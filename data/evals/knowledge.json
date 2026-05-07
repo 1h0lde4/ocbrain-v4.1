@@ -1,0 +1,22 @@
+[
+  {"query": "What is machine learning?", "answer": "Machine learning is a subset of AI where systems learn from data to improve performance without explicit programming."},
+  {"query": "What is the difference between supervised and unsupervised learning?", "answer": "Supervised learning uses labeled training data to predict outputs. Unsupervised learning finds hidden patterns in unlabeled data."},
+  {"query": "What is a neural network?", "answer": "A neural network is a computational model inspired by the brain, consisting of layers of interconnected nodes that process data to learn representations."},
+  {"query": "What is gradient descent?", "answer": "Gradient descent is an optimization algorithm that iteratively adjusts model parameters in the direction of steepest loss reduction to find the minimum."},
+  {"query": "What is overfitting in machine learning?", "answer": "Overfitting is when a model learns training data too well, including noise, causing poor generalization to new data."},
+  {"query": "What is a transformer model?", "answer": "A transformer is a neural network architecture using self-attention mechanisms to process sequences in parallel, enabling models like GPT and BERT."},
+  {"query": "What is RAG in AI?", "answer": "Retrieval-Augmented Generation combines a retrieval system with a generative model, fetching relevant documents before generating responses to improve accuracy."},
+  {"query": "What is the difference between AI and ML?", "answer": "AI is the broad field of creating intelligent machines. ML is a subset that focuses on learning from data. All ML is AI but not all AI is ML."},
+  {"query": "What is a large language model?", "answer": "A large language model (LLM) is a neural network trained on massive text datasets to understand and generate human language."},
+  {"query": "What is fine-tuning in ML?", "answer": "Fine-tuning adapts a pre-trained model to a specific task by continuing training on a smaller, task-specific dataset."},
+  {"query": "What is LoRA in machine learning?", "answer": "LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning technique that adds small trainable matrices to frozen model weights, reducing memory and compute requirements."},
+  {"query": "What is a vector database?", "answer": "A vector database stores high-dimensional numerical representations (embeddings) of data and enables fast similarity search using distance metrics."},
+  {"query": "What is the attention mechanism?", "answer": "Attention allows models to weigh the importance of different parts of the input when producing each output element, enabling context-aware processing."},
+  {"query": "What is the difference between parameters and hyperparameters?", "answer": "Parameters are learned from training data (weights, biases). Hyperparameters are set before training and control the learning process (learning rate, batch size)."},
+  {"query": "What is tokenization in NLP?", "answer": "Tokenization splits text into smaller units (tokens) like words or subwords that a model can process numerically."},
+  {"query": "What is cosine similarity?", "answer": "Cosine similarity measures the angle between two vectors in high-dimensional space, ranging from -1 to 1, used to compare text embeddings."},
+  {"query": "What is the difference between precision and recall?", "answer": "Precision is correct positives / all predicted positives. Recall is correct positives / all actual positives. High precision = few false alarms. High recall = few misses."},
+  {"query": "What is transfer learning?", "answer": "Transfer learning reuses a model trained on one task as the starting point for a different but related task, reducing data and compute requirements."},
+  {"query": "What is an embedding in machine learning?", "answer": "An embedding is a dense vector representation of data (text, images, etc.) where similar items have similar vectors, enabling semantic comparison."},
+  {"query": "What is the context window of an LLM?", "answer": "The context window is the maximum number of tokens an LLM can process at once, limiting how much text it can consider when generating a response."}
+]

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCBrain — Settings</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f0f; --surface: #1a1a1a; --border: #2a2a2a;
+    --text: #e8e6e1; --sub: #888780; --accent: #1d9e75;
+    --purple: #7f77dd; --amber: #ba7517; --radius: 8px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+         max-width: 720px; margin: 0 auto; padding: 32px 20px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .sub { font-size: 13px; color: var(--sub); margin-bottom: 28px; }
+  .back { font-size: 13px; color: var(--accent); text-decoration: none; display: inline-block;
+          margin-bottom: 20px; }
+  .section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+                   text-transform: uppercase; color: var(--sub); margin: 24px 0 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: var(--radius); overflow: hidden; margin-bottom: 10px; }
+  .setting-row { display: flex; align-items: center; gap: 16px; padding: 14px 16px;
+                 border-bottom: 1px solid var(--border); }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-info { flex: 1; }
+  .setting-label { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .setting-desc  { font-size: 12px; color: var(--sub); }
+  .toggle { width: 36px; height: 20px; border-radius: 10px; background: var(--border);
+            cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0; }
+  .toggle.on { background: var(--accent); }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+                   background: white; border-radius: 50%; transition: transform 0.2s; }
+  .toggle.on::after { transform: translateX(16px); }
+  .input-row { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex;
+               align-items: center; gap: 12px; }
+  .input-row:last-child { border-bottom: none; }
+  .input-label { font-size: 13px; font-weight: 500; min-width: 160px; }
+  .input-row input, .input-row select {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 10px; border-radius: 4px; font-size: 13px; flex: 1; }
+  .input-row input:focus, .input-row select:focus { outline: none; border-color: var(--accent); }
+  .save-btn { background: var(--accent); color: white; border: none; padding: 10px 24px;
+              border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500;
+              margin-top: 20px; transition: opacity 0.15s; }
+  .save-btn:hover { opacity: 0.85; }
+  .danger-btn { background: none; color: #e05555; border: 1px solid #e05555; padding: 8px 16px;
+                border-radius: var(--radius); cursor: pointer; font-size: 13px; margin-top: 8px; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 99px; font-weight: 500; margin-left: 6px; }
+  .badge-new { background: #1e1b3a; color: var(--purple); }
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--accent);
+           color: white; padding: 10px 18px; border-radius: var(--radius); font-size: 13px;
+           display: none; animation: fadein 0.3s; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+</style>
+</head>
+<body>
+<a class="back" href="/">← Back to OCBrain</a>
+<h1>Settings</h1>
+<p class="sub">All settings are saved to config/settings.toml and take effect immediately — no restart needed.</p>
+
+<div id="settings-container">Loading...</div>
+
+<div id="toast">Settings saved ✓</div>
+
+<script>
+const API = '';
+let cfg = {};
+
+const DEFS = {
+  privacy: [
+    { key: 'privacy.save_history',        label: 'Save conversation history',   desc: 'Store turns in context.sqlite for multi-turn memory', type: 'toggle' },
+    { key: 'privacy.save_training_pairs', label: 'Collect training pairs',       desc: 'Save query/answer pairs to train your own models', type: 'toggle' },
+    { key: 'privacy.encrypt_context_db',  label: 'Encrypt context database',     desc: 'AES-256 encryption on context.sqlite (requires password on startup)', type: 'toggle' },
+    { key: 'privacy.telemetry',           label: 'Anonymous telemetry',          desc: 'Send anonymous usage stats (no queries, no content)', type: 'toggle' },
+  ],
+  learning: [
+    { key: 'learning.training_enabled',   label: 'Enable model training',        desc: 'Master switch — disables all LoRA fine-tuning', type: 'toggle' },
+    { key: 'learning.crawl_interval_h',   label: 'Crawl interval (hours)',       desc: 'How often to fetch new content from trusted sources', type: 'number' },
+    { key: 'learning.clean_interval_h',   label: 'Clean interval (hours)',       desc: 'How often to process and embed raw crawled content', type: 'number' },
+    { key: 'learning.train_interval_h',   label: 'Training interval (hours)',    desc: 'How often to run a LoRA fine-tuning cycle', type: 'number' },
+    { key: 'learning.min_pairs_to_train', label: 'Min pairs before training',    desc: 'Minimum query/answer pairs collected before first training run', type: 'number' },
+    { key: 'learning.replay_ratio',       label: 'Replay ratio (0.0–1.0)',       desc: 'Fraction of previous pairs mixed in each training run (prevents forgetting)', type: 'number' },
+  ],
+  global: [
+    { key: 'global.voice_enabled',        label: 'Voice input',                  desc: 'Enable speech-to-text via Ctrl+Shift+Space (requires Whisper)', type: 'toggle' },
+    { key: 'global.fanout_on_ambiguity',  label: 'Fan-out on ambiguous queries', desc: 'When unsure, query all relevant modules instead of asking for clarification', type: 'toggle' },
+    { key: 'global.confidence_floor',     label: 'Confidence floor (0.0–1.0)',   desc: 'Minimum classifier confidence required before routing to a module', type: 'number' },
+    { key: 'global.context_window',       label: 'Context window (turns)',       desc: 'Number of previous conversation turns sent to the model as context', type: 'number' },
+    { key: 'global.web_ui_port',          label: 'Web UI port',                  desc: 'Port for the local web interface (requires restart)', type: 'number' },
+    { key: 'global.ollama_host',          label: 'Ollama host URL',              desc: 'Address of your Ollama instance', type: 'text' },
+    { key: 'global.response_style',       label: 'Response style',               desc: 'Default verbosity of model responses', type: 'select',
+      options: ['concise', 'detailed', 'technical'] },
+    { key: 'global.log_level',            label: 'Log level',                    desc: 'Verbosity of server logs', type: 'select',
+      options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'] },
+  ],
+};
+
+function getVal(key) {
+  const parts = key.split('.');
+  let v = cfg;
+  for (const p of parts) v = v?.[p];
+  return v;
+}
+
+function renderSection(title, defs) {
+  const rows = defs.map(d => {
+    const val = getVal(d.key);
+    if (d.type === 'toggle') {
+      const on = Boolean(val);
+      return `<div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label">${d.label}</div>
+          <div class="setting-desc">${d.desc}</div>
+        </div>
+        <div class="toggle ${on ? 'on' : ''}" data-key="${d.key}" onclick="toggleSetting(this)"></div>
+      </div>`;
+    }
+    if (d.type === 'select') {
+      const opts = d.options.map(o =>
+        `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`
+      ).join('');
+      return `<div class="input-row">
+        <div class="input-label">${d.label}</div>
+        <select data-key="${d.key}" onchange="markDirty()"><option value="">--</option>${opts}</select>
+      </div>`;
+    }
+    return `<div class="input-row">
+      <div class="input-label">${d.label}</div>
+      <input type="${d.type === 'number' ? 'number' : 'text'}" value="${val ?? ''}"
+             data-key="${d.key}" oninput="markDirty()" step="${d.type === 'number' && String(val).includes('.') ? '0.05' : '1'}">
+    </div>`;
+  }).join('');
+
+  return `<div class="section-title">${title}</div><div class="card">${rows}</div>`;
+}
+
+async function load() {
+  try {
+    const r = await fetch(`${API}/config`);
+    cfg = await r.json();
+    const c = document.getElementById('settings-container');
+    c.innerHTML =
+      renderSection('Privacy', DEFS.privacy) +
+      renderSection('Learning & Training', DEFS.learning) +
+      renderSection('General', DEFS.global) +
+      `<div class="section-title">Danger Zone</div>
+       <div class="card" style="padding:16px">
+         <div style="font-size:13px; color:var(--sub); margin-bottom:10px;">
+           These actions cannot be undone.
+         </div>
+         <button class="danger-btn" onclick="if(confirm('Wipe all training data?')) wipePairs()">
+           🗑 Wipe all training pairs
+         </button>
+       </div>
+       <button class="save-btn" id="save-btn" onclick="saveAll()" disabled>Save Changes</button>`;
+  } catch (e) {
+    document.getElementById('settings-container').textContent = 'Could not load settings — is OCBrain running?';
+  }
+}
+
+let dirty = false;
+function markDirty() {
+  dirty = true;
+  const btn = document.getElementById('save-btn');
+  if (btn) btn.disabled = false;
+}
+
+function toggleSetting(el) {
+  el.classList.toggle('on');
+  markDirty();
+}
+
+async function saveAll() {
+  const updates = {};
+  document.querySelectorAll('[data-key]').forEach(el => {
+    const key = el.dataset.key;
+    let val;
+    if (el.classList.contains('toggle')) {
+      val = el.classList.contains('on');
+    } else if (el.tagName === 'SELECT') {
+      val = el.value;
+    } else {
+      val = el.type === 'number' ? parseFloat(el.value) : el.value;
+    }
+    updates[key] = val;
+  });
+
+  try {
+    await fetch(`${API}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    const toast = document.getElementById('toast');
+    toast.style.display = 'block';
+    setTimeout(() => toast.style.display = 'none', 2500);
+    dirty = false;
+    document.getElementById('save-btn').disabled = true;
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+async function wipePairs() {
+  try {
+    await fetch(`${API}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 'privacy.save_training_pairs': false }),
+    });
+    alert('Training pairs wiped (privacy flag set to false).');
+  } catch (e) { alert(e.message); }
+}
+
+window.addEventListener('beforeunload', e => {
+  if (dirty) e.preventDefault();
+});
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+[coding]
+sources = [
+    "https://docs.python.org/3/",
+    "https://github.com/trending",
+    "https://stackoverflow.com/questions?tab=votes&sort=week",
+    "https://realpython.com/",
+    "https://docs.github.com/en",
+]
+
+[web_search]
+sources = [
+    "https://news.ycombinator.com/rss",
+    "https://lobste.rs/rss",
+    "https://feeds.feedburner.com/TheHackersNews",
+]
+
+[knowledge]
+sources = [
+    "https://en.wikipedia.org/wiki/Special:RecentChanges",
+    "https://arxiv.org/rss/cs.AI",
+    "https://arxiv.org/rss/cs.LG",
+]
+
+[system_ctrl]
+sources = []

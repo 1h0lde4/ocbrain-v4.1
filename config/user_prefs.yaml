@@ -1,0 +1,27 @@
+user:
+  name: "User"
+  language: "en"
+
+modules:
+  coding:
+    trusted_sources:
+      - "https://docs.python.org"
+      - "https://github.com"
+      - "https://stackoverflow.com"
+    update_frequency: "weekly"
+    preferred_languages: ["python", "typescript", "rust"]
+
+  web_search:
+    trusted_sources: []
+    max_results_per_query: 5
+
+  knowledge:
+    trusted_sources:
+      - "https://en.wikipedia.org"
+    update_frequency: "monthly"
+
+  system_ctrl:
+    allowed_paths:
+      - "~/Documents"
+      - "~/Downloads"
+    allow_app_launch: true

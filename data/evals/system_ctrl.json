@@ -1,0 +1,12 @@
+[
+  {"query": "open firefox", "answer": "{\"action\": \"open\", \"target\": \"firefox\"}"},
+  {"query": "launch spotify", "answer": "{\"action\": \"launch\", \"target\": \"spotify\"}"},
+  {"query": "open the terminal", "answer": "{\"action\": \"open\", \"target\": \"terminal\"}"},
+  {"query": "list files in the current directory", "answer": "{\"action\": \"list_dir\", \"path\": \".\"}"},
+  {"query": "read the file config.txt", "answer": "{\"action\": \"read_file\", \"path\": \"config.txt\"}"},
+  {"query": "delete temp.log", "answer": "{\"action\": \"delete_file\", \"path\": \"temp.log\"}"},
+  {"query": "create a new file called notes.txt", "answer": "{\"action\": \"write_file\", \"path\": \"notes.txt\", \"content\": \"\"}"},
+  {"query": "show current working directory", "answer": "{\"action\": \"get_cwd\"}"},
+  {"query": "open vs code", "answer": "{\"action\": \"open\", \"target\": \"code\"}"},
+  {"query": "save this text to output.txt: hello world", "answer": "{\"action\": \"write_file\", \"path\": \"output.txt\", \"content\": \"hello world\"}"}
+]

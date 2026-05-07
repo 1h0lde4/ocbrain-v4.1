@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments — never commit these
+.venv/
+venv/
+env/
+.env/
+
+# Distribution / packaging
+*.whl
+*.tar.gz
+*.deb
+*.rpm
+*.exe
+*.pkg
+
+# PyInstaller
+*.spec
+
+# ── User data — NEVER commit trained weights or personal data ──
+data/raw/
+data/chunks/
+data/gaps/
+data/exports/
+data/context.sqlite
+data/brain_state.json
+
+# Per-module trained artifacts
+modules/*/knowledge.db/
+modules/*/weights/active/
+modules/*/weights/previous/
+modules/*/weights/pending/
+
+# Eval results (keep eval definitions, not results)
+data/evals/*.results.json
+
+# Secrets / keys
+.env
+*.key
+*.pem
+secrets.toml
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V7
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+/tmp/ocbrain*
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Temp error files from setup.sh
+/tmp/*.err
+
+# Config backups
+config/*.bak
+config/models.toml.bak

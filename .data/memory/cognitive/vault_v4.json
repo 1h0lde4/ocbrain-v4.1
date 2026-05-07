@@ -1,0 +1,32 @@
+[
+  {
+    "id": "d1157676-0390-4606-9b0c-e0acf4cecf11",
+    "tier": "L1",
+    "content": "Provider mesh failed due to timeout on Ollama(llama3)",
+    "source": "system_event",
+    "confidence": 1.0,
+    "importance": 1.0,
+    "access_count": 0,
+    "timestamp": "2026-05-07T07:56:53.703180+00:00",
+    "embedding": null,
+    "derived_from": [],
+    "validation_state": "validated",
+    "meta": {}
+  },
+  {
+    "id": "24be5e35-caf6-46a1-b149-23df035b5530",
+    "tier": "L3",
+    "content": "Increase Ollama timeout to 60s",
+    "source": "upgrade_planner",
+    "confidence": 1.0,
+    "importance": 1.0,
+    "access_count": 0,
+    "timestamp": "2026-05-07T07:56:53.704514+00:00",
+    "embedding": null,
+    "derived_from": [
+      "d1157676-0390-4606-9b0c-e0acf4cecf11"
+    ],
+    "validation_state": "validated",
+    "meta": {}
+  }
+]

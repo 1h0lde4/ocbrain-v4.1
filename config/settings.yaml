@@ -1,0 +1,24 @@
+openclaw:
+  version: "0.1.0"
+
+orchestrator:
+  classifier_confidence_threshold: 0.60
+  max_parallel_modules: 4
+  context_window_turns: 10
+
+modules:
+  enabled:
+    - coding
+    - web_search
+    - knowledge
+    - system_ctrl
+  weights_dir: "weights/"
+  memory_dir:  "memory/"
+
+learning:
+  enabled: true
+  schedule_cron: "0 3 * * *"
+  max_pages_per_run: 500
+
+logging:
+  level: "INFO"

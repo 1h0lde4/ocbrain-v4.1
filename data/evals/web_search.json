@@ -1,0 +1,12 @@
+[
+  {"query": "What is the latest version of Python?", "answer": "Python 3.12 is the latest stable release as of 2024."},
+  {"query": "Who created Linux?", "answer": "Linus Torvalds created Linux in 1991."},
+  {"query": "What is the capital of France?", "answer": "Paris is the capital of France."},
+  {"query": "What does HTTP stand for?", "answer": "HTTP stands for HyperText Transfer Protocol."},
+  {"query": "What is the speed of light?", "answer": "The speed of light in a vacuum is approximately 299,792,458 meters per second."},
+  {"query": "Who wrote the Python programming language?", "answer": "Guido van Rossum created Python, first released in 1991."},
+  {"query": "What is GitHub?", "answer": "GitHub is a web-based platform for version control and collaboration using Git."},
+  {"query": "What does API stand for?", "answer": "API stands for Application Programming Interface."},
+  {"query": "What is Docker?", "answer": "Docker is a platform for containerizing applications, packaging code and dependencies together for consistent deployment."},
+  {"query": "What is the difference between TCP and UDP?", "answer": "TCP is reliable and ordered with error checking. UDP is faster but unreliable with no guaranteed delivery order."}
+]

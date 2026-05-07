@@ -1,0 +1,39 @@
+[coding]
+stage = "bootstrap"
+maturity_score = 0.0
+query_count = 57
+bootstrap_model = "mistral"
+base_model = "mistral:7b"
+active_weights = ""
+last_trained = ""
+train_pairs = 0
+
+[web_search]
+stage = "bootstrap"
+maturity_score = 0.0
+query_count = 65
+bootstrap_model = "mistral"
+base_model = "mistral:7b"
+active_weights = ""
+last_trained = ""
+train_pairs = 0
+
+[knowledge]
+stage = "bootstrap"
+maturity_score = 0.0
+query_count = 25
+bootstrap_model = "mistral"
+base_model = "mistral:7b"
+active_weights = ""
+last_trained = ""
+train_pairs = 0
+
+[system_ctrl]
+stage = "bootstrap"
+maturity_score = 0.0
+query_count = 17
+bootstrap_model = "mistral"
+base_model = "mistral:7b"
+active_weights = ""
+last_trained = ""
+train_pairs = 0

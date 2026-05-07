@@ -1,0 +1,57 @@
+[global]
+language            = "auto"
+response_style      = "concise"
+confidence_floor    = 0.6
+fanout_on_ambiguity = true
+context_window      = 10
+ollama_host         = "http://localhost:11434"
+classifier_model    = "mistral"     # model used for intent classification and merging
+web_ui_port         = 7437
+voice_enabled       = false
+log_level           = "INFO"
+
+[privacy]
+save_history        = true
+save_training_pairs = true
+telemetry           = false
+encrypt_context_db  = false
+
+[learning]
+crawl_interval_h    = 1
+clean_interval_h    = 6
+train_interval_h    = 24
+min_pairs_to_train  = 500
+replay_ratio        = 0.2
+training_enabled    = true
+
+[modules.coding]
+enabled             = true
+keywords            = ["write","code","script","function","debug","fix","build","implement","program","snippet"]
+staleness_decay     = true
+max_kb_size_mb      = 500
+confidence_boost    = 0.1
+pin_to_external     = false
+
+[modules.web_search]
+enabled             = true
+keywords            = ["search","find","latest","today","current","news","lookup","what is happening","recent"]
+staleness_decay     = true
+max_kb_size_mb      = 300
+confidence_boost    = 0.1
+pin_to_external     = false
+
+[modules.knowledge]
+enabled             = true
+keywords            = ["explain","what is","how does","why","define","summarize","describe","tell me about"]
+staleness_decay     = false
+max_kb_size_mb      = 1000
+confidence_boost    = 0.05
+pin_to_external     = false
+
+[modules.system_ctrl]
+enabled             = true
+keywords            = ["open","close","run","launch","start","stop","save","delete","move","copy","rename","create file"]
+staleness_decay     = false
+max_kb_size_mb      = 100
+confidence_boost    = 0.15
+pin_to_external     = false
