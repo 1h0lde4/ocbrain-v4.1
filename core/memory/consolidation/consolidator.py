@@ -1,8 +1,8 @@
 import logging
 import asyncio
 from datetime import datetime, timezone
-from ..cognitive_vault import cognitive_vault
-from ..governance.memory_governor import memory_governor
+from core.memory.cognitive_vault import cognitive_vault
+from core.governance.memory_governor import memory_governor
 
 logger = logging.getLogger("ocbrain.memory.consolidation")
 
