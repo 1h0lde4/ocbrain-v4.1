@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import logging
+import re
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 
@@ -76,19 +77,32 @@ class MemoryVault:
     def bm25_search_placeholder(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Placeholder for BM25 keyword search.
-        Currently performs a naive substring search.
+        Performs lightweight token overlap until a full BM25 index is added.
         """
         query_lower = query.lower()
+        query_terms = {
+            t for t in re.findall(r"\w+", query_lower)
+            if len(t) > 2 and t not in {"what", "when", "where", "why", "how", "the", "and", "for"}
+        }
         results = []
         for entry in self.entries:
             # Naive scoring based on keyword existence
             score = 0.0
-            if query_lower in entry.get("fact", "").lower():
+            fact = entry.get("fact", "").lower()
+            summary = entry.get("summary", "").lower()
+            tags = " ".join(str(tag).lower() for tag in entry.get("tags", []))
+
+            if query_lower in fact:
                 score += 0.5
-            if query_lower in entry.get("summary", "").lower():
+            if query_lower in summary:
                 score += 0.3
-            if any(query_lower in str(tag).lower() for tag in entry.get("tags", [])):
+            if query_lower in tags:
                 score += 0.2
+
+            haystack_terms = set(re.findall(r"\w+", f"{fact} {summary} {tags}"))
+            overlap = query_terms & haystack_terms
+            if overlap:
+                score += len(overlap) / max(len(query_terms), 1)
                 
             if score > 0:
                 results.append((score, entry))

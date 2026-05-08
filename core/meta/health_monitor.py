@@ -12,6 +12,7 @@ class HealthMonitor:
     """
     def __init__(self):
         self._is_running = False
+        self._task: asyncio.Task | None = None
         self._metrics = {
             "failed_provider_calls": 0,
             "total_provider_calls": 0,
@@ -24,19 +25,25 @@ class HealthMonitor:
         if self._is_running: return
         self._is_running = True
         logger.info("[HealthMonitor] Monitoring system active.")
-        asyncio.create_task(self._diagnostic_loop())
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._diagnostic_loop())
 
     def stop(self):
         self._is_running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
 
     async def _diagnostic_loop(self):
         """Runs diagnostics every 10 minutes (standard for Phase 4)."""
-        while self._is_running:
-            try:
-                self.run_diagnostics()
-            except Exception as e:
-                logger.error(f"[HealthMonitor] Diagnostic loop error: {e}")
-            await asyncio.sleep(600)
+        try:
+            while self._is_running:
+                try:
+                    self.run_diagnostics()
+                except Exception as e:
+                    logger.error(f"[HealthMonitor] Diagnostic loop error: {e}")
+                await asyncio.sleep(600)
+        except asyncio.CancelledError:
+            raise
 
     def run_diagnostics(self):
         logger.info("[HealthMonitor] Running periodic diagnostics...")

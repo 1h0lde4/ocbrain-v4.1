@@ -13,20 +13,30 @@ class MemoryConsolidator:
     def __init__(self, decay_rate: float = 0.95):
         self.decay_rate = decay_rate
         self._is_running = False
+        self._task: asyncio.Task | None = None
 
     async def start(self):
         if self._is_running: return
         self._is_running = True
         logger.info("[Consolidator] Memory consolidation engine active.")
-        asyncio.create_task(self._loop())
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._loop())
+
+    def stop(self):
+        self._is_running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
 
     async def _loop(self):
-        while self._is_running:
-            try:
-                await self.run_consolidation()
-            except Exception as e:
-                logger.error(f"[Consolidator] Loop error: {e}")
-            await asyncio.sleep(3600) # Run every hour
+        try:
+            while self._is_running:
+                try:
+                    await self.run_consolidation()
+                except Exception as e:
+                    logger.error(f"[Consolidator] Loop error: {e}")
+                await asyncio.sleep(3600) # Run every hour
+        except asyncio.CancelledError:
+            raise
 
     async def run_consolidation(self):
         logger.info("[Consolidator] Starting memory consolidation run...")

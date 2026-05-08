@@ -147,16 +147,18 @@ async def generate_with_fallback(providers: List[Provider], prompt: str) -> str:
     from core.prompt.cache import cached_generate
     from core.runtime.limits import safe_llm_call
 
-    # Rank providers by health score before attempting
+    # Rank providers by health score before attempting.  Some tests and plugin
+    # integrations use lightweight provider-like objects instead of subclasses,
+    # so provider health hooks are treated as an optional protocol.
     available_providers = sorted(
-        [p for p in providers if p.is_available()],
-        key=lambda x: x.health_score,
+        [p for p in providers if _provider_available(p)],
+        key=lambda x: _provider_health(x),
         reverse=True
     )
 
     if not available_providers:
         # If all are in cooldown, pick the one that recovers soonest
-        soonest = min(providers, key=lambda x: x.cooldown_until)
+        soonest = min(providers, key=lambda x: getattr(x, "cooldown_until", 0))
         logger.warning(f"[ProviderMesh] All providers in cooldown. Forced choice: {soonest.name}")
         available_providers = [soonest]
 
@@ -173,7 +175,7 @@ async def generate_with_fallback(providers: List[Provider], prompt: str) -> str:
                 raise ValueError("Provider returned an empty response.")
 
             latency = int((time.perf_counter() - start_time) * 1000)
-            provider.mark_success()
+            _provider_mark_success(provider)
             
             # Phase 4: Record health
             from core.meta.health_monitor import health_monitor
@@ -185,7 +187,7 @@ async def generate_with_fallback(providers: List[Provider], prompt: str) -> str:
 
         except Exception as e:
             last_error = e
-            provider.mark_failure()
+            _provider_mark_failure(provider)
             latency = int((time.perf_counter() - start_time) * 1000)
             
             # Phase 4: Record health
@@ -196,3 +198,30 @@ async def generate_with_fallback(providers: List[Provider], prompt: str) -> str:
                 logger.warning(f"[ProviderMesh] {provider.name} failed ({type(e).__name__}: {e}), trying next...")
 
     raise RuntimeError(f"All available {len(available_providers)} provider(s) failed. Last: {last_error}")
+
+
+def _provider_available(provider) -> bool:
+    checker = getattr(provider, "is_available", None)
+    if checker is None:
+        return True
+    try:
+        return bool(checker())
+    except Exception:
+        logger.warning("[ProviderMesh] availability check failed for %s", provider.name)
+        return False
+
+
+def _provider_health(provider) -> int:
+    return int(getattr(provider, "health_score", 100))
+
+
+def _provider_mark_success(provider) -> None:
+    marker = getattr(provider, "mark_success", None)
+    if marker is not None:
+        marker()
+
+
+def _provider_mark_failure(provider) -> None:
+    marker = getattr(provider, "mark_failure", None)
+    if marker is not None:
+        marker()

@@ -26,6 +26,8 @@ async def merge(results: list[RouteResult], original_query: str) -> str:
     for r in results:
         if isinstance(r, RouteResult):
             normalized.append(r)
+        elif hasattr(r, "result") and isinstance(getattr(r, "result"), RouteResult):
+            normalized.append(r.result)
         elif isinstance(r, str):
             normalized.append(RouteResult(answer=r, source="legacy_module"))
         else:
@@ -54,6 +56,14 @@ async def merge(results: list[RouteResult], original_query: str) -> str:
         # If answers are near-identical, just return the first
         if _word_overlap(a1, a2) > 0.80:
             return a1
+        if _word_overlap(a1, a2) < 0.60:
+            try:
+                merged = await _weave([a1, a2], original_query)
+                if errors:
+                    merged += "\n\n" + "\n".join(r.answer for r in errors)
+                return merged
+            except Exception:
+                log.exception("[Merger] weave failed, falling back to template join")
         # If one is very short (supplement), append naturally
         if len(a2.split()) < 40:
             return f"{a1}\n\n{a2}"

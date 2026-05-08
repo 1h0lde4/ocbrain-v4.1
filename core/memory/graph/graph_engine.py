@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import logging
+from contextlib import closing
 from typing import List, Dict, Any, Tuple
 
 logger = logging.getLogger("ocbrain.memory.graph")
@@ -16,7 +17,7 @@ class GraphEngine:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             # Nodes: Entities, Events, Upgrades, etc.
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS nodes (
@@ -42,7 +43,7 @@ class GraphEngine:
 
     def add_node(self, node_id: str, node_type: str, name: str, properties: Dict[str, Any] = None):
         import json
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO nodes (id, type, name, properties) VALUES (?, ?, ?, ?)",
                 (node_id, node_type, name, json.dumps(properties or {}))
@@ -50,7 +51,7 @@ class GraphEngine:
 
     def add_edge(self, source: str, target: str, relation: str, properties: Dict[str, Any] = None):
         import json
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 "INSERT INTO edges (source, target, relation, properties) VALUES (?, ?, ?, ?)",
                 (source, target, relation, json.dumps(properties or {}))
@@ -58,7 +59,7 @@ class GraphEngine:
 
     def get_neighbors(self, node_id: str) -> List[Tuple[str, str, str]]:
         """Returns (target_id, relation, target_type) for a given node."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("""
                 SELECT e.target, e.relation, n.type 
                 FROM edges e 
@@ -69,7 +70,7 @@ class GraphEngine:
 
     def search_nodes(self, query: str) -> List[Dict[str, Any]]:
         """Simple name-based search."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT id, type, name FROM nodes WHERE name LIKE ?", (f"%{query}%",))
             return [{"id": r[0], "type": r[1], "name": r[2]} for r in cursor.fetchall()]
 

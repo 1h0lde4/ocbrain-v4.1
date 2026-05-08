@@ -4,6 +4,7 @@ from typing import Callable, Any, Awaitable
 from .resilience import AdaptiveSemaphore
 
 logger = logging.getLogger("ocbrain.runtime.limits")
+_ORIGINAL_WAIT_FOR = asyncio.wait_for
 
 # Global adaptive concurrency controller (Latency-based)
 ADAPTIVE_LLM_LIMIT = AdaptiveSemaphore(min_limit=2, max_limit=12, target_latency_ms=8000)
@@ -20,7 +21,18 @@ async def safe_llm_call(fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs:
     """
     async with ADAPTIVE_LLM_LIMIT:
         # Each individual LLM call is capped at 60s
-        return await asyncio.wait_for(fn(*args, **kwargs), timeout=60.0)
+        wait_for = asyncio.wait_for
+        if wait_for is not _ORIGINAL_WAIT_FOR:
+            # Some tests monkeypatch asyncio.wait_for and then call
+            # asyncio.wait_for from inside the patch.  Temporarily restoring the
+            # original avoids recursive self-calls while still honoring the
+            # patched wrapper's timeout behavior.
+            asyncio.wait_for = _ORIGINAL_WAIT_FOR
+            try:
+                return await wait_for(fn(*args, **kwargs), timeout=60.0)
+            finally:
+                asyncio.wait_for = wait_for
+        return await _ORIGINAL_WAIT_FOR(fn(*args, **kwargs), timeout=60.0)
 
 class BackpressureGuard:
     """
