@@ -27,9 +27,12 @@ def chunk_text(text: str, chunk_size_words: int = 250, overlap_words: int = 50) 
 
     i = 0
     while i < len(words):
-        chunk_words = words[i:i + chunk_size_words]
+        end = min(i + chunk_size_words, len(words))
+        chunk_words = words[i:end]
         chunk = ' '.join(chunk_words)
         chunks.append(chunk)
+        if end == len(words):
+            break
         i += chunk_size_words - overlap_words
         
     return chunks

@@ -69,14 +69,20 @@ def _write_file(path: str, content: str = "") -> str:
 
 
 def _read_file(path: str) -> str:
-    p = _safe_path(path)
+    try:
+        p = _safe_path(path)
+    except PermissionError as e:
+        return f"File not found or access denied: {path} ({e})"
     if not p.exists():
         return f"File not found: {path}"
     return p.read_text(errors="replace")[:4000]  # cap at 4k chars
 
 
 def _delete_file(path: str) -> str:
-    p = _safe_path(path)
+    try:
+        p = _safe_path(path)
+    except PermissionError as e:
+        return f"File not found or access denied: {path} ({e})"
     if not p.exists():
         return f"File not found: {path}"
     p.unlink()

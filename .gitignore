@@ -77,6 +77,10 @@ logs/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+pytest-cache-files-*/
+.data/pytest-cache-files-*/
+.data/tmp/
+workspace/
 
 # Temp error files from setup.sh
 /tmp/*.err

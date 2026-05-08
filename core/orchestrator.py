@@ -32,9 +32,31 @@ class Orchestrator:
         self.router  = router
         self.vault   = MemoryVault()
         self.retriever = HybridRetriever(self.vault)
+        self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
-        asyncio.create_task(health_monitor.start())
-        asyncio.create_task(consolidator.start())
+        self._start_background_engines()
+
+    def _start_background_engines(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("[Orchestrator] Background engines deferred: no running event loop")
+            return
+
+        self._background_tasks.extend([
+            loop.create_task(health_monitor.start(), name="health-monitor-start"),
+            loop.create_task(consolidator.start(), name="memory-consolidator-start"),
+        ])
+
+    async def close(self):
+        """Stop background services owned by this orchestrator."""
+        health_monitor.stop()
+        consolidator.stop()
+        for task in self._background_tasks:
+            if not task.done():
+                task.cancel()
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
     @async_trace_function(name="orchestrator_v3")
     async def handle(self, query: str, max_iterations: int = 5) -> str:

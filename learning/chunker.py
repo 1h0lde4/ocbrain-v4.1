@@ -59,12 +59,19 @@ def _split_prose(text: str, max_tokens: int = 300, overlap: int = 50) -> list[st
         else:
             if current_words:
                 chunks.append(" ".join(current_words))
+                current_words = []
             # If single paragraph is too long, split at sentences
             if len(words) > max_tokens:
                 sentences = re.split(r'(?<=[.!?])\s+', para)
                 buf: list[str] = []
                 for sent in sentences:
                     sw = sent.split()
+                    if len(sw) > max_tokens:
+                        if buf:
+                            chunks.append(" ".join(buf))
+                            buf = []
+                        chunks.extend(_split_words(sw, max_tokens, overlap))
+                        continue
                     if len(buf) + len(sw) > max_tokens:
                         if buf:
                             chunks.append(" ".join(buf))
@@ -78,6 +85,23 @@ def _split_prose(text: str, max_tokens: int = 300, overlap: int = 50) -> list[st
 
     if current_words:
         chunks.append(" ".join(current_words))
+    return chunks
+
+
+def _split_words(words: list[str], max_tokens: int, overlap: int) -> list[str]:
+    """Split a long token sequence into bounded overlapping windows."""
+    if not words:
+        return []
+
+    step = max(1, max_tokens - overlap)
+    chunks: list[str] = []
+    start = 0
+    while start < len(words):
+        end = min(start + max_tokens, len(words))
+        chunks.append(" ".join(words[start:end]))
+        if end == len(words):
+            break
+        start += step
     return chunks
 
 

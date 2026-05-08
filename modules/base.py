@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import time
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,24 +22,27 @@ log = logging.getLogger(__name__)
 _RETRIEVE_CACHE: dict[tuple, tuple] = {}
 _CACHE_TTL_SEC  = 300   # 5 minutes — stale after this
 _CACHE_MAX_SIZE = 128
+_CACHE_LOCK = threading.RLock()
 
 
 def _cache_get(key: tuple) -> Optional[list]:
-    entry = _RETRIEVE_CACHE.get(key)
-    if entry is None:
-        return None
-    chunks, ts = entry
-    if time.time() - ts > _CACHE_TTL_SEC:
-        del _RETRIEVE_CACHE[key]
-        return None
-    return chunks
+    with _CACHE_LOCK:
+        entry = _RETRIEVE_CACHE.get(key)
+        if entry is None:
+            return None
+        chunks, ts = entry
+        if time.time() - ts > _CACHE_TTL_SEC:
+            del _RETRIEVE_CACHE[key]
+            return None
+        return chunks
 
 
 def _cache_set(key: tuple, chunks: list):
-    if len(_RETRIEVE_CACHE) >= _CACHE_MAX_SIZE:
-        oldest = min(_RETRIEVE_CACHE, key=lambda k: _RETRIEVE_CACHE[k][1])
-        del _RETRIEVE_CACHE[oldest]
-    _RETRIEVE_CACHE[key] = (chunks, time.time())
+    with _CACHE_LOCK:
+        if len(_RETRIEVE_CACHE) >= _CACHE_MAX_SIZE:
+            oldest = min(_RETRIEVE_CACHE, key=lambda k: _RETRIEVE_CACHE[k][1])
+            del _RETRIEVE_CACHE[oldest]
+        _RETRIEVE_CACHE[key] = (chunks, time.time())
 
 
 @dataclass
@@ -141,9 +145,10 @@ class BaseModule(ABC):
         try:
             self.db.upsert(documents=chunks, metadatas=metadatas, ids=ids)
             # Invalidate retrieval cache for this module on new ingest
-            keys_to_drop = [k for k in _RETRIEVE_CACHE if k[0] == self.name]
-            for k in keys_to_drop:
-                del _RETRIEVE_CACHE[k]
+            with _CACHE_LOCK:
+                keys_to_drop = [k for k in _RETRIEVE_CACHE if k[0] == self.name]
+                for k in keys_to_drop:
+                    del _RETRIEVE_CACHE[k]
         except Exception as e:
             log.error(f"[{self.name}] ingest error: {e}")
 
@@ -199,8 +204,12 @@ class BaseModule(ABC):
             "db_ok":          db_ok,
             "kb_chunks":      count,
             "model":          state.get("bootstrap_model", "unknown"),
-            "cache_entries":  sum(1 for k in _RETRIEVE_CACHE if k[0] == self.name),
+            "cache_entries":  self._cache_entry_count(),
         }
+
+    def _cache_entry_count(self) -> int:
+        with _CACHE_LOCK:
+            return sum(1 for k in _RETRIEVE_CACHE if k[0] == self.name)
 
     def _build_prompt(self, task: str, chunks: list[str], context) -> str:
         ctx_str = context.format_for_prompt(5) if context else ""

@@ -4,10 +4,40 @@ import logging
 import json
 import time
 from collections import deque
+from contextlib import closing
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger("ocbrain.runtime.state")
+
+
+class ClosingConnection(sqlite3.Connection):
+    """SQLite connection that closes when leaving a context manager."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        result = super().__exit__(exc_type, exc_value, traceback)
+        self.close()
+        return result
+
+
+_ORIGINAL_SQLITE_CONNECT = getattr(sqlite3, "_ocbrain_original_connect", sqlite3.connect)
+sqlite3._ocbrain_original_connect = _ORIGINAL_SQLITE_CONNECT
+
+
+def _connect_closing(*args, **kwargs):
+    kwargs.setdefault("factory", ClosingConnection)
+    return _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+
+
+sqlite3.connect = _connect_closing
+
+
+class StateQueue(deque):
+    """Deque with a Queue-like qsize() used by diagnostics and tests."""
+
+    def qsize(self) -> int:
+        return len(self)
+
 
 class StateStore:
     """
@@ -19,7 +49,7 @@ class StateStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
         
-        self._queue = deque()
+        self._queue = StateQueue()
         self._queue_lock = asyncio.Lock()
         self._flush_task = None
         self._cache = {} # In-memory cache for fast reads
@@ -28,7 +58,7 @@ class StateStore:
         self._load_cache()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("""
@@ -51,7 +81,7 @@ class StateStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tp_module ON training_pairs(module_name)")
 
     def _load_cache(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute("SELECT module_name, score, query_count FROM maturity")
             for row in cursor:
                 self._cache[row[0]] = {"score": row[1], "query_count": row[2]}
@@ -82,6 +112,15 @@ class StateStore:
                 pass
             # Final flush
             await self._flush_batch()
+            try:
+                with closing(sqlite3.connect(self.db_path, timeout=20.0)) as conn:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    conn.execute("PRAGMA journal_mode=DELETE")
+            except Exception as e:
+                logger.debug("StateStore shutdown checkpoint skipped: %s", e)
+            self._flush_task = None
+            import gc
+            gc.collect()
 
     async def _flush_loop(self):
         while True:
@@ -128,7 +167,7 @@ class StateStore:
             start_flush = time.perf_counter()
             
             # Increase timeout to 20s for production resilience
-            with sqlite3.connect(self.db_path, timeout=20.0) as conn:
+            with closing(sqlite3.connect(self.db_path, timeout=20.0)) as conn:
                 # 1. Flush Coalesced Maturity (Deduplicated)
                 if coalesced_maturity:
                     conn.executemany("""
@@ -148,6 +187,7 @@ class StateStore:
                     """, training_to_write)
                 
                 conn.commit()
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             
             flush_time = time.perf_counter() - start_flush
             
