@@ -81,6 +81,7 @@ pytest-cache-files-*/
 .data/pytest-cache-files-*/
 .data/tmp/
 workspace/
+ocbrain -v4-fixed/
 
 # Temp error files from setup.sh
 /tmp/*.err
