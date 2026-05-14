@@ -13,7 +13,7 @@ def train(module_name: str, data_path: Path) -> Path | None:
     Returns path to pending weights dir, or None on failure.
     """
     if not config.get("learning.training_enabled", True):
-        print(f"[finetuner] Training disabled in settings.")
+        print("[finetuner] Training disabled in settings.")
         return None
 
     pending = (

@@ -4,7 +4,6 @@ Uses a fixed eval set + cosine similarity vs external model.
 """
 import json
 from pathlib import Path
-from typing import Optional
 
 EVAL_DIR = Path(__file__).parent.parent / "data" / "evals"
 PASS_FLOOR     = 0.60    # absolute floor
@@ -29,7 +28,6 @@ async def evaluate(module_name: str, pending_path: Path, registry: dict) -> bool
     new_scores = []
     old_scores = []
 
-    import asyncio
 
     async def _score_all():
         from core.model_router import model_router

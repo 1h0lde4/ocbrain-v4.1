@@ -4,8 +4,6 @@ Handles code generation, debugging, and explanation tasks.
 """
 import ast
 import time
-import httpx
-from pathlib import Path
 
 from modules.base import BaseModule, ModuleResult
 from core.config import config

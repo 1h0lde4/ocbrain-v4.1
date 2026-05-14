@@ -1,6 +1,5 @@
 import logging
 from typing import Dict, Any, List
-from datetime import datetime, timezone
 
 logger = logging.getLogger("ocbrain.governance.memory")
 

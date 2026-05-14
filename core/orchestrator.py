@@ -4,19 +4,16 @@ Coordinates the query flow using parallel execution and safety limits.
 """
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 
 from . import parser, merger
-from .config import config
 from .context import ContextMemory
 from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
 from .observability.tracer import async_trace_function, span
-from .runtime.limits import safe_llm_call, IterationBudget, BackpressureGuard
-from .provider_mesh import resolve_provider, generate_with_fallback
+from .runtime.limits import IterationBudget, BackpressureGuard
 from .memory.mem_vault import MemoryVault
 from .memory.hybrid_retrieval import HybridRetriever
-from .memory.cognitive_vault import cognitive_vault
 from .memory.assembly import context_assembler
 from .memory.consolidation.consolidator import consolidator
 from .shadow.shadow_learner import shadow_learner
@@ -111,7 +108,7 @@ class Orchestrator:
                 answer = await merger.merge(processed_results, query)
 
                 # 6. Save to context memory (Short-Term)
-                modules_used = [l["module"] for l in labels]
+                modules_used = [label_item["module"] for label_item in labels]
                 entities = {
                     "urls":      parsed.entities.get("urls", []),
                     "languages": parsed.entities.get("languages", []),

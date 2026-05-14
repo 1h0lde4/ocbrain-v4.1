@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 from core.learning.similarity import semantic_similarity
 from core.memory.mem_vault import MemoryVault
 

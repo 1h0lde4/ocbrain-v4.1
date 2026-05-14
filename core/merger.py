@@ -7,7 +7,6 @@ Strategy:
   - 3+ results  → LLM weave only when content truly conflicts
 """
 import logging
-from .config import config
 from .model_router import RouteResult
 from .provider_mesh import resolve_provider, generate_with_fallback
 

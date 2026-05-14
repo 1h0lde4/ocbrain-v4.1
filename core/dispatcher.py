@@ -4,7 +4,6 @@ Resolves the DAG from decomposer and fires tasks in correct order.
 """
 import asyncio
 from dataclasses import dataclass
-from typing import Optional
 
 from .decomposer import Task
 from .model_router import ModelRouter, RouteResult

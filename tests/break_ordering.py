@@ -10,7 +10,8 @@ from core.runtime.state import StateStore
 
 async def test_replay_ordering():
     db_path = ".data/test_ordering.sqlite"
-    if os.path.exists(db_path): os.remove(db_path)
+    if os.path.exists(db_path):
+        os.remove(db_path)
     
     store = StateStore(db_path=db_path)
     # Don't start the background loop, we'll flush manually
@@ -51,8 +52,9 @@ async def test_replay_ordering():
             print("Ordering preserved.")
 
     try:
-        if os.path.exists(db_path): os.remove(db_path)
-    except:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+    except OSError:
         pass
 
 if __name__ == "__main__":

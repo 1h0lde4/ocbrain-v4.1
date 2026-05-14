@@ -10,7 +10,6 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 BRAIN_STATE_PATH = Path(__file__).parent.parent / "data" / "brain_state.json"
 APP_VERSION_PATH = Path(__file__).parent.parent / "version.txt"

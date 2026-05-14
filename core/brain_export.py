@@ -23,6 +23,13 @@ DATA    = ROOT / "data"
 EXPORTS = ROOT / "data" / "exports"
 
 
+def _safe_read(path: Path, default: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip() or default
+    except OSError:
+        return default
+
+
 def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     """
     Export a module's brain to a .ocbrain bundle.

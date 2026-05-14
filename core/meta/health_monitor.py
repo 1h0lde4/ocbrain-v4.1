@@ -1,8 +1,6 @@
 import logging
-import time
 import asyncio
-from typing import Dict, List, Any
-from .self_model import SELF_MODEL, update_health
+from .self_model import update_health
 
 logger = logging.getLogger("ocbrain.meta.health")
 
@@ -22,7 +20,8 @@ class HealthMonitor:
         }
 
     async def start(self):
-        if self._is_running: return
+        if self._is_running:
+            return
         self._is_running = True
         logger.info("[HealthMonitor] Monitoring system active.")
         if self._task is None or self._task.done():
@@ -53,14 +52,13 @@ class HealthMonitor:
         logger.info("[HealthMonitor] Diagnostics complete.")
 
     def _check_providers(self):
-        from core.provider_mesh import resolve_provider
         # Logic to check real provider health from mesh
         # For simulation, we look at previous turn stats if any
         pass
 
     def _check_memory(self):
         from core.memory.mem_vault import MemoryVault
-        vault = MemoryVault()
+        MemoryVault()
         # Verify JSON integrity and entry count
         update_health("memory_integrity", 1.0)
 

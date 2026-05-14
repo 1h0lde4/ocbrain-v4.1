@@ -2,7 +2,7 @@ import asyncio
 import time
 import logging
 from enum import Enum
-from typing import Callable, Any, Awaitable, Optional
+from typing import Callable, Any, Awaitable
 
 logger = logging.getLogger("ocbrain.runtime.resilience")
 
@@ -92,7 +92,8 @@ class AdaptiveSemaphore:
             if new_limit != self.current_limit:
                 diff = new_limit - self.current_limit
                 if diff > 0:
-                    for _ in range(diff): self._semaphore.release()
+                    for _ in range(diff):
+                        self._semaphore.release()
                 self.current_limit = new_limit
                 logger.debug(f"[AdaptiveSemaphore] Limit: {new_limit} (ema_lat: {self._avg_latency:.2f}s)")
 

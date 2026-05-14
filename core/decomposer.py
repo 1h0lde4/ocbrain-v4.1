@@ -5,7 +5,6 @@ Sequential: tasks where one feeds the next have dep links.
 """
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .classifier import Label
 from .parser import ParsedQuery
@@ -76,7 +75,7 @@ def _slice_subtask(raw: str, module: str, labels: list[Label]) -> str:
     # Split on sequential signal words
     parts = _SEQ_SIGNALS.split(raw)
     if len(parts) >= len(labels):
-        idx = next((i for i, l in enumerate(labels) if l.module == module), 0)
+        idx = next((i for i, label_item in enumerate(labels) if label_item.module == module), 0)
         return parts[min(idx, len(parts) - 1)].strip()
 
     return raw

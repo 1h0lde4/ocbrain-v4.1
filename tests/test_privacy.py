@@ -1,7 +1,6 @@
 """Tests for core/privacy.py"""
 import sys
 import shutil
-import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

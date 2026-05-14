@@ -1,8 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime, timezone
 from core.memory.cognitive_vault import cognitive_vault
-from core.governance.memory_governor import memory_governor
 
 logger = logging.getLogger("ocbrain.memory.consolidation")
 
@@ -16,7 +14,8 @@ class MemoryConsolidator:
         self._task: asyncio.Task | None = None
 
     async def start(self):
-        if self._is_running: return
+        if self._is_running:
+            return
         self._is_running = True
         logger.info("[Consolidator] Memory consolidation engine active.")
         if self._task is None or self._task.done():

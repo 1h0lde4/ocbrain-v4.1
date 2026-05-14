@@ -15,7 +15,7 @@ Usage:
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Callable, Coroutine
+from typing import Callable
 
 log = logging.getLogger(__name__)
 

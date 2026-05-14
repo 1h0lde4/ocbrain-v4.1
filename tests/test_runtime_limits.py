@@ -16,16 +16,13 @@ async def test_safe_llm_call_timeout():
         await asyncio.sleep(40) # Should hit the 30s timeout
         return "Done"
         
-    # We will temporarily patch the timeout for the test to avoid 30s wait
-    import core.runtime.limits
-    original_timeout = 30.0
-    
     try:
         # Patch for test
-        async def mock_wait_for(coro, timeout):
-            return await asyncio.wait_for(coro, timeout=0.1)
-        
         original_wait_for = asyncio.wait_for
+
+        async def mock_wait_for(coro, timeout):
+            return await original_wait_for(coro, timeout=0.1)
+        
         asyncio.wait_for = mock_wait_for
         
         with pytest.raises(asyncio.TimeoutError):

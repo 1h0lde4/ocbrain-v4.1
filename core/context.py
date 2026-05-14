@@ -49,8 +49,9 @@ class ContextMemory:
         self.long_term_memories = []
         self._long_term_memories_string = ""
 
-    def set_long_term_memories(self, memories: list):
+    def set_long_term_memories(self, memories: list[dict]):
         self.long_term_memories = memories
+        self._long_term_memories_string = ""
         self._turns_cache_dirty = True
         self._prompt_cache.clear()
 
@@ -137,10 +138,6 @@ class ContextMemory:
             if module_name in t.modules_used:
                 return 0.1
         return 0.0
-
-    def set_long_term_memories(self, memories: list[dict]):
-        self.long_term_memories = memories
-        self._long_term_memories_string = ""
 
     def set_long_term_memories_string(self, context_string: str):
         """Sets the pre-formatted long-term memory string (Phase 5)."""

@@ -1,6 +1,5 @@
 import asyncio
 import sys
-import os
 import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -8,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.orchestrator import Orchestrator
 from core.context import context_memory
 from core.model_router import model_router
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 async def run_stress(num_requests=30):
     orchestrator = Orchestrator(modules={}, context=context_memory, router=model_router)
@@ -32,7 +31,7 @@ async def run_stress(num_requests=30):
         successes = [r for r in results if isinstance(r, str) and "Sorry" not in r]
         errors = [r for r in results if not isinstance(r, str) or "Sorry" in r]
         
-        print(f"\nSTRESS TEST COMPLETE")
+        print("\nSTRESS TEST COMPLETE")
         print(f"Total time: {duration:.2f}s")
         print(f"Throughput: {num_requests / duration:.2f} req/s")
         print(f"Successes: {len(successes)}")

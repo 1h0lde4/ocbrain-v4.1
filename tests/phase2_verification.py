@@ -18,7 +18,7 @@ import sys
 import time
 import statistics
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from unittest.mock import AsyncMock, patch
 
 # Ensure project root is importable
@@ -285,6 +285,8 @@ async def _test_provider_fallback_async() -> Tuple[bool, str]:
 
     if not fallback_used:
         return False, "Secondary provider was never called"
+    if result != "fallback_response":
+        return False, f"Unexpected fallback response: {result}"
     return True, "Primary failed -> fallback triggered"
 
 

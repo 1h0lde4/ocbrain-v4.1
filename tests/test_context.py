@@ -1,11 +1,8 @@
 """Tests for core/context.py"""
 import sys
-import time
-import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 
 
 def test_context_save_and_retrieve(tmp_path, monkeypatch):

@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, Any, List
+from importlib.util import find_spec
+from typing import Any
 
 logger = logging.getLogger("ocbrain.meta.self_model")
 
@@ -73,9 +74,7 @@ class CapabilityDetector:
     @staticmethod
     def _detect_modules():
         from core.config import config
-        modules = config.get("modules", {})
-        # OCBrain v3 modules are registered in config
-        pass # Already reflected in config access
+        SELF_MODEL["capabilities"]["module_registry"] = bool(config.get("modules", {}))
 
     @staticmethod
     def _detect_memory():
@@ -86,8 +85,6 @@ class CapabilityDetector:
 
     @staticmethod
     def _detect_retrieval():
-        try:
-            from core.memory.hybrid_retrieval import HybridRetriever
-            SELF_MODEL["capabilities"]["hybrid_retrieval"] = True
-        except ImportError:
-            SELF_MODEL["capabilities"]["hybrid_retrieval"] = False
+        SELF_MODEL["capabilities"]["hybrid_retrieval"] = (
+            find_spec("core.memory.hybrid_retrieval") is not None
+        )

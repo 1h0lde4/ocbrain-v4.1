@@ -1,5 +1,5 @@
 import logging
-from typing import Dict
+from typing import Any, Dict
 
 logger = logging.getLogger("ocbrain.web_learning.trust")
 
@@ -48,7 +48,7 @@ class TrustManager:
         try:
             from urllib.parse import urlparse
             return urlparse(url).netloc.replace("www.", "")
-        except:
+        except Exception:
             return url
 
 # Global singleton

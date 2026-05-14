@@ -5,7 +5,7 @@ Runs every 6 hours over data/raw/ backlog.
 import re
 from pathlib import Path
 
-from learning.chunker import Chunk, chunk, deduplicate, score_quality
+from learning.chunker import Chunk, chunk, deduplicate
 from learning.embedder import ingest_chunks
 
 DATA_RAW    = Path(__file__).parent.parent / "data" / "raw"

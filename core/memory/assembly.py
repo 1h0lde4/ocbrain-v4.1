@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List
 from .retrieval.fusion import fusion_engine
 
 logger = logging.getLogger("ocbrain.memory.assembly")

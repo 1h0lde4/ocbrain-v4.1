@@ -5,15 +5,12 @@ The LLM NEVER executes shell directly.
 """
 import json
 import logging
-import os
 import platform
 import subprocess
 import time
 from pathlib import Path
 
-import httpx
 from modules.base import BaseModule, ModuleResult
-from core.config import config
 from core.provider_mesh import resolve_provider, generate_with_fallback
 
 log = logging.getLogger(__name__)

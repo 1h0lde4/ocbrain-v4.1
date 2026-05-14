@@ -10,7 +10,6 @@ Typical latency:
   Fast-path (80%+ of queries): ~1–5ms
   LLM path (ambiguous queries): ~1–3s
 """
-import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -73,7 +72,7 @@ def _build_labels(
         for mod, score in scores.items()
         if score >= threshold
     ]
-    labels.sort(key=lambda l: l.confidence, reverse=True)
+    labels.sort(key=lambda label_item: label_item.confidence, reverse=True)
     return labels
 
 

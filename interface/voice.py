@@ -2,7 +2,6 @@
 interface/voice.py — Local speech-to-text (Whisper) and TTS (pyttsx3).
 Optional — disabled by default in settings.toml.
 """
-import asyncio
 import threading
 from typing import Callable, Optional
 

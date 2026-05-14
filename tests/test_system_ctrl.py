@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 from modules.system_ctrl.module import Module, ACTION_HANDLERS, _write_file, _read_file, _list_dir, _delete_file
 
 

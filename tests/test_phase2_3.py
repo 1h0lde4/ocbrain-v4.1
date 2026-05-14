@@ -1,12 +1,12 @@
-import pytest
 import asyncio
-import json
-from unittest.mock import AsyncMock, MagicMock
-from core.provider_mesh import resolve_provider, generate_with_fallback, Provider
-from core.orchestrator import Orchestrator
-from core.context import ContextMemory
-from core.model_router import ModelRouter, RouteResult
+import os
+import shutil
+
+import pytest
+
+from core.provider_mesh import generate_with_fallback, Provider
 from interface.api import QueryResponse
+
 
 @pytest.mark.asyncio
 async def test_api_response_contract():
@@ -15,7 +15,7 @@ async def test_api_response_contract():
         success=True,
         answer="Hello world",
         data={"query": "test"},
-        meta={"ver": "1.0"}
+        meta={"ver": "1.0"},
     )
     assert resp.success is True
     assert resp.answer == "Hello world"
@@ -30,7 +30,8 @@ async def test_provider_mesh_hardening():
             self.should_fail = should_fail
         
         @property
-        def name(self): return self._name
+        def name(self):
+            return self._name
         
         async def generate(self, prompt):
             if self.should_fail:
@@ -56,25 +57,36 @@ async def test_provider_mesh_hardening():
 async def test_memory_hybrid_retrieval():
     from core.memory.mem_vault import MemoryVault
     from core.memory.hybrid_retrieval import HybridRetriever
-    import os
-    import shutil
 
     test_dir = ".data/test_memory"
-    if os.path.exists(test_dir): shutil.rmtree(test_dir)
+    if os.path.exists(test_dir):
+        shutil.rmtree(test_dir)
     
     vault = MemoryVault(storage_dir=test_dir)
     # Add some entries
-    vault.add_entry(fact="The sky is blue", summary="Sky color", confidence=0.9, embedding=[0.1]*384)
-    vault.add_entry(fact="Grass is green", summary="Grass color", confidence=0.8, embedding=[0.2]*384)
+    vault.add_entry(
+        fact="The sky is blue",
+        summary="Sky color",
+        confidence=0.9,
+        embedding=[0.1] * 384,
+    )
+    vault.add_entry(
+        fact="Grass is green",
+        summary="Grass color",
+        confidence=0.8,
+        embedding=[0.2] * 384,
+    )
     
     retriever = HybridRetriever(vault)
     results = retriever.hybrid_search("What color is the sky?")
     
     assert len(results) > 0
     assert "sky" in results[0]["fact"].lower()
-    assert results[0]["access_count"] == 2 # 1 (init) + 1 (retrieval)
+    assert results[0]["access_count"] == 2  # 1 (init) + 1 (retrieval)
 
-    if os.path.exists(test_dir): shutil.rmtree(test_dir)
+    if os.path.exists(test_dir):
+        shutil.rmtree(test_dir)
+
 
 if __name__ == "__main__":
     asyncio.run(test_api_response_contract())

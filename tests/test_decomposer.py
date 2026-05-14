@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.parser import parse
 from core.classifier import Label
-from core.decomposer import build, Task
+from core.decomposer import build
 
 
 def _labels(*modules):

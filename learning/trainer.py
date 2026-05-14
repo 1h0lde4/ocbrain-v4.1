@@ -4,7 +4,6 @@ Mixes 20% of previous pairs to prevent catastrophic forgetting.
 """
 import json
 import random
-import time
 from pathlib import Path
 
 DATA_RAW    = Path(__file__).parent.parent / "data" / "raw"

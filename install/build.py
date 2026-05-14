@@ -56,7 +56,7 @@ Description: OCBrain — local self-learning AI brain for OpenClaw
     os.chmod(pkg_dir / "usr/local/bin/ocbrain", 0o755)
 
     # Systemd user service
-    (pkg_dir / "lib/systemd/user/ocbrain.service").write_text(f"""[Unit]
+    (pkg_dir / "lib/systemd/user/ocbrain.service").write_text("""[Unit]
 Description=OCBrain
 After=network.target
 
@@ -70,7 +70,7 @@ WantedBy=default.target
 """)
 
     # Desktop entry
-    (pkg_dir / "usr/share/applications/ocbrain.desktop").write_text(f"""[Desktop Entry]
+    (pkg_dir / "usr/share/applications/ocbrain.desktop").write_text("""[Desktop Entry]
 Name=OCBrain
 Exec=/usr/local/bin/ocbrain
 Icon=ocbrain
@@ -171,7 +171,7 @@ def build_macos_pkg():
     la_dir  = pkg_dir / "Library" / "LaunchAgents"
     la_dir.mkdir(parents=True, exist_ok=True)
 
-    (la_dir / "io.ocbrain.plist").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+    (la_dir / "io.ocbrain.plist").write_text("""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -185,7 +185,7 @@ def build_macos_pkg():
 </dict>
 </plist>
 """)
-    print(f"[build] macOS LaunchAgent plist written.")
+    print("[build] macOS LaunchAgent plist written.")
 
 
 def build_homebrew_formula():

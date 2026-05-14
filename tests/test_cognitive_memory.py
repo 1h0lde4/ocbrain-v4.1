@@ -56,7 +56,7 @@ async def test_context_assembly():
 async def test_governance_limits():
     # Try to add a very low confidence memory
     is_valid = memory_governor.validate_ingestion({"confidence": 0.1, "content": "Bad data"})
-    assert is_valid == False
+    assert not is_valid
 
 if __name__ == "__main__":
     asyncio.run(test_cognitive_storage_and_provenance())

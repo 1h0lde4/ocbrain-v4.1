@@ -1,9 +1,7 @@
-import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 from modules.system_ctrl.module import _safe_path, SAFE_ROOT
 
 def test_sandbox_neighbor_escape():
@@ -27,8 +25,10 @@ def test_sandbox_neighbor_escape():
         assert True
     finally:
         # Cleanup
-        if secret_file.exists(): secret_file.unlink()
-        if neighbor_dir.exists(): neighbor_dir.rmdir()
+        if secret_file.exists():
+            secret_file.unlink()
+        if neighbor_dir.exists():
+            neighbor_dir.rmdir()
 
 if __name__ == "__main__":
     try:

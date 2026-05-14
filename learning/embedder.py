@@ -1,8 +1,6 @@
 """
 learning/embedder.py — Embeds clean chunks and upserts into each module's ChromaDB.
 """
-import time
-from pathlib import Path
 from learning.chunker import Chunk
 
 

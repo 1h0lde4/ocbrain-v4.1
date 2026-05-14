@@ -1,12 +1,11 @@
 import asyncio
 import sqlite3
 import logging
-import json
 import time
 from collections import deque
 from contextlib import closing
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 
 logger = logging.getLogger("ocbrain.runtime.state")
 

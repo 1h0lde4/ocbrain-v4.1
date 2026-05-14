@@ -1,9 +1,7 @@
 import asyncio
 import sys
 import os
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -16,7 +14,8 @@ from core.runtime.limits import BackpressureGuard, PENDING_COUNTER
 @pytest.mark.asyncio
 async def test_batched_state():
     db_path = ".data/test_state.sqlite"
-    if os.path.exists(db_path): os.remove(db_path)
+    if os.path.exists(db_path):
+        os.remove(db_path)
     
     store = StateStore(db_path=db_path)
     await store.start()
@@ -35,11 +34,14 @@ async def test_batched_state():
     # Verify DB content
     import sqlite3
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT score, query_count FROM maturity WHERE module_name='test_mod'").fetchone()
-        assert row[1] == 99 # query_count of last update
+        row = conn.execute(
+            "SELECT score, query_count FROM maturity WHERE module_name='test_mod'"
+        ).fetchone()
+        assert row[1] == 99  # query_count of last update
         
     await store.stop()
-    if os.path.exists(db_path): os.remove(db_path)
+    if os.path.exists(db_path):
+        os.remove(db_path)
 
 # 2. Test Circuit Breaker
 @pytest.mark.asyncio
@@ -53,9 +55,11 @@ async def test_circuit_breaker():
         return "ok"
 
     # 1. Fail twice to open
-    with pytest.raises(RuntimeError): await breaker.call(failing_fn)
+    with pytest.raises(RuntimeError):
+        await breaker.call(failing_fn)
     assert breaker.state == CircuitState.CLOSED
-    with pytest.raises(RuntimeError): await breaker.call(failing_fn)
+    with pytest.raises(RuntimeError):
+        await breaker.call(failing_fn)
     assert breaker.state == CircuitState.OPEN
     
     # 2. Immediate call should fail with circuit OPEN error
@@ -102,7 +106,8 @@ async def test_backpressure():
     # Release one and try again
     PENDING_COUNTER.release()
     async with guard:
-        pass # Should work now
+        pass  # Should work now
+
 
 if __name__ == "__main__":
     import pytest

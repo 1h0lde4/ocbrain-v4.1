@@ -4,7 +4,6 @@ Runs automatically on startup if brain schema < app expected schema.
 Each migration is a numbered function — never destructive, always additive.
 Trained data is NEVER deleted during migration.
 """
-import json
 import logging
 import sqlite3
 from pathlib import Path

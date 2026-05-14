@@ -9,7 +9,6 @@ from typing import Optional, AsyncGenerator, Any
 
 import aiofiles
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -66,17 +65,23 @@ class QueryResponse(BaseModel):
     meta: dict = {}
 
 class NewModuleRequest(BaseModel):
-    name: str; desc: str; model: str
-    keywords: list[str]; sources: list[str]
+    name: str
+    desc: str
+    model: str
+    keywords: list[str]
+    sources: list[str]
 
 class DistillRequest(BaseModel):
-    module_name: str; topic: str; num_pairs: int = 50
+    module_name: str
+    topic: str
+    num_pairs: int = 50
 
 class ExportRequest(BaseModel):
     module_name: str
 
 class ImportRequest(BaseModel):
-    bundle_path: str; overwrite: bool = False
+    bundle_path: str
+    overwrite: bool = False
 
 
 # ── Routes ─────────────────────────────────────────────────────
@@ -116,7 +121,8 @@ async def query(req: QueryRequest):
         )
 
     except Exception as e:
-        import logging, traceback
+        import logging
+        import traceback
         err_msg = f"{type(e).__name__}: {e}"
         logging.getLogger("ocbrain").error(
             f"POST /query failed: {err_msg}\n{traceback.format_exc()}"
@@ -294,7 +300,7 @@ async def debug():
     Returns a full diagnostic snapshot — call this when something is broken.
     Visit http://localhost:7437/debug in your browser.
     """
-    import httpx, traceback
+    import httpx
     report = {}
 
     # Orchestrator
@@ -381,7 +387,7 @@ async def check_updates():
 
 @app.post("/update/install")
 async def install_update():
-    from interface.updater import check, install_async
+    from interface.updater import check
     info = check()
     if info.check_failed:
         return {"status": "check_failed", "error": info.check_error}

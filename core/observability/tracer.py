@@ -4,7 +4,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from contextlib import contextmanager
-from typing import Any, Dict, Optional, Iterator
+from typing import Any, Optional, Iterator
 
 # Setup a dedicated logger for traces
 logger = logging.getLogger("ocbrain.tracer")

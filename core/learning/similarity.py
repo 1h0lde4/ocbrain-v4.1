@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 logger = logging.getLogger("ocbrain.learning.similarity")
 

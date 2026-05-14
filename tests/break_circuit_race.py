@@ -1,7 +1,5 @@
 import asyncio
 import sys
-import os
-import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -11,15 +9,19 @@ async def test_breaker_race():
     # threshold 1 to make it easy to open
     breaker = CircuitBreaker("race_test", threshold=1, reset_timeout=0.2)
     
-    async def fail(): raise RuntimeError("Fail")
+    async def fail():
+        raise RuntimeError("Fail")
+
     async def slow_success():
         await asyncio.sleep(0.5)
         return "ok"
 
     # 1. Open the circuit
     print("Opening circuit...")
-    try: await breaker.call(fail)
-    except: pass
+    try:
+        await breaker.call(fail)
+    except RuntimeError:
+        pass
     assert breaker.state == CircuitState.OPEN
     
     # 2. Wait for reset timeout

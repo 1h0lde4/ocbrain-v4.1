@@ -145,7 +145,6 @@ class Scheduler:
 
     async def trigger_module(self, module_name: str) -> str:
         from learning import trainer, finetuner, evaluator
-        from core.model_router import model_router
 
         data_path = trainer.prepare(module_name, self.registry)
         if data_path is None:

@@ -8,12 +8,10 @@ import logging
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+
+from core.event_bus import bus
 
 log = logging.getLogger(__name__)
-
-from core.config import config
-from core.event_bus import bus
 
 DATA_RAW  = Path(__file__).parent.parent / "data" / "raw"
 DATA_GAPS = Path(__file__).parent.parent / "data" / "gaps"

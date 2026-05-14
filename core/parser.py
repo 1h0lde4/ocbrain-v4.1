@@ -3,8 +3,7 @@ core/parser.py — Tokenize raw query, extract entities and keywords.
 No LLM needed — pure NLP. Runs in < 5 ms.
 """
 import re
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -48,7 +47,7 @@ def parse(raw: str) -> ParsedQuery:
         "urls":      urls,
         "filenames": filenames,
         "dates":     dates,
-        "languages": [l.lower() for l in languages],
+        "languages": [language.lower() for language in languages],
     }
 
     # Detect query language (basic heuristic — extend with langdetect if needed)

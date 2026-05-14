@@ -38,8 +38,8 @@ class Module(BaseModule):
         ctx_str = context.format_for_prompt(5) if context else ""
         kb_str  = "\n\n".join(chunks) if chunks else ""
         base    = (
-            f"You are a knowledgeable assistant. "
-            f"Answer clearly and accurately.\n"
+            "You are a knowledgeable assistant. "
+            "Answer clearly and accurately.\n"
         )
         if ctx_str:
             base += f"\nConversation:\n{ctx_str}\n"

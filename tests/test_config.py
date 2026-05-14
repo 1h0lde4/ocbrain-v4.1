@@ -1,12 +1,9 @@
 """Tests for core/config.py"""
 import sys
-import tempfile
-import shutil
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import pytest
 
 
 def test_config_loads_defaults(tmp_path, monkeypatch):

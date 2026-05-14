@@ -1,17 +1,15 @@
 import asyncio
 import sys
-import os
 import random
 import time
 import sqlite3
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.orchestrator import Orchestrator
 from core.runtime.state import state_store
-from core.runtime.resilience import CircuitBreaker
 
 # --- CHAOS INJECTORS ---
 
@@ -60,8 +58,10 @@ async def run_chaos_monkey(duration=30):
     # Mock a module that sometimes fails, sometimes is slow
     async def chaotic_route(name, query, ctx):
         r = random.random()
-        if r < 0.1: raise RuntimeError("Random Provider Failure")
-        if r < 0.3: await asyncio.sleep(random.uniform(1.0, 5.0))
+        if r < 0.1:
+            raise RuntimeError("Random Provider Failure")
+        if r < 0.3:
+            await asyncio.sleep(random.uniform(1.0, 5.0))
         return "Chaos result"
     
     orchestrator.router.route = chaotic_route

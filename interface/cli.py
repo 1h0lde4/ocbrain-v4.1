@@ -9,7 +9,6 @@ Usage:
   ocbrain --rollback
   echo "query" | ocbrain
 """
-import asyncio
 import sys
 
 import click
@@ -104,7 +103,7 @@ def new_module():
     keywords = [k.strip() for k in kw_str.split(",") if k.strip()]
     sources  = [s.strip() for s in src_str.split(",") if s.strip()]
     try:
-        result = _post("/modules/new", {
+        _post("/modules/new", {
             "name": name, "desc": desc, "model": model,
             "keywords": keywords, "sources": sources,
         })

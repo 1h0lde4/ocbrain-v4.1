@@ -35,7 +35,8 @@ class KnowledgeQuarantine:
 
     def get_pending(self) -> List[Dict[str, Any]]:
         """Retrieves all pending knowledge entries."""
-        if not os.path.exists(self.storage_path): return []
+        if not os.path.exists(self.storage_path):
+            return []
         
         pending = []
         try:

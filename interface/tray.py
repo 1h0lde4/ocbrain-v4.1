@@ -42,7 +42,6 @@ def _open_settings(icon, item):
 def _toggle_learning(icon, item):
     current = config.get("learning.training_enabled", True)
     config.set("learning.training_enabled", not current)
-    label = "Resume learning" if current else "Pause learning"
     print(f"[tray] Learning {'paused' if current else 'resumed'}")
 
 
@@ -57,7 +56,8 @@ def _check_updates(icon, item):
 
 def _quit_app(icon, item):
     icon.stop()
-    import os, signal
+    import os
+    import signal
     os.kill(os.getpid(), signal.SIGTERM)
 
 

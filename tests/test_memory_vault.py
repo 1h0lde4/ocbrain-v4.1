@@ -1,4 +1,3 @@
-import pytest
 import os
 from core.memory.mem_vault import MemoryVault
 

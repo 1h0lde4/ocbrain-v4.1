@@ -1,10 +1,8 @@
 import logging
-import asyncio
 from typing import List, Dict, Any
 from .trust import trust_manager
 from .quarantine import quarantine
 from core.memory.mem_vault import MemoryVault
-from core.runtime.limits import safe_llm_call
 
 logger = logging.getLogger("ocbrain.web_learning.pipeline")
 
@@ -34,7 +32,8 @@ class WebLearningPipeline:
 
             # 2. Extraction
             content = await self._extract(result)
-            if not content: continue
+            if not content:
+                continue
             
             # 3. Quarantine
             quarantine.add(content, url, trust)
