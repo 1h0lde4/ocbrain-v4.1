@@ -1,6 +1,7 @@
 import pytest
+
+from core.web.cleaner import chunk_text, deduplicate_chunks, normalize_text
 from core.web.parser import parse_html
-from core.web.cleaner import normalize_text, chunk_text, deduplicate_chunks
 
 SAMPLE_HTML = (
     "<html>"
@@ -17,6 +18,7 @@ SAMPLE_HTML = (
     "</html>"
 )
 
+
 def test_parse_html():
     text = parse_html(SAMPLE_HTML)
     assert "Ignore me" not in text
@@ -26,11 +28,13 @@ def test_parse_html():
     assert "Main Title" in text
     assert "This is the core content." in text
 
+
 def test_normalize_text():
     raw = "This   has \t extra spaces.\n\n\nAnd  newlines."
     cleaned = normalize_text(raw)
     assert "This has extra spaces." in cleaned
     assert "\n\nAnd newlines." in cleaned
+
 
 def test_chunk_text():
     # 100 words, chunk=60, overlap=20 → step=40
@@ -41,16 +45,18 @@ def test_chunk_text():
     assert len(chunks[0].split()) == 60
     assert len(chunks[1].split()) == 60
 
+
 def test_chunk_text_overlap_error():
     text = "word " * 10
     with pytest.raises(ValueError):
         chunk_text(text, chunk_size_words=10, overlap_words=10)
 
+
 def test_deduplicate_chunks():
     chunks = [
         "This is a chunk.",
         "This is a chunk.  ",  # Should be deduped (whitespace-normalized)
-        "This is another chunk."
+        "This is another chunk.",
     ]
     unique = deduplicate_chunks(chunks)
     assert len(unique) == 2
