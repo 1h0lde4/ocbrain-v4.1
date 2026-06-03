@@ -23,3 +23,8 @@ sources = [
 
 [system_ctrl]
 sources = []
+
+[test_config_reg_tmp]
+sources = [
+    "https://example.com",
+]

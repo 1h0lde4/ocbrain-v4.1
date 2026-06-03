@@ -27,17 +27,18 @@ async def test_adaptive_thrash():
 
     print(f"Limit History: {limits}")
     
-    # Check for oscillation (constant jumping between extremes)
-    unique_limits = set(limits)
-    print(f"Unique Limits encountered: {unique_limits}")
+    # Check for oscillation (constant jumping between extremes in the tail)
+    tail = limits[len(limits)//2:]
+    unique_tail = set(tail)
+    print(f"Unique Limits in tail: {unique_tail}")
     
-    std_dev = statistics.stdev(limits) if len(limits) > 1 else 0
-    print(f"Standard Deviation of limits: {std_dev:.2f}")
+    std_dev_tail = statistics.stdev(tail) if len(tail) > 1 else 0
+    print(f"Standard Deviation of tail: {std_dev_tail:.2f}")
     
-    if std_dev > 1.5:
-        print("INSTABILITY CONFIRMED: High oscillation in concurrency limits!")
+    if std_dev_tail > 1.0:
+        print("INSTABILITY CONFIRMED: High oscillation in concurrency limits tail!")
     else:
-        print("System appears stable (or too slow to react).")
+        print("System appears stable at steady state.")
 
 if __name__ == "__main__":
     asyncio.run(test_adaptive_thrash())
