@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+import contextvars
 from enum import Enum
 from typing import Callable, Any, Awaitable
 
@@ -69,32 +70,51 @@ class AdaptiveSemaphore:
         self._semaphore = asyncio.Semaphore(self.current_limit)
         self._lock = asyncio.Lock()
         self._avg_latency = self.target_latency # EMA seed
-        self._alpha = 0.4 # Faster reaction to latency spikes
+        self._alpha = 0.1 # Smoother EMA to prevent jitter
+        self._start_time_var = contextvars.ContextVar("start_time", default=0.0)
+        self._pending_shrinks = 0
 
     async def __aenter__(self):
         await self._semaphore.acquire()
-        self._start_time = time.perf_counter()
+        self._start_time_var.set(time.perf_counter())
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        latency = time.perf_counter() - self._start_time
-        self._semaphore.release()
+        latency = time.perf_counter() - self._start_time_var.get()
         
         async with self._lock:
             # Update EMA latency
             self._avg_latency = (self._alpha * latency) + ((1 - self._alpha) * self._avg_latency)
             
-            # Use smoothed latency for limit decisions to avoid jitter
-            if self._avg_latency > self.target_latency:
+            # Deadband (hysteresis) of 10% to prevent oscillation
+            upper_threshold = self.target_latency * 1.1
+            lower_threshold = self.target_latency * 0.9
+
+            # During bootstrap (limit=min), we're more aggressive to grow
+            is_bootstrapping = (self.current_limit == self.min_limit)
+
+            if self._avg_latency > upper_threshold or (self.current_limit > self.min_limit and latency > self.target_latency * 1.5):
                 new_limit = max(self.min_limit, int(self.current_limit * 0.9))
-            else:
+            elif self._avg_latency < lower_threshold or (is_bootstrapping and latency < self.target_latency):
                 new_limit = min(self.max_limit, self.current_limit + 1)
+            else:
+                new_limit = self.current_limit
             
             if new_limit != self.current_limit:
                 diff = new_limit - self.current_limit
                 if diff > 0:
+                    # Expansion: release extra permits immediately
                     for _ in range(diff):
                         self._semaphore.release()
+                else:
+                    # Contraction: withhold future releases
+                    self._pending_shrinks += abs(diff)
                 self.current_limit = new_limit
                 logger.debug(f"[AdaptiveSemaphore] Limit: {new_limit} (ema_lat: {self._avg_latency:.2f}s)")
+
+            # Release permit (or consume a pending shrink)
+            if self._pending_shrinks > 0:
+                self._pending_shrinks -= 1
+            else:
+                self._semaphore.release()
 
 # Global instances can be managed here or in limits.py

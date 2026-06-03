@@ -74,7 +74,8 @@ class Orchestrator:
                 with span("cognitive_memory_assembly"):
                     # Assemble optimized context from L1, L2, L3 tiers
                     memory_context = context_assembler.assemble_context(query)
-                    self.context.set_long_term_memories_string(memory_context)
+                    if self.context:
+                        self.context.set_long_term_memories_string(memory_context)
                     
                     # Phase 4: Record retrieval health
                     # (Simplified check: if context has content, it's a hit)
@@ -109,12 +110,13 @@ class Orchestrator:
 
                 # 6. Save to context memory (Short-Term)
                 modules_used = [label_item["module"] for label_item in labels]
-                entities = {
-                    "urls":      parsed.entities.get("urls", []),
-                    "languages": parsed.entities.get("languages", []),
-                    "filenames": parsed.entities.get("filenames", []),
-                }
-                self.context.save(query, modules_used, answer, entities)
+                if self.context:
+                    entities = {
+                        "urls":      parsed.entities.get("urls", []),
+                        "languages": parsed.entities.get("languages", []),
+                        "filenames": parsed.entities.get("filenames", []),
+                    }
+                    self.context.save(query, modules_used, answer, entities)
 
                 # 7. Shadow Learning (Phase 3)
                 shadow_learner.record_interaction(
