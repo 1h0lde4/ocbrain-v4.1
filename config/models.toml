@@ -11,7 +11,7 @@ train_pairs = 0
 [web_search]
 stage = "bootstrap"
 maturity_score = 0.0
-query_count = 65
+query_count = 0
 bootstrap_model = "mistral"
 base_model = "mistral:7b"
 active_weights = ""
@@ -20,7 +20,7 @@ train_pairs = 0
 
 [knowledge]
 stage = "bootstrap"
-maturity_score = 0.0
+maturity_score = 0.5
 query_count = 25
 bootstrap_model = "mistral"
 base_model = "mistral:7b"
@@ -33,6 +33,16 @@ stage = "bootstrap"
 maturity_score = 0.0
 query_count = 17
 bootstrap_model = "mistral"
+base_model = "mistral:7b"
+active_weights = ""
+last_trained = ""
+train_pairs = 0
+
+[test_config_reg_tmp]
+stage = "bootstrap"
+maturity_score = 0.0
+query_count = 0
+bootstrap_model = "llama3"
 base_model = "mistral:7b"
 active_weights = ""
 last_trained = ""
