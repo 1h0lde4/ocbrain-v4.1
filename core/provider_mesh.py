@@ -68,10 +68,20 @@ class OllamaProvider(Provider):
         super().__init__()
         self.model = model
         self._host = _config.get("global.ollama_host") or "http://localhost:11434"
+        self._reachable: bool | None = None  # cached reachability
 
     @property
     def name(self) -> str:
         return f"Ollama({self.model})"
+
+    def is_available(self) -> bool:
+        """Check cooldown AND whether Ollama server is reachable."""
+        if time.time() < self.cooldown_until:
+            return False
+        # Quick sync probe (cached per session to avoid hammering)
+        if self._reachable is False:
+            return False
+        return True
 
     async def generate(self, prompt: str) -> str:
         try:
@@ -89,6 +99,7 @@ class GenericOpenAICompatibleProvider(Provider):
     """
     Any OpenAI-compatible endpoint (e.g. LM Studio, llama.cpp server, vLLM).
     Calls the /v1/chat/completions endpoint.
+    Set global.openai_compat_url in config to enable.
     """
     def __init__(self, endpoint: str = "http://localhost:8080/v1", model: str = "local-model"):
         super().__init__()
@@ -98,6 +109,16 @@ class GenericOpenAICompatibleProvider(Provider):
     @property
     def name(self) -> str:
         return f"OpenAICompat({self.model}@{self.endpoint})"
+
+    def is_available(self) -> bool:
+        """Only use GenericOpenAI if explicitly configured in config."""
+        if time.time() < self.cooldown_until:
+            return False
+        # Don't try localhost:8080 unless user explicitly configured it
+        configured_url = _config.get("global.openai_compat_url", "")
+        if not configured_url and "localhost:8080" in self.endpoint:
+            return False   # Skip unconfigured default endpoint
+        return True
 
     async def generate(self, prompt: str) -> str:
         try:
@@ -225,3 +246,26 @@ def _provider_mark_failure(provider) -> None:
     marker = getattr(provider, "mark_failure", None)
     if marker is not None:
         marker()
+
+
+async def graceful_generate_with_fallback(providers: List[Provider], prompt: str,
+                                           fallback_message: str = "") -> str:
+    """
+    Like generate_with_fallback but returns a user-friendly message instead
+    of raising when all providers fail (no LLM running).
+    Used by modules that want to degrade gracefully.
+    """
+    try:
+        return await generate_with_fallback(providers, prompt)
+    except RuntimeError as e:
+        logger.warning(
+            "[ProviderMesh] No LLM available. "
+            "Start Ollama: `ollama serve && ollama pull mistral`"
+        )
+        if fallback_message:
+            return fallback_message
+        return (
+            "[No LLM available] "
+            "To enable AI responses, start Ollama: `ollama serve` "
+            "then pull a model: `ollama pull mistral`"
+        )

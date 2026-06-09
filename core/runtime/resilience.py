@@ -70,12 +70,18 @@ class AdaptiveSemaphore:
         self._lock = asyncio.Lock()
         self._avg_latency = self.target_latency # EMA seed
         self._alpha = 0.4 # Faster reaction to latency spikes
+        self._acquired = False  # BUG FIX: track acquisition state
+        self._start_time = 0.0
 
     async def __aenter__(self):
         await self._semaphore.acquire()
+        self._acquired = True    # BUG FIX: only set after successful acquire
         self._start_time = time.perf_counter()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if not self._acquired:   # BUG FIX: guard release before checking acquired
+            return
+        self._acquired = False
         latency = time.perf_counter() - self._start_time
         self._semaphore.release()
         

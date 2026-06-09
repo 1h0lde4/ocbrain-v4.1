@@ -76,39 +76,52 @@ class MemoryVault:
 
     def bm25_search_placeholder(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Placeholder for BM25 keyword search.
-        Performs lightweight token overlap until a full BM25 index is added.
+        BUG FIX: Was keyword/token-overlap search labeled as BM25.
+        Now implements actual BM25 (Okapi BM25) scoring.
+        k1=1.5, b=0.75 — standard production defaults.
         """
-        query_lower = query.lower()
-        query_terms = {
-            t for t in re.findall(r"\w+", query_lower)
-            if len(t) > 2 and t not in {"what", "when", "where", "why", "how", "the", "and", "for"}
-        }
-        results = []
-        for entry in self.entries:
-            # Naive scoring based on keyword existence
+        return self.bm25_search(query, top_k=top_k)
+
+    def bm25_search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Real BM25 (Okapi BM25) search over stored memories.
+        Replaces the token-overlap placeholder from the reference implementation.
+        """
+        import math
+        if not self.entries:
+            return []
+
+        k1, b = 1.5, 0.75
+        query_terms = [t.lower() for t in re.findall(r"\w+", query) if len(t) > 2]
+        if not query_terms:
+            return []
+
+        # Build inverted index + doc lengths
+        corpus: List[List[str]] = []
+        for e in self.entries:
+            tokens = re.findall(r"\w+", (e.get("fact","") + " " + e.get("summary","")).lower())
+            corpus.append(tokens)
+
+        N = len(corpus)
+        avg_dl = sum(len(d) for d in corpus) / N if N else 1
+
+        scores = []
+        for idx, (entry, doc_tokens) in enumerate(zip(self.entries, corpus)):
+            dl = len(doc_tokens)
             score = 0.0
-            fact = entry.get("fact", "").lower()
-            summary = entry.get("summary", "").lower()
-            tags = " ".join(str(tag).lower() for tag in entry.get("tags", []))
-
-            if query_lower in fact:
-                score += 0.5
-            if query_lower in summary:
-                score += 0.3
-            if query_lower in tags:
-                score += 0.2
-
-            haystack_terms = set(re.findall(r"\w+", f"{fact} {summary} {tags}"))
-            overlap = query_terms & haystack_terms
-            if overlap:
-                score += len(overlap) / max(len(query_terms), 1)
-                
+            for term in query_terms:
+                tf = doc_tokens.count(term)
+                df = sum(1 for d in corpus if term in d)
+                if df == 0:
+                    continue
+                idf = math.log((N - df + 0.5) / (df + 0.5) + 1)
+                tf_norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / avg_dl))
+                score += idf * tf_norm
             if score > 0:
-                results.append((score, entry))
-                
-        results.sort(key=lambda x: x[0], reverse=True)
-        return [r[1] for r in results[:top_k]]
+                scores.append((score, entry))
+
+        scores.sort(key=lambda x: x[0], reverse=True)
+        return [e for _, e in scores[:top_k]]
 
     def get_all_embeddings(self) -> tuple[List[str], List[List[float]]]:
         """
