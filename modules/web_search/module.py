@@ -12,7 +12,7 @@ import trafilatura
 from modules.base import BaseModule, ModuleResult
 from core.config import config
 from core.runtime.network import client as _network_client
-from core.provider_mesh import resolve_provider, generate_with_fallback
+from core.provider_mesh import resolve_provider, generate_with_fallback, graceful_generate_with_fallback
 
 log = logging.getLogger(__name__)
 
@@ -119,10 +119,10 @@ class Module(BaseModule):
 
     async def _call_external_raw(self, prompt: str) -> str:
         providers = resolve_provider(self.name)
-        try:
-            return await generate_with_fallback(providers, prompt)
-        except Exception as e:
-            return f"[Web search module error: {e}]"
+        return await graceful_generate_with_fallback(
+            providers, prompt,
+            fallback_message="[Web search: no LLM available — start Ollama to enable AI responses]"
+        )
 
     async def _call_own_raw(self, prompt: str) -> str:
         state = config.get_module_state(self.name)
