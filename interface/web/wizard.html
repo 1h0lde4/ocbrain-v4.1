@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCBrain — Setup Wizard</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #222; --border: #2a2a2a;
+  --text: #e8e6e1; --sub: #888780; --accent: #1d9e75; --accent2: #16785a;
+  --purple: #7f77dd; --amber: #ba7517; --red: #e05555; --radius: 10px;
+}
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+       min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+       justify-content: flex-start; padding: 40px 20px; }
+.wizard { width: 100%; max-width: 680px; }
+.logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+.logo span { color: var(--accent); }
+.tagline { font-size: 13px; color: var(--sub); margin-bottom: 36px; }
+/* Step indicator */
+.steps { display: flex; gap: 0; margin-bottom: 36px; }
+.step-dot { flex: 1; height: 3px; background: var(--border); transition: background 0.3s; position: relative; }
+.step-dot.active { background: var(--accent); }
+.step-dot.done { background: var(--accent2); }
+/* Card */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+        padding: 28px; margin-bottom: 16px; }
+.card-title { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.card-sub { font-size: 13px; color: var(--sub); margin-bottom: 20px; }
+/* Hardware grid */
+.hw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.hw-tile { background: var(--surface2); border: 1px solid var(--border);
+           border-radius: 8px; padding: 14px 16px; }
+.hw-tile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+                 color: var(--sub); margin-bottom: 6px; }
+.hw-tile-value { font-size: 14px; font-weight: 500; }
+.hw-tile-sub { font-size: 12px; color: var(--sub); margin-top: 3px; }
+.badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 99px;
+         font-weight: 600; margin-left: 6px; vertical-align: middle; }
+.badge-ok { background: #0e2a1e; color: var(--accent); }
+.badge-warn { background: #2a200a; color: var(--amber); }
+.badge-na { background: var(--border); color: var(--sub); }
+/* Buttons */
+.btn-row { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+.btn { padding: 10px 22px; border-radius: var(--radius); font-size: 14px; font-weight: 500;
+       cursor: pointer; border: none; transition: opacity 0.15s; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); }
+.btn-ghost { background: none; color: var(--sub); border: 1px solid var(--border); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Log console */
+.log-box { background: #0a0a0a; border: 1px solid var(--border); border-radius: 8px;
+           padding: 14px 16px; height: 180px; overflow-y: auto; font-family: monospace;
+           font-size: 12px; color: #9be0b4; margin-bottom: 16px; }
+.log-line { margin-bottom: 4px; line-height: 1.5; }
+.log-line.err { color: #e07777; }
+/* Validation results */
+.val-row { display: flex; justify-content: space-between; align-items: center;
+           padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.val-row:last-child { border-bottom: none; }
+.val-status { font-weight: 600; font-size: 12px; }
+.val-pass { color: var(--accent); }
+.val-fail { color: var(--red); }
+.val-na   { color: var(--sub); }
+/* Model checklist */
+.model-list { display: flex; flex-direction: column; gap: 8px; }
+.model-item { display: flex; align-items: center; gap: 12px; background: var(--surface2);
+              border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+              cursor: pointer; transition: border-color 0.15s; }
+.model-item.selected { border-color: var(--accent); background: #0e2a1e; }
+.model-item input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
+.model-info { flex: 1; }
+.model-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.model-desc { font-size: 12px; color: var(--sub); }
+.model-meta { font-size: 11px; color: var(--sub); text-align: right; flex-shrink: 0; }
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--border);
+           border-top-color: var(--accent); border-radius: 50%;
+           animation: spin 0.7s linear infinite; display: inline-block; }
+/* Success screen */
+.success-icon { font-size: 48px; margin-bottom: 16px; }
+.section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+                 text-transform: uppercase; color: var(--sub); margin: 18px 0 8px; }
+#screen-detecting .scan-anim { text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+<div class="wizard">
+  <div class="logo">OC<span>Brain</span></div>
+  <div class="tagline">First-time setup — AI Acceleration Wizard</div>
+
+  <div class="steps" id="steps">
+    <div class="step-dot active" id="dot-0"></div>
+    <div class="step-dot" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
+  </div>
+
+  <!-- SCREEN 0: Detecting -->
+  <div id="screen-detecting">
+    <div class="card">
+      <div class="card-title">Scanning your hardware...</div>
+      <div class="card-sub">Detecting GPU, CPU and memory for optimal AI configuration.</div>
+      <div class="scan-anim">
+        <div class="spinner" style="width:36px;height:36px;margin:0 auto 12px;border-width:3px;"></div>
+        <div id="scan-status" style="font-size:13px;color:var(--sub)">Initialising...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 1: Review -->
+  <div id="screen-review" style="display:none">
+    <div class="card">
+      <div class="card-title">AI Acceleration Hardware Detected</div>
+      <div class="card-sub">Review your hardware and choose how to configure OCBrain.</div>
+      <div class="hw-grid" id="hw-grid"></div>
+      <div id="hw-benefits"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-gpu" onclick="chooseMode('gpu')">⚡ Configure Automatically</button>
+      <button class="btn btn-secondary" onclick="chooseMode('cpu')">🖥 CPU Only</button>
+      <button class="btn btn-ghost" onclick="chooseMode('advanced')">⚙ Advanced Options</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: Configuring -->
+  <div id="screen-configuring" style="display:none">
+    <div class="card">
+      <div class="card-title">Configuring GPU Acceleration</div>
+      <div class="card-sub">Setting up your AI runtime for optimal performance.</div>
+      <div class="log-box" id="config-log"></div>
+      <div id="config-errors" style="color:var(--red);font-size:12px;"></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: Models -->
+  <div id="screen-models" style="display:none">
+    <div class="card">
+      <div class="card-title">Recommended AI Models</div>
+      <div class="card-sub" id="models-note">Based on your hardware, these models are recommended.</div>
+      <div class="model-list" id="model-list"></div>
+      <div class="section-title">Estimates</div>
+      <div id="model-estimates" style="font-size:13px;color:var(--sub);"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="proceedToValidation()">Continue →</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: Validating -->
+  <div id="screen-validating" style="display:none">
+    <div class="card">
+      <div class="card-title">Running Validation Tests</div>
+      <div class="card-sub">Verifying your AI acceleration setup.</div>
+      <div id="val-results"></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 5: Complete -->
+  <div id="screen-complete" style="display:none">
+    <div class="card" style="text-align:center">
+      <div class="success-icon">✅</div>
+      <div class="card-title">OCBrain is Ready</div>
+      <div class="card-sub" id="complete-msg">Hardware configured successfully.</div>
+      <div class="btn-row" style="justify-content:center;margin-top:24px;">
+        <a href="/" class="btn btn-primary" style="text-decoration:none">Open OCBrain →</a>
+        <a href="/settings" class="btn btn-secondary" style="text-decoration:none">⚙ Settings</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let state = null;
+let selectedModels = new Set();
+
+async function init() {
+  try {
+    // Check if wizard already done
+    const r = await fetch(`${API}/api/wizard/status`);
+    const s = await r.json();
+    if (s.complete && !new URLSearchParams(location.search).has('force')) {
+      location.href = '/';
+      return;
+    }
+    // Start detection
+    await runDetection();
+  } catch (e) {
+    document.getElementById('scan-status').textContent = 'Could not connect to OCBrain. Is it running?';
+  }
+}
+
+async function runDetection() {
+  document.getElementById('scan-status').textContent = 'Scanning GPU, CPU and RAM...';
+  try {
+    const r = await fetch(`${API}/api/wizard/detect`, { method: 'POST' });
+    state = await r.json();
+    showReview();
+  } catch (e) {
+    document.getElementById('scan-status').textContent = `Detection failed: ${e.message}`;
+  }
+}
+
+function showReview() {
+  setStep(1);
+  hide('screen-detecting'); show('screen-review');
+
+  const report = state.report;
+  const rec    = state.recommendation;
+  const grid   = document.getElementById('hw-grid');
+
+  // GPU tile
+  let gpuHtml = '';
+  if (report.best_gpu) {
+    const g = report.best_gpu;
+    const cudaBadge = g.cuda_available
+      ? `<span class="badge badge-ok">CUDA ${g.cuda_version || '✓'}</span>`
+      : g.rocm_available ? `<span class="badge badge-ok">ROCm ✓</span>`
+      : g.metal_available ? `<span class="badge badge-ok">Metal ✓</span>`
+      : `<span class="badge badge-warn">Driver needed</span>`;
+    gpuHtml = `<div class="hw-tile">
+      <div class="hw-tile-label">GPU</div>
+      <div class="hw-tile-value">${g.vendor} ${g.model} ${cudaBadge}</div>
+      <div class="hw-tile-sub">${g.vram_gb.toFixed(1)} GB VRAM · Tier: ${g.tier}</div>
+    </div>`;
+  } else {
+    gpuHtml = `<div class="hw-tile">
+      <div class="hw-tile-label">GPU</div>
+      <div class="hw-tile-value">No discrete GPU <span class="badge badge-na">CPU Mode</span></div>
+      <div class="hw-tile-sub">AI will run on CPU</div>
+    </div>`;
+    document.getElementById('btn-gpu').disabled = true;
+    document.getElementById('btn-gpu').title = 'No GPU detected';
+  }
+
+  // CPU tile
+  const cpu = report.cpu;
+  const cpuHtml = `<div class="hw-tile">
+    <div class="hw-tile-label">CPU</div>
+    <div class="hw-tile-value">${cpu.model.substring(0,42)}</div>
+    <div class="hw-tile-sub">${cpu.physical_cores}c/${cpu.logical_cores}t</div>
+  </div>`;
+
+  // RAM tile
+  const ramHtml = `<div class="hw-tile">
+    <div class="hw-tile-label">System RAM</div>
+    <div class="hw-tile-value">${cpu.ram_gb.toFixed(0)} GB</div>
+    <div class="hw-tile-sub">Available for AI models</div>
+  </div>`;
+
+  // Tier tile
+  const tierHtml = `<div class="hw-tile">
+    <div class="hw-tile-label">Recommended Tier</div>
+    <div class="hw-tile-value">${rec.tier.charAt(0).toUpperCase() + rec.tier.slice(1)}</div>
+    <div class="hw-tile-sub">${rec.note}</div>
+  </div>`;
+
+  grid.innerHTML = gpuHtml + cpuHtml + ramHtml + tierHtml;
+
+  // Benefits
+  const hasGpu = !!report.best_gpu;
+  document.getElementById('hw-benefits').innerHTML = hasGpu ? `
+    <div style="font-size:13px;color:var(--sub);margin-top:4px;">
+      Enabling GPU acceleration provides:&nbsp;
+      <span style="color:var(--accent)">✓ Faster responses</span> &nbsp;
+      <span style="color:var(--accent)">✓ Larger models</span> &nbsp;
+      <span style="color:var(--accent)">✓ Reduced CPU load</span>
+    </div>` : '';
+}
+
+async function chooseMode(mode) {
+  setStep(2);
+  hide('screen-review'); show('screen-configuring');
+  const logBox = document.getElementById('config-log');
+  logBox.innerHTML = '';
+
+  const addLog = (msg, isErr=false) => {
+    const line = document.createElement('div');
+    line.className = 'log-line' + (isErr ? ' err' : '');
+    line.textContent = '› ' + msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+  };
+
+  try {
+    const r = await fetch(`${API}/api/wizard/configure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const result = await r.json();
+
+    for (const log of result.logs || []) addLog(log);
+    for (const err of result.errors || []) addLog(err, true);
+    state = { ...state, ...result };
+
+    // Show models screen
+    setTimeout(() => showModels(), 800);
+  } catch (e) {
+    addLog('Configuration error: ' + e.message, true);
+  }
+}
+
+function showModels() {
+  setStep(3);
+  hide('screen-configuring'); show('screen-models');
+
+  const rec = state.recommendation;
+  if (!rec) { proceedToValidation(); return; }
+
+  document.getElementById('models-note').textContent = rec.note || 'Based on your hardware.';
+
+  const list = document.getElementById('model-list');
+  const allModels = [...(rec.primary || []), ...(rec.optional || [])];
+
+  // Pre-select primary
+  selectedModels = new Set(rec.primary?.map(m => m.name) || []);
+
+  list.innerHTML = allModels.map(m => `
+    <label class="model-item ${selectedModels.has(m.name) ? 'selected' : ''}" id="model-${m.name}">
+      <input type="checkbox" ${selectedModels.has(m.name) ? 'checked' : ''}
+             onchange="toggleModel('${m.name}', this.checked)">
+      <div class="model-info">
+        <div class="model-name">${m.display || m.name}</div>
+        <div class="model-desc">${m.description || ''}</div>
+      </div>
+      <div class="model-meta">${m.disk_gb}GB disk<br>${m.vram_gb}GB VRAM</div>
+    </label>`).join('');
+
+  updateEstimates(rec);
+}
+
+function toggleModel(name, checked) {
+  if (checked) selectedModels.add(name);
+  else selectedModels.delete(name);
+  const el = document.getElementById('model-' + name);
+  if (el) el.classList.toggle('selected', checked);
+}
+
+function updateEstimates(rec) {
+  const allModels = [...(rec.primary || []), ...(rec.optional || [])];
+  const sel = allModels.filter(m => selectedModels.has(m.name));
+  const disk = sel.reduce((s, m) => s + m.disk_gb, 0).toFixed(1);
+  const ram  = sel.reduce((s, m) => s + m.vram_gb, 0).toFixed(1);
+  document.getElementById('model-estimates').innerHTML =
+    `Estimated disk usage: <strong>${disk} GB</strong>&nbsp; &nbsp;
+     Estimated VRAM usage: <strong>${ram} GB</strong>`;
+}
+
+async function proceedToValidation() {
+  setStep(4);
+  hide('screen-models'); show('screen-validating');
+
+  document.getElementById('val-results').innerHTML =
+    '<div style="text-align:center;padding:24px"><div class="spinner" style="width:28px;height:28px;margin:0 auto 10px;border-width:3px;"></div><div style="font-size:13px;color:var(--sub)">Running tests...</div></div>';
+
+  try {
+    const r = await fetch(`${API}/api/wizard/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models: [...selectedModels] }),
+    });
+    const result = await r.json();
+    state = { ...state, ...result };
+    renderValidation(result.validation || {});
+  } catch (e) {
+    document.getElementById('val-results').innerHTML =
+      `<div style="color:var(--red);font-size:13px">Validation error: ${e.message}</div>`;
+  }
+}
+
+function renderValidation(results) {
+  const html = Object.entries(results).map(([test, status]) => {
+    const isPass = status === 'PASS';
+    const isFail = status.startsWith('FAIL');
+    const cls = isPass ? 'val-pass' : isFail ? 'val-fail' : 'val-na';
+    const icon = isPass ? '✓' : isFail ? '✗' : '–';
+    return `<div class="val-row">
+      <span>${test}</span>
+      <span class="val-status ${cls}">${icon} ${status}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('val-results').innerHTML = html ||
+    '<div style="color:var(--sub);font-size:13px;padding:10px 0">No tests ran.</div>';
+
+  // Show complete after short delay
+  setTimeout(() => {
+    const allOk = Object.values(results).every(s => !s.startsWith('FAIL'));
+    showComplete(allOk);
+  }, 1000);
+}
+
+function showComplete(success) {
+  setStep(5);
+  hide('screen-validating'); show('screen-complete');
+  const mode = state.chosen_mode || 'cpu';
+  const profile = state.profile;
+  let msg = success
+    ? `Your system is configured for AI acceleration (${mode} mode).`
+    : `Setup completed with some warnings. OCBrain will run in CPU mode.`;
+  if (profile?.recommended_models?.length) {
+    msg += ` Recommended models: ${profile.recommended_models.join(', ')}.`;
+  }
+  document.getElementById('complete-msg').textContent = msg;
+}
+
+function setStep(n) {
+  for (let i = 0; i < 5; i++) {
+    const dot = document.getElementById('dot-' + i);
+    if (i < n)  dot.className = 'step-dot done';
+    else if (i === n) dot.className = 'step-dot active';
+    else dot.className = 'step-dot';
+  }
+}
+
+function show(id) { document.getElementById(id).style.display = 'block'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+init();
+</script>
+</body>
+</html>
