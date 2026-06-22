@@ -10,8 +10,8 @@ set -euo pipefail
 GITHUB_REPO="1h0lde4/OCBrain"
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_REPO}/main"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-APT_REPO="https://YOUR_USERNAME.github.io/ocbrain/apt"
-GPG_KEY_URL="https://YOUR_USERNAME.github.io/ocbrain/apt/ocbrain.gpg"
+APT_REPO="https://1h0ld4r.github.io/ocbrain/apt"
+GPG_KEY_URL="https://1h0lde4.github.io/ocbrain/apt/ocbrain.gpg"
 
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; BLU='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${BLU}[ocbrain]${NC} $*"; }
