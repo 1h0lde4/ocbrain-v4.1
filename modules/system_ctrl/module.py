@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from modules.base import BaseModule, ModuleResult
-from core.provider_mesh import resolve_provider, generate_with_fallback, graceful_generate_with_fallback
+from core.provider_mesh import resolve_provider, generate_with_fallback
 
 log = logging.getLogger(__name__)
 

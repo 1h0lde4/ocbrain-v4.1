@@ -19,7 +19,7 @@ class Module(BaseModule):
         chunks = self.retrieve(task, k=5)
         prompt = self._build_prompt(task, chunks, context)
         
-        from core.provider_mesh import resolve_provider, generate_with_fallback, graceful_generate_with_fallback
+        from core.provider_mesh import resolve_provider, generate_with_fallback
         providers = resolve_provider(self.name)
         answer    = await generate_with_fallback(providers, prompt)
         
