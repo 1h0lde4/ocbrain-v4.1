@@ -45,18 +45,27 @@ class MemoryConsolidator:
         logger.info("[Consolidator] Consolidation run complete.")
 
     def _apply_adaptive_forgetting(self):
-        """Decays importance of all memories."""
+        """Decays importance of all memories.
+
+        BUG-05 FIX: Entries to prune are collected in a separate pass before
+        any removal.  The previous implementation called
+        ``cognitive_vault.entries.remove(entry)`` while iterating the same list,
+        which caused the iterator to skip every other stale entry.
+        """
+        age_factor = 0.99
+
+        # First pass: decay all entries and collect those that need pruning.
+        to_prune = []
         for entry in cognitive_vault.entries:
-            # Importance decays, but access_count protects it
-            # High-access memories stay important longer
-            age_factor = 0.99 
             entry["importance"] = round(entry["importance"] * age_factor, 4)
-            
-            # If importance is too low, prune it (unless it's L4 Archive)
             if entry["importance"] < 0.1 and entry["tier"] != "L4":
-                logger.info(f"[Consolidator] Pruning low-value memory: {entry['id']}")
-                cognitive_vault.entries.remove(entry)
-        
+                to_prune.append(entry)
+
+        # Second pass: remove collected entries (list is not being iterated here).
+        for entry in to_prune:
+            logger.info(f"[Consolidator] Pruning low-value memory: {entry['id']}")
+            cognitive_vault.entries.remove(entry)
+
         cognitive_vault._save()
 
     def _merge_duplicates(self):

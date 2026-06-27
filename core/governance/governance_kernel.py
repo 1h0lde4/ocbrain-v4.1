@@ -151,6 +151,27 @@ class BudgetGovernor(Governor):
     Architecture:
         PI §6.1 — "budget enforcement"
         FA §4.1 Layer 0 — GovernanceKernel (tokens)
+
+    BUG-03 FIX: Budget state is now per-workflow, not per-process.
+
+    The previous implementation accumulated ``_step_count`` and
+    ``_token_spend`` on the singleton ``GovernanceKernel``. After 100
+    governance evaluations across the lifetime of the process, every
+    subsequent action was permanently rejected — making the system
+    unusable without a restart.
+
+    Correct architecture (PI §6.1 "budget enforcement per workflow"):
+    Budget context is carried by the caller inside
+    ``GovernanceAction.metadata`` under the keys ``"step_count"`` and
+    ``"token_spend"``.  The worker or orchestrator is responsible for
+    incrementing these values before each ``evaluate_action()`` call.
+
+    When metadata keys are absent the governor approves the action and
+    emits a debug warning.  This preserves backward compatibility with
+    callers that do not yet supply budget context.
+
+    The ``reset()`` method is retained for API compatibility but is now
+    a documented no-op because state lives in the caller, not here.
     """
 
     name = "BudgetGovernor"
@@ -159,23 +180,38 @@ class BudgetGovernor(Governor):
                  max_token_budget: float = 1_000_000.0) -> None:
         self.max_steps = max_steps
         self.max_token_budget = max_token_budget
-        self._step_count: int = 0
-        self._token_spend: float = 0.0
 
     def evaluate(self, action: GovernanceAction) -> GovernanceResult:
-        self._step_count += 1
-        self._token_spend += action.resource_cost
+        step_count: Optional[int]   = action.metadata.get("step_count")
+        token_spend: Optional[float] = action.metadata.get("token_spend")
 
-        if self._step_count > self.max_steps:
+        if step_count is None and token_spend is None:
+            # Caller did not supply budget context — approve with advisory log.
+            # This handles legacy callers that predate per-workflow budget tracking.
+            logger.debug(
+                "[BudgetGovernor] No budget context in metadata "
+                "(worker_id=%s, action_type=%s). Supply 'step_count' and "
+                "'token_spend' in GovernanceAction.metadata to enforce limits.",
+                action.worker_id, action.action_type,
+            )
+            return GovernanceResult(
+                verdict=GovernanceVerdict.APPROVE, governor=self.name,
+            )
+
+        step_count  = int(step_count  or 0)
+        token_spend = float(token_spend or 0.0)
+
+        if step_count > self.max_steps:
             return GovernanceResult(
                 verdict=GovernanceVerdict.REJECT,
-                reason=f"Step budget exhausted ({self._step_count}/{self.max_steps})",
+                reason=f"Step budget exhausted ({step_count}/{self.max_steps})",
                 governor=self.name,
             )
-        if self._token_spend > self.max_token_budget:
+        if token_spend > self.max_token_budget:
             return GovernanceResult(
                 verdict=GovernanceVerdict.REJECT,
-                reason=f"Token budget exhausted ({self._token_spend:.0f}/{self.max_token_budget:.0f})",
+                reason=(f"Token budget exhausted "
+                        f"({token_spend:.0f}/{self.max_token_budget:.0f})"),
                 governor=self.name,
             )
         return GovernanceResult(
@@ -183,9 +219,13 @@ class BudgetGovernor(Governor):
         )
 
     def reset(self) -> None:
-        """Reset counters for a new workflow."""
-        self._step_count = 0
-        self._token_spend = 0.0
+        """No-op: budget state lives in the caller (GovernanceAction.metadata).
+
+        Retained for API compatibility. Callers that previously relied on
+        reset() to clear the singleton counter should instead track
+        step_count and token_spend in their own workflow context and pass
+        them via GovernanceAction.metadata.
+        """
 
 
 class EvolutionGovernor(Governor):
