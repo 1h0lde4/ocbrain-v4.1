@@ -115,10 +115,6 @@ class SQLiteGraphBackend(GraphBackend):
         """Return mutually-contradicting node pairs, ordered deterministically."""
         return await self._run(self._engine.find_contradictions)
 
-    async def delete_node(self, node_id: str) -> bool:
-        """Delete a node and all its incident edges; returns True if node existed."""
-        return await self._run(lambda: self._engine.delete_node(node_id))
-
     async def stats(self) -> Dict[str, Any]:
         """Return graph statistics with backend label."""
         base = await self._run(self._engine.stats)
