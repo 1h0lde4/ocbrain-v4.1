@@ -100,7 +100,12 @@ class SQLiteArchiveBackend(ArchiveBackend):
             conn.commit()
 
     async def _run(self, fn):
-        return await asyncio.get_event_loop().run_in_executor(None, fn)
+        """Dispatch blocking fn to thread executor.
+
+        Uses get_running_loop() — correct API inside a coroutine.
+        Session 3A: fixed from deprecated get_event_loop().
+        """
+        return await asyncio.get_running_loop().run_in_executor(None, fn)
 
     # ── ArchiveBackend implementation ─────────────────────────────────────
 
@@ -108,6 +113,22 @@ class SQLiteArchiveBackend(ArchiveBackend):
         """Append an event. Idempotent — duplicate event_id is silently ignored."""
         def _append():
             d = event.to_dict()
+            # KnowledgeEvent.to_dict() uses "delta" and "from_layer"/"to_layer";
+            # the archive schema uses "change_delta" and "previous_layer".
+            # Build the params dict explicitly to keep both representations clean.
+            params = {
+                "event_id":       d.get("event_id",    ""),
+                "entry_id":       d.get("entry_id",    ""),
+                "event_type":     d.get("event_type",  ""),
+                "timestamp":      d.get("timestamp",   0.0),
+                "worker_id":      d.get("worker_id",   ""),
+                "workflow_id":    d.get("workflow_id", ""),
+                "previous_layer": d.get("from_layer",  ""),   # from_layer → previous_layer
+                "previous_truth": "",                           # not on KnowledgeEvent
+                "change_delta":   d.get("delta",       "{}"), # delta → change_delta
+                "reason":         d.get("reason",      ""),
+                "metadata":       d.get("metadata",    "{}"),
+            }
             with closing(self._connect()) as conn:
                 conn.execute("""
                     INSERT OR IGNORE INTO knowledge_events
@@ -118,7 +139,7 @@ class SQLiteArchiveBackend(ArchiveBackend):
                     (:event_id, :entry_id, :event_type, :timestamp,
                      :worker_id, :workflow_id, :previous_layer, :previous_truth,
                      :change_delta, :reason, :metadata)
-                """, d)
+                """, params)
                 conn.commit()
         await self._run(_append)
 

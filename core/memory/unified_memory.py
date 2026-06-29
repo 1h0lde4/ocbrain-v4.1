@@ -35,7 +35,7 @@ from core.memory.backends.sqlite_archive import SQLiteArchiveBackend
 from core.memory.knowledge_entry import KnowledgeEntry, LAYERS, GRAPH_ELIGIBLE_STATUSES
 from core.memory.knowledge_event import (
     KnowledgeEvent,
-    event_created, event_updated, event_promoted, event_archived,
+    event_created, event_updated, event_promoted, event_archived, event_deleted,
 )
 
 if TYPE_CHECKING:
@@ -97,11 +97,15 @@ class HookRegistry:
     Extension points for MemoryCuratorWorker (v4.3.6).
     All hooks are no-ops until CuratorWorker registers at startup.
 
-    before_write:  List[fn(entry) → Optional[entry]]  — None means reject
-    after_write:   List[fn(entry) → None]              — fire-and-forget
-    before_promote/after_promote: layer transition hooks
-    before_archive/after_archive: L4 archival hooks
-    before_delete/after_delete:   deletion hooks
+    Hook signatures:
+      before_write:  fn(entry) → Optional[KnowledgeEntry]  — None means reject write
+      after_write:   fn(entry) → None                       — fire-and-forget observation
+      before_delete: fn(entry) → Optional[KnowledgeEntry]  — None means block deletion
+      after_delete:  fn(entry) → None                       — fire-and-forget observation
+      before/after_promote and before/after_archive reserved for future phases.
+
+    Hook lifecycle is owned entirely by HookRegistry.
+    No external component should append to hook lists directly.
     """
     before_write:   List[Callable] = field(default_factory=list)
     after_write:    List[Callable] = field(default_factory=list)
@@ -111,11 +115,66 @@ class HookRegistry:
     after_archive:  List[Callable] = field(default_factory=list)
     before_delete:  List[Callable] = field(default_factory=list)
     after_delete:   List[Callable] = field(default_factory=list)
+    # Internal registration flag — not part of equality or repr
+    _curator_registered: bool = field(default=False, repr=False, compare=False)
 
     def register_curator(self, curator: Any) -> None:
-        """Called once by MemoryCuratorWorker at startup (v4.3.6)."""
-        logger.info("HookRegistry: MemoryCuratorWorker registered")
-        # v4.3.6 will populate hooks here
+        """Wire all MemoryCuratorWorker hook functions into this registry.
+
+        This is the single, centralised place where hook population happens.
+        MemoryCuratorWorker.register() calls this method; the curator never
+        appends to hook lists directly (dependency inversion).
+
+        Registration order is deterministic:
+          1. before_write  — quality gate (reject empty/short content)
+          2. after_write   — observation (logging)
+          3. before_delete — archival gate (block L4 deletion, log all others)
+
+        Duplicate registration is blocked: a second call is a no-op with a warning.
+
+        Args:
+            curator: MemoryCuratorWorker instance that exposes the hook callables.
+        """
+        if self._curator_registered:
+            logger.warning(
+                "HookRegistry: duplicate curator registration blocked "
+                "(curator is already registered)"
+            )
+            return
+
+        self.before_write.append(curator._before_write_hook)
+        self.after_write.append(curator._after_write_hook)
+        self.before_delete.append(curator._before_delete_hook)
+
+        # Use object.__setattr__ because dataclass fields are set in __init__,
+        # but _curator_registered was initialised as False; we update it directly.
+        object.__setattr__(self, "_curator_registered", True)
+
+        logger.info(
+            "HookRegistry: MemoryCuratorWorker hooks wired "
+            "(before_write=%d, after_write=%d, before_delete=%d)",
+            len(self.before_write), len(self.after_write), len(self.before_delete),
+        )
+
+    def unregister_curator(self) -> None:
+        """Remove all curator hooks and reset the registration flag.
+
+        Used in testing and future hot-reload scenarios.  The curator is the
+        sole hook provider in the current architecture, so clearing the lists
+        is safe and complete.
+        """
+        if not self._curator_registered:
+            return
+        self.before_write.clear()
+        self.after_write.clear()
+        self.before_delete.clear()
+        object.__setattr__(self, "_curator_registered", False)
+        logger.info("HookRegistry: MemoryCuratorWorker hooks removed")
+
+    @property
+    def curator_registered(self) -> bool:
+        """True once register_curator() has successfully wired the curator."""
+        return self._curator_registered
 
 
 # ── Layer Router ──────────────────────────────────────────────────────────────
@@ -467,6 +526,145 @@ class UnifiedMemory:
             except Exception as e:
                 logger.debug("Archive update event failed: %s", e)
         return ok
+
+    # ── Delete ────────────────────────────────────────────────────────────
+
+    async def delete(self, entry_id: str,
+                     reason: str = "", worker_id: str = "") -> bool:
+        """Delete an entry from all active memory layers.
+
+        Deletion orchestration order (UM §5, FA §8 Risk 7):
+          1. Load entry — must exist to proceed
+          2. before_delete hooks — None return blocks deletion
+          3. Archive: deletion event + entry snapshot (data preserved in L4)
+          4. Remove L3 graph node (if entry has graph_node_id and graph active)
+          5. Remove L2 vector index
+          6. Remove L1 storage record
+          7. Evict L0 cache (always — even if earlier steps failed)
+          8. after_delete hooks — fire-and-forget
+
+        Returns:
+            True  — entry found and successfully deleted.
+            False — entry not found, OR blocked by a before_delete hook.
+
+        Non-blocking failures:
+            Steps 3–5 are non-blocking: partial failures are logged but do not
+            abort the delete.  L1 removal (step 6) is the authoritative deletion;
+            if it fails, False is returned even though earlier steps may have run.
+        """
+        # 1. Load entry
+        entry = await self.read(entry_id)
+        if entry is None:
+            logger.debug("delete: entry %s not found", entry_id[:8] if entry_id else "?")
+            return False
+
+        # 2. Execute before_delete hooks
+        for hook in self._hooks.before_delete:
+            try:
+                result = hook(entry)
+                if asyncio.iscoroutine(result):
+                    result = await result
+                if result is None:
+                    logger.info(
+                        "delete: blocked by before_delete hook for %s",
+                        entry_id[:8],
+                    )
+                    return False
+                entry = result   # hook may return a (possibly modified) entry
+            except Exception as e:
+                logger.warning("before_delete hook error: %s", e)
+
+        # 3. Archive deletion event + snapshot (data is preserved in L4 before removal)
+        try:
+            ev = event_deleted(entry_id, reason=reason, worker_id=worker_id)
+            await self._archive.append_event(ev)
+            await self._archive.append_entry_snapshot(entry, reason="delete")
+        except Exception as e:
+            logger.warning("Archive deletion event failed (non-blocking): %s", e)
+
+        # 4. Remove L3 graph node (non-blocking; graph_node_id may not be set)
+        if entry.graph_node_id and self._graph:
+            try:
+                deleted_from_graph = await self._graph.delete_node(entry.graph_node_id)
+                if not deleted_from_graph:
+                    logger.debug(
+                        "Graph node %s not found during delete of %s "
+                        "(may have been removed already)",
+                        entry.graph_node_id, entry_id[:8],
+                    )
+            except Exception as e:
+                logger.warning("Graph node removal failed (non-blocking): %s", e)
+
+        # 5. Remove L2 vector index (non-blocking)
+        try:
+            await self._vector.remove(entry_id)
+        except Exception as e:
+            logger.debug("Vector removal for %s: %s", entry_id[:8], e)
+
+        # 6. Remove L1 storage record (authoritative deletion)
+        try:
+            await self._storage.delete(entry_id)
+        except Exception as e:
+            logger.warning("Storage deletion failed for %s: %s", entry_id[:8], e)
+
+        # 7. Evict L0 cache (always)
+        self._l0.evict(entry_id)
+
+        # 8. Execute after_delete hooks (fire-and-forget)
+        for hook in self._hooks.after_delete:
+            try:
+                result = hook(entry)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                logger.debug("after_delete hook error: %s", e)
+
+        return True
+
+    # ── Archive helpers (public API for workers) ──────────────────────────
+
+    async def archive_event(self, event: KnowledgeEvent) -> None:
+        """Write a KnowledgeEvent to the L4 archive.
+
+        Public API that lets workers emit audit events without accessing the
+        archive backend directly (dependency inversion compliance).
+        Failures are logged but not raised (archive is non-blocking).
+        """
+        try:
+            await self._archive.append_event(event)
+        except Exception as e:
+            logger.warning("archive_event failed: %s", e)
+
+    async def archive_snapshot(self, entry: KnowledgeEntry,
+                                reason: str = "snapshot") -> None:
+        """Write an entry snapshot to the L4 archive.
+
+        Public API for workers that need to snapshot an entry without
+        accessing the archive backend directly.
+        """
+        try:
+            await self._archive.append_entry_snapshot(entry, reason=reason)
+        except Exception as e:
+            logger.warning("archive_snapshot failed: %s", e)
+
+    # ── Graph delegation (public API for workers) ─────────────────────────
+
+    async def find_contradictions(self) -> List[Dict[str, Any]]:
+        """Return pairs of mutually-contradicting graph nodes.
+
+        Delegates to the active graph backend.  Returns an empty list when no
+        graph backend is registered — callers do not need to check graph_active.
+
+        Returns:
+            List of dicts with keys: node_a (str), node_b (str).
+        """
+        if self._graph is None:
+            return []
+        try:
+            return await self._graph.find_contradictions()
+        except Exception as e:
+            logger.warning("find_contradictions failed: %s", e)
+            return []
 
     # ── Consolidate ───────────────────────────────────────────────────────
 

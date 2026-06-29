@@ -172,6 +172,16 @@ def event_archived(entry_id: str, *,
     )
 
 
+def event_deleted(entry_id: str, *,
+                  reason: str = "deleted",
+                  worker_id: str = "") -> KnowledgeEvent:
+    """Factory for 'deleted' events. Called by UnifiedMemory.delete()."""
+    return KnowledgeEvent(
+        event_type="deleted", entry_id=entry_id,
+        reason=reason, worker_id=worker_id,
+    )
+
+
 def event_curated(entry_id: str, *,
                   delta: Optional[Dict[str, Any]] = None,
                   reason: str = "",

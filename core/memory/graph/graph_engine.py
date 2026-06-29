@@ -281,7 +281,7 @@ class GraphEngine:
         return [{"id": r[0], "type": r[1], "name": r[2]} for r in rows]
 
     def find_contradictions(self) -> List[Dict[str, Any]]:
-        """Return pairs of nodes that hold a mutual 'contradicts' relation.
+        """Return mutually-contradicting node pairs, ordered deterministically.
 
         A contradiction exists when node A has a 'contradicts' edge to B
         AND node B has a 'contradicts' edge back to A.  Each pair is returned
@@ -308,6 +308,31 @@ class GraphEngine:
                 """
             ).fetchall()
         return [{"node_a": r[0], "node_b": r[1]} for r in rows]
+
+    def delete_node(self, node_id: str) -> bool:
+        """Delete a node and all its incident edges.
+
+        Incident edges (where node_id appears as source OR target) are removed
+        first to maintain logical graph consistency.  SQLite foreign-key
+        enforcement is not relied upon (not enabled per-connection).
+
+        Returns:
+            True  — node existed and was deleted.
+            False — node not found; no-op, no write performed.
+        """
+        with closing(self._connect()) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM nodes WHERE id = ?", (node_id,)
+            ).fetchone()
+            if not exists:
+                return False
+            conn.execute(
+                "DELETE FROM edges WHERE source = ? OR target = ?",
+                (node_id, node_id),
+            )
+            conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
+            conn.commit()
+        return True
 
     def stats(self) -> Dict[str, Any]:
         """Return graph statistics.
