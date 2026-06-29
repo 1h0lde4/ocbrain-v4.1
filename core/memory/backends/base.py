@@ -124,6 +124,16 @@ class GraphBackend(ABC):
     async def find_contradictions(self) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
+    async def delete_node(self, node_id: str) -> bool:
+        """Delete a node and all its incident edges.
+
+        Returns:
+            True  — node existed and was deleted.
+            False — node not found; no-op.
+        """
+        ...
+
+    @abstractmethod
     async def stats(self) -> Dict[str, Any]: ...
 
     async def close(self) -> None:
