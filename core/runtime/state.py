@@ -144,16 +144,16 @@ class StateStore:
             # Pull up to current batch size from the head
             while self._queue and len(batch) < self._current_batch_size:
                 batch.append(self._queue.popleft())
-        
+
         if not batch:
             return
 
         # --- OPTIMIZATION: Event Coalescing ---
         # Maturity updates are 'state-overwrite'. Only the newest in a batch matters.
         # Training pairs are 'append-only'. All must be preserved.
-        coalesced_maturity = {} # module_name -> latest_data
-        training_to_write = []
-        
+        coalesced_maturity = {}   # module_name -> latest_data
+        training_to_write  = []
+
         for msg_type, data in batch:
             if msg_type == "maturity":
                 # data is (module_name, score, query_count, timestamp)
@@ -162,48 +162,80 @@ class StateStore:
                 training_to_write.append(data)
 
         try:
-            # Measure flush duration for future congestion control
+            # BUG-04 FIX: All blocking SQLite I/O dispatched to thread executor.
+            # The event loop is never blocked; batching, ordering, WAL mode,
+            # durability, and AIMD congestion control are all preserved.
             start_flush = time.perf_counter()
-            
-            # Increase timeout to 20s for production resilience
-            with closing(sqlite3.connect(self.db_path, timeout=20.0)) as conn:
-                # 1. Flush Coalesced Maturity (Deduplicated)
-                if coalesced_maturity:
-                    conn.executemany("""
-                        INSERT INTO maturity (module_name, score, query_count, updated_at)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(module_name) DO UPDATE SET
-                            score=excluded.score,
-                            query_count=excluded.query_count,
-                            updated_at=excluded.updated_at
-                    """, list(coalesced_maturity.values()))
-                
-                # 2. Flush Training Pairs (Bulk Insert)
-                if training_to_write:
-                    conn.executemany("""
-                        INSERT INTO training_pairs (module_name, query, answer, timestamp)
-                        VALUES (?, ?, ?, ?)
-                    """, training_to_write)
-                
-                conn.commit()
-                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            
-            flush_time = time.perf_counter() - start_flush
-            
-            # Adaptive Congestion Control (AIMD)
-            if flush_time < 0.1: # Fast DB
-                self._current_batch_size = min(self._max_batch_size, self._current_batch_size + 20)
-            elif flush_time > 0.5: # Slow DB
+
+            flush_time = await asyncio.get_event_loop().run_in_executor(
+                None,
+                self._flush_sync,
+                dict(coalesced_maturity),   # pass copies — immutable in executor
+                list(training_to_write),
+                start_flush,
+            )
+
+            # Adaptive Congestion Control (AIMD) — runs on event loop (cheap)
+            if flush_time < 0.1:  # Fast DB
+                self._current_batch_size = min(
+                    self._max_batch_size, self._current_batch_size + 20
+                )
+            elif flush_time > 0.5:  # Slow DB
                 self._current_batch_size = max(50, self._current_batch_size - 50)
-                logger.warning(f"[StateStore] DB Congestion: shrinking batch to {self._current_batch_size}")
-                
+                logger.warning(
+                    "[StateStore] DB Congestion: shrinking batch to %d",
+                    self._current_batch_size,
+                )
+
         except Exception as e:
-            logger.error(f"Failed to flush state batch: {e}. Re-queueing {len(batch)} items at FRONT.")
-            # Critical: Re-queue items at the FRONT to preserve ordering
+            logger.error(
+                "Failed to flush state batch: %s. Re-queueing %d items at FRONT.",
+                e, len(batch),
+            )
+            # Critical: Re-queue items at the FRONT to preserve ordering.
             async with self._queue_lock:
                 for item in reversed(batch):
                     self._queue.appendleft(item)
-            await asyncio.sleep(2.0) # Longer backoff on DB pressure
+            await asyncio.sleep(2.0)  # Longer backoff on DB pressure
+
+    def _flush_sync(
+        self,
+        coalesced_maturity: dict,
+        training_to_write: list,
+        start_flush: float,
+    ) -> float:
+        """Blocking SQLite work — always runs in a thread executor (BUG-04 fix).
+
+        Returns the elapsed flush time in seconds for AIMD congestion control.
+        Raises on any SQLite error so _flush_batch can re-queue the batch.
+        """
+        with closing(sqlite3.connect(self.db_path, timeout=20.0)) as conn:
+            if coalesced_maturity:
+                conn.executemany(
+                    """
+                    INSERT INTO maturity (module_name, score, query_count, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(module_name) DO UPDATE SET
+                        score=excluded.score,
+                        query_count=excluded.query_count,
+                        updated_at=excluded.updated_at
+                    """,
+                    list(coalesced_maturity.values()),
+                )
+
+            if training_to_write:
+                conn.executemany(
+                    """
+                    INSERT INTO training_pairs (module_name, query, answer, timestamp)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    training_to_write,
+                )
+
+            conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+        return time.perf_counter() - start_flush
 
 # Singleton instance
 state_store = StateStore()
