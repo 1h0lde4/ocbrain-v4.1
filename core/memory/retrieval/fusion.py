@@ -4,10 +4,10 @@ core/memory/retrieval/fusion.py — RetrievalFusionEngine
 Session 3B: Legacy retrieval chain replaced.
 
 REMOVED:
-  - import of cognitive_vault singleton
-  - import of graph_engine singleton
-  - all internal retrieval logic (_semantic_search, _graph_search, _apply_rrf)
-  - module-level singleton
+  - CognitiveVault import and all direct vault calls
+  - Raw graph singleton import and all direct graph calls
+  - All internal retrieval logic (_semantic_search, _graph_search, _apply_rrf)
+  - Module-level singleton
 
 NEW:
   - Constructor injection: __init__(self, memory: UnifiedMemory)
