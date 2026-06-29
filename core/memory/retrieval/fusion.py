@@ -1,77 +1,82 @@
+"""
+core/memory/retrieval/fusion.py — RetrievalFusionEngine
+
+Session 3B: Legacy retrieval chain replaced.
+
+REMOVED:
+  - import of cognitive_vault singleton
+  - import of graph_engine singleton
+  - all internal retrieval logic (_semantic_search, _graph_search, _apply_rrf)
+  - module-level singleton
+
+NEW:
+  - Constructor injection: __init__(self, memory: UnifiedMemory)
+  - fuse_search() is async — delegates entirely to UnifiedMemory.search()
+  - No duplicate ranking logic
+  - No direct access to any backend
+
+Architecture:
+  UnifiedMemory is the single owner of retrieval (FA §4.1 Layer 5).
+  RetrievalFusionEngine is now a thin async compatibility façade that lets
+  ContextAssemblyEngine call a named method while the real work happens in
+  UnifiedMemory.search() (BM25 + vector + RRF + composite scoring).
+"""
+
 import logging
-from typing import List, Dict, Any, Optional
-from ..cognitive_vault import cognitive_vault
-from ..graph.graph_engine import graph_engine
+from typing import List, Optional
+
+from core.memory.unified_memory import UnifiedMemory, SearchResult
 
 logger = logging.getLogger("ocbrain.memory.fusion")
 
+
 class RetrievalFusionEngine:
     """
-    TEMPR-inspired Retrieval Fusion (Semantic + Keyword + Graph + Temporal).
-    Uses Reciprocal Rank Fusion (RRF) to combine results.
+    Async compatibility façade over UnifiedMemory.search().
+
+    Dependency injection: receives UnifiedMemory through the constructor.
+    No singletons. No module-level state. No backend access.
+
+    All retrieval logic lives exclusively in UnifiedMemory (ADR-006):
+      L2 VectorBackend  — BM25 + optional embeddings
+      L1 StorageBackend — FTS5 keyword search
+      Composite scoring — recency × importance × relevance (RRF-merged)
     """
-    def __init__(self, k: int = 60):
-        self.k = k
 
-    def fuse_search(self, 
-                    query: str, 
-                    query_embedding: Optional[List[float]] = None, 
-                    top_k: int = 5) -> List[Dict[str, Any]]:
+    def __init__(self, memory: UnifiedMemory) -> None:
         """
-        Main entry for multi-channel retrieval.
+        Args:
+            memory: The UnifiedMemory instance that owns all retrieval.
+                    Injected at construction time; never fetched internally.
         """
-        # 1. Semantic Retrieval (L1, L2, L3)
-        semantic_results = self._semantic_search(query_embedding) if query_embedding else []
-        
-        # 2. Keyword Retrieval (L1, L2, L3)
-        keyword_results = cognitive_vault.search_keyword(query, top_k=top_k*2)
-        
-        # 3. Graph Retrieval (Finding related entities)
-        graph_results = self._graph_search(query)
-        
-        # 4. Temporal Retrieval (Recency bias)
-        # (Handled within RRF by injecting timestamp weight or separate list)
-        
-        # Merge using RRF
-        scores = {} # id -> rrf_score
-        
-        self._apply_rrf(scores, semantic_results)
-        self._apply_rrf(scores, keyword_results)
-        self._apply_rrf(scores, graph_results)
-        
-        # Final ranking
-        final_results = []
-        for entry_id, score in scores.items():
-            entry = cognitive_vault.get_entry(entry_id)
-            if entry:
-                # Add recency boost
-                # final_score = score + recency_boost(entry)
-                final_results.append((score, entry))
-        
-        final_results.sort(key=lambda x: x[0], reverse=True)
-        return [r[1] for r in final_results[:top_k]]
+        self._memory = memory
 
-    def _semantic_search(self, embedding: List[float]) -> List[Dict[str, Any]]:
-        # Logic to iterate cognitive_vault and compare cosine similarity
-        # Simplified for now
-        return []
+    async def fuse_search(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]] = None,
+        top_k: int = 5,
+    ) -> List[SearchResult]:
+        """Return top-k SearchResult objects for *query*.
 
-    def _graph_search(self, query: str) -> List[Dict[str, Any]]:
+        Delegates entirely to UnifiedMemory.search() — no duplicate logic.
+
+        Args:
+            query:           Natural language search string.
+            query_embedding: Optional dense vector; passed through to L2
+                             vector search when provided.
+            top_k:           Maximum number of results to return.
+
+        Returns:
+            List[SearchResult] ordered by composite_score descending.
+            Empty list when memory contains no relevant entries.
         """
-        Searches graph nodes for name matches, then pulls neighbors.
-        """
-        nodes = graph_engine.search_nodes(query)
-        results = []
-        for node in nodes:
-            # For each matching node, find related cognitive entries in the vault
-            # (Requires nodes to store reference to vault entry_id)
-            pass
-        return results
+        return await self._memory.search(
+            query=query,
+            limit=top_k,
+            query_embedding=query_embedding,
+        )
 
-    def _apply_rrf(self, scores: Dict[str, float], results: List[Dict[str, Any]]):
-        for i, entry in enumerate(results):
-            eid = entry["id"]
-            scores[eid] = scores.get(eid, 0.0) + (1.0 / (self.k + i + 1))
 
-# Global singleton
-fusion_engine = RetrievalFusionEngine()
+# ── No module-level singleton ─────────────────────────────────────────────────
+# ContextAssemblyEngine owns construction and holds the instance.
