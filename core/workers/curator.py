@@ -164,27 +164,21 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
     def register(self, memory: Any) -> None:
         """Register with UnifiedMemory's HookRegistry.
 
-        Wires curator hooks into the memory write/promote/archive/delete
-        lifecycle. Called once at startup.
+        Hook wiring is delegated entirely to HookRegistry.register_curator().
+        The curator never accesses memory._hooks directly.
 
         Args:
             memory: The UnifiedMemory instance to register with.
 
         Architecture:
             UM §5 — Memory Curator Lifecycle Hooks.
-            FA v4.3.6 — "Wraps MemoryConsolidator with Agent Protocol interface"
+            Session 3A — dependency inversion: hook lifecycle owned by HookRegistry.
         """
         self._memory = memory
         self._registered = True
-
-        # Register hook functions with the HookRegistry
-        memory._hooks.before_write.append(self._before_write_hook)
-        memory._hooks.after_write.append(self._after_write_hook)
-        memory._hooks.before_delete.append(self._before_delete_hook)
-
-        # Notify the HookRegistry that a curator is registered
-        memory._hooks.register_curator(self)
-
+        # Centralized hook wiring — HookRegistry owns the hook lifecycle.
+        # This is the only call needed; no direct _hooks manipulation here.
+        memory.register_curator(self)
         logger.info("[MemoryCuratorWorker] Registered with UnifiedMemory HookRegistry")
 
     # ── Lifecycle Hooks ───────────────────────────────────────────────────
@@ -327,6 +321,13 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
             FA Pattern 4 — "prune stale nodes"
             FA §8 Risk 7 — "importance threshold before delete, log pruned
                              entries to L4"
+            Session 3A — uses UnifiedMemory.delete() exclusively (no private
+                          backend access).
+
+        UnifiedMemory.delete() orchestrates archiving, graph removal, vector
+        removal, storage removal, and cache eviction in the correct order.
+        The before_delete hook (this curator's _before_delete_hook) guards
+        against L4 archive deletion.
 
         Returns:
             Number of entries pruned.
@@ -351,30 +352,19 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
                     and entry.importance < cfg.min_importance_to_prune
                     and entry.access_count < 2):
 
-                # Archive to L4 before pruning (FA §8 Risk 7)
-                if cfg.archive_before_prune:
-                    try:
-                        ev = event_curated(
-                            entry_id=entry.entry_id,
-                            delta={"action": "prune", "age_days": round(age_days, 1)},
-                            reason=f"Stale: age={age_days:.0f}d, imp={entry.importance:.2f}",
-                            worker_id=self._id,
-                        )
-                        await self._memory._archive.append_event(ev)
-                        await self._memory._archive.append_entry_snapshot(
-                            entry, reason="curator_prune",
-                        )
-                    except Exception as e:
-                        logger.warning("[Curator] Archive before prune failed: %s", e)
-
-                # Delete from active storage
                 try:
-                    await self._memory._storage.delete(entry.entry_id)
-                    self._memory._l0.evict(entry.entry_id)
-                    await self._memory._vector.remove(entry.entry_id)
-                    pruned += 1
-                    logger.debug("[Curator] Pruned: %s (age=%.0fd, imp=%.2f)",
-                                 entry.entry_id[:8], age_days, entry.importance)
+                    deleted = await self._memory.delete(
+                        entry.entry_id,
+                        reason=f"curator_prune:age={age_days:.0f}d,"
+                               f"imp={entry.importance:.2f}",
+                        worker_id=self._id,
+                    )
+                    if deleted:
+                        pruned += 1
+                        logger.debug(
+                            "[Curator] Pruned: %s (age=%.0fd, imp=%.2f)",
+                            entry.entry_id[:8], age_days, entry.importance,
+                        )
                 except Exception as e:
                     logger.warning("[Curator] Prune delete failed for %s: %s",
                                    entry.entry_id[:8], e)
@@ -443,12 +433,14 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
             FA v4.3.6 — "Contradiction resolution: when graph finds
                           contradictions, curator resolves"
             FA Pattern 4 — "detect and resolve contradictions"
+            Session 3A — uses UnifiedMemory.find_contradictions() and
+                          UnifiedMemory.archive_event() (no private backend access).
 
         Strategy:
-            1. Query graph for contradiction edges.
+            1. Query graph for contradiction edges via public API.
             2. For each pair, compare confidence and recency.
             3. Mark the weaker entry as "deprecated" (not deleted).
-            4. Log resolution to L4 Archive.
+            4. Log resolution to L4 Archive via public archive_event().
 
         Returns:
             Tuple of (contradictions_found, contradictions_resolved).
@@ -456,34 +448,35 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
         found = 0
         resolved = 0
 
-        # Skip if no graph backend is wired
-        if self._memory._graph is None:
-            logger.debug("[Curator] No graph backend — skipping contradiction check")
-            return found, resolved
-
-        # Query graph for contradiction edges
+        # Query graph for contradiction pairs via public UnifiedMemory API.
+        # Returns [] when no graph backend is registered — safe to proceed.
         try:
             contradictions: List[Dict[str, Any]] = (
-                await self._memory._graph.find_contradictions()
+                await self._memory.find_contradictions()
             )
         except Exception as e:
             logger.warning("[Curator] Graph contradiction query failed: %s", e)
             return found, resolved
 
         found = len(contradictions)
+        if not found:
+            logger.debug("[Curator] No contradictions found in graph")
+            return found, resolved
 
         for contradiction in contradictions:
             if self.is_cancelled:
                 break
 
-            source_id = contradiction.get("source", "")
-            target_id = contradiction.get("target", "")
+            # find_contradictions() returns {"node_a": ..., "node_b": ...}
+            # Graph node IDs use "mem:" prefix added by UnifiedMemory.write().
+            node_a_id = contradiction.get("node_a", "")
+            node_b_id = contradiction.get("node_b", "")
 
-            # Strip "mem:" prefix if present (used by unified_memory graph indexing)
-            source_entry_id = source_id.replace("mem:", "")
-            target_entry_id = target_id.replace("mem:", "")
+            # Strip "mem:" prefix to get the entry_id
+            source_entry_id = node_a_id.replace("mem:", "")
+            target_entry_id = node_b_id.replace("mem:", "")
 
-            # Load both entries
+            # Load both entries via public read() API
             try:
                 source_entry = await self._memory.read(source_entry_id)
                 target_entry = await self._memory.read(target_entry_id)
@@ -515,7 +508,7 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
                     worker_id=self._id,
                 )
 
-                # Archive the resolution event
+                # Archive the resolution event via public archive_event() API
                 ev = event_curated(
                     entry_id=loser_id,
                     delta={
@@ -526,11 +519,13 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
                     reason="contradiction_resolved",
                     worker_id=self._id,
                 )
-                await self._memory._archive.append_event(ev)
+                await self._memory.archive_event(ev)
 
                 resolved += 1
-                logger.info("[Curator] Contradiction resolved: %s (deprecated) "
-                            "vs %s (retained)", loser_id[:8], winner_id[:8])
+                logger.info(
+                    "[Curator] Contradiction resolved: %s (deprecated) vs %s (retained)",
+                    loser_id[:8], winner_id[:8],
+                )
             except Exception as e:
                 logger.warning("[Curator] Contradiction resolution failed: %s", e)
 
