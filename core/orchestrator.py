@@ -12,8 +12,7 @@ from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
 from .observability.tracer import async_trace_function, span
 from .runtime.limits import IterationBudget, BackpressureGuard
-from .memory.mem_vault import MemoryVault
-from .memory.hybrid_retrieval import HybridRetriever
+from .memory.unified_memory import UnifiedMemory
 from .memory.assembly import context_assembler
 from .memory.consolidation.consolidator import consolidator
 from .shadow.shadow_learner import shadow_learner
@@ -23,12 +22,12 @@ logger = logging.getLogger("ocbrain.orchestrator")
 
 
 class Orchestrator:
-    def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter):
+    def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter,
+                 memory: UnifiedMemory):
         self.modules = modules
         self.context = context
         self.router  = router
-        self.vault   = MemoryVault()
-        self.retriever = HybridRetriever(self.vault)
+        self.memory: UnifiedMemory = memory
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
         self._start_background_engines()
@@ -115,6 +114,18 @@ class Orchestrator:
                     "filenames": parsed.entities.get("filenames", []),
                 }
                 self.context.save(query, modules_used, answer, entities)
+
+                # 6b. Persist interaction to UnifiedMemory (Session 4: production memory owner)
+                try:
+                    await self.memory.write(
+                        content=f"Q: {query}\nA: {answer}",
+                        content_type="interaction",
+                        source="orchestrator",
+                        importance=0.5,
+                        metadata={"modules_used": modules_used, "entities": entities},
+                    )
+                except Exception as e:
+                    logger.warning(f"[Orchestrator] Memory write failed (non-blocking): {e}")
 
                 # 7. Shadow Learning (Phase 3)
                 shadow_learner.record_interaction(
