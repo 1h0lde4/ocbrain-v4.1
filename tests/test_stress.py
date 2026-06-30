@@ -10,10 +10,12 @@ from unittest.mock import patch
 from core.context import context_memory
 from core.model_router import model_router
 from core.orchestrator import Orchestrator
+from core.memory.unified_memory import get_unified_memory
 
 
 async def run_stress(num_requests=30):
-    orchestrator = Orchestrator(modules={}, context=context_memory, router=model_router)
+    orchestrator = Orchestrator(modules={}, context=context_memory, router=model_router,
+                                 memory=get_unified_memory())
 
     # We mock generate_with_fallback to simulate a slow LLM (2s per call)
     # This will trigger queueing because semaphore is likely 3.

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.orchestrator import Orchestrator
 from core.runtime.state import state_store
+from core.memory.unified_memory import get_unified_memory
 
 # --- CHAOS INJECTORS ---
 
@@ -53,7 +54,8 @@ async def run_chaos_monkey(duration=30):
     inject_db_chaos()
     await state_store.start()
     
-    orchestrator = Orchestrator(modules={}, context=MagicMock(), router=MagicMock())
+    orchestrator = Orchestrator(modules={}, context=MagicMock(), router=MagicMock(),
+                                 memory=get_unified_memory())
     
     # Mock a module that sometimes fails, sometimes is slow
     async def chaotic_route(name, query, ctx):

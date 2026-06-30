@@ -6,11 +6,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.orchestrator import Orchestrator
 from core.context import context_memory
 from core.model_router import model_router
+from core.memory.unified_memory import get_unified_memory
 
 async def run_fuzz():
     # Initialize Orchestrator with dummy modules if needed, or use real ones
     # For a fuzz test, the 'handle' method is the target.
-    orchestrator = Orchestrator(modules={}, context=context_memory, router=model_router)
+    orchestrator = Orchestrator(modules={}, context=context_memory, router=model_router,
+                                 memory=get_unified_memory())
 
     fuzz_inputs = [
         "", # Empty string
