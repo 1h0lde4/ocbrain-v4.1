@@ -214,7 +214,9 @@ async def _test_parallel_execution_async() -> Tuple[bool, str]:
     async def orchestrate(q, modules=None, max_iterations=5, context=None, router=None):
         from core.context import context_memory
         from core.model_router import model_router
-        o = Orchestrator(modules or {}, context_memory, model_router)
+        from core.memory.unified_memory import get_unified_memory
+        o = Orchestrator(modules or {}, context_memory, model_router,
+                          memory=get_unified_memory())
         return await o.handle(q, max_iterations=max_iterations)
 
     call_count = 0
@@ -401,7 +403,9 @@ async def _test_tracing_integrity_async() -> Tuple[bool, str]:
     async def orchestrate(q, modules=None, max_iterations=5, context=None, router=None):
         from core.context import context_memory
         from core.model_router import model_router
-        o = Orchestrator(modules or {}, context_memory, model_router)
+        from core.memory.unified_memory import get_unified_memory
+        o = Orchestrator(modules or {}, context_memory, model_router,
+                          memory=get_unified_memory())
         return await o.handle(q, max_iterations=max_iterations)
     from core.observability.tracer import set_trace_id
 
@@ -464,7 +468,9 @@ async def _benchmark_latency_async(n: int = 20) -> Dict[str, float]:
     async def orchestrate(q, modules=None, max_iterations=5, context=None, router=None):
         from core.context import context_memory
         from core.model_router import model_router
-        o = Orchestrator(modules or {}, context_memory, model_router)
+        from core.memory.unified_memory import get_unified_memory
+        o = Orchestrator(modules or {}, context_memory, model_router,
+                          memory=get_unified_memory())
         return await o.handle(q, max_iterations=max_iterations)
     from core.observability.tracer import set_trace_id
 

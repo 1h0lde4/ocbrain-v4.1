@@ -3,7 +3,9 @@ core/orchestrator.py — Parallel Orchestrator (Converged V3).
 Coordinates the query flow using parallel execution and safety limits.
 """
 import asyncio
+import hashlib
 import logging
+import time
 from typing import Dict, Any
 
 from . import parser, merger
@@ -12,8 +14,7 @@ from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
 from .observability.tracer import async_trace_function, span
 from .runtime.limits import IterationBudget, BackpressureGuard
-from .memory.mem_vault import MemoryVault
-from .memory.hybrid_retrieval import HybridRetriever
+from .memory.unified_memory import UnifiedMemory
 from .memory.assembly import context_assembler
 from .memory.consolidation.consolidator import consolidator
 from .shadow.shadow_learner import shadow_learner
@@ -22,13 +23,31 @@ from .meta.health_monitor import health_monitor
 logger = logging.getLogger("ocbrain.orchestrator")
 
 
+def _interaction_id(query: str, answer: str) -> str:
+    """
+    Deterministic, content-addressed identity for an Orchestrator interaction.
+
+    Hashing (query, answer) rather than minting a random UUID means a
+    byte-identical repeat of the same interaction maps to the same
+    entry_id. UnifiedMemory's storage backend already does
+    `ON CONFLICT(entry_id) DO UPDATE` (core/memory/backends/sqlite_storage.py),
+    so a true repeat naturally collapses to a single, refreshed L1 row
+    (current state) while L4 archive still appends a new immutable event
+    per occurrence (full history) -- duplicate detection and auditability
+    from one mechanism, no new singleton, no counter, no shared mutable
+    state: pure function of the interaction's own content.
+    """
+    digest = hashlib.sha256(f"{query}\x1f{answer}".encode("utf-8")).hexdigest()
+    return f"interaction:{digest[:32]}"
+
+
 class Orchestrator:
-    def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter):
+    def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter,
+                 memory: UnifiedMemory):
         self.modules = modules
         self.context = context
         self.router  = router
-        self.vault   = MemoryVault()
-        self.retriever = HybridRetriever(self.vault)
+        self.memory: UnifiedMemory = memory
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
         self._start_background_engines()
@@ -115,6 +134,31 @@ class Orchestrator:
                     "filenames": parsed.entities.get("filenames", []),
                 }
                 self.context.save(query, modules_used, answer, entities)
+
+                # 6b. Persist interaction to UnifiedMemory (Session 4: production
+                #     memory owner; Session 4B: structured payload, stable
+                #     identity, enriched metadata -- see Goals 1-3).
+                interaction_id = _interaction_id(query, answer)
+                try:
+                    await self.memory.write(
+                        content=answer,
+                        summary=query,
+                        content_type="interaction",
+                        source="orchestrator",
+                        importance=0.5,
+                        entry_id=interaction_id,
+                        metadata={
+                            "interaction_id":        interaction_id,
+                            "query":                  query,
+                            "modules_used":           modules_used,
+                            "entities":               entities,
+                            "classification_scores":  labels,
+                            "timestamp":              time.time(),
+                            "response_length":        len(answer),
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"[Orchestrator] Memory write failed (non-blocking): {e}")
 
                 # 7. Shadow Learning (Phase 3)
                 shadow_learner.record_interaction(

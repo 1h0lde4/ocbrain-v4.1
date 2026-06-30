@@ -128,8 +128,10 @@ async def main():
     from core.context import context_memory
     from core.model_router import model_router
     from core.orchestrator import Orchestrator
-    orchestrator = Orchestrator(modules, context_memory, model_router)
-    log.info("Orchestrator ready")
+    from core.memory.unified_memory import get_unified_memory
+    orchestrator = Orchestrator(modules, context_memory, model_router,
+                                 memory=get_unified_memory())
+    log.info("Orchestrator ready (UnifiedMemory: production memory owner)")
 
     # Step 7: Scheduler
     from learning.scheduler import Scheduler

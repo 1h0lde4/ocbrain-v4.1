@@ -312,6 +312,7 @@ class UnifiedMemory:
                     procedure_name: Optional[str] = None,
                     embedding:      Optional[List[float]] = None,
                     entry_id:       Optional[str] = None,
+                    summary:        str = "",
                     ) -> str:
         """
         Write a knowledge entry to the appropriate memory layer.
@@ -320,6 +321,15 @@ class UnifiedMemory:
         Event flow:
           before_write hooks → L1 storage → L2 vector (if semantic) →
           L4 archive event → after_write hooks
+
+        `summary` is an existing KnowledgeEntry field (FTS5-indexed
+        alongside `content` and `tags` — see knowledge_entries_fts in
+        sqlite_storage.py). Callers that have a natural structural split
+        between a primary searchable body (`content`) and a secondary
+        searchable label (`summary`) — e.g. an interaction's answer vs.
+        its originating query — can use it instead of concatenating both
+        into `content`. Both fields remain independently full-text
+        searchable; neither is required.
         """
         layer = self._router.route(
             content=content, content_type=content_type,
@@ -331,6 +341,7 @@ class UnifiedMemory:
             entry_id=       entry_id or str(uuid.uuid4()),
             layer=          layer,
             content=        content,
+            summary=        summary,
             importance=     max(0.0, min(1.0, importance)),
             confidence=     max(0.0, min(1.0, confidence)),
             trust_score=    max(0.0, min(1.0, trust_score)),
@@ -368,9 +379,12 @@ class UnifiedMemory:
 
         # ── L2: vector index (semantic layers) ────────────────────────────
         if layer in ("l2", "l3"):
-            await self._vector.index(
-                entry.entry_id, entry.content, embedding=embedding
-            )
+            try:
+                await self._vector.index(
+                    entry.entry_id, entry.content, embedding=embedding
+                )
+            except Exception as e:
+                logger.warning("Vector indexing failed (non-blocking): %s", e)
 
         # ── L3: graph indexing (wired at v4.3.5, only for graph-eligible) ─
         if layer == "l3" and self._graph and entry.is_graph_eligible():
@@ -472,7 +486,7 @@ class UnifiedMemory:
                     vector_score=vec_score,
                 )
         except Exception as e:
-            logger.debug("L2 vector search error: %s", e)
+            logger.warning("L2 vector search failed (non-blocking): %s", e)
 
         # ── L1 FTS5 search ─────────────────────────────────────────────────
         try:
@@ -493,7 +507,7 @@ class UnifiedMemory:
                         entry=entry, composite_score=0.0, bm25_score=0.5
                     )
         except Exception as e:
-            logger.debug("L1 FTS5 search error: %s", e)
+            logger.warning("L1 FTS5 search failed (non-blocking): %s", e)
 
         # ── Composite scoring (ADR-006) ────────────────────────────────────
         now = time.time()

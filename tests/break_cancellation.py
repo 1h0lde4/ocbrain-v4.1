@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.orchestrator import Orchestrator
 from core.runtime.limits import ADAPTIVE_LLM_LIMIT
 from core.runtime.state import state_store
+from core.memory.unified_memory import get_unified_memory
 
 async def test_cancellation_leak():
     # Mocking a slow module that ignores cancellation or takes time to clean up
@@ -22,7 +23,8 @@ async def test_cancellation_leak():
             raise
 
     # 1. Start an orchestration
-    orchestrator = Orchestrator(modules={}, context=None, router=AsyncMock())
+    orchestrator = Orchestrator(modules={}, context=None, router=AsyncMock(),
+                                 memory=get_unified_memory())
     
     # We patch the router to use our slow task
     orchestrator.router.route = slow_module_task
