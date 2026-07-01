@@ -98,9 +98,10 @@ class SQLiteStorageBackend(StorageBackend):
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS ke_au AFTER UPDATE ON knowledge_entries BEGIN
-                    UPDATE knowledge_entries_fts
-                    SET content=new.content, summary=new.summary, tags=new.tags
-                    WHERE rowid=old.rowid;
+                    INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rowid, content, summary, tags)
+                    VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+                    INSERT INTO knowledge_entries_fts(rowid, content, summary, tags)
+                    VALUES (new.rowid, new.content, new.summary, new.tags);
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS ke_ad AFTER DELETE ON knowledge_entries BEGIN
@@ -121,6 +122,29 @@ class SQLiteStorageBackend(StorageBackend):
                     ON knowledge_entries(procedure_name)
                     WHERE procedure_name IS NOT NULL;
             """)
+            # Migration (Session 4C hidden-issue fix): a database created before
+            # this fix has ke_au bound to the old, unsafe definition ("CREATE
+            # TRIGGER IF NOT EXISTS" left it untouched above). SQLite has no
+            # CREATE OR REPLACE TRIGGER, so detect + recreate explicitly.
+            # See SESSION4C_REPORT.md "Phase 2 Hidden Issue" for the full
+            # analysis of why the old trigger body was unsafe.
+            current_trigger_sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='ke_au'"
+            ).fetchone()
+            if current_trigger_sql and "'delete'" not in current_trigger_sql[0]:
+                conn.executescript("""
+                    DROP TRIGGER ke_au;
+                    CREATE TRIGGER ke_au AFTER UPDATE ON knowledge_entries BEGIN
+                        INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rowid, content, summary, tags)
+                        VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+                        INSERT INTO knowledge_entries_fts(rowid, content, summary, tags)
+                        VALUES (new.rowid, new.content, new.summary, new.tags);
+                    END;
+                """)
+                logger.warning(
+                    "Migrated ke_au trigger to safe delete+insert FTS5 pattern "
+                    "(pre-existing database, Session 4C fix)."
+                )
             conn.commit()
 
     # ── Async helpers ─────────────────────────────────────────────────────
