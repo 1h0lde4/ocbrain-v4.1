@@ -194,7 +194,8 @@ class LayerRouter:
         "concept":    "l2",
         "knowledge":  "l2",
         "web_knowledge":"l2",
-        "entity":     "l2",   # also mutual-indexed in L3 at v4.3.5
+        "entity":     "l2",   # graph-indexed independently via is_graph_eligible()
+                              # when truth_status qualifies -- NOT a layer route
         "skill":      "l2",
         "procedure":  "l2",
         "audit":      "l4",
@@ -369,8 +370,11 @@ class UnifiedMemory:
             except Exception as e:
                 logger.warning("before_write hook error: %s", e)
 
-        # ── L0: put in working memory (L0/L1 layers only) ─────────────────
-        if layer in ("l0", "l1"):
+        # ── L0: pure ephemeral working memory ─────────────────────────────
+        # Populated immediately for layer=="l0" (no storage write at all).
+        # For l1, L0 population is deferred to the end of write() -- see the
+        # final "L0 cache coherence" block below for why.
+        if layer == "l0":
             self._l0.put(entry.entry_id, entry)
 
         # ── L1: primary storage (always, except pure L0 ephemeral) ────────
@@ -386,8 +390,12 @@ class UnifiedMemory:
             except Exception as e:
                 logger.warning("Vector indexing failed (non-blocking): %s", e)
 
-        # ── L3: graph indexing (wired at v4.3.5, only for graph-eligible) ─
-        if layer == "l3" and self._graph and entry.is_graph_eligible():
+        # ── Graph indexing: orthogonal index, NOT a memory layer ───────────
+        # Architectural decision: the graph is an index over UnifiedMemory's
+        # canonical entries (comparable to the vector/BM25/FTS5 indexes),
+        # not a destination layer of its own. Any entry in any layer that is
+        # graph-eligible gets indexed; layer never gates this.
+        if self._graph and entry.is_graph_eligible():
             try:
                 node_id = f"mem:{entry.entry_id}"
                 await self._graph.add_node(
@@ -416,6 +424,24 @@ class UnifiedMemory:
                 await self._archive.append_entry_snapshot(entry, reason="write")
         except Exception as e:
             logger.warning("Archive write failed (non-blocking): %s", e)
+
+        # ── L0 cache coherence ──────────────────────────────────────────────
+        # Populated last, after every storage mutation for this write() call
+        # has completed -- including the graph_node_id backref above, which
+        # runs its own separate self._storage.update() after the initial L1
+        # write. Populating L0 any earlier (e.g. right after the L1 write)
+        # would cache a snapshot that predates that update, so a subsequent
+        # read() could return an entry missing graph_node_id even though the
+        # database and the graph itself both already have it (Session 4C
+        # established the same principle for created_at after UPSERT; this
+        # is the same class of bug, newly reachable now that graph indexing
+        # is no longer gated to unreachable layer=="l3" writes).
+        # Storage failures upstream already raised before reaching here, so
+        # no phantom-entry risk; reloading from storage (not the in-memory
+        # object) guarantees L0 matches exactly what's persisted.
+        if layer == "l1":
+            persisted = await self._storage.read(entry.entry_id)
+            self._l0.put(entry.entry_id, persisted if persisted is not None else entry)
 
         # ── after_write hooks ──────────────────────────────────────────────
         for hook in self._hooks.after_write:
