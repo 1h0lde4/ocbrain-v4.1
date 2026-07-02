@@ -57,10 +57,25 @@ class HealthMonitor:
         pass
 
     def _check_memory(self):
-        from core.memory.mem_vault import MemoryVault
-        MemoryVault()
-        # Verify JSON integrity and entry count
-        update_health("memory_integrity", 1.0)
+        """Check UnifiedMemory's actual health, not the legacy MemoryVault.
+
+        UnifiedMemory has been the production memory owner since Session 4;
+        MemoryVault is unused by production runtime. stats() is
+        synchronous and explicitly documented as safe to call from health
+        monitors (core/memory/unified_memory.py). Health here means the
+        singleton is reachable and its stats have the expected shape --
+        not a numeric threshold, since write/search counts are legitimately
+        zero on a freshly-started instance and would make any ">= 0" style
+        check trivially, uselessly always-true.
+        """
+        from core.memory.unified_memory import get_unified_memory
+        try:
+            stats = get_unified_memory().stats()
+            healthy = {"writes", "searches", "l0"} <= stats.keys()
+            update_health("memory_integrity", 1.0 if healthy else 0.0)
+        except Exception as e:
+            logger.warning(f"[HealthMonitor] UnifiedMemory health check failed: {e}")
+            update_health("memory_integrity", 0.0)
 
     def _calculate_stability(self):
         # Stability based on crash/failure frequency
