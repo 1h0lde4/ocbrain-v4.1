@@ -75,37 +75,48 @@ def _fresh_memory(tmp_path, name: str) -> UnifiedMemory:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# GOAL 1 — Structured payload (content = answer, summary = query)
+# GOAL 1 — Structured payload (content = answer; summary reserved for LLM curator)
 # ──────────────────────────────────────────────────────────────────────────
 
 class TestGoal1StructuredPersistence:
 
     @pytest.mark.asyncio
-    async def test_content_is_answer_summary_is_query(self, tmp_path):
+    async def test_content_is_answer_summary_is_empty_for_interactions(self, tmp_path):
+        """Session 4C Issue 1: summary is reserved for LLM-generated curator
+        summaries (v4.3.6). Interaction writes must leave it empty so
+        MemoryCuratorWorker can populate it without overwriting the query.
+        The query is fully preserved in metadata["query"]."""
         memory = _fresh_memory(tmp_path, "g1a")
         entry_id = await memory.write(
             content="Orchestrator now writes through UnifiedMemory",
-            summary="how does the write path work",
             content_type="interaction", source="orchestrator",
             entry_id="interaction:g1a",
+            metadata={"query": "how does the write path work"},
         )
         entry = await memory.read(entry_id)
         assert entry.content == "Orchestrator now writes through UnifiedMemory"
-        assert entry.summary == "how does the write path work"
+        assert entry.summary == ""   # reserved for MemoryCuratorWorker
+        assert entry.metadata["query"] == "how does the write path work"
 
     @pytest.mark.asyncio
-    async def test_both_content_and_summary_independently_fts5_searchable(self, tmp_path):
+    async def test_interaction_findable_by_answer_content_not_by_summary(self, tmp_path):
+        """Session 4C: content (answer) is indexed in FTS5 and BM25.
+        summary is empty so there is nothing in that field to accidentally
+        pollute either index with raw query text."""
         memory = _fresh_memory(tmp_path, "g1b")
         await memory.write(
             content="xqzANSWERterm appears only in the answer body",
-            summary="xqzQUERYterm appears only in the original query",
             content_type="interaction", source="orchestrator",
             entry_id="interaction:g1b",
+            metadata={"query": "xqzQUERYterm stays in metadata only"},
         )
         by_answer = await memory.search("xqzANSWERterm", limit=5)
-        by_query = await memory.search("xqzQUERYterm", limit=5)
         assert any(r.entry.entry_id == "interaction:g1b" for r in by_answer)
-        assert any(r.entry.entry_id == "interaction:g1b" for r in by_query)
+        # xqzQUERYterm is in metadata only (not FTS5-indexed at this phase).
+        # This is intentional: metadata-aware retrieval is v4.3.8 scope.
+        entry = await memory.read("interaction:g1b")
+        assert entry.summary == ""
+        assert entry.metadata["query"] == "xqzQUERYterm stays in metadata only"
 
     def test_write_does_not_introduce_a_breaking_api(self):
         """The new `summary` parameter must be additive: every Session 3A/4
@@ -128,18 +139,24 @@ class TestGoal1StructuredPersistence:
 class TestGoal2InteractionIdentity:
 
     def test_deterministic_for_identical_content(self):
-        a = _interaction_id("what is OCBrain", "a cognitive OS")
-        b = _interaction_id("what is OCBrain", "a cognitive OS")
+        a = _interaction_id("what is OCBrain")
+        b = _interaction_id("what is OCBrain")
         assert a == b
 
-    def test_differs_for_different_content(self):
-        a = _interaction_id("question one", "answer one")
-        b = _interaction_id("question two", "answer two")
-        c = _interaction_id("question one", "a different answer")
-        assert len({a, b, c}) == 3
+    def test_differs_for_different_queries(self):
+        """Session 4C Issue 3: different queries produce different ids.
+        Same query + different answers produce the SAME id (current-state
+        semantics: L1 holds one authoritative row per topic, not per response).
+        """
+        a = _interaction_id("question one")
+        b = _interaction_id("question two")
+        assert a != b
+        # Same query regardless of answer -> same id
+        same_a = _interaction_id("question one")
+        assert a == same_a
 
     def test_format_is_stable_and_self_describing(self):
-        iid = _interaction_id("q", "a")
+        iid = _interaction_id("q")
         assert iid.startswith("interaction:")
         digest = iid.split(":", 1)[1]
         assert len(digest) == 32
@@ -172,9 +189,9 @@ class TestGoal2InteractionIdentity:
     @pytest.mark.asyncio
     async def test_interaction_id_is_used_as_storage_entry_id(self, tmp_path):
         memory = _fresh_memory(tmp_path, "g2")
-        iid = _interaction_id("stable id query", "stable id answer")
+        iid = _interaction_id("stable id query")
         returned_id = await memory.write(
-            content="stable id answer", summary="stable id query",
+            content="stable id answer",
             content_type="interaction", source="orchestrator", entry_id=iid,
         )
         assert returned_id == iid
@@ -185,9 +202,9 @@ class TestGoal2InteractionIdentity:
     @pytest.mark.asyncio
     async def test_interaction_id_survives_archive_lifecycle(self, tmp_path):
         memory = _fresh_memory(tmp_path, "g2b")
-        iid = _interaction_id("archive survival query", "archive survival answer")
+        iid = _interaction_id("archive survival query")
         await memory.write(
-            content="archive survival answer", summary="archive survival query",
+            content="archive survival answer",
             content_type="interaction", source="orchestrator", entry_id=iid,
         )
         events = await memory._archive.query_events(entry_id=iid)
@@ -206,9 +223,9 @@ class TestGoal3MetadataEnrichment:
         memory = _fresh_memory(tmp_path, "g3")
         answer = "a reasonably long structured answer body"
         query = "a metadata completeness query"
-        iid = _interaction_id(query, answer)
+        iid = _interaction_id(query)
         await memory.write(
-            content=answer, summary=query, content_type="interaction",
+            content=answer, content_type="interaction",
             source="orchestrator", entry_id=iid,
             metadata={
                 "interaction_id": iid, "query": query,
@@ -226,9 +243,9 @@ class TestGoal3MetadataEnrichment:
     async def test_response_length_matches_actual_answer_not_fabricated(self, tmp_path):
         memory = _fresh_memory(tmp_path, "g3b")
         answer = "x" * 247
-        iid = _interaction_id("length query", answer)
+        iid = _interaction_id("length query")
         await memory.write(
-            content=answer, summary="length query", content_type="interaction",
+            content=answer, content_type="interaction",
             source="orchestrator", entry_id=iid,
             metadata={"response_length": len(answer)},
         )
@@ -271,7 +288,7 @@ class TestGoal3MetadataEnrichment:
         finally:
             await orch.close()
 
-        iid = _interaction_id("g3c metadata end to end query", "g3c answer")
+        iid = _interaction_id("g3c metadata end to end query")
         entry = await memory.read(iid)
         assert entry is not None
         assert entry.metadata["query"] == "g3c metadata end to end query"
@@ -354,7 +371,7 @@ class TestGoal5BackendFailureIsolation:
         entry_id = await memory.write(
             content="vector backend is down but this must still succeed",
             content_type="interaction", layer_hint="l3", entry_id="interaction:g5b",
-        )
+        )  # no summary= (correct interaction write semantics)
         assert entry_id == "interaction:g5b"
         entry = await memory.read(entry_id)
         assert entry is not None
@@ -471,8 +488,10 @@ class TestGoal6Concurrency:
 
         async def write_one(i):
             return await memory.write(
-                content=f"answer number {i}", summary=f"query number {i}",
-                content_type="interaction", entry_id=f"interaction:g6a-{i:04d}",
+                content=f"answer number {i}",
+                content_type="interaction",
+                entry_id=f"interaction:g6a-{i:04d}",
+                metadata={"query": f"query number {i}"},
             )
 
         entry_ids = await asyncio.gather(*[write_one(i) for i in range(100)])
@@ -485,11 +504,11 @@ class TestGoal6Concurrency:
     @pytest.mark.asyncio
     async def test_concurrent_identical_writes_collapse_without_corruption(self, tmp_path):
         memory = _fresh_memory(tmp_path, "g6b")
-        iid = _interaction_id("same concurrent query", "same concurrent answer")
+        iid = _interaction_id("same concurrent query")
 
         async def write_dup():
             return await memory.write(
-                content="same concurrent answer", summary="same concurrent query",
+                content="same concurrent answer",
                 content_type="interaction", entry_id=iid,
             )
 
@@ -521,12 +540,12 @@ class TestGoal6Concurrency:
         fixing (L0/cache invalidation semantics are UnifiedMemory
         internals, not the write-path hardening this session targets)."""
         memory = _fresh_memory(tmp_path, "g6c")
-        iid = _interaction_id("sequential dup query", "sequential dup answer")
-        await memory.write(content="sequential dup answer", summary="sequential dup query",
+        iid = _interaction_id("sequential dup query")
+        await memory.write(content="sequential dup answer",
                             content_type="interaction", entry_id=iid)
         first = await memory._storage.read(iid)
         await asyncio.sleep(0.05)
-        await memory.write(content="sequential dup answer", summary="sequential dup query",
+        await memory.write(content="sequential dup answer",
                             content_type="interaction", entry_id=iid)
         second = await memory._storage.read(iid)
         assert second.created_at == first.created_at
@@ -674,7 +693,24 @@ class TestGoal8ArchitectureClean:
 
     def test_no_duplicate_retrieval_or_storage_logic_added(self):
         """The hardening lives entirely inside the existing write()/search()
-        methods; no parallel write/search path was introduced elsewhere."""
+        methods; no parallel write/search path was introduced elsewhere.
+
+        Updated by Session 4C: core/memory/backends/sqlite_storage.py was
+        added to the allowed set. That session's Phase 2 hidden-issue
+        review found and fixed a real FTS5 external-content trigger bug
+        (ke_au) in that file -- not new/duplicate logic, a correction to
+        the existing trigger definition. See SESSION4C_REPORT.md.
+
+        Updated again by the Architecture Hardening Session (graph-as-index
+        decision + composition root review): core/memory/knowledge_entry.py
+        (LAYERS["l3"] corrected from "Graph Memory" to "Procedural Memory"
+        per OCBRAIN_FUTURE_ARCHITECTURE.md's own definition), and
+        core/meta/health_monitor.py + core/meta/self_model.py (both had
+        MemoryVault() references -- one live via the 10-minute health-check
+        loop, one dead -- replaced with real UnifiedMemory-based checks;
+        neither is a duplicate retrieval/storage path, both are diagnostic
+        consumers of UnifiedMemory.stats(), which already exists for
+        exactly this purpose)."""
         import subprocess
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
@@ -686,4 +722,7 @@ class TestGoal8ArchitectureClean:
         # within core/memory and core/ (test files aside).
         core_changes = {f for f in changed if f.startswith("core/") and "test" not in f}
         assert core_changes <= {"core/orchestrator.py", "core/memory/unified_memory.py",
-                                 "main.py"}
+                                 "core/memory/backends/sqlite_storage.py",
+                                 "core/memory/knowledge_entry.py",
+                                 "core/meta/health_monitor.py",
+                                 "core/meta/self_model.py", "main.py"}

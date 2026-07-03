@@ -1,5 +1,4 @@
 import logging
-from importlib.util import find_spec
 from typing import Any
 
 logger = logging.getLogger("ocbrain.meta.self_model")
@@ -78,13 +77,36 @@ class CapabilityDetector:
 
     @staticmethod
     def _detect_memory():
-        from core.memory.mem_vault import MemoryVault
-        vault = MemoryVault()
-        SELF_MODEL["capabilities"]["memory_system"] = len(vault.entries) >= 0 # Always true if class exists
-        SELF_MODEL["health"]["memory_integrity"] = 1.0 # Placeholder for actual validation
+        """Detect UnifiedMemory's actual capability/health, not MemoryVault.
+
+        UnifiedMemory has been the production memory owner since Session 4;
+        MemoryVault is unused by production runtime. The previous check
+        (`len(vault.entries) >= 0`) was a tautology -- always true
+        regardless of actual state -- and the health value was an
+        explicitly-labeled placeholder. Both are now real signals derived
+        from UnifiedMemory.stats(), which is documented as safe to call
+        synchronously for exactly this purpose.
+        """
+        from core.memory.unified_memory import get_unified_memory
+        try:
+            stats = get_unified_memory().stats()
+            SELF_MODEL["capabilities"]["memory_system"] = {"writes", "searches", "l0"} <= stats.keys()
+            SELF_MODEL["health"]["memory_integrity"] = 1.0
+        except Exception:
+            SELF_MODEL["capabilities"]["memory_system"] = False
+            SELF_MODEL["health"]["memory_integrity"] = 0.0
 
     @staticmethod
     def _detect_retrieval():
-        SELF_MODEL["capabilities"]["hybrid_retrieval"] = (
-            find_spec("core.memory.hybrid_retrieval") is not None
-        )
+        """Detect hybrid retrieval capability from UnifiedMemory, not the
+        orphaned hybrid_retrieval.py file's mere existence.
+
+        core.memory.hybrid_retrieval.HybridRetriever has had zero production
+        consumers since Session 4 removed its only real usage from
+        Orchestrator. find_spec() finding the file proves nothing about
+        whether hybrid retrieval actually works today -- it has genuinely
+        moved to UnifiedMemory.search() (BM25 + embeddings + RRF fusion,
+        Session 3B), so that is what capability detection should check.
+        """
+        from core.memory.unified_memory import UnifiedMemory
+        SELF_MODEL["capabilities"]["hybrid_retrieval"] = hasattr(UnifiedMemory, "search")

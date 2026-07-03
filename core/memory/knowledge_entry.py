@@ -34,7 +34,7 @@ LAYERS = {
     "l0": "Working Memory (LRU, in-process, active context)",
     "l1": "Episodic Memory (SQLite+FTS5, events and observations)",
     "l2": "Semantic Memory (BM25+embeddings, facts and concepts)",
-    "l3": "Graph Memory (entities, relations, knowledge graph)",
+    "l3": "Procedural Memory (skills, workflows, procedures)",
     "l4": "Archive Memory (immutable audit log, provenance)",
 }
 

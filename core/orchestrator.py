@@ -13,31 +13,36 @@ from .context import ContextMemory
 from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
 from .observability.tracer import async_trace_function, span
-from .runtime.limits import IterationBudget, BackpressureGuard
+from .runtime.limits import BackpressureGuard
 from .memory.unified_memory import UnifiedMemory
 from .memory.assembly import context_assembler
-from .memory.consolidation.consolidator import consolidator
 from .shadow.shadow_learner import shadow_learner
 from .meta.health_monitor import health_monitor
 
 logger = logging.getLogger("ocbrain.orchestrator")
 
 
-def _interaction_id(query: str, answer: str) -> str:
+def _interaction_id(query: str) -> str:
     """
-    Deterministic, content-addressed identity for an Orchestrator interaction.
+    Deterministic identity for an Orchestrator interaction, based on the
+    query text alone.
 
-    Hashing (query, answer) rather than minting a random UUID means a
-    byte-identical repeat of the same interaction maps to the same
-    entry_id. UnifiedMemory's storage backend already does
-    `ON CONFLICT(entry_id) DO UPDATE` (core/memory/backends/sqlite_storage.py),
-    so a true repeat naturally collapses to a single, refreshed L1 row
-    (current state) while L4 archive still appends a new immutable event
-    per occurrence (full history) -- duplicate detection and auditability
-    from one mechanism, no new singleton, no counter, no shared mutable
-    state: pure function of the interaction's own content.
+    Interaction identity (the question/topic) and response identity (a
+    specific answer) are separate concerns:
+    - L1 storage = current knowledge state: one row per unique query, kept
+      current via ON CONFLICT(entry_id) DO UPDATE. A regenerated or improved
+      answer to the same question updates this row in place.
+    - L4 archive = full response history: a new immutable event is appended
+      on every write(), so every answer ever produced is preserved regardless
+      of L1 deduplication.
+
+    Using SHA256(query) instead of SHA256(query+answer) ensures that a
+    re-run of the same query improves the existing L1 entry rather than
+    accumulating parallel entries that would dilute retrieval quality.
+
+    Pure function: no singletons, no counters, no global state.
     """
-    digest = hashlib.sha256(f"{query}\x1f{answer}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
     return f"interaction:{digest[:32]}"
 
 
@@ -59,15 +64,25 @@ class Orchestrator:
             logger.warning("[Orchestrator] Background engines deferred: no running event loop")
             return
 
+        # Note (Architecture Hardening Session): MemoryConsolidator previously
+        # ran here too, hourly, operating on the legacy `cognitive_vault`
+        # singleton (core/memory/consolidation/consolidator.py) -- a data
+        # store fully disconnected from UnifiedMemory since Session 4's
+        # migration. It provided zero benefit to the live memory system
+        # (its two other methods, _merge_duplicates and
+        # _distill_episodic_to_semantic, are no-ops; only the cognitive_vault
+        # decay/prune logic did real work, against data nothing reads).
+        # Stopped rather than migrated: active memory improvement for
+        # UnifiedMemory is MemoryCuratorWorker's job (v4.3.6), explicitly
+        # out of scope to build here. The capability is honestly absent
+        # until then, not silently running against the wrong store.
         self._background_tasks.extend([
             loop.create_task(health_monitor.start(), name="health-monitor-start"),
-            loop.create_task(consolidator.start(), name="memory-consolidator-start"),
         ])
 
     async def close(self):
         """Stop background services owned by this orchestrator."""
         health_monitor.stop()
-        consolidator.stop()
         for task in self._background_tasks:
             if not task.done():
                 task.cancel()
@@ -79,11 +94,21 @@ class Orchestrator:
         """
         Main entry point for query processing.
         Uses semantic classification and parallel module dispatching.
+
+        max_iterations: accepted for API compatibility but not currently
+        enforced. handle() is a single-pass classify->dispatch->merge flow
+        with no internal loop to bound -- the prior IterationBudget check
+        here was dead code (constructed and checked exactly once per call,
+        which can never exceed any max_iterations >= 1). Real iteration/
+        recursion limiting belongs in GovernanceKernel.RecursionGovernor
+        (core/governance/governance_kernel.py), which already exists,
+        is already tested, and is already used by EventStream/workers/
+        graph -- but is not yet wired into Orchestrator.handle(). See the
+        Architecture Hardening Session report for why that wiring is
+        deliberately not implemented here.
         """
         async with BackpressureGuard():
-            budget = IterationBudget(max_steps=max_iterations)
             try:
-                budget.check()
                 logger.info(f"[Orchestrator] Handling query: {query[:80]}")
 
                 # 1. Parse (Extract entities)
@@ -135,14 +160,20 @@ class Orchestrator:
                 }
                 self.context.save(query, modules_used, answer, entities)
 
-                # 6b. Persist interaction to UnifiedMemory (Session 4: production
-                #     memory owner; Session 4B: structured payload, stable
-                #     identity, enriched metadata -- see Goals 1-3).
-                interaction_id = _interaction_id(query, answer)
+                # 6b. Persist interaction to UnifiedMemory.
+                #
+                # Session 4:  activated UnifiedMemory as production memory owner.
+                # Session 4B: structured payload, stable identity, enriched metadata.
+                # Session 4C: fixed identity semantics (query-only hash, not Q+A hash)
+                #             and removed summary=query (summary is reserved for
+                #             LLM-generated summaries by MemoryCuratorWorker at v4.3.6).
+                #             The query is fully preserved in metadata["query"] for
+                #             analytics, replay, and future metadata-aware retrieval
+                #             (v4.3.8 Cognitive Retrieval Engine).
+                interaction_id = _interaction_id(query)
                 try:
                     await self.memory.write(
                         content=answer,
-                        summary=query,
                         content_type="interaction",
                         source="orchestrator",
                         importance=0.5,

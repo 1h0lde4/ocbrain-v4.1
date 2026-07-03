@@ -119,11 +119,12 @@ class TestOrchestratorHandleWritesToUnifiedMemory:
         mock_memory.write.assert_awaited_once()
         _, kwargs = mock_memory.write.call_args
         assert kwargs["content_type"] == "interaction"
-        # Session 4B: structured payload -- answer is the primary content,
-        # query lives in summary (both independently FTS5-searchable) and
-        # is also exposed in metadata for machine-readable access.
+        # Session 4C: content = answer (primary searchable body).
+        # summary is intentionally empty for interactions (reserved for
+        # LLM-generated summaries by MemoryCuratorWorker at v4.3.6).
+        # The query is preserved in metadata["query"] for analytics and replay.
         assert kwargs["content"] == "the answer"
-        assert kwargs["summary"] == "what is OCBrain?"
+        assert "summary" not in kwargs or kwargs.get("summary", "") == ""
         assert kwargs["metadata"]["query"] == "what is OCBrain?"
         # Response unchanged: single classified module -> merger pass-through.
         assert answer == "the answer"
