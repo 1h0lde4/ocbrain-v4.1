@@ -28,7 +28,7 @@ Design:
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from core.workers.base import (
@@ -36,7 +36,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
-from core.memory.knowledge_entry import KnowledgeEntry, GRAPH_ELIGIBLE_STATUSES
+from core.memory.knowledge_entry import KnowledgeEntry
 from core.memory.knowledge_event import event_curated
 
 logger = logging.getLogger("ocbrain.workers.curator")

@@ -83,9 +83,31 @@ pytest-cache-files-*/
 workspace/
 ocbrain -v4-fixed/
 
+# Runtime memory state (.data/) — generated at runtime, machine-specific,
+# never source. Consistent with the existing data/ treatment above.
+# (Repository Cleanup Session: 6 files were previously tracked here --
+# .data/memory/graph.db, .data/memory/cognitive/vault_v4.json,
+# .data/phase2_baseline.json, .data/runtime_state.sqlite,
+# .data/test_ordering.sqlite, .data/test_state.sqlite -- all genuinely
+# generated/mutated by every test run, none are curated fixtures.)
+.data/memory/*.db
+.data/memory/cognitive/*.json
+.data/events/
+.data/learning/
+.data/archive.db
+.data/*.sqlite
+.data/*.json
+
 # Temp error files from setup.sh
 /tmp/*.err
 
 # Config backups
 config/*.bak
 config/models.toml.bak
+
+# Stray captured test-run output (not source, machine/OS-specific logs)
+test_output.txt
+unicode_check.txt
+
+# graphify structural-analysis tool output (generated, not source)
+graphify-out/

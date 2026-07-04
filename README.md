@@ -168,11 +168,20 @@ OpenClaw (or caller)
 | **Decomposer** | Converts multi-module queries into task DAGs with dependencies |
 | **Merger** | Synthesizes parallel module results into unified answers |
 | **ModelRouter** | Manages module maturity stages and external/internal model switching |
-| **MemoryVault** | Persistent knowledge store (ChromaDB) with LRU cache layer |
-| **HybridRetriever** | Combined semantic + keyword-based search across knowledge |
-| **CognitiveVault** | Multi-tier memory (L1/L2/L3) with consolidation scheduling |
+| **UnifiedMemory** | Single production memory owner — L0 working (LRU) / L1 episodic (SQLite+FTS5) / L2 semantic (BM25+embeddings) / L3 procedural / L4 immutable archive, with an orthogonal graph index over eligible entries |
 | **ProviderMesh** | Provider selection & fallback logic (OpenAI, Anthropic, local Ollama) |
 | **Trainer** | LoRA-based fine-tuning pipeline with automatic scheduling |
+
+<details>
+<summary>Legacy components (superseded, kept only for compatibility where noted)</summary>
+
+| Component | Status |
+|-----------|--------|
+| MemoryVault | Superseded by UnifiedMemory for production reads/writes; still used by `core/web_learning/pipeline.py` |
+| HybridRetriever | No production consumers; retrieval now lives in `UnifiedMemory.search()` |
+| CognitiveVault | No longer wired into the runtime |
+
+</details>
 
 ---
 

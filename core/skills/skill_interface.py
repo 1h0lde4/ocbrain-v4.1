@@ -2,12 +2,11 @@
 OCBrain v4.1.1 — SkillInterface
 Versioned, typed, cacheable, MCP-ready skill base class.
 """
-import asyncio, hashlib, json, logging, time, uuid
+import asyncio, json, logging, time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("ocbrain.skills")
 

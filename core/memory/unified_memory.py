@@ -24,7 +24,7 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional
 
 from core.memory.backends.base import (
     ArchiveBackend, GraphBackend, L0Cache, StorageBackend, VectorBackend,
@@ -32,14 +32,11 @@ from core.memory.backends.base import (
 from core.memory.backends.sqlite_storage import SQLiteStorageBackend
 from core.memory.backends.memory_vector import InMemoryVectorBackend
 from core.memory.backends.sqlite_archive import SQLiteArchiveBackend
-from core.memory.knowledge_entry import KnowledgeEntry, LAYERS, GRAPH_ELIGIBLE_STATUSES
+from core.memory.knowledge_entry import KnowledgeEntry, LAYERS
 from core.memory.knowledge_event import (
     KnowledgeEvent,
-    event_created, event_updated, event_promoted, event_archived, event_deleted,
+    event_created, event_updated, event_promoted, event_deleted,
 )
-
-if TYPE_CHECKING:
-    from core.memory.backends.sqlite_graph import SQLiteGraphBackend
 
 logger = logging.getLogger("ocbrain.memory.unified")
 

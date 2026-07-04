@@ -19,7 +19,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from core.memory.backends.base import GraphBackend
-from core.memory.graph.graph_engine import GraphEngine, get_graph_engine
+from core.memory.graph.graph_engine import GraphEngine
 
 logger = logging.getLogger("ocbrain.memory.backends.sqlite_graph")
 
