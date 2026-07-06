@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import logging
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from . import parser, merger
 from .context import ContextMemory
@@ -18,8 +18,26 @@ from .memory.unified_memory import UnifiedMemory
 from .memory.assembly import context_assembler
 from .shadow.shadow_learner import shadow_learner
 from .meta.health_monitor import health_monitor
+from .governance.governance_kernel import (
+    GovernanceAction,
+    GovernanceKernel,
+    GovernanceVerdict,
+    get_governance_kernel,
+)
+from .events.event_stream import EventStream, get_event_stream
 
 logger = logging.getLogger("ocbrain.orchestrator")
+
+# Session 5 — Production Runtime Integration.
+#
+# Orchestrator.handle() is the production request path, so it is governed
+# using the exact same contract AbstractCognitiveWorker.execute() already
+# uses, and that GovernanceKernel/EventStream are already tested against
+# (core/workers/base.py). This is deliberately NOT a new mechanism: same
+# GovernanceAction shape, same evaluate_action() call, same non-fatal
+# event-emission wrapper. See the governance block and _emit_event() in
+# handle() below.
+ORCHESTRATOR_ACTION_TYPE = "orchestrator_handle"
 
 
 def _interaction_id(query: str) -> str:
@@ -48,11 +66,36 @@ def _interaction_id(query: str) -> str:
 
 class Orchestrator:
     def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter,
-                 memory: UnifiedMemory):
+                 memory: UnifiedMemory, *,
+                 governance: Optional[GovernanceKernel] = None,
+                 event_stream: Optional[EventStream] = None):
+        """
+        governance/event_stream: Optional[...] = None, defaulting to the
+        shared singleton via get_governance_kernel()/get_event_stream().
+
+        This mirrors AbstractCognitiveWorker.__init__ exactly (core/workers/
+        base.py) rather than inventing a second injection convention:
+            self._governance = governance or get_governance_kernel()
+            self._event_stream = event_stream or get_event_stream()
+
+        Session 5 reality-audit finding: prior to this change, neither
+        GovernanceKernel nor EventStream was ever instantiated in the
+        running process at all -- get_governance_kernel()/get_event_stream()
+        were only called from AbstractCognitiveWorker.__init__, and no
+        AbstractCognitiveWorker subclass is ever constructed from main.py.
+        Passing them explicitly from the composition root (main.py) makes
+        that construction visible there, consistent with PI LAW 4
+        (Determinism over Magic) -- the default-via-getter fallback exists
+        so existing callers (tests, scripts) that construct Orchestrator
+        without these kwargs keep working unchanged.
+        """
         self.modules = modules
         self.context = context
         self.router  = router
         self.memory: UnifiedMemory = memory
+        self._governance: GovernanceKernel = governance or get_governance_kernel()
+        self._event_stream: EventStream = event_stream or get_event_stream()
+        self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
         self._start_background_engines()
@@ -89,6 +132,22 @@ class Orchestrator:
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
+    async def _emit_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Emit a lifecycle event to the EventStream.
+
+        Mirrors AbstractCognitiveWorker._emit_event() (core/workers/base.py)
+        exactly: event emission failure must NEVER break query handling.
+        """
+        try:
+            await self._event_stream.append(
+                event_type=event_type,
+                source=self._id,
+                payload=payload,
+            )
+        except Exception as e:
+            logger.warning("[Orchestrator] Event emission failed for %s: %s",
+                            event_type, e)
+
     @async_trace_function(name="orchestrator_v3")
     async def handle(self, query: str, max_iterations: int = 5) -> str:
         """
@@ -99,15 +158,71 @@ class Orchestrator:
         enforced. handle() is a single-pass classify->dispatch->merge flow
         with no internal loop to bound -- the prior IterationBudget check
         here was dead code (constructed and checked exactly once per call,
-        which can never exceed any max_iterations >= 1). Real iteration/
-        recursion limiting belongs in GovernanceKernel.RecursionGovernor
-        (core/governance/governance_kernel.py), which already exists,
-        is already tested, and is already used by EventStream/workers/
-        graph -- but is not yet wired into Orchestrator.handle(). See the
-        Architecture Hardening Session report for why that wiring is
-        deliberately not implemented here.
+        which can never exceed any max_iterations >= 1). RecursionGovernor
+        (below) is keyed off recursion_depth, not max_iterations; this
+        parameter itself remains accepted-but-unenforced.
+
+        Session 5 — Production Runtime Integration: GovernanceKernel and
+        EventStream are now wired here, using the exact same GovernanceAction
+        contract and evaluate_action() call that AbstractCognitiveWorker.
+        execute() already uses (core/workers/base.py) -- no new governance
+        mechanism was introduced, per PI LAW 4. With today's default
+        governors (RecursionGovernor, BudgetGovernor, EvolutionGovernor),
+        action_type=ORCHESTRATOR_ACTION_TYPE (not in EvolutionGovernor's
+        SELF_MODIFYING_ACTIONS), recursion_depth=0 (handle() has no actual
+        recursion today), and no step_count/token_spend supplied (BudgetGovernor
+        approves by design when absent -- see its docstring), every
+        currently-passing call is APPROVEd: this closes the PI LAW 1
+        structural gap ("no autonomous capability may bypass governance")
+        without changing behavior for any existing caller or test.
+        Recursion/budget enforcement across nested or chained calls, and
+        wiring the remaining PI §6.1 governors (OrchestrationGovernor,
+        MemoryGovernor, AgentGovernor, ConversationGuardrails -- none of
+        which exist yet except the disconnected MemoryGovernor), remain
+        future work; see the Session 5 Technical Debt Report.
         """
+        interaction_id = _interaction_id(query)
+
+        # ── Governance evaluation (PI LAW 1) — BEFORE any work, BEFORE the
+        # backpressure guard, so a rejected/escalated request never consumes
+        # a concurrency slot. Same REJECT/ESCALATE handling as
+        # AbstractCognitiveWorker.execute(). ──────────────────────────────
+        action = GovernanceAction(
+            action_type=ORCHESTRATOR_ACTION_TYPE,
+            worker_id=self._id,
+            description=f"orchestrator_handle: {query[:120]}",
+            recursion_depth=0,
+            metadata={"interaction_id": interaction_id},
+        )
+        gov_result = self._governance.evaluate_action(action)
+
+        if gov_result.verdict == GovernanceVerdict.REJECT:
+            await self._emit_event("orchestrator.rejected", {
+                "interaction_id": interaction_id,
+                "reason": gov_result.reason,
+                "governor": gov_result.governor,
+            })
+            logger.warning("[Orchestrator] Query rejected by %s: %s",
+                            gov_result.governor, gov_result.reason)
+            return (f"This request was blocked by governance "
+                    f"({gov_result.governor}): {gov_result.reason}")
+
+        if gov_result.verdict == GovernanceVerdict.ESCALATE:
+            await self._emit_event("orchestrator.escalated", {
+                "interaction_id": interaction_id,
+                "reason": gov_result.reason,
+                "governor": gov_result.governor,
+            })
+            logger.info("[Orchestrator] Query escalated by %s: %s",
+                        gov_result.governor, gov_result.reason)
+            return (f"This request requires human approval "
+                    f"({gov_result.governor}): {gov_result.reason}")
+
         async with BackpressureGuard():
+            await self._emit_event("orchestrator.query_started", {
+                "interaction_id": interaction_id,
+                "query_preview": query[:120],
+            })
             try:
                 logger.info(f"[Orchestrator] Handling query: {query[:80]}")
 
@@ -127,6 +242,10 @@ class Orchestrator:
                 # 3. Classify (Identify target modules)
                 labels = classify(query, top_k=2)
                 if not labels:
+                    await self._emit_event("orchestrator.query_completed", {
+                        "interaction_id": interaction_id,
+                        "outcome": "unclassified",
+                    })
                     return "I'm not sure which module should handle this. Could you rephrase?"
 
                 # 4. Dispatch (Execute modules in parallel)
@@ -170,7 +289,8 @@ class Orchestrator:
                 #             The query is fully preserved in metadata["query"] for
                 #             analytics, replay, and future metadata-aware retrieval
                 #             (v4.3.8 Cognitive Retrieval Engine).
-                interaction_id = _interaction_id(query)
+                # interaction_id computed once at the top of handle() (Session 5:
+                # reused here rather than recomputed -- same deterministic value).
                 try:
                     await self.memory.write(
                         content=answer,
@@ -199,10 +319,20 @@ class Orchestrator:
                     confidence=1.0 # Standard success confidence
                 )
 
+                await self._emit_event("orchestrator.query_completed", {
+                    "interaction_id": interaction_id,
+                    "outcome": "success",
+                    "modules_used": modules_used,
+                })
                 return answer
 
             except Exception as e:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
+                await self._emit_event("orchestrator.query_failed", {
+                    "interaction_id": interaction_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                })
                 return f"Sorry, I encountered an internal error: {type(e).__name__}"
 
     @async_trace_function(name="module_execution")
