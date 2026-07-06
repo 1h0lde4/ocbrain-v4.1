@@ -129,8 +129,64 @@ async def main():
     from core.model_router import model_router
     from core.orchestrator import Orchestrator
     from core.memory.unified_memory import get_unified_memory
+    from core.memory.backends.sqlite_graph import SQLiteGraphBackend
+    from core.governance.governance_kernel import get_governance_kernel
+    from core.events.event_stream import get_event_stream
+
+    memory = get_unified_memory()
+
+    # Session 5 — Graph Backend Wiring. Session 5.25 — Graph Index Foundation.
+    # Reality-audit finding: register_graph_backend() was never called
+    # anywhere in production before Session 5; SQLiteGraphBackend was
+    # constructed only in tests, so memory.stats()["graph_active"] was
+    # permanently False. Wiring it here is additive/best-effort: UnifiedMemory
+    # already treats a missing or failing graph backend as a clean no-op
+    # (tests/test_session4b_memory_hardening.py::
+    # test_graph_backend_unregistered_in_production_is_a_clean_noop), so a
+    # failure to construct/register it must never block startup.
+    # Session 5.25 built GraphIndexer (core/memory/graph/graph_indexer.py):
+    # eligibility/extraction/sync/removal now live there, and
+    # UnifiedMemory.update() -- previously blind to the graph entirely --
+    # now re-syncs too, so a truth_status change (e.g. MemoryCuratorWorker's
+    # resolve_contradictions(), which already calls
+    # update(loser_id, {"truth_status": "deprecated"})) correctly creates or
+    # removes the corresponding graph node. This defaults to
+    # NullEntityExtractor (no entities/edges, memory-node only) and
+    # TruthStatusEligibilityPolicy (unchanged truth_status gate) — a
+    # deliberately conservative default; see the Session 5.25 Integration
+    # Report for how to opt into RegexEntityExtractor. Remaining gap: the
+    # graph still stays empty in a default run today, because nothing in
+    # the *reachable* production path calls update() with a truth_status
+    # change yet -- MemoryCuratorWorker has that logic but is not
+    # instantiated/scheduled anywhere (Session 5's Technical Debt Report;
+    # unchanged by this session, deliberately out of scope here too).
+    try:
+        graph_backend = SQLiteGraphBackend()
+        memory.register_graph_backend(graph_backend)
+        log.info("GraphBackend registered (L3 index active via GraphIndexer; "
+                 "empty until something calls update() with a truth_status "
+                 "change — see Session 5.25 report)")
+    except Exception as e:
+        log.warning(f"GraphBackend registration failed (non-fatal, graph index inactive): {e}")
+
+    # Session 5 — Governance / EventStream Wiring.
+    # Reality-audit finding: get_governance_kernel()/get_event_stream() were
+    # previously only called from AbstractCognitiveWorker.__init__, and no
+    # AbstractCognitiveWorker subclass is ever constructed from main.py — so
+    # neither singleton was ever instantiated in the running process, and
+    # Orchestrator.handle() never consulted governance or emitted events.
+    # Constructing them explicitly here (rather than relying on
+    # Orchestrator's default-via-getter fallback) makes that construction
+    # visible in the composition root, per PI LAW 4.
+    governance_kernel = get_governance_kernel()
+    event_stream = get_event_stream()
+    log.info(f"GovernanceKernel ready ({governance_kernel.stats()['governors']})")
+    log.info("EventStream ready")
+
     orchestrator = Orchestrator(modules, context_memory, model_router,
-                                 memory=get_unified_memory())
+                                 memory=memory,
+                                 governance=governance_kernel,
+                                 event_stream=event_stream)
     log.info("Orchestrator ready (UnifiedMemory: production memory owner)")
 
     # Step 7: Scheduler
@@ -179,7 +235,19 @@ async def main():
         loop="asyncio",
     )
     server = uvicorn.Server(uv_config)
-    await asyncio.gather(server.serve(), scheduler.start())
+    try:
+        await asyncio.gather(server.serve(), scheduler.start())
+    finally:
+        # Session 5 — Shutdown Validation.
+        # Reality-audit finding: orchestrator.close() (stops health_monitor,
+        # cancels Orchestrator's own background tasks) was never called from
+        # anywhere; asyncio.run() tearing down the loop on exit cancelled
+        # those tasks abruptly instead of gracefully. This runs on every exit
+        # path from main(): normal return, exception, or a
+        # KeyboardInterrupt/SystemExit propagating up through
+        # asyncio.gather() above.
+        log.info("Shutting down Orchestrator...")
+        await orchestrator.close()
 
 
 def _handle_sigterm(sig, frame):
