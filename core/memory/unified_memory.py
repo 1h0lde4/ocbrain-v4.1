@@ -32,6 +32,9 @@ from core.memory.backends.base import (
 from core.memory.backends.sqlite_storage import SQLiteStorageBackend
 from core.memory.backends.memory_vector import InMemoryVectorBackend
 from core.memory.backends.sqlite_archive import SQLiteArchiveBackend
+from core.memory.graph.graph_indexer import GraphIndexer
+from core.memory.graph.eligibility import GraphEligibilityPolicy
+from core.memory.graph.entity_extractor import EntityExtractor
 from core.memory.knowledge_entry import KnowledgeEntry, LAYERS
 from core.memory.knowledge_event import (
     KnowledgeEvent,
@@ -270,7 +273,8 @@ class UnifiedMemory:
         self._l0      = _LRUWorkingMemory(maxsize=l0_maxsize)
         self._storage = storage  or SQLiteStorageBackend(f"{db_prefix}/unified.db")
         self._vector  = vector   or InMemoryVectorBackend()
-        self._graph:   Optional[GraphBackend] = graph   # None until v4.3.5
+        self._graph:         Optional[GraphBackend] = None   # set via register_graph_backend()
+        self._graph_indexer: Optional[GraphIndexer] = None   # Session 5.25
         self._archive = archive  or SQLiteArchiveBackend(f"{db_prefix}/archive.db")
         self._router  = LayerRouter()
         self._hooks   = HookRegistry()
@@ -281,18 +285,64 @@ class UnifiedMemory:
         logger.info("UnifiedMemory ready (L0=%d cap, archive_all=%s)",
                     l0_maxsize, archive_all)
 
+        # Constructor-provided graph goes through the same registration path
+        # as main.py's explicit register_graph_backend() call, so there is
+        # exactly one place GraphIndexer gets built regardless of entry point.
+        if graph is not None:
+            self.register_graph_backend(graph)
+
     # ── Curator integration ───────────────────────────────────────────────
 
     def register_curator(self, curator: Any) -> None:
         """Called by MemoryCuratorWorker (v4.3.6) at startup."""
         self._hooks.register_curator(curator)
 
-    def register_graph_backend(self, graph: GraphBackend) -> None:
-        """Called at v4.3.5 startup to wire in the graph backend."""
+    def register_graph_backend(self, graph: GraphBackend, *,
+                                eligibility_policy: Optional[GraphEligibilityPolicy] = None,
+                                entity_extractor: Optional[EntityExtractor] = None) -> None:
+        """Wire in the graph backend (main.py Step 6; also test call sites).
+
+        Session 5.25: also constructs the GraphIndexer that owns eligibility/
+        extraction/sync/removal for this backend. eligibility_policy and
+        entity_extractor are optional — omitting both preserves the exact
+        pre-5.25 default behavior (TruthStatusEligibilityPolicy delegating to
+        entry.is_graph_eligible(), NullEntityExtractor producing no entities)
+        so every existing call site (`register_graph_backend(graph)`, one
+        positional arg) keeps working unchanged.
+        """
         self._graph = graph
+        self._graph_indexer = GraphIndexer(
+            graph, eligibility_policy=eligibility_policy, entity_extractor=entity_extractor)
         logger.info("UnifiedMemory: GraphBackend registered (L3 active)")
 
+    async def _sync_graph(self, entry: KnowledgeEntry) -> None:
+        """Shared by write() and update(): ask GraphIndexer to create/update/
+        remove entry's graph node, then persist any node_id change back onto
+        the canonical entry in L1 storage. GraphIndexer never touches L1
+        itself (KnowledgeEntry remains canonical — Session 5.25 frozen
+        architecture); this method is the one place that boundary is
+        crossed, and only to persist an id, never entry content.
+
+        Non-blocking: any exception here must never fail write()/update().
+        """
+        if self._graph_indexer is None:
+            return
+        try:
+            node_id = await self._graph_indexer.sync(entry)
+        except Exception as e:
+            logger.warning("Graph sync failed (non-blocking): %s", e)
+            return
+        if node_id != entry.graph_node_id:
+            entry.graph_node_id = node_id
+            try:
+                await self._storage.update(entry.entry_id, {"graph_node_id": node_id})
+            except Exception as e:
+                logger.warning(
+                    "Persisting graph_node_id failed (non-blocking, graph "
+                    "and storage may drift until next sync): %s", e)
+
     # ── Write ─────────────────────────────────────────────────────────────
+
 
     async def write(self,
                     content:        str,
@@ -392,25 +442,10 @@ class UnifiedMemory:
         # canonical entries (comparable to the vector/BM25/FTS5 indexes),
         # not a destination layer of its own. Any entry in any layer that is
         # graph-eligible gets indexed; layer never gates this.
-        if self._graph and entry.is_graph_eligible():
-            try:
-                node_id = f"mem:{entry.entry_id}"
-                await self._graph.add_node(
-                    node_id=node_id, node_type="memory_entry",
-                    name=entry.content[:80],
-                    properties={
-                        "l2_entry_id": entry.entry_id,
-                        "source": entry.source,
-                        "importance": entry.importance,
-                        "truth_status": entry.truth_status,
-                    },
-                )
-                entry.graph_node_id = node_id
-                # Update storage with graph_node_id back-reference
-                await self._storage.update(entry.entry_id,
-                                            {"graph_node_id": node_id})
-            except Exception as e:
-                logger.warning("Graph indexing failed (non-blocking): %s", e)
+        # Session 5.25: eligibility/extraction/sync now owned by
+        # GraphIndexer (core/memory/graph/graph_indexer.py), not inlined
+        # here — see _sync_graph() above.
+        await self._sync_graph(entry)
 
         # ── L4: archive the creation event ────────────────────────────────
         try:
@@ -552,7 +587,17 @@ class UnifiedMemory:
 
     async def update(self, entry_id: str, delta: Dict[str, Any],
                       reason: str = "", worker_id: str = "") -> bool:
-        """Partial update + archive delta event."""
+        """Partial update + archive delta event.
+
+        Session 5.25: also re-syncs the graph. Before this change, update()
+        never touched self._graph at all — an entry whose truth_status
+        moved from "unknown" to "verified" via update() (the intended path
+        for curator/verification workflows) would never get a graph node
+        even once the graph backend and eligibility gate were otherwise
+        working, because only write() had graph logic. This closes that gap
+        using the same GraphIndexer.sync() write() now uses, so create and
+        update go through one code path.
+        """
         ok = await self._storage.update(entry_id, delta)
         if ok:
             self._l0.evict(entry_id)   # invalidate cache
@@ -562,6 +607,10 @@ class UnifiedMemory:
                 await self._archive.append_event(ev)
             except Exception as e:
                 logger.debug("Archive update event failed: %s", e)
+            if self._graph_indexer is not None:
+                entry = await self.read(entry_id)
+                if entry is not None:
+                    await self._sync_graph(entry)
         return ok
 
     # ── Delete ────────────────────────────────────────────────────────────
@@ -620,17 +669,16 @@ class UnifiedMemory:
             logger.warning("Archive deletion event failed (non-blocking): %s", e)
 
         # 4. Remove L3 graph node (non-blocking; graph_node_id may not be set)
-        if entry.graph_node_id and self._graph:
-            try:
-                deleted_from_graph = await self._graph.delete_node(entry.graph_node_id)
-                if not deleted_from_graph:
-                    logger.debug(
-                        "Graph node %s not found during delete of %s "
-                        "(may have been removed already)",
-                        entry.graph_node_id, entry_id[:8],
-                    )
-            except Exception as e:
-                logger.warning("Graph node removal failed (non-blocking): %s", e)
+        # Session 5.25: routed through GraphIndexer.remove() (owns removal),
+        # rather than calling self._graph directly here.
+        if entry.graph_node_id and self._graph_indexer is not None:
+            deleted_from_graph = await self._graph_indexer.remove(entry)
+            if not deleted_from_graph:
+                logger.debug(
+                    "Graph node %s not found during delete of %s "
+                    "(may have been removed already)",
+                    entry.graph_node_id, entry_id[:8],
+                )
 
         # 5. Remove L2 vector index (non-blocking)
         try:
