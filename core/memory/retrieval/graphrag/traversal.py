@@ -76,7 +76,19 @@ class BFSTraversalStrategy(TraversalStrategy):
         if not seed_node_ids or max_depth <= 0 or max_nodes <= 0:
             return []
 
-        visited: Set[str] = set(seed_node_ids)
+        # `all_seed_ids` vs `visited` are deliberately separate: a node
+        # being an original seed does NOT mean it can't be legitimately
+        # *discovered* again via another seed's edge (e.g. two entries
+        # returned by vector search that also happen to be directly
+        # connected in the graph -- exactly the case GraphRAGPipeline's
+        # consolidation step needs a TraversalResult for). What a seed
+        # does NOT do is re-enter the frontier when discovered this way:
+        # its own depth-0 frontier entry already covers its expansion
+        # independently, so re-expanding from it a second time would only
+        # duplicate work and risk two seeds bouncing off each other
+        # indefinitely in a cyclic graph.
+        all_seed_ids: Set[str] = set(seed_node_ids)
+        visited: Set[str] = set()
         frontier: List[TraversalResult] = [
             TraversalResult(node_id=s, distance=0, path=[], seed_node_id=s)
             for s in seed_node_ids
@@ -102,6 +114,14 @@ class BFSTraversalStrategy(TraversalStrategy):
                     target_id = n.get("target_id")
                     if not target_id or target_id in visited:
                         continue
+                    if target_id == current.seed_node_id:
+                        # Cycled back to this branch's OWN originating seed
+                        # -- not new information (trivially "reachable" from
+                        # itself at distance 0); skip rather than report a
+                        # spurious self-rediscovery. A DIFFERENT seed being
+                        # reached here is NOT skipped -- see all_seed_ids
+                        # check below, that's the genuinely useful case.
+                        continue
                     visited.add(target_id)
                     hop = TraversalHop(relation=n.get("relation", ""), node_id=target_id)
                     result = TraversalResult(
@@ -110,7 +130,8 @@ class BFSTraversalStrategy(TraversalStrategy):
                         node=n, seed_node_id=current.seed_node_id,
                     )
                     results.append(result)
-                    next_frontier.append(result)
+                    if target_id not in all_seed_ids:
+                        next_frontier.append(result)
                     if len(results) >= max_nodes:
                         break
             frontier = next_frontier
