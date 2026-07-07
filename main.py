@@ -130,6 +130,7 @@ async def main():
     from core.orchestrator import Orchestrator
     from core.memory.unified_memory import get_unified_memory
     from core.memory.backends.sqlite_graph import SQLiteGraphBackend
+    from core.memory.graph.entity_extractor import RegexEntityExtractor
     from core.governance.governance_kernel import get_governance_kernel
     from core.events.event_stream import get_event_stream
 
@@ -160,12 +161,21 @@ async def main():
     # change yet -- MemoryCuratorWorker has that logic but is not
     # instantiated/scheduled anywhere (Session 5's Technical Debt Report;
     # unchanged by this session, deliberately out of scope here too).
+    # Session 5.5 — Graph Population Strategy (see Session 5.5 Architecture
+    # Decision report). RegexEntityExtractor is enabled explicitly here,
+    # at the composition root -- not by changing GraphIndexer's own
+    # library-level default (still NullEntityExtractor, still the safe
+    # choice for anyone constructing GraphIndexer directly). Population
+    # additionally requires an entry to be graph-eligible in the first
+    # place: write() now accepts an optional truth_status kwarg for
+    # exactly this (see UnifiedMemory.write()) -- nothing calls it
+    # automatically; a caller must opt in per entry.
     try:
         graph_backend = SQLiteGraphBackend()
-        memory.register_graph_backend(graph_backend)
-        log.info("GraphBackend registered (L3 index active via GraphIndexer; "
-                 "empty until something calls update() with a truth_status "
-                 "change — see Session 5.25 report)")
+        memory.register_graph_backend(graph_backend,
+                                       entity_extractor=RegexEntityExtractor())
+        log.info("GraphBackend registered (L3 index active via GraphIndexer, "
+                 "RegexEntityExtractor enabled — see Session 5.5 report)")
     except Exception as e:
         log.warning(f"GraphBackend registration failed (non-fatal, graph index inactive): {e}")
 
