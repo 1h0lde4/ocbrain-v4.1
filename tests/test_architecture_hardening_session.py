@@ -90,23 +90,62 @@ class TestGraphAsIndexDecision:
         assert LayerRouter.CONTENT_TYPE_ROUTES["entity"] == "l2"
 
     def test_graph_indexing_gate_has_no_layer_dependency(self):
-        """AST check: the graph-indexing block inside write() must not
-        reference entry.layer or a "l3" comparison anywhere in its
-        condition -- graph eligibility is the only gate."""
-        tree = ast.parse(UNIFIED_MEMORY_SRC.read_text())
+        """AST check: the graph-eligibility gate must not reference
+        entry.layer or a "l3" comparison anywhere in its logic -- graph
+        eligibility is the only gate.
+
+        Session 5.25 update: this logic moved out of write() into
+        GraphIndexer / GraphEligibilityPolicy (Graph Index Foundation
+        session) -- write() now just calls self._sync_graph(entry). The
+        invariant this test protects is unchanged; only its location moved,
+        so the check now covers both:
+          1. write() still triggers a graph sync on every call (the call
+             site moved, it didn't disappear).
+          2. TruthStatusEligibilityPolicy.evaluate() -- the default gate
+             GraphIndexer.sync() consults -- has no layer/l3 dependency.
+          3. KnowledgeEntry.is_graph_eligible() -- what that policy
+             delegates to -- has no layer/l3 dependency either (unchanged
+             check from before Session 5.25, re-verified here since it's
+             still the ultimate ground truth).
+        """
+        write_src_full = UNIFIED_MEMORY_SRC.read_text()
+        tree = ast.parse(write_src_full)
         write_def = next(
             node for node in ast.walk(tree)
             if isinstance(node, ast.AsyncFunctionDef) and node.name == "write"
         )
-        src = ast.get_source_segment(UNIFIED_MEMORY_SRC.read_text(), write_def)
-        # Locate the graph-indexing if-block specifically (contains add_node)
-        assert "self._graph.add_node" in src
-        graph_block_start = src.index("if self._graph and entry.is_graph_eligible()")
-        # The condition itself (up to the colon) must not mention layer/l3
-        condition_end = src.index(":", graph_block_start)
-        condition = src[graph_block_start:condition_end]
-        assert "layer" not in condition
-        assert '"l3"' not in condition
+        write_src = ast.get_source_segment(write_src_full, write_def)
+        assert "_sync_graph" in write_src, (
+            "write() must still trigger a graph sync on every call")
+
+        eligibility_path = (Path(__file__).parent.parent / "core" / "memory"
+                             / "graph" / "eligibility.py")
+        eligibility_src_full = eligibility_path.read_text()
+        eligibility_tree = ast.parse(eligibility_src_full)
+        policy_class = next(
+            node for node in ast.walk(eligibility_tree)
+            if isinstance(node, ast.ClassDef)
+            and node.name == "TruthStatusEligibilityPolicy"
+        )
+        evaluate_method = next(
+            node for node in ast.walk(policy_class)
+            if isinstance(node, ast.FunctionDef) and node.name == "evaluate"
+        )
+        evaluate_src = ast.get_source_segment(eligibility_src_full, evaluate_method)
+        assert "layer" not in evaluate_src
+        assert '"l3"' not in evaluate_src
+
+        entry_path = (Path(__file__).parent.parent / "core" / "memory"
+                      / "knowledge_entry.py")
+        entry_src_full = entry_path.read_text()
+        entry_tree = ast.parse(entry_src_full)
+        is_eligible_def = next(
+            node for node in ast.walk(entry_tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "is_graph_eligible"
+        )
+        is_eligible_src = ast.get_source_segment(entry_src_full, is_eligible_def)
+        assert "layer" not in is_eligible_src
+        assert '"l3"' not in is_eligible_src
 
     @pytest.mark.asyncio
     async def test_l1_entry_can_now_be_graph_indexed(self, tmp_path):
