@@ -361,10 +361,23 @@ class UnifiedMemory:
                     embedding:      Optional[List[float]] = None,
                     entry_id:       Optional[str] = None,
                     summary:        str = "",
+                    truth_status:   Optional[str] = None,
                     ) -> str:
         """
         Write a knowledge entry to the appropriate memory layer.
         Returns entry_id.
+
+        truth_status: Session 5.5 Graph Population Strategy. Optional,
+        defaults to KnowledgeEntry's own default ("unknown") when omitted --
+        this parameter is purely additive; every existing call site is
+        unaffected. Lets a caller that already trusts what it's writing
+        (e.g. a future verification workflow) mark it graph-eligible
+        ("verified"/"candidate") at write time, without a new autonomous
+        promotion mechanism -- nothing changes truth_status on its own
+        behalf; a caller must explicitly opt in per entry. Invalid values
+        raise ValueError via KnowledgeEntry's own __post_init__ validation
+        (TRUTH_STATUS enum, core/memory/knowledge_entry.py) -- not
+        re-validated here, to avoid a second, driftable source of truth.
 
         Event flow:
           before_write hooks → L1 storage → L2 vector (if semantic) →
@@ -385,7 +398,7 @@ class UnifiedMemory:
             layer_hint=layer_hint, procedure_name=procedure_name,
         )
 
-        entry = KnowledgeEntry(
+        entry_kwargs = dict(
             entry_id=       entry_id or str(uuid.uuid4()),
             layer=          layer,
             content=        content,
@@ -401,6 +414,9 @@ class UnifiedMemory:
             derived_from=   derived_from or [],
             procedure_name= procedure_name,
         )
+        if truth_status is not None:
+            entry_kwargs["truth_status"] = truth_status
+        entry = KnowledgeEntry(**entry_kwargs)
         if content_type:
             entry.metadata["content_type"] = content_type
 
