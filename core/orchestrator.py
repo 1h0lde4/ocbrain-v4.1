@@ -69,20 +69,19 @@ class Orchestrator:
                  memory: UnifiedMemory, *,
                  governance: Optional[GovernanceKernel] = None,
                  event_stream: Optional[EventStream] = None,
-                 execution_runtime: Optional["ExecutionRuntime"] = None):
+                 execution_runtime: Optional["ExecutionRuntime"] = None,
+                 workflow_runtime: Optional["WorkflowRuntime"] = None):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
 
-        execution_runtime: K2.1 — The canonical execution service for worker
-        invocations. When provided, Orchestrator delegates worker-based
-        execution through it. When None (backward compatibility for tests),
-        Orchestrator uses its legacy classify→dispatch→merge flow.
+        execution_runtime: K2.1 — The canonical execution service.
+        workflow_runtime: K2.2 — The canonical workflow coordinator.
 
-        This mirrors AbstractCognitiveWorker.__init__ exactly (core/workers/
-        base.py) rather than inventing a second injection convention:
-            self._governance = governance or get_governance_kernel()
-            self._event_stream = event_stream or get_event_stream()
+        When workflow_runtime is provided, handle() delegates through:
+            WorkflowRuntime → PlannerWorker → ExecutionRuntime
+        When None (backward compatibility for tests), handle() uses
+        the legacy classify→dispatch→merge flow.
         """
         self.modules = modules
         self.context = context
@@ -91,6 +90,7 @@ class Orchestrator:
         self._governance: GovernanceKernel = governance or get_governance_kernel()
         self._event_stream: EventStream = event_stream or get_event_stream()
         self._execution_runtime = execution_runtime
+        self._workflow_runtime = workflow_runtime
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
