@@ -68,26 +68,21 @@ class Orchestrator:
     def __init__(self, modules: dict, context: ContextMemory, router: ModelRouter,
                  memory: UnifiedMemory, *,
                  governance: Optional[GovernanceKernel] = None,
-                 event_stream: Optional[EventStream] = None):
+                 event_stream: Optional[EventStream] = None,
+                 execution_runtime: Optional["ExecutionRuntime"] = None):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
+
+        execution_runtime: K2.1 — The canonical execution service for worker
+        invocations. When provided, Orchestrator delegates worker-based
+        execution through it. When None (backward compatibility for tests),
+        Orchestrator uses its legacy classify→dispatch→merge flow.
 
         This mirrors AbstractCognitiveWorker.__init__ exactly (core/workers/
         base.py) rather than inventing a second injection convention:
             self._governance = governance or get_governance_kernel()
             self._event_stream = event_stream or get_event_stream()
-
-        Session 5 reality-audit finding: prior to this change, neither
-        GovernanceKernel nor EventStream was ever instantiated in the
-        running process at all -- get_governance_kernel()/get_event_stream()
-        were only called from AbstractCognitiveWorker.__init__, and no
-        AbstractCognitiveWorker subclass is ever constructed from main.py.
-        Passing them explicitly from the composition root (main.py) makes
-        that construction visible there, consistent with PI LAW 4
-        (Determinism over Magic) -- the default-via-getter fallback exists
-        so existing callers (tests, scripts) that construct Orchestrator
-        without these kwargs keep working unchanged.
         """
         self.modules = modules
         self.context = context
@@ -95,6 +90,7 @@ class Orchestrator:
         self.memory: UnifiedMemory = memory
         self._governance: GovernanceKernel = governance or get_governance_kernel()
         self._event_stream: EventStream = event_stream or get_event_stream()
+        self._execution_runtime = execution_runtime
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
