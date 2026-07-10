@@ -138,9 +138,11 @@ class ExecutionRuntime:
 
         # ── Step 2: Construct Worker instance (ADR-003: ephemeral) ───────
         try:
+            extra_kwargs = self._registry.get_kwargs(worker_type)
             worker = worker_cls(
                 governance=self._governance,
                 event_stream=self._event_stream,
+                **extra_kwargs,
             )
         except Exception as e:
             self._total_failures += 1
