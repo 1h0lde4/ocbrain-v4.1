@@ -1,7 +1,19 @@
 """
-main.py — OCBrain V2.1
-Adds Ollama model pre-warm: loads all module models into VRAM at startup
-so the first real query never pays the cold-load penalty (~1–3s saved).
+main.py — OCBrain v4.1 — Composition Root
+
+Canonical entry point for the OCBrain runtime.
+Constructs and wires all production singletons:
+  - UnifiedMemory (L0-L4)
+  - GovernanceKernel (3 governors)
+  - EventStream (SQLite WAL)
+  - WorkerRegistry (worker type index)
+  - ExecutionRuntime (worker invocation service)
+  - MemoryCuratorWorker (registered, wired to memory)
+  - Orchestrator (query handler, delegates through ExecutionRuntime)
+
+Architecture:
+    KERNEL_ARCHITECTURE_v1.0.md §7 — Execution Model.
+    K2.1 — ExecutionRuntime becomes the production execution path.
 """
 import asyncio
 import logging
@@ -193,11 +205,49 @@ async def main():
     log.info(f"GovernanceKernel ready ({governance_kernel.stats()['governors']})")
     log.info("EventStream ready")
 
+    # Step 6b: K2.1 — ExecutionRuntime (canonical execution path)
+    # WorkerRegistry: static index of constructable Worker types.
+    # ExecutionRuntime: constructs and invokes one Worker per unit of work.
+    # MemoryCuratorWorker: first production worker, registered and wired.
+    from core.runtime.worker_registry import WorkerRegistry
+    from core.runtime.execution_runtime import ExecutionRuntime
+    from core.workers.curator import MemoryCuratorWorker
+
+    worker_registry = WorkerRegistry()
+
+    # Register all known worker types — composition root is the only
+    # place workers are registered (no auto-discovery, no magic).
+    worker_registry.register(MemoryCuratorWorker)
+    log.info(f"WorkerRegistry ready ({worker_registry.list_types()})")
+
+    execution_runtime = ExecutionRuntime(
+        worker_registry=worker_registry,
+        governance=governance_kernel,
+        event_stream=event_stream,
+    )
+    log.info("ExecutionRuntime ready")
+
+    # Wire MemoryCuratorWorker to UnifiedMemory for hook integration.
+    # K2.1: this instance is used for hook registration only.
+    # ExecutionRuntime creates fresh ephemeral instances for each invoke().
+    # The hook-registered instance and the ephemeral instances are separate
+    # — hooks are wired via HookRegistry at the UnifiedMemory level.
+    try:
+        curator_for_hooks = MemoryCuratorWorker(
+            governance=governance_kernel,
+            event_stream=event_stream,
+        )
+        curator_for_hooks.register(memory)
+        log.info("MemoryCuratorWorker hooks registered with UnifiedMemory")
+    except Exception as e:
+        log.warning(f"MemoryCuratorWorker hook registration failed (non-fatal): {e}")
+
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
-                                 event_stream=event_stream)
-    log.info("Orchestrator ready (UnifiedMemory: production memory owner)")
+                                 event_stream=event_stream,
+                                 execution_runtime=execution_runtime)
+    log.info("Orchestrator ready (ExecutionRuntime: production execution owner)")
 
     # Step 7: Scheduler
     from learning.scheduler import Scheduler
@@ -237,7 +287,7 @@ async def main():
     log.info(f"API     → http://localhost:{port}/docs")
     log.info(f"Stream  → POST http://localhost:{port}/query  {{stream: true}}")
     log.info(f"Events  → GET  http://localhost:{port}/events")
-    log.info("OCBrain v2.1 is ready.\n")
+    log.info("OCBrain v4.1 is ready (K2.1: ExecutionRuntime LIVE).\n")
 
     uv_config = uvicorn.Config(
         app, host="127.0.0.1", port=port,
