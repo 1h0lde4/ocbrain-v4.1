@@ -1,4 +1,6 @@
-# PROJECT_INSTRUCTIONS.md — OCBrain v4.0
+# PROJECT_INSTRUCTIONS.md — OCBrain v4.1
+
+> **Precedence:** This document is subordinate to the [Kernel Constitution](OCBRAIN_KERNEL_CONSTITUTION.md) and [KERNEL_ARCHITECTURE_v1.0.md](KERNEL_ARCHITECTURE_v1.0.md). Where this document and those documents conflict, the higher-authority document wins. This document provides operational engineering rules; the Constitution provides principles; the Architecture Specification provides frozen contracts.
 
 ## Purpose
 
@@ -8,7 +10,7 @@ This is not documentation.
 
 This is the governing execution contract for the project.
 
-All human developers, Claude Code sessions, autonomous coding agents, workflow workers, and MCP tools must follow these instructions.
+All human developers, autonomous coding agents, workflow workers, and MCP tools must follow these instructions.
 
 ---
 

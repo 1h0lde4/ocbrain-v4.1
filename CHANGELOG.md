@@ -1,5 +1,62 @@
 # Changelog
 
+## [4.1.0] — 2026-07-10 — Kernel Architecture v1.0
+
+Architecture freeze release. All kernel contracts are locked. The project transitions
+from Architecture Era to Implementation Era.
+
+### Kernel Constitution
+- **Kernel Constitution v1.0** — 11 laws, 9 invariants governing all system behaviour
+- Constitution rationale document and pressure test record
+- Constitutional enforcement integrated into GovernanceKernel at runtime
+
+### Architecture Specification
+- **KERNEL_ARCHITECTURE_v1.0.md** — consolidated engineering specification (frozen)
+- **8 Architecture Decision Records (ADRs)** — rationale for all major design choices
+- **Canonical vocabulary** — 37 defined terms for cross-document consistency
+- **Frozen public contracts** for all K2 services (ExecutionRuntime, WorkflowRuntime, CapabilityRegistry)
+
+### Governance
+- **GovernanceKernel** — runtime governance enforcement engine
+- **RecursionGovernor** — prevents unbounded recursive worker invocations
+- **BudgetGovernor** — enforces token and resource budget limits per execution
+- **EvolutionGovernor** — controls worker self-modification within constitutional bounds
+- Governor interface defined for future ConcurrencyGovernor, QualityGovernor+
+
+### Event System
+- **EventStream** — immutable, append-only event log on SQLite WAL
+- Pub/sub event dispatch with topic-based subscriptions
+- Full replay capability from any checkpoint
+- Checkpoint creation and restoration
+
+### Memory
+- **UnifiedMemory** — L0 (working) through L4 (archival) tier model
+- Graph backend integration for relationship-aware memory storage
+- Governed memory lifecycle (no silent discard)
+
+### Cognitive Workers
+- **AbstractCognitiveWorker** — template method pattern for governed worker execution
+- **MemoryCuratorWorker** — first worker subclass (implemented, not yet wired to production)
+
+### Retrieval
+- **RetrievalContextBuilder** — assembles retrieval context from multiple sources
+- **GraphRAGPipeline** — graph-augmented retrieval pipeline (built, tested, not yet wired)
+- **GraphIndexer** — indexes content into graph structure
+- **GraphEngine** — query engine over graph-indexed knowledge
+- **SQLiteGraphBackend** — local graph storage on SQLite
+
+### Resource Model
+- Protocol-based resource abstraction
+- **KnowledgeEntry** as canonical Resource type
+- Uniform interface for all kernel-managed data
+
+### Repository
+- Documentation restructured for architecture-first navigation
+- Repository cleanup and consolidation report
+- Session reports for architecture hardening (Sessions 4, 4B, 4C)
+
+---
+
 ## [2.1.0] — 2025
 
 ### Performance — response speed
