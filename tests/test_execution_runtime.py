@@ -81,6 +81,9 @@ class BadConstructorWorker(AbstractCognitiveWorker):
     def __init__(self, **kwargs):
         raise ValueError("constructor exploded")
 
+    async def _run(self, context: WorkerContext) -> WorkerResult:
+        return WorkerResult(success=True)
+
 
 # ── CancellationToken Tests ───────────────────────────────────────────────────
 
