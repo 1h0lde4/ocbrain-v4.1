@@ -6,14 +6,24 @@ Constructs and wires all production singletons:
   - UnifiedMemory (L0-L4)
   - GovernanceKernel (3 governors)
   - EventStream (SQLite WAL)
-  - WorkerRegistry (worker type index)
+  - WorkerRegistry (worker type index: MemoryCuratorWorker, PlannerWorker)
   - ExecutionRuntime (worker invocation service)
+  - WorkflowRuntime (DAG coordinator, wraps ExecutionRuntime)
   - MemoryCuratorWorker (registered, wired to memory)
-  - Orchestrator (query handler, delegates through ExecutionRuntime)
+  - Orchestrator (query handler, delegates through WorkflowRuntime)
 
 Architecture:
     KERNEL_ARCHITECTURE_v1.0.md §7 — Execution Model.
-    K2.1 — ExecutionRuntime becomes the production execution path.
+    KERNEL_ARCHITECTURE_v1.0.md §8 — Workflow Model.
+    K2.1 — ExecutionRuntime constructed and worker-invocation-capable.
+    K2.2 — WorkflowRuntime becomes the production execution path:
+           Orchestrator.handle() -> WorkflowRuntime -> ExecutionRuntime ->
+           PlannerWorker. See K2.2 Cutover Report for the full chain and
+           the reachability audit that verifies this is actually live
+           (K2.1 alone constructed ExecutionRuntime and passed it to
+           Orchestrator, but nothing in Orchestrator.handle() ever called
+           it — that gap is what this session's wiring closes, for both
+           K2.1 and K2.2 together).
 """
 import asyncio
 import logging
@@ -212,12 +222,30 @@ async def main():
     from core.runtime.worker_registry import WorkerRegistry
     from core.runtime.execution_runtime import ExecutionRuntime
     from core.workers.curator import MemoryCuratorWorker
+    from core.workers.planner import PlannerWorker
+    from core.workflow.runtime import WorkflowRuntime
 
     worker_registry = WorkerRegistry()
 
     # Register all known worker types — composition root is the only
     # place workers are registered (no auto-discovery, no magic).
     worker_registry.register(MemoryCuratorWorker)
+
+    # K2.2 — PlannerWorker needs domain dependencies (modules, router,
+    # context, memory) beyond the governance/event_stream every worker
+    # gets by default. WorkerRegistry.register()'s constructor_kwargs
+    # parameter exists specifically for this case (see its own docstring,
+    # which already names PlannerWorker as the example). context_memory
+    # and model_router are the same module-level singletons Orchestrator
+    # itself is constructed with below, so PlannerWorker's context.save()
+    # and Orchestrator.context stay the same object, not two divergent
+    # ContextMemory instances.
+    worker_registry.register(PlannerWorker, constructor_kwargs={
+        "modules": modules,
+        "context_memory": context_memory,
+        "model_router": model_router,
+        "memory": memory,
+    })
     log.info(f"WorkerRegistry ready ({worker_registry.list_types()})")
 
     execution_runtime = ExecutionRuntime(
@@ -226,6 +254,19 @@ async def main():
         event_stream=event_stream,
     )
     log.info("ExecutionRuntime ready")
+
+    # Step 6c: K2.2 — WorkflowRuntime (canonical workflow coordinator)
+    # Coordinates a DAG of ExecutionRuntime invocations. Orchestrator.handle()
+    # wraps every query in the single-node "planner" workflow
+    # (core/workflow/definition.py::build_planner_workflow) and delegates
+    # through this, replacing the inline classify->dispatch->merge flow as
+    # the primary production path. See K2.2 Cutover Report for the full
+    # before/after chain and the reachability audit that verifies this.
+    workflow_runtime = WorkflowRuntime(
+        execution_runtime=execution_runtime,
+        event_stream=event_stream,
+    )
+    log.info("WorkflowRuntime ready")
 
     # Wire MemoryCuratorWorker to UnifiedMemory for hook integration.
     # K2.1: this instance is used for hook registration only.
@@ -246,8 +287,9 @@ async def main():
                                  memory=memory,
                                  governance=governance_kernel,
                                  event_stream=event_stream,
-                                 execution_runtime=execution_runtime)
-    log.info("Orchestrator ready (ExecutionRuntime: production execution owner)")
+                                 execution_runtime=execution_runtime,
+                                 workflow_runtime=workflow_runtime)
+    log.info("Orchestrator ready (WorkflowRuntime: production execution owner)")
 
     # Step 7: Scheduler
     from learning.scheduler import Scheduler
@@ -287,7 +329,7 @@ async def main():
     log.info(f"API     → http://localhost:{port}/docs")
     log.info(f"Stream  → POST http://localhost:{port}/query  {{stream: true}}")
     log.info(f"Events  → GET  http://localhost:{port}/events")
-    log.info("OCBrain v4.1 is ready (K2.1: ExecutionRuntime LIVE).\n")
+    log.info("OCBrain v4.1 is ready (K2.2: WorkflowRuntime LIVE).\n")
 
     uv_config = uvicorn.Config(
         app, host="127.0.0.1", port=port,
