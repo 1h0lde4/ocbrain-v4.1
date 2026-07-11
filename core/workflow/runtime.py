@@ -207,16 +207,24 @@ class WorkflowRuntime:
             )
 
         # ── Step 5: Aggregate result ─────────────────────────────────────
-        all_success = all(
-            ns.status in (NodeStatus.COMPLETED, NodeStatus.SKIPPED, NodeStatus.PENDING)
-            for ns in node_states.values()
-        )
-        # Check specifically that executed nodes succeeded
-        executed_success = all(
-            r.success for r in node_results.values()
-        ) if node_results else True
-
-        success = all_success and executed_success
+        # Workflow success is defined by whether execution terminated along
+        # a successful path -- i.e. the outcome of `last_result`, which is
+        # whatever _execute_from actually returned last (it follows
+        # error_branch redirection on failure, so a node that failed but
+        # was recovered via its error_branch surfaces here as a success --
+        # that redirection is the entire point of error_branch, and a
+        # workflow that recovered must not be reported as failed).
+        #
+        # This also correctly handles the cancellation case: a pre-
+        # cancelled token makes _execute_from return
+        # WorkerResult(success=False, error="Workflow cancelled") before
+        # touching node_states/node_results at all, so those two
+        # collections stay empty/PENDING -- checking them (as an earlier
+        # version of this method did) reports success=True for a workflow
+        # that never ran. Checking last_result.success avoids that: an
+        # empty node_results with a failed last_result correctly reports
+        # failure.
+        success = last_result.success if last_result is not None else True
         duration_ms = (time.time() - start_time) * 1000
 
         if not success:
