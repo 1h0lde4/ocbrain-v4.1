@@ -24,7 +24,15 @@ sessions add wiring):
   - EventStream durability + queryability
   - a real Orchestrator instance + handle() call, confirming the
     governance check and query_started/query_completed events actually
-    fire on the real request path
+    fire on the real request path (legacy compatibility-bridge shape:
+    no execution_runtime/workflow_runtime supplied)
+  - K2.2: the actual production wiring shape -- WorkerRegistry ->
+    ExecutionRuntime -> WorkflowRuntime -> Orchestrator, with
+    PlannerWorker registered via constructor_kwargs exactly as main.py's
+    composition root does it, confirming the full chain's events
+    (workflow.started/completed, execution.completed,
+    orchestrator.query_completed tagged execution_path=workflow_runtime)
+    all fire and the answer is correctly returned end-to-end
 
 Run with:  python scripts/integration_check.py
 Exit code: 0 on success, 1 (via AssertionError) on any check failing.
@@ -34,6 +42,7 @@ import asyncio
 import os
 import shutil
 import sys
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -148,6 +157,76 @@ async def main() -> None:
     results["orchestrator_emits_query_started"] = True
     await orch.close()
     results["orchestrator_close_works"] = True
+
+    # ── 7. K2.2 — real WorkflowRuntime wiring, main.py's actual shape ──────
+    # Section 6 above deliberately still constructs Orchestrator WITHOUT
+    # execution_runtime/workflow_runtime -- that remains a valid check of
+    # the legacy-compatibility bridge (still test-reachable per
+    # tests/test_execution_runtime.py::TestBackwardCompatibility). This
+    # section proves the actual production shape main.py now builds:
+    # WorkerRegistry -> ExecutionRuntime -> WorkflowRuntime -> Orchestrator,
+    # with PlannerWorker registered via constructor_kwargs exactly as the
+    # composition root does it, and a real (non-mocked) RouteResult so
+    # merger.merge() and PlannerWorker's memory.write()/context.save() are
+    # mechanically exercised, not just governance/events.
+    from core.model_router import RouteResult
+    from core.runtime.worker_registry import WorkerRegistry
+    from core.runtime.execution_runtime import ExecutionRuntime
+    from core.workers.planner import PlannerWorker
+    from core.workflow.runtime import WorkflowRuntime
+
+    wf_router = MagicMock()
+    wf_router.route = AsyncMock(
+        return_value=RouteResult(answer="K2.2 wiring proof", source="mock"))
+    wf_ctx = MagicMock(spec=ContextMemory)
+
+    registry = WorkerRegistry()
+    registry.register(PlannerWorker, constructor_kwargs={
+        "modules": {"web_search": object()},
+        "context_memory": wf_ctx,
+        "model_router": wf_router,
+        "memory": memory,
+    })
+    execution_runtime = ExecutionRuntime(
+        worker_registry=registry, governance=gk, event_stream=es)
+    workflow_runtime = WorkflowRuntime(
+        execution_runtime=execution_runtime, event_stream=es)
+
+    wf_orch = Orchestrator(
+        modules={"web_search": object()}, context=wf_ctx, router=wf_router,
+        memory=memory, governance=gk, event_stream=es,
+        execution_runtime=execution_runtime,
+        workflow_runtime=workflow_runtime,
+    )
+    # EventStream.query() returns newest-first (ORDER BY sequence DESC)
+    # with a default limit=100 -- a before/after-count + slice comparison
+    # (as section 6 above does) silently breaks once total event count
+    # exceeds the limit, or returns the wrong subset once ordering is
+    # accounted for. Use the since= timestamp filter it already supports
+    # instead, which is correct regardless of how many events sections
+    # 1-6 already appended.
+    since_ts = time.time()
+    answer = await wf_orch.handle("K2.2 integration check query")
+    assert answer == "K2.2 wiring proof"
+    results["workflow_runtime_produces_correct_answer"] = True
+
+    wf_events = await es.query(since=since_ts, limit=1000)
+    wf_event_types = [e.event_type for e in wf_events]
+    # workflow.started/completed (WorkflowRuntime) and execution.completed
+    # (ExecutionRuntime) must ALL fire -- proof the full chain ran, not
+    # just the orchestrator-level events section 6 already confirmed.
+    assert "workflow.started" in wf_event_types
+    assert "workflow.completed" in wf_event_types
+    assert "execution.completed" in wf_event_types
+    results["full_chain_events_fire"] = True
+
+    wf_completed = [e for e in wf_events
+                     if e.event_type == "orchestrator.query_completed"][0]
+    assert wf_completed.payload.get("execution_path") == "workflow_runtime"
+    results["execution_path_tagged_workflow_runtime"] = True
+
+    await wf_orch.close()
+    results["workflow_runtime_orchestrator_close_works"] = True
 
     print("=== integration_check.py results ===")
     for k, v in results.items():
