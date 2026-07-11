@@ -219,6 +219,108 @@ class Orchestrator:
                 "interaction_id": interaction_id,
                 "query_preview": query[:120],
             })
+
+            # ── K2.2 — Production Runtime Migration ────────────────────────
+            # When a WorkflowRuntime was supplied at construction (main.py,
+            # composition root), query handling delegates through:
+            #     WorkflowRuntime -> ExecutionRuntime -> PlannerWorker
+            # PlannerWorker (core/workers/planner.py) runs the identical
+            # classify->dispatch->merge pipeline that used to live inline
+            # below, but now governed per-worker (AbstractCognitiveWorker.
+            # execute()'s template method, PI LAW 1) and event-sourced at
+            # node granularity (WorkflowRuntime's workflow.started/completed
+            # + ExecutionRuntime's execution.completed), on top of the
+            # orchestrator-level governance/event pair already emitted
+            # above. Both governance evaluations are safe to run in
+            # sequence: RecursionGovernor and BudgetGovernor are stateless
+            # per-call (state lives in the caller-supplied GovernanceAction,
+            # not the governor -- see BudgetGovernor's BUG-03 fix note in
+            # core/governance/governance_kernel.py), so this is strictly
+            # additional visibility, not double-counting.
+            #
+            # When workflow_runtime is None (existing tests that construct
+            # Orchestrator without it, per TestBackwardCompatibility in
+            # tests/test_execution_runtime.py), handle() falls through to
+            # the untouched legacy flow below. This is the "legacy
+            # compatibility bridge" the K2.2 migration calls for -- kept
+            # only because it's still test-reachable, not because anything
+            # in main.py's composition root constructs Orchestrator without
+            # a workflow_runtime today.
+            if self._workflow_runtime is not None:
+                try:
+                    from core.workflow.definition import build_planner_workflow
+
+                    definition = build_planner_workflow()
+                    wf_result = await self._workflow_runtime.execute(
+                        definition,
+                        query=query,
+                        session_id=interaction_id,
+                        metadata={"interaction_id": interaction_id},
+                    )
+
+                    if not wf_result.success:
+                        logger.error("[Orchestrator] Workflow execution "
+                                     "failed: %s", wf_result.error)
+                        await self._emit_event("orchestrator.query_failed", {
+                            "interaction_id": interaction_id,
+                            "error": wf_result.error,
+                            "error_type": "WorkflowFailure",
+                        })
+                        return (f"Sorry, I encountered an internal error: "
+                                f"{wf_result.error}")
+
+                    answer = wf_result.output or ""
+                    planner_result = wf_result.node_results.get(
+                        definition.entry_node)
+                    modules_used = (
+                        planner_result.metadata.get("modules_used", [])
+                        if planner_result else []
+                    )
+
+                    # Shadow learning (Phase 3) is not replicated inside
+                    # PlannerWorker -- it is an orchestrator-level maturity
+                    # tracking concern, not part of the governed worker
+                    # contract, so it stays here for both paths.
+                    shadow_learner.record_interaction(
+                        query=query,
+                        answer=answer,
+                        module_name=", ".join(modules_used),
+                        confidence=1.0,
+                    )
+
+                    await self._emit_event("orchestrator.query_completed", {
+                        "interaction_id": interaction_id,
+                        "outcome": "success",
+                        "modules_used": modules_used,
+                        "execution_path": "workflow_runtime",
+                    })
+                    return answer
+
+                except Exception as e:
+                    # Should not happen -- WorkflowRuntime.execute() never
+                    # raises (Law 11, Failure Containment). Contained here
+                    # anyway, consistent with the legacy path's own
+                    # top-level except block below.
+                    logger.error("[Orchestrator] Unexpected error in "
+                                 "workflow-runtime path: %s", e, exc_info=True)
+                    await self._emit_event("orchestrator.query_failed", {
+                        "interaction_id": interaction_id,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    })
+                    return (f"Sorry, I encountered an internal error: "
+                            f"{type(e).__name__}")
+
+            # ── Legacy Compatibility Bridge ─────────────────────────────────
+            # Reached only when workflow_runtime is None. main.py's
+            # composition root always supplies one (K2.2), so this path is
+            # exercised in production only if that wiring is ever removed;
+            # it remains live today solely to keep tests that construct
+            # Orchestrator directly (without ExecutionRuntime/WorkflowRuntime)
+            # passing unmodified. Scheduled for removal once K2.3's
+            # CapabilityRegistry work confirms nothing else still relies on
+            # constructing a workflow_runtime-less Orchestrator -- see the
+            # K2.2 Cutover Report's Legacy Runtime Audit.
             try:
                 logger.info(f"[Orchestrator] Handling query: {query[:80]}")
 

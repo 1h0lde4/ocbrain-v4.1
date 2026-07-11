@@ -145,3 +145,53 @@ class WorkflowDefinition:
                 errors.append(f"Node '{node.node_id}' error_branch "
                               f"'{node.error_branch}' not in nodes")
         return errors
+
+
+# ── Canonical Definitions (K2.2) ────────────────────────────────────────────
+
+PLANNER_NODE_ID = "planner"
+
+
+def build_planner_workflow(
+    workflow_id: str = "planner-default",
+) -> WorkflowDefinition:
+    """The canonical single-node workflow used by the Orchestrator bridge.
+
+    Architecture:
+        KERNEL_ARCHITECTURE_v1.0.md §8 — Workflow Model.
+        K2.2 — Production Runtime Migration.
+
+    Design:
+        Orchestrator.handle() does not itself know how to build a DAG — it
+        wraps every incoming query in this trivial one-node workflow so
+        that query handling participates in the same WorkflowRuntime
+        lifecycle (events, retry policy, error containment) as any future
+        multi-node workflow, without a bespoke non-workflow code path.
+
+        The single node invokes worker_type="PlannerWorker", which itself
+        performs the classify -> dispatch -> merge pipeline. Retries are
+        deliberately disabled by default (RetryPolicy(max_retries=0)):
+        PlannerWorker's own internal dispatch already fans out to multiple
+        modules and contains their individual failures; retrying the whole
+        pipeline on any partial failure would silently re-run modules that
+        already succeeded. A future node-level RetryPolicy can be attached
+        here once retry semantics for partial-success pipelines are
+        explicitly designed -- not assumed as part of this cutover.
+
+    Returns:
+        A WorkflowDefinition with a single entry node, worker_type
+        "PlannerWorker", node_id PLANNER_NODE_ID.
+    """
+    return WorkflowDefinition(
+        workflow_id=workflow_id,
+        name="default_planner_workflow",
+        nodes=[
+            WorkflowNode(
+                node_id=PLANNER_NODE_ID,
+                worker_type="PlannerWorker",
+                retry_policy=RetryPolicy(max_retries=0),
+            ),
+        ],
+        edges=[],
+        entry_node=PLANNER_NODE_ID,
+    )
