@@ -56,7 +56,17 @@ class PlannerWorker(AbstractCognitiveWorker):
     Constructor kwargs (injected via WorkerRegistry):
         modules: Dict of loaded expert modules.
         context_memory: ContextMemory for conversation history.
-        model_router: ModelRouter for module dispatch.
+        adapter_runtime: K2.3 — AdapterRuntime for capability-based
+            dispatch. Preferred over model_router when both are supplied
+            -- see _dispatch_module()'s docstring for the full K2.3
+            migration rationale.
+        model_router: ModelRouter for module dispatch. K2.3 — retained
+            as an optional, backward-compatible fallback only; main.py's
+            composition root no longer passes this directly (it is
+            wrapped inside ModelRouterAdapter instead, registered with
+            the new AdapterRuntime). Existing test code that constructs
+            PlannerWorker with only model_router= continues to work
+            unmodified.
         memory: UnifiedMemory for interaction persistence.
     """
 
@@ -68,6 +78,7 @@ class PlannerWorker(AbstractCognitiveWorker):
         modules: Optional[dict] = None,
         context_memory: Optional[Any] = None,
         model_router: Optional[Any] = None,
+        adapter_runtime: Optional[Any] = None,
         memory: Optional[Any] = None,
         **kwargs: Any,
     ) -> None:
@@ -75,6 +86,7 @@ class PlannerWorker(AbstractCognitiveWorker):
         self._modules = modules or {}
         self._context_memory = context_memory
         self._model_router = model_router
+        self._adapter_runtime = adapter_runtime
         self._memory = memory
 
     async def _run(self, context: WorkerContext) -> WorkerResult:
@@ -224,12 +236,74 @@ class PlannerWorker(AbstractCognitiveWorker):
 
     async def _dispatch_module(self, mod_name: str, query: str,
                                 context: WorkerContext) -> Any:
-        """Dispatch to a single module via the model router."""
+        """Dispatch to a single module.
+
+        K2.3 — Legacy Dispatch Migration:
+            Preferred path: AdapterRuntime.invoke(LLM_COMPLETION, ...).
+            PlannerWorker no longer imports or references ModelRouter
+            directly for this call -- it only knows the abstract
+            capability contract (CapabilityType.LLM_COMPLETION), matching
+            the K2.3 session prompt's "Workers must never know concrete
+            providers. Workers only know Capabilities." The concrete
+            provider selection (ModelRouterAdapter vs. OllamaAdapter vs.
+            OpenAICompatAdapter, and ModelRouter's own bootstrap/shadow/
+            native routing beneath ModelRouterAdapter) is entirely
+            main.py's composition-root concern now, not PlannerWorker's.
+
+            Returns a RouteResult (not a raw CapabilityResult) so
+            merger.merge() -- which already expects a list of
+            RouteResult-shaped objects -- needs no changes (Law of
+            Contract Stability).
+
+            Fallback path: self._model_router.route() directly, kept
+            only for backward compatibility with existing test code that
+            constructs PlannerWorker with model_router= and no
+            adapter_runtime=. main.py's composition root always supplies
+            adapter_runtime (see K2.3 Composition Root Review) -- this
+            fallback is not reachable in production, the same standard
+            already established for Orchestrator.handle()'s
+            workflow_runtime=None legacy branch in K2.2.
+
+            If neither is configured, raises RuntimeError rather than
+            returning a bare WorkerResult -- the prior code path returned
+            a WorkerResult object directly into what asyncio.gather()
+            collects, which _run()'s result-processing loop
+            (isinstance(res, Exception) check) would NOT have caught,
+            silently leaking a non-RouteResult object into
+            merger.merge(). Raising instead lets the existing
+            return_exceptions=True containment in _run() format it the
+            same way any other module failure is formatted
+            ("[Error in {mod_name}: {res}]"), which is strictly more
+            correct than the previous behavior, not just a refactor.
+        """
+        if self._adapter_runtime is not None:
+            from core.capabilities.capability import CapabilityRequest, CapabilityType
+
+            request = CapabilityRequest(
+                capability_type=CapabilityType.LLM_COMPLETION,
+                payload={
+                    "module_name": mod_name,
+                    "subtask": query,
+                    "context": self._context_memory,
+                },
+            )
+            capability_result = await self._adapter_runtime.invoke(
+                CapabilityType.LLM_COMPLETION, request=request)
+            if not capability_result.success:
+                raise RuntimeError(
+                    capability_result.error or
+                    f"capability invocation failed for module '{mod_name}'")
+
+            from core.model_router import RouteResult
+            return RouteResult(
+                answer=capability_result.output,
+                source=capability_result.adapter_used or "capability",
+            )
+
         if self._model_router:
             return await self._model_router.route(
                 mod_name, query, self._context_memory)
-        else:
-            return WorkerResult(
-                success=False,
-                error=f"No model_router available for module '{mod_name}'",
-            )
+
+        raise RuntimeError(
+            f"No adapter_runtime or model_router available for module "
+            f"'{mod_name}'")

@@ -6,6 +6,9 @@ Constructs and wires all production singletons:
   - UnifiedMemory (L0-L4)
   - GovernanceKernel (3 governors)
   - EventStream (SQLite WAL)
+  - CapabilityRegistry (LLM_COMPLETION capability, 3 registered adapters)
+  - ResourceManager (HTTPClientResource, ModelResource binding)
+  - AdapterRuntime (capability execution: selection, fallback, isolation)
   - WorkerRegistry (worker type index: MemoryCuratorWorker, PlannerWorker)
   - ExecutionRuntime (worker invocation service)
   - WorkflowRuntime (DAG coordinator, wraps ExecutionRuntime)
@@ -24,6 +27,14 @@ Architecture:
            Orchestrator, but nothing in Orchestrator.handle() ever called
            it — that gap is what this session's wiring closes, for both
            K2.1 and K2.2 together).
+    K2.3 — Capability Runtime: PlannerWorker's module dispatch no longer
+           calls ModelRouter directly. It goes through AdapterRuntime,
+           which resolves CapabilityType.LLM_COMPLETION to a registered
+           Adapter (ModelRouterAdapter by default, wrapping the same
+           ModelRouter unmodified -- a documented compatibility wrapper,
+           not a replacement; see K2_3_CAPABILITY_RUNTIME_REPORT.md).
+           OllamaAdapter/OpenAICompatAdapter register alongside it as the
+           "pure" capability path with no maturity-tracking layer.
 """
 import asyncio
 import logging
@@ -225,25 +236,74 @@ async def main():
     from core.workers.planner import PlannerWorker
     from core.workflow.runtime import WorkflowRuntime
 
+    # Step 6a-2: K2.3 — Capability Runtime (capability/adapter/resource layer)
+    # CapabilityRegistry: metadata only (what capabilities exist, which
+    # adapters fulfill them) -- does not execute.
+    # ResourceManager: owns Resource lifetime (K1.6 Resource Model,
+    # extended). No global state, no singleton lookups (K2.3 prompt).
+    # AdapterRuntime: execution -- adapter selection, fallback, failure
+    # isolation, diagnostics. See K2_3_CAPABILITY_RUNTIME_REPORT.md for
+    # the full design (why only LLM_COMPLETION is registered, and why
+    # ModelRouterAdapter wraps rather than replaces ModelRouter).
+    from core.capabilities import CapabilityRegistry, ResourceManager, AdapterRuntime, CapabilityContract, CapabilityType
+    from core.capabilities.adapters.model_router_adapter import ModelRouterAdapter
+    from core.capabilities.adapters.ollama_adapter import OllamaAdapter
+    from core.capabilities.adapters.openai_compat_adapter import OpenAICompatAdapter
+
+    resource_manager = ResourceManager()
+    capability_registry = CapabilityRegistry()
+    capability_registry.register_capability(CapabilityContract(
+        capability_type=CapabilityType.LLM_COMPLETION,
+        description="Generate text from a prompt via a language model.",
+        required_resources=["http-client-shared"],
+    ))
+    # Adapter order = attempt order (subject to health-based re-ranking).
+    # ModelRouterAdapter first: preserves the bootstrap/shadow/native
+    # maturity pipeline PlannerWorker's production behavior already
+    # depends on (documented compatibility wrapper -- see its own
+    # docstring). OllamaAdapter/OpenAICompatAdapter are the "pure"
+    # capability path, tried only if the maturity-tracked path is
+    # unavailable.
+    capability_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, ModelRouterAdapter(model_router))
+    capability_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, OllamaAdapter())
+    capability_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, OpenAICompatAdapter())
+
+    adapter_runtime = AdapterRuntime(
+        registry=capability_registry,
+        resource_manager=resource_manager,
+        event_stream=event_stream,
+    )
+    log.info(f"CapabilityRegistry ready ({capability_registry.list_capabilities()}); "
+             f"AdapterRuntime ready ({capability_registry.stats()})")
+
     worker_registry = WorkerRegistry()
 
     # Register all known worker types — composition root is the only
     # place workers are registered (no auto-discovery, no magic).
     worker_registry.register(MemoryCuratorWorker)
 
-    # K2.2 — PlannerWorker needs domain dependencies (modules, router,
-    # context, memory) beyond the governance/event_stream every worker
-    # gets by default. WorkerRegistry.register()'s constructor_kwargs
-    # parameter exists specifically for this case (see its own docstring,
-    # which already names PlannerWorker as the example). context_memory
-    # and model_router are the same module-level singletons Orchestrator
-    # itself is constructed with below, so PlannerWorker's context.save()
-    # and Orchestrator.context stay the same object, not two divergent
-    # ContextMemory instances.
+    # K2.2 — PlannerWorker needs domain dependencies (modules, context,
+    # memory) beyond the governance/event_stream every worker gets by
+    # default. WorkerRegistry.register()'s constructor_kwargs parameter
+    # exists specifically for this case (see its own docstring, which
+    # already names PlannerWorker as the example). context_memory is the
+    # same module-level singleton Orchestrator itself is constructed with
+    # below, so PlannerWorker's context.save() and Orchestrator.context
+    # stay the same object, not two divergent ContextMemory instances.
+    #
+    # K2.3 — adapter_runtime replaces model_router here: PlannerWorker no
+    # longer depends on the concrete ModelRouter class directly ("Workers
+    # must never know concrete providers. Workers only know
+    # Capabilities." -- K2.3 prompt). ModelRouter still runs underneath,
+    # wrapped inside ModelRouterAdapter above -- nothing about its
+    # bootstrap/shadow/native behavior changed, only who calls it.
     worker_registry.register(PlannerWorker, constructor_kwargs={
         "modules": modules,
         "context_memory": context_memory,
-        "model_router": model_router,
+        "adapter_runtime": adapter_runtime,
         "memory": memory,
     })
     log.info(f"WorkerRegistry ready ({worker_registry.list_types()})")
@@ -329,7 +389,7 @@ async def main():
     log.info(f"API     → http://localhost:{port}/docs")
     log.info(f"Stream  → POST http://localhost:{port}/query  {{stream: true}}")
     log.info(f"Events  → GET  http://localhost:{port}/events")
-    log.info("OCBrain v4.1 is ready (K2.2: WorkflowRuntime LIVE).\n")
+    log.info("OCBrain v4.1 is ready (K2.3: CapabilityRuntime LIVE).\n")
 
     uv_config = uvicorn.Config(
         app, host="127.0.0.1", port=port,

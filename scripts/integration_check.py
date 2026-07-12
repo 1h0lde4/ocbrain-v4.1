@@ -228,6 +228,82 @@ async def main() -> None:
     await wf_orch.close()
     results["workflow_runtime_orchestrator_close_works"] = True
 
+    # ── 8. K2.3 — real Capability Runtime wiring, main.py's actual shape ───
+    # Same discipline as section 7: build the exact object graph main.py
+    # builds (CapabilityRegistry -> AdapterRuntime -> ModelRouterAdapter
+    # wrapping a real ModelRouter, registered alongside OllamaAdapter/
+    # OpenAICompatAdapter exactly as main.py orders them), with only the
+    # network-level seam (ModelRouter.route(), which would otherwise hit
+    # a real Ollama server) patched.
+    from core.model_router import ModelRouter, RouteResult
+    from core.capabilities import (
+        CapabilityRegistry, ResourceManager, AdapterRuntime,
+        CapabilityContract, CapabilityType,
+    )
+    from core.capabilities.adapters.model_router_adapter import ModelRouterAdapter
+    from core.capabilities.adapters.ollama_adapter import OllamaAdapter
+    from core.capabilities.adapters.openai_compat_adapter import OpenAICompatAdapter
+
+    real_model_router = ModelRouter()
+
+    async def _fake_route(module_name, subtask, context):
+        return RouteResult(answer="K2.3 wiring proof", source="patched")
+    real_model_router.route = _fake_route
+
+    k23_resource_manager = ResourceManager()
+    k23_registry = CapabilityRegistry()
+    k23_registry.register_capability(CapabilityContract(
+        capability_type=CapabilityType.LLM_COMPLETION,
+        description="integration check"))
+    k23_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, ModelRouterAdapter(real_model_router))
+    k23_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, OllamaAdapter())
+    k23_registry.register_adapter(
+        CapabilityType.LLM_COMPLETION, OpenAICompatAdapter())
+    assert k23_registry.validate() == []
+    results["capability_registry_valid_no_unfulfilled"] = True
+
+    k23_adapter_runtime = AdapterRuntime(
+        registry=k23_registry, resource_manager=k23_resource_manager,
+        event_stream=es)
+
+    k23_ctx = MagicMock(spec=ContextMemory)
+    registry2 = WorkerRegistry()
+    registry2.register(PlannerWorker, constructor_kwargs={
+        "modules": {"web_search": object()},
+        "context_memory": k23_ctx,
+        "adapter_runtime": k23_adapter_runtime,
+        "memory": memory,
+    })
+    k23_execution_runtime = ExecutionRuntime(
+        worker_registry=registry2, governance=gk, event_stream=es)
+    k23_workflow_runtime = WorkflowRuntime(
+        execution_runtime=k23_execution_runtime, event_stream=es)
+
+    k23_orch = Orchestrator(
+        modules={"web_search": object()}, context=k23_ctx, router=wf_router,
+        memory=memory, governance=gk, event_stream=es,
+        execution_runtime=k23_execution_runtime,
+        workflow_runtime=k23_workflow_runtime,
+    )
+    since_k23 = time.time()
+    k23_answer = await k23_orch.handle("K2.3 integration check query")
+    assert k23_answer == "K2.3 wiring proof"
+    results["capability_runtime_produces_correct_answer"] = True
+
+    k23_events = await es.query(since=since_k23, limit=1000)
+    k23_event_types = [e.event_type for e in k23_events]
+    assert "adapter.invoked" in k23_event_types
+    results["adapter_runtime_events_fire"] = True
+
+    invoked_event = [e for e in k23_events if e.event_type == "adapter.invoked"][0]
+    assert invoked_event.payload.get("adapter") == "ModelRouterAdapter"
+    results["model_router_adapter_used_by_default"] = True
+
+    await k23_orch.close()
+    results["capability_runtime_orchestrator_close_works"] = True
+
     print("=== integration_check.py results ===")
     for k, v in results.items():
         print(f"  {k}: {'PASS' if v else 'FAIL'}")
