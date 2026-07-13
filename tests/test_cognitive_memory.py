@@ -2,7 +2,9 @@ import pytest
 import asyncio
 from core.memory.cognitive_vault import cognitive_vault
 from core.memory.graph.graph_engine import graph_engine
-from core.memory.retrieval.fusion import fusion_engine
+from core.memory.unified_memory import get_unified_memory
+from core.memory.retrieval.fusion import RetrievalFusionEngine
+fusion_engine = RetrievalFusionEngine(get_unified_memory())
 from core.memory.assembly import context_assembler
 from core.governance.memory_governor import memory_governor
 
@@ -15,7 +17,7 @@ async def test_cognitive_storage_and_provenance():
         source="system_event",
         confidence=1.0
     )
-    
+
     # Add a procedural fix derived from that event
     fid = cognitive_vault.add_entry(
         content="Increase Ollama timeout to 60s",
@@ -23,7 +25,7 @@ async def test_cognitive_storage_and_provenance():
         source="upgrade_planner",
         derived_from=[eid]
     )
-    
+
     entry = cognitive_vault.get_entry(fid)
     assert entry["tier"] == "L3"
     assert eid in entry["derived_from"]
@@ -34,21 +36,25 @@ async def test_graph_relationships():
     graph_engine.add_node("EVT_01", "event", "OllamaTimeout")
     graph_engine.add_node("FIX_01", "fix", "TimeoutIncrease")
     graph_engine.add_edge("EVT_01", "FIX_01", "resolved_by")
-    
+
     neighbors = graph_engine.get_neighbors("EVT_01")
-    assert any(n[0] == "FIX_01" and n[1] == "resolved_by" for n in neighbors)
+    assert any(n["target_id"] == "FIX_01" and n["relation"] == "resolved_by" for n in neighbors)
 
 @pytest.mark.asyncio
 async def test_retrieval_fusion():
+    # Import the entries we added to cognitive_vault into UnifiedMemory
+    await get_unified_memory().import_from_cognitive_vault(cognitive_vault)
     # Search for "timeout"
-    results = fusion_engine.fuse_search("timeout")
+    results = await fusion_engine.fuse_search("timeout")
     # Should find the episodic memory added in the first test
     assert len(results) > 0
-    assert any("timeout" in r["content"].lower() for r in results)
+    assert any("timeout" in r.entry.content.lower() for r in results)
 
 @pytest.mark.asyncio
 async def test_context_assembly():
-    context_str = context_assembler.assemble_context("timeout")
+    # Import the entries we added to cognitive_vault into UnifiedMemory
+    await get_unified_memory().import_from_cognitive_vault(cognitive_vault)
+    context_str = await context_assembler.assemble_context("timeout")
     assert "### RECENT EPISODES" in context_str
     assert "timeout" in context_str.lower()
 
