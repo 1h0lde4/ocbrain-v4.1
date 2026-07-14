@@ -1,5 +1,7 @@
 # OCBrain Kernel v1.0 — Documentation Synchronization, Validation & K2.4 Preparation
 
+> **Superseded by `KERNEL_V1_0_FINAL_ARCHITECTURE_AUDIT_REVISION.md`.** Every factual finding in this report was preserved and independently re-verified there, with one point (the retrieval-stack conclusion) checked more rigorously against a specific alternative hypothesis that this report did not explicitly rule out. This report remains the historical record of the session that produced it; the revision refines authority framing, decouples the Constitution discussion from governance implementation, adds an architectural-risk lens, and is the current definitive reference. This note is the only change made to this file.
+
 **Date:** July 14, 2026
 **Status:** Documentation synchronization session output. No code modified. No architecture redesigned. Constitution not amended. Historical ADRs not renumbered.
 **Input treated as primary:** `docs/reports/ARCHITECTURE_CONSOLIDATION_AND_K3_READINESS_REPORT.md` (the previous session's report) — validated against a fresh clone, not assumed correct.
