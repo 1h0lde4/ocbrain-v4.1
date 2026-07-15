@@ -1,3 +1,4 @@
+<img width="1536" height="1024" alt="a5c8335f-e65d-4698-a789-4e1c05752f22" src="https://github.com/user-attachments/assets/2830440e-a250-45ee-95f6-095530b7ddd1" />
 # OCBrain
 
 <div align="center">
