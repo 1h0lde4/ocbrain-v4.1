@@ -4,7 +4,7 @@ main.py — OCBrain v4.1 — Composition Root
 Canonical entry point for the OCBrain runtime.
 Constructs and wires all production singletons:
   - UnifiedMemory (L0-L4)
-  - GovernanceKernel (3 governors)
+  - GovernanceKernel (7 governors — K2.4 complete: PI §6.1 canonical set)
   - EventStream (SQLite WAL)
   - CapabilityRegistry (LLM_COMPLETION capability, 3 registered adapters)
   - ResourceManager (HTTPClientResource, ModelResource binding)

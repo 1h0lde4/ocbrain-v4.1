@@ -9,12 +9,13 @@ Architecture references:
   - FA §4.1 Layer 0: GovernanceKernel (recursion, steps, tokens, workers)
   - FA §4.1 Layer 0: EvolutionGovernor (self-modification requires approval)
 
-Required Governors (PI §6.1):
-  - OrchestrationGovernor
-  - MemoryGovernor (exists: core/governance/memory_governor.py)
-  - AgentGovernor
-  - EvolutionGovernor
-  - ConversationGuardrails
+Required Governors (PI §6.1) — K2.4 status: all five implemented and
+registered as of this session:
+  - OrchestrationGovernor  (core/governance/orchestration_governor.py)
+  - MemoryGovernor         (core/governance/memory_governor.py — reconciled K2.4)
+  - AgentGovernor          (core/governance/agent_governor.py)
+  - EvolutionGovernor      (this file)
+  - ConversationGuardrails (core/governance/conversation_guardrails.py)
 
 Design:
   - Template Method enforcement: Workers call execute() which wraps _run()
@@ -293,6 +294,41 @@ class GovernanceKernel:
         self.register_governor(RecursionGovernor())
         self.register_governor(BudgetGovernor())
         self.register_governor(EvolutionGovernor())
+
+        # K2.4: register the remaining PI §6.1 governors, completing the
+        # canonical five-governor set (KERNEL_ARCHITECTURE_v1.0.md §14.3).
+        #
+        # Imported here, inside __init__, rather than at module level:
+        # orchestration_governor.py / agent_governor.py /
+        # conversation_guardrails.py / memory_governor.py each import
+        # Governor / GovernanceAction / GovernanceResult / GovernanceVerdict
+        # FROM this module at their own module level. A module-level import
+        # here, in the other direction, would be circular. Importing inside
+        # __init__ defers it until this module has already finished
+        # defining everything above, which resolves cleanly (evaluation
+        # order stays fully explicit and deterministic — this only affects
+        # *when the class objects are imported*, not the runtime evaluation
+        # order below, which is unchanged: registration order).
+        #
+        # Ordering rationale (registration order = evaluation order,
+        # KERNEL_ARCHITECTURE_v1.0.md §14.1): the three governors above are
+        # unchanged from pre-K2.4 and keep their exact positions, so no
+        # existing evaluation-order behavior changes. Among the four K2.4
+        # additions, OrchestrationGovernor (broadest: is this worker type
+        # authorized at all) runs before AgentGovernor (narrower: per-call
+        # cost and delegation permissions), before ConversationGuardrails
+        # (content-pattern check), before MemoryGovernor (narrowest today —
+        # only ever has an opinion on action_type == "memory_write", which
+        # no live call site currently produces; see memory_governor.py).
+        from core.governance.orchestration_governor import OrchestrationGovernor
+        from core.governance.agent_governor import AgentGovernor
+        from core.governance.conversation_guardrails import ConversationGuardrails
+        from core.governance.memory_governor import MemoryGovernor
+
+        self.register_governor(OrchestrationGovernor())
+        self.register_governor(AgentGovernor())
+        self.register_governor(ConversationGuardrails())
+        self.register_governor(MemoryGovernor())
 
         logger.info("GovernanceKernel initialized with %d governor(s)",
                      len(self._governors))
