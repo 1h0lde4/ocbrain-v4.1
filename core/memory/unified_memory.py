@@ -315,6 +315,21 @@ class UnifiedMemory:
             graph, eligibility_policy=eligibility_policy, entity_extractor=entity_extractor)
         logger.info("UnifiedMemory: GraphBackend registered (L3 active)")
 
+    @property
+    def graph(self) -> Optional[GraphBackend]:
+        """The registered GraphBackend, or None if register_graph_backend()
+        has not been called. Read-only — registration via
+        register_graph_backend() is the only way to set it, preserving
+        this class's own "single owner of retrieval, nothing reaches
+        into a backend directly" principle for external readers too.
+
+        Added K2.2 (Retrieval Runtime cutover): GraphRAGPipeline needs the
+        registered backend at construction time; this is the minimal
+        public accessor for that, following the existing
+        curator_registered property's pattern in this same class.
+        """
+        return self._graph
+
     async def _sync_graph(self, entry: KnowledgeEntry) -> None:
         """Shared by write() and update(): ask GraphIndexer to create/update/
         remove entry's graph node, then persist any node_id change back onto
