@@ -17,15 +17,19 @@
 | 2026 Q2 | Session 5.5 | (inline in code) | RegexEntityExtractor enabled at composition root. Graph population strategy decided. |
 | 2026 Q2 | Architecture Hardening | `ARCHITECTURE_HARDENING_SESSION_REPORT.md` | Dead code audit. MemoryConsolidator stopped. Composition root cleaned. Evidence-first audit methodology established. |
 | 2026 Q2 | Repository Cleanup | `REPOSITORY_CLEANUP_REPORT.md` | Stale files removed. Archive directory created. |
-| Jul 8, 2026 | Constitution | `OCBRAIN_KERNEL_CONSTITUTION.md` | 9-law Constitution drafted (later updated to 11 laws). North Star: "The kernel coordinates; it does not own." |
+| Jul 8, 2026 | Constitution | `OCBRAIN_KERNEL_CONSTITUTION.md` | 9-law Constitution drafted. North Star: "The kernel coordinates; it does not own." |
 | Jul 8, 2026 | Constitution Rationale | `OCBRAIN_KERNEL_CONSTITUTION_RATIONALE.md` | Section-by-section reasoning. Reconciliation with PROJECT_INSTRUCTIONS.md. Naming review. |
-| Jul 8, 2026 | Constitution Pressure Test | `OCBRAIN_KERNEL_CONSTITUTION_PRESSURE_TEST.md` | Stress-tested Constitution against real scenarios. Proposed 2 new laws (Contract Stability, Failure Containment). |
+| Jul 8, 2026 | Constitution Pressure Test | `OCBRAIN_KERNEL_CONSTITUTION_PRESSURE_TEST.md` | Stress-tested Constitution against real scenarios. Proposed 2 new laws (Contract Stability, Failure Containment) — not adopted into Constitution. |
 | Jul 8, 2026 | **K1 — Kernel Runtime Audit** | `OCBRAIN_K1_KERNEL_AUDIT_AND_SPECIFICATION.md` | Complete audit of running system vs. Constitution. Found Worker layer fully built and fully disconnected. Found governance partially compliant. Established K2 sub-phasing. |
 | Jul 8, 2026 | **K1.5 — Kernel API & Service Model** | `OCBRAIN_K1.5_KERNEL_API_SERVICE_MODEL.md` | Vocabulary freeze (42 terms). Service catalog (9 services). Discovered second disconnected subsystem (RetrievalContextBuilder/GraphRAG). Merged Worker + Retrieval wiring into one K2 milestone. |
 | Jul 8, 2026 | **K1.6 — Resource Model** | `OCBRAIN_K1.6_RESOURCE_MODEL.md` | Resource as Protocol. Four-category taxonomy (Resource, wrapper, projection, ephemeral). KnowledgeEntry confirmed as the only existing Resource. Twelve-state lifecycle rejected. |
 | Jul 10, 2026 | **K1.7–K1.11 — Architecture Freeze** | `OCBRAIN_K1.7-K1.11_FINAL_ARCHITECTURE_FREEZE.md` | ExecutionRuntime, CapabilityModel, WorkflowRuntime, WorkerRuntime fully specified. 6 ADRs. 16 interfaces. Ownership matrix. Dependency graph. K2 readiness confirmed. |
 | Jul 10, 2026 | **K4 — Contract Freeze** | (Implicit in K1.7–K1.11) | All public contracts frozen. Architecture locked for K2 implementation. |
 | Jul 10, 2026 | **Consolidation** | `KERNEL_ARCHITECTURE_v1.0.md` | All specifications merged into single canonical document. |
+| Jul 2026 | **K2.1 — Execution Runtime** | `K2_2_CUTOVER_REPORT.md` | ExecutionRuntime, ExecutionContext, CancellationToken, WorkingMemory, WorkerRegistry, PlannerWorker implemented and production-wired. |
+| Jul 2026 | **K2.2 — Workflow Runtime** | `K2_2_RETRIEVAL_CUTOVER_REPORT.md` | WorkflowRuntime (DAG execution, retry, lifecycle events). Retrieval cutover: ContextAssemblyEngine → GraphRAGPipeline → RetrievalContextBuilder. |
+| Jul 2026 | **K2.3 — Capability Runtime** | `ADR_K2_3_01_GOVERNANCE_OWNERSHIP.md` | CapabilityRegistry, AdapterRuntime, Adapter Protocol. 3 adapters for LLM_COMPLETION. Extension-over-modification pattern. |
+| Jul 2026 | **K2.4 — Governance Completion** | `K2_4_GOVERNANCE_IMPLEMENTATION_REPORT.md` | OrchestrationGovernor, AgentGovernor, ConversationGuardrails built. MemoryGovernor reconciled. 7 governors total. |
 
 ---
 
@@ -156,17 +160,19 @@ Every remaining architectural question resolved. 6 ADRs written. 16 interfaces s
 
 ---
 
-## Known Technical Debt (at freeze)
+## Known Technical Debt (at freeze → K2 resolution status)
 
-| Area | Debt | Severity | Tracking |
-|---|---|---|---|
-| Workers | 7 of 8 canonical types unbuilt. `MemoryCuratorWorker` exists but never instantiated. | Critical | K2.1 |
-| Retrieval | Sophisticated stack (RCB/GraphRAG) disconnected from live path | Critical | K2.2 |
-| Governance | `MemoryGovernor` interface incompatible with `Governor` base class. 2 governors unbuilt. | High | K2.4 |
-| Memory | L2 semantic memory loses embeddings on restart (InMemoryVectorBackend) | High | v4.5.3 |
-| Documentation | README.md, PRODUCT.md describe older product identity | Medium | Parallel |
-| Graph | Default run produces no graph population (nothing calls write() with truth_status yet) | Medium | K2.1 (MemoryCuratorWorker wiring) |
+| Area | Debt | Severity | Tracking | Status |
+|---|---|---|---|---|
+| Workers | 7 of 8 canonical types unbuilt. `MemoryCuratorWorker` exists but never instantiated. | Critical | K2.1 | **Partially resolved** — PlannerWorker built (K2.2), MemoryCuratorWorker wired (K2.1). 2 of 8 canonical types now exist. 5 remain (Cognitive Phase). |
+| Retrieval | Sophisticated stack (RCB/GraphRAG) disconnected from live path | Critical | K2.2 | **Resolved** — ContextAssemblyEngine → GraphRAGPipeline → RetrievalContextBuilder production-wired. RetrievalFusionEngine converted to façade. |
+| Governance | `MemoryGovernor` interface incompatible with `Governor` base class. 2 governors unbuilt. | High | K2.4 | **Resolved** — MemoryGovernor reconciled. OrchestrationGovernor, AgentGovernor, ConversationGuardrails built. 7 governors total. |
+| Memory | L2 semantic memory loses embeddings on restart (InMemoryVectorBackend) | High | v4.5.3 | **Open** — unchanged. |
+| Documentation | README.md, PRODUCT.md describe older product identity | Medium | Parallel | **Resolved** — documentation synchronized July 2026. |
+| Graph | Default run produces no graph population (nothing calls write() with truth_status yet) | Medium | K2.1 (MemoryCuratorWorker wiring) | **Open** — unchanged. |
+
+For current technical debt, see `KNOWN_ISSUES.md`.
 
 ---
 
-*Changelog complete. This document is a historical record. For current architecture, see `KERNEL_ARCHITECTURE_v1.0.md`.*
+*Changelog complete. This document is a historical record. For current architecture, see `KERNEL_ARCHITECTURE_v1.0.md`. For current implementation status, see `CURRENT_STATE.md`.*

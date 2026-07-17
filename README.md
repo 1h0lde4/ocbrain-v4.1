@@ -70,26 +70,25 @@ The Kernel Architecture v1.0 is **frozen**. All architectural contracts are stab
 
 | Component | Status | Purpose |
 |---|---|---|
-| **GovernanceKernel** | Live | Constitutional governance enforcement. 3 governors: Recursion, Budget, Evolution. Template method makes bypass structurally impossible. |
+| **GovernanceKernel** | Live | Constitutional governance enforcement. 7 governors: Recursion, Budget, Evolution, Orchestration, Agent, ConversationGuardrails, Memory. Template method makes bypass structurally impossible. |
 | **EventStream** | Live | Immutable, append-only event log. SQLite WAL. Pub/sub, replay, checkpoints. |
 | **UnifiedMemory** | Live | Canonical memory (L0 Working, L1 Episodic, L2 Semantic, L3 Procedural, L4 Archive). SQLite + FTS5 + BM25 + embeddings + graph index. |
-| **AbstractCognitiveWorker** | Built | Template method pattern: governance → events → `_run()`. 1 subclass (MemoryCuratorWorker). Wiring in K2. |
-| **RetrievalContextBuilder** | Built | Structured retrieval with provenance, contradiction detection, token budgeting. Wiring in K2. |
-| **GraphRAGPipeline** | Built | Graph-augmented retrieval with pluggable strategies. Wiring in K2. |
-| **GraphIndexer + GraphEngine** | Built | Entity extraction, graph storage, neighbor traversal. SQLiteGraphBackend registered at startup. |
-| **ExecutionRuntime** | K2 target | Worker invocation, ExecutionContext lifecycle, failure containment. |
-| **WorkflowRuntime** | K2 target | DAG execution, retry, checkpoint/resume, HITL gates. |
-| **CapabilityRegistry** | K2 target | Static index of capabilities and adapters. |
+| **ExecutionRuntime** | Live | Worker invocation, ExecutionContext lifecycle, failure containment. One worker per call, never raises. |
+| **WorkflowRuntime** | Live | DAG-based multi-worker orchestration. Retry with exponential backoff. Lifecycle event emission. |
+| **CapabilityRegistry + AdapterRuntime** | Live | Metadata-only capability index + execution with adapter selection, health-based ranking, and automatic fallback. 3 adapters for LLM_COMPLETION. |
+| **AbstractCognitiveWorker** | Live | Template method pattern: governance → events → `_run()`. 2 subclasses (PlannerWorker, MemoryCuratorWorker). |
+| **RetrievalContextBuilder + GraphRAGPipeline** | Live | Structured retrieval with provenance, contradiction detection, token budgeting. Graph-augmented retrieval. Production-wired. |
+| **GraphIndexer + GraphEngine** | Live | Entity extraction, graph storage, neighbor traversal. SQLiteGraphBackend registered at startup. |
 
 ### Constitutional Principles
 
-OCBrain is governed by 11 laws. The three most consequential for daily engineering:
+OCBrain is governed by 9 laws. The three most consequential for daily engineering:
 
 1. **Bounded Autonomy** — No capability may exceed the governance wrapped around it
 2. **Explicit State** — Nothing meaningful happens without leaving a trace (events)
 3. **Separation of Concerns** — The kernel coordinates; it does not perform
 
-See the full [Kernel Constitution](OCBRAIN_KERNEL_CONSTITUTION.md) for all 11 laws and 9 invariants.
+See the full [Kernel Constitution](OCBRAIN_KERNEL_CONSTITUTION.md) for all 9 laws and 9 invariants.
 
 ---
 

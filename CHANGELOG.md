@@ -1,12 +1,55 @@
 # Changelog
 
+## [4.1.1] — 2026-07 — K2 Implementation Complete
+
+Documentation synchronization release. All K2 sub-phases verified complete.
+
+### K2.1 — Execution Runtime
+- **ExecutionRuntime** — worker invocation, ExecutionContext lifecycle, failure containment
+- **ExecutionContext** — canonical execution parameter object (replaces WorkerContext, ADR-001)
+- **CancellationToken** — cooperative cancellation
+- **WorkingMemory** — L0 per-execution scratch space
+- **WorkerRegistry** — worker type index
+- **PlannerWorker** — canonical workflow entry worker
+
+### K2.2 — Workflow Runtime
+- **WorkflowRuntime** — DAG-based multi-worker orchestration with retry and lifecycle events
+- **WorkflowDefinition / Node / Edge** — workflow graph model
+- **Retrieval cutover** — ContextAssemblyEngine → GraphRAGPipeline → RetrievalContextBuilder production-wired
+- **RetrievalFusionEngine** — converted to compatibility façade over GraphRAGPipeline
+
+### K2.3 — Capability Runtime
+- **CapabilityRegistry** — metadata-only capability index (does not execute)
+- **AdapterRuntime** — capability execution with adapter selection, health-based ranking, fallback
+- **Adapter Protocol** — structural typing (Protocol, not ABC)
+- **ModelRouterAdapter** — wraps existing ModelRouter (extension over modification)
+- **OllamaAdapter** — direct Ollama API adapter
+- **OpenAICompatAdapter** — OpenAI-compatible API adapter
+
+### K2.4 — Governance Completion
+- **OrchestrationGovernor** — worker type execution authorization
+- **AgentGovernor** — per-call resource ceiling and delegation permission matrix
+- **ConversationGuardrails** — session-level content policy
+- **MemoryGovernor** — reconciled with Governor base class, registered in GovernanceKernel
+- Total: 7 governors registered and active
+
+### Documentation
+- **CURRENT_STATE.md** — authoritative implementation status
+- **IMPLEMENTATION_ROADMAP.md** — living roadmap
+- **KNOWN_ISSUES.md** — technical debt register
+- **PROJECT_INDEX.md** — repository map
+- Architecture Decision Records organized into `docs/architecture/decisions/`
+- All documents synchronized with implementation status
+
+---
+
 ## [4.1.0] — 2026-07-10 — Kernel Architecture v1.0
 
 Architecture freeze release. All kernel contracts are locked. The project transitions
 from Architecture Era to Implementation Era.
 
 ### Kernel Constitution
-- **Kernel Constitution v1.0** — 11 laws, 9 invariants governing all system behaviour
+- **Kernel Constitution v1.0** — 9 laws, 9 invariants governing all system behaviour
 - Constitution rationale document and pressure test record
 - Constitutional enforcement integrated into GovernanceKernel at runtime
 

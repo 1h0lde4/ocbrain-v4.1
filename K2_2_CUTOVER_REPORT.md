@@ -1,6 +1,8 @@
 # OCBrain K2.2 — Workflow Runtime & Production Runtime Migration
 ## Cutover Report
 
+> **Companion report:** The K2.2 Retrieval Runtime cutover is documented separately in [`docs/reports/K2_2_RETRIEVAL_CUTOVER_REPORT.md`](docs/reports/K2_2_RETRIEVAL_CUTOVER_REPORT.md).
+
 **Date:** July 11, 2026
 **Status:** Implementation complete, reconciled against a concurrent push discovered mid-session (see §0.5). Final patch base: `9bcb6e6` (current `main` tip at time of delivery). Original working base: `ca43469` (no `kernel-v1.0` tag exists in the repository at either commit — see §0).
 **Method:** Direct inspection of the actual repository (cloned fresh, not assumed from the session prompt's framing), full regression suite run before and after every change, two new bugs found by tests written in this session and fixed, then a second full verification pass after discovering and reconciling a concurrent push (§0.5).

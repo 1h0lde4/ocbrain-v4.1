@@ -17,7 +17,7 @@ It is not a cloud service. It is not a workflow automation tool.
 
 ## Governing Principles
 
-All design decisions are bound by the **Kernel Constitution** — 11 laws and 9 invariants
+All design decisions are bound by the **Kernel Constitution** — 9 laws and 9 invariants
 that define what the system may and may not do. The Constitution is not advisory; it is
 enforced at runtime by the GovernanceKernel.
 
@@ -36,12 +36,15 @@ The engineering specification is frozen in `KERNEL_ARCHITECTURE_v1.0.md`.
 
 | Subsystem | Status | Description |
 |:---|:---|:---|
-| **GovernanceKernel** | Live (3/5+ governors) | RecursionGovernor, BudgetGovernor, EvolutionGovernor |
+| **GovernanceKernel** | Live (7 governors) | RecursionGovernor, BudgetGovernor, EvolutionGovernor, OrchestrationGovernor, AgentGovernor, ConversationGuardrails, MemoryGovernor |
 | **EventStream** | Live | SQLite WAL, immutable append, pub/sub, replay, checkpoints |
 | **UnifiedMemory** | Live | L0–L4 tier model with graph backend |
-| **GraphRAG Pipeline** | Built, tested | RetrievalContextBuilder + GraphRAGPipeline |
-| **Graph Engine** | Built | GraphIndexer, GraphEngine, SQLiteGraphBackend |
-| **CognitiveWorker** | Template built | AbstractCognitiveWorker (1 subclass: MemoryCuratorWorker) |
+| **ExecutionRuntime** | Live | Worker invocation, ExecutionContext lifecycle, failure containment |
+| **WorkflowRuntime** | Live | DAG-based multi-worker orchestration with retry and lifecycle events |
+| **CapabilityRegistry + AdapterRuntime** | Live | Metadata-only capability index + execution with adapter selection, fallback. 3 adapters (LLM_COMPLETION) |
+| **GraphRAG Pipeline** | Live | RetrievalContextBuilder + GraphRAGPipeline — production-wired retrieval path |
+| **Graph Engine** | Live | GraphIndexer, GraphEngine, SQLiteGraphBackend registered at startup |
+| **CognitiveWorkers** | Live | AbstractCognitiveWorker + 2 subclasses (PlannerWorker, MemoryCuratorWorker) |
 | **Legacy Modules** | Operational | coding, web_search, knowledge, system_ctrl |
 
 **Stack**: Python 3.11+, FastAPI, Ollama (local inference), SQLite.
@@ -69,19 +72,20 @@ OCBrain deliberately does not attempt to be:
 
 ---
 
-## Architecture Era → Implementation Era
+## Implementation Era — Complete
 
-The Kernel Architecture v1.0 is frozen. The project is now entering the
-**Implementation Era (K2)**, which will deliver:
+The Kernel Architecture v1.0 is frozen. K2 implementation is **complete**:
 
-- **ExecutionRuntime** — lifecycle management for cognitive workers
-- **WorkflowRuntime** — DAG-based multi-worker orchestration
-- **CapabilityRegistry** — dynamic tool and capability discovery
-- **Governance completion** — remaining governors (ConcurrencyGovernor, QualityGovernor+)
-- **MCP-native tools** — Model Context Protocol integration for tool interop
-- **Self-improvement under governance** — workers that evolve within constitutional bounds
+- ✅ **ExecutionRuntime** — worker invocation, ExecutionContext lifecycle, failure containment
+- ✅ **WorkflowRuntime** — DAG-based multi-worker orchestration with retry
+- ✅ **CapabilityRegistry + AdapterRuntime** — capability index + execution with adapter selection and fallback
+- ✅ **Governance completion** — 7 governors registered (Recursion, Budget, Evolution, Orchestration, Agent, ConversationGuardrails, Memory)
 
-All K2 services will conform to the frozen public contracts defined in the architecture spec.
+**Next phase:** K3 — Kernel Compliance Audit.
+
+**Future (Cognitive Phase):** MCP-native tools, self-improvement under governance, additional workers and capability types.
+
+See `IMPLEMENTATION_ROADMAP.md` for the full roadmap and `CURRENT_STATE.md` for detailed implementation status.
 
 ---
 

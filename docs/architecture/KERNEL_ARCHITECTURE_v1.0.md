@@ -190,11 +190,11 @@ The kernel comprises exactly nine services. Five exist and are live. Four are K2
 | **EventStream** | Live | Immutable, append-only event log with pub/sub and replay. SQLite WAL-mode backend. Abstract `EventStore` interface for future migration. |
 | **UnifiedMemory** | Live | Canonical read/write for all persistent memory (L0–L4). Storage, vector, graph, and archive backends. Public API: `write()`, `search()`, `update()`, `stats()`. |
 | **HealthMonitor** | Live | Periodic system health checks. Background task, isolated from request path. |
-| **ExecutionRuntime** | K2 target | Construct and invoke one Worker for one unit of work. Create ExecutionContext. Enforce execution boundaries. |
-| **WorkflowRuntime** | K2 target | Coordinate a DAG of ExecutionRuntime invocations. Own retry logic, checkpoints, HITL gates, and execution transactions. |
-| **CapabilityRegistry** | K2 target | Static index of Capabilities and their Adapters. Populated at startup, read-only after initialization. |
-| **CapabilityResolver** | K2 target | Stateless runtime selection of which Adapter satisfies a request. Health/cost/latency scoring. |
-| **WorkerRegistry** | K2 target | Index of constructable Worker types. Populated at startup, read-only after initialization. |
+| **ExecutionRuntime** | Live (K2.1) | Construct and invoke one Worker for one unit of work. Create ExecutionContext. Enforce execution boundaries. |
+| **WorkflowRuntime** | Live (K2.2) | Coordinate a DAG of ExecutionRuntime invocations. Own retry logic, checkpoints, HITL gates, and execution transactions. |
+| **CapabilityRegistry** | Live (K2.3) | Static index of Capabilities and their Adapters. Populated at startup, read-only after initialization. |
+| **CapabilityResolver** | Live (K2.3) | Stateless runtime selection of which Adapter satisfies a request (implemented as `AdapterRuntime`). Health/cost/latency scoring. |
+| **WorkerRegistry** | Live (K2.1) | Index of constructable Worker types. Populated at startup, read-only after initialization. |
 
 ### Explicitly Rejected Services
 
@@ -433,11 +433,11 @@ async def _run(self, context: ExecutionContext) -> WorkerResult: ...
 
 | Worker | Status | Responsibility | K2 Priority |
 |---|---|---|---|
-| **MemoryCuratorWorker** | Implemented, never wired | Active memory improvement — prune, strengthen, derive, resolve contradictions | K2.1 (wire into composition root) |
-| **PlannerWorker** | Not built | Decompose a goal into a plan or WorkflowDefinition | K2.1 |
-| **ReflectionWorker** | Not built | Evaluate and critique the system's own outputs | K2.4+ |
-| **EvaluatorWorker** | Not built | Score/grade outputs against criteria | K2.4+ |
-| **SupervisorWorker** | Not built | Coordinate multiple sub-workers via ExecutionRuntime | K2.4+ |
+| **MemoryCuratorWorker** | Implemented, wired (K2.1) | Active memory improvement — prune, strengthen, derive, resolve contradictions | K2.1 |
+| **PlannerWorker** | Implemented, production-wired (K2.2) | Canonical workflow entry worker — classify, dispatch, merge | K2.1 |
+| **ReflectionWorker** | Not built | Evaluate and critique the system's own outputs | Cognitive Phase |
+| **EvaluatorWorker** | Not built | Score/grade outputs against criteria | Cognitive Phase |
+| **SupervisorWorker** | Not built | Coordinate multiple sub-workers via ExecutionRuntime | Cognitive Phase |
 | **CoderWorker** | Not built | Code generation, modification, analysis (sandboxed) | Cognitive Phase |
 | **BrowserWorker** | Not built | Web browsing, content extraction | Cognitive Phase |
 
@@ -609,7 +609,7 @@ The graph is an index over Memory, not a storage layer.
 
 Two retrieval stacks exist. The sophisticated one is canonical.
 
-## 13.1 Canonical Stack (K2 target — wire into live path)
+## 13.1 Canonical Stack (Live — production retrieval path since K2.2)
 
 **RetrievalContextBuilder** produces structured `Context` objects:
 - `ContextBlock`: Storage-decoupled projection of a KnowledgeEntry with provenance
@@ -668,10 +668,10 @@ class GovernanceAction:
 | **RecursionGovernor** | Live | Prevents runaway recursive loops (depth > 10 → REJECT) |
 | **BudgetGovernor** | Live | Enforces per-workflow step and token budgets (carried in `GovernanceAction.metadata`) |
 | **EvolutionGovernor** | Live | Controls self-modifying actions (`memory_curate`, `skill_create`, etc.). HITL escalation when `requires_approval` is set. |
-| **MemoryGovernor** | Exists, **disconnected** | Validates memory ingestion quality. Interface incompatible with `Governor` base class — K2.4 reconciliation target. |
-| **OrchestrationGovernor** | Not built | K2.4 target |
-| **AgentGovernor** | Not built | K2.4 target |
-| **ConversationGuardrails** | Not built | K2.4 target |
+| **MemoryGovernor** | Live (K2.4) | Reconciled with `Governor` base class. Validates memory ingestion quality. Registered in GovernanceKernel. No production call site yet constructs `action_type="memory_write"`. |
+| **OrchestrationGovernor** | Live (K2.4) | Authorizes which worker types may execute. Permissive default (empty deny list). |
+| **AgentGovernor** | Live (K2.4) | Per-call resource ceiling and delegation permission matrix. Permissive default. |
+| **ConversationGuardrails** | Live (K2.4) | Session-level content policy via denylist. Permissive default (empty denylist). |
 
 ## 14.4 Verdicts
 
@@ -957,10 +957,12 @@ The Resource Protocol requires a `lifecycle_state` field but does not mandate th
 - ✅ K1.7–K1.11 — Final Architecture Freeze
 - ✅ K4 — Contract Freeze
 
-## Kernel Implementation Phase (Next)
+## Kernel Implementation Phase (✅ Complete — July 2026)
+
+> **Provenance note:** Implementation status markers added post-freeze after K2.1–K2.4 were independently verified complete. Architecture contracts unchanged. See `CURRENT_STATE.md` for detailed implementation status.
 
 ```
-K2.1 — Execution Runtime              [unblocks everything]
+K2.1 — Execution Runtime              ✅ Complete
   ExecutionContext, CancellationToken, WorkingMemory
   ExecutionRuntime.invoke()
   WorkerRegistry
@@ -968,20 +970,22 @@ K2.1 — Execution Runtime              [unblocks everything]
   Wire MemoryCuratorWorker into composition root
   PlannerWorker (minimal)
 
-K2.2 — Workflow Runtime                ┐
-  WorkflowDefinition, Node, Edge       │ can proceed in
-  WorkflowRuntime.execute/resume/cancel│ parallel once
-  Wire RetrievalContextBuilder into    │ K2.1 lands
-  live path                            │
+K2.2 — Workflow Runtime                ✅ Complete
+  WorkflowDefinition, Node, Edge
+  WorkflowRuntime.execute/resume/cancel
+  Wire RetrievalContextBuilder into
+  live path
 
-K2.3 — Capability Registry            │
-  CapabilityAdapter Protocol           │
-  CapabilityRegistry, Resolver         │
-  Wrap existing Providers              ┘
+K2.3 — Capability Registry             ✅ Complete
+  Adapter Protocol (named Adapter, not CapabilityAdapter)
+  CapabilityRegistry, AdapterRuntime
+  Wrap existing Providers (ModelRouterAdapter)
+  OllamaAdapter, OpenAICompatAdapter
 
-K2.4 — Governance Completion
+K2.4 — Governance Completion           ✅ Complete
   Reconcile MemoryGovernor interface
   OrchestrationGovernor, AgentGovernor, ConversationGuardrails
+  7 governors total
 ```
 
 ## Validation Phase

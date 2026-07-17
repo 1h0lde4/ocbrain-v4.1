@@ -1,5 +1,7 @@
 # OCBrain Kernel v1.0 — K2.2 Retrieval Runtime Completion (Canonical Retrieval Cutover): Session Report
 
+> **Companion report:** The K2.2 Workflow Runtime cutover is documented separately in [`K2_2_CUTOVER_REPORT.md`](../../K2_2_CUTOVER_REPORT.md) (repository root).
+
 **Date:** July 16, 2026
 **Status:** Implementation complete. All success criteria met. No architectural redesign — `RetrievalContextBuilder` and `GraphRAGPipeline` (built and comprehensively tested in earlier sessions, 93 pre-existing passing tests) are activated as the live path exactly as specified; their internal algorithms were not touched.
 **Scope discipline:** `UnifiedMemory`, Execution Runtime, Workflow Runtime, Governance Runtime, Capability Runtime were not redesigned. `UnifiedMemory` received one small, additive, read-only accessor (§3) — its retrieval/storage logic is otherwise untouched.
