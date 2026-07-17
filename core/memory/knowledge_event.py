@@ -33,6 +33,9 @@ EVENT_TYPES = {
     "deprecated",    # truth_status set to "deprecated"
     "deleted",       # Entry removed from active storage
     "curated",       # MemoryCuratorWorker modified the entry
+    # K3.5 — Governance rejection/escalation events (Law 1 + Law 2)
+    "memory_write_rejected",   # Governance rejected a memory write
+    "memory_write_escalated",  # Governance escalated a memory write (HITL required)
 }
 
 

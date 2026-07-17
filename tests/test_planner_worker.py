@@ -206,7 +206,7 @@ class TestPlannerWorkerViaExecutionRuntime:
         """If PlannerWorker is registered WITHOUT its required
         constructor_kwargs, construction fails (modules defaults to {},
         which _run() correctly rejects) -- but ExecutionRuntime must still
-        contain this as a WorkerResult, never raise (Law 11)."""
+        contain this as a WorkerResult, never raise (Failure Containment)."""
         registry = WorkerRegistry()
         registry.register(PlannerWorker)  # no constructor_kwargs
         runtime = ExecutionRuntime(

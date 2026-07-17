@@ -201,6 +201,10 @@ class AbstractCognitiveWorker(ABC):
         self._total_executions += 1
 
         # ── Step 1: Governance evaluation ─────────────────────────────────
+        # K3.5: propagate budget context so BudgetGovernor is operational.
+        # step_count/token_spend are read from context.metadata where
+        # ExecutionRuntime/WorkflowRuntime supply accumulated values.
+        budget = context.metadata.get("budget", {})
         action = GovernanceAction(
             action_type="worker_execute",
             worker_id=self._id,
@@ -210,6 +214,8 @@ class AbstractCognitiveWorker(ABC):
                 "task_id": context.task_id,
                 "worker_type": self.worker_type,
                 "workflow_id": context.workflow_id,
+                "step_count": budget.get("steps", context.metadata.get("step_count", 0)),
+                "token_spend": budget.get("tokens", context.metadata.get("token_spend", 0.0)),
             },
         )
 

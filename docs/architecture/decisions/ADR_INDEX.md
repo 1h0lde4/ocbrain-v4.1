@@ -37,6 +37,7 @@ Both conventions are valid. Embedded ADRs are part of the frozen spec; standalon
 |---|---|---|---|
 | ADR-K2.3-01 | Governance Ownership in Capability Runtime | Draft | `ADR_K2_3_01_GOVERNANCE_OWNERSHIP.md` |
 | ADR-K2-EXT-01 | Extension over Modification | Accepted | `ADR_K2_EXT_01_EXTENSION_OVER_MODIFICATION.md` |
+| ADR-K3.5-01 | Event Architecture — EventStream vs EventBus | Accepted | `ADR_K3_5_01_EVENT_ARCHITECTURE.md` |
 
 ---
 

@@ -188,7 +188,14 @@ class Orchestrator:
             worker_id=self._id,
             description=f"orchestrator_handle: {query[:120]}",
             recursion_depth=0,
-            metadata={"interaction_id": interaction_id},
+            metadata={
+                "interaction_id": interaction_id,
+                # K3.5: Budget context for BudgetGovernor activation.
+                # Values are 0 at orchestrator level (first evaluation in chain).
+                # Accumulated budget propagates at worker level via ExecutionContext.
+                "step_count": 0,
+                "token_spend": 0.0,
+            },
         )
         gov_result = self._governance.evaluate_action(action)
 
@@ -298,7 +305,7 @@ class Orchestrator:
 
                 except Exception as e:
                     # Should not happen -- WorkflowRuntime.execute() never
-                    # raises (Law 11, Failure Containment). Contained here
+                    # raises (Failure Containment principle). Contained here
                     # anyway, consistent with the legacy path's own
                     # top-level except block below.
                     logger.error("[Orchestrator] Unexpected error in "

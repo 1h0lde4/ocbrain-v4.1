@@ -7,7 +7,7 @@ Architecture:
     KERNEL_ARCHITECTURE_v1.0.md §7.1 — ExecutionRuntime.
     Constitution Law 1 — Bounded Autonomy (governance in template method).
     Constitution Law 2 — Explicit State (lifecycle events).
-    Constitution Law 11 — Failure Containment (never raises).
+    Failure Containment principle (never raises).
 
 Design:
     - Constructs a fresh Worker instance per invoke() call (ADR-003).
@@ -95,7 +95,7 @@ class ExecutionRuntime:
 
         Architecture:
             KERNEL_ARCHITECTURE_v1.0.md §7.1 — ExecutionRuntime.invoke().
-            Law 11 — Failure Containment: never raises past this boundary.
+            Failure Containment principle: never raises past this boundary.
 
         Lifecycle:
             1. Resolve worker_type via WorkerRegistry
@@ -169,6 +169,14 @@ class ExecutionRuntime:
                 parent_worker_id=parent_worker_id,
                 metadata={
                     "query": query,
+                    # K3.5: Budget context for BudgetGovernor activation.
+                    # Callers (e.g. WorkflowRuntime) may override these via
+                    # the metadata kwarg with accumulated values.
+                    "budget": {
+                        "steps": (metadata or {}).get("budget", {}).get("steps", 0),
+                        "tokens": (metadata or {}).get("budget", {}).get("tokens", 0.0),
+                        "cost": (metadata or {}).get("budget", {}).get("cost", 0.0),
+                    },
                     **(metadata or {}),
                 },
             )

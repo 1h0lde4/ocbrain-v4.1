@@ -226,6 +226,13 @@ async def main():
     log.info(f"GovernanceKernel ready ({governance_kernel.stats()['governors']})")
     log.info("EventStream ready")
 
+    # K3.5 — Wire governance into memory (Constitution Law 1: Bounded Autonomy).
+    # Every production memory write now passes through GovernanceKernel.
+    # MemoryGovernor (registered in GovernanceKernel.__init__) evaluates
+    # action_type="memory_write" for quality and growth limits.
+    memory.register_governance(governance_kernel)
+    log.info("GovernanceKernel registered with UnifiedMemory (memory writes governed)")
+
     # Step 6b: K2.1 — ExecutionRuntime (canonical execution path)
     # WorkerRegistry: static index of constructable Worker types.
     # ExecutionRuntime: constructs and invokes one Worker per unit of work.

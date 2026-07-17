@@ -24,7 +24,10 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.governance.governance_kernel import GovernanceKernel
 
 from core.memory.backends.base import (
     ArchiveBackend, GraphBackend, L0Cache, StorageBackend, VectorBackend,
@@ -269,7 +272,8 @@ class UnifiedMemory:
                  archive:  Optional[ArchiveBackend] = None,
                  l0_maxsize: int = 500,
                  archive_all: bool = False,
-                 db_prefix: str = ".data/memory"):
+                 db_prefix: str = ".data/memory",
+                 governance: Optional["GovernanceKernel"] = None):
         self._l0      = _LRUWorkingMemory(maxsize=l0_maxsize)
         self._storage = storage  or SQLiteStorageBackend(f"{db_prefix}/unified.db")
         self._vector  = vector   or InMemoryVectorBackend()
@@ -279,17 +283,39 @@ class UnifiedMemory:
         self._router  = LayerRouter()
         self._hooks   = HookRegistry()
         self._archive_all = archive_all  # snapshot every entry on write
+        self._governance: Optional["GovernanceKernel"] = governance  # K3.5: explicit injection
 
         self._write_count   = 0
         self._search_count  = 0
-        logger.info("UnifiedMemory ready (L0=%d cap, archive_all=%s)",
-                    l0_maxsize, archive_all)
+        logger.info("UnifiedMemory ready (L0=%d cap, archive_all=%s, governance=%s)",
+                    l0_maxsize, archive_all, governance is not None)
 
         # Constructor-provided graph goes through the same registration path
         # as main.py's explicit register_graph_backend() call, so there is
         # exactly one place GraphIndexer gets built regardless of entry point.
         if graph is not None:
             self.register_graph_backend(graph)
+
+    # ── Governance integration (K3.5) ──────────────────────────────────────
+
+    def register_governance(self, governance: "GovernanceKernel") -> None:
+        """Wire GovernanceKernel into this memory instance.
+
+        K3.5 Kernel Hardening — Constitution Law 1 (Bounded Autonomy).
+        Called from the composition root (main.py) after both singletons
+        exist. Mirrors register_graph_backend() and register_curator().
+
+        Explicit injection, not hidden singleton lookup — preserves
+        constructor testability and avoids hidden global dependencies.
+
+        Args:
+            governance: GovernanceKernel instance from the composition root.
+        """
+        if self._governance is not None:
+            logger.warning("UnifiedMemory: duplicate governance registration blocked")
+            return
+        self._governance = governance
+        logger.info("UnifiedMemory: GovernanceKernel registered (memory writes governed)")
 
     # ── Curator integration ───────────────────────────────────────────────
 
@@ -407,6 +433,87 @@ class UnifiedMemory:
         into `content`. Both fields remain independently full-text
         searchable; neither is required.
         """
+        # ── K3.5: Governance evaluation (Law 1 — Bounded Autonomy) ─────────
+        # Runs BEFORE layer routing, entry construction, or any backend write.
+        # If governance is not registered (tests, legacy paths), writes
+        # proceed ungoverned — matching the permissive-when-absent pattern
+        # established by BudgetGovernor and OrchestrationGovernor.
+        if self._governance is not None:
+            from core.governance.governance_kernel import (
+                GovernanceAction, GovernanceVerdict,
+            )
+            gov_action = GovernanceAction(
+                action_type="memory_write",
+                worker_id=worker_id or "UnifiedMemory",
+                description=f"memory_write: {content[:120]}",
+                metadata={
+                    "entry": {
+                        "confidence": confidence,
+                        "fact": content,
+                        "content": content,
+                    },
+                    "current_count": self._write_count,
+                    "content_type": content_type,
+                    "layer_hint": layer_hint,
+                    "importance": importance,
+                },
+            )
+            gov_result = self._governance.evaluate_action(gov_action)
+
+            if gov_result.verdict == GovernanceVerdict.REJECT:
+                logger.warning(
+                    "[UnifiedMemory] Write rejected by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                # Law 2 — Explicit State: emit event so rejection is observable.
+                try:
+                    ev = event_created(
+                        entry_id or "rejected",
+                        worker_id=worker_id, workflow_id=workflow_id,
+                    )
+                    # Reuse the archive's event infrastructure for the
+                    # rejection record. The event payload carries the
+                    # governance reason; the event_type distinguishes it.
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    reject_ev = KnowledgeEvent(
+                        event_type="memory_write_rejected",
+                        entry_id=entry_id or "",
+                        worker_id=worker_id,
+                        workflow_id=workflow_id,
+                        payload={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": content[:80],
+                        },
+                    )
+                    await self._archive.append_event(reject_ev)
+                except Exception as e:
+                    logger.warning("memory_write_rejected event emission failed: %s", e)
+                return ""
+
+            if gov_result.verdict == GovernanceVerdict.ESCALATE:
+                logger.info(
+                    "[UnifiedMemory] Write escalated by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                try:
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    escalate_ev = KnowledgeEvent(
+                        event_type="memory_write_escalated",
+                        entry_id=entry_id or "",
+                        worker_id=worker_id,
+                        workflow_id=workflow_id,
+                        payload={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": content[:80],
+                        },
+                    )
+                    await self._archive.append_event(escalate_ev)
+                except Exception as e:
+                    logger.warning("memory_write_escalated event emission failed: %s", e)
+                return ""
+
         layer = self._router.route(
             content=content, content_type=content_type,
             importance=importance, trust_score=trust_score,

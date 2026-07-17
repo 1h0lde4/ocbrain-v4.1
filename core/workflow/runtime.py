@@ -125,7 +125,7 @@ class WorkflowRuntime:
 
         Architecture:
             KERNEL_ARCHITECTURE_v1.0.md §8 — Workflow Model.
-            Law 11 — Failure Containment: never raises.
+            Failure Containment principle: never raises.
 
         Lifecycle:
             1. Validate workflow definition
