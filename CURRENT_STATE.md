@@ -1,6 +1,6 @@
 # OCBrain Kernel v1.0 — Current State
 
-**Last synchronized:** July 2026 (post-K3.5.1 Kernel Hardening)
+**Last synchronized:** July 18, 2026 (Repository Reality Synchronization pass)
 **Authority:** This document is the authoritative answer to "what is actually built right now."
 
 ---
@@ -41,7 +41,7 @@
 | Governor | File | Status | Purpose |
 |---|---|---|---|
 | **RecursionGovernor** | `core/governance/governance_kernel.py` | Active | Prevents runaway recursive loops (depth > 10 → REJECT) |
-| **BudgetGovernor** | `core/governance/governance_kernel.py` | Active | Enforces per-workflow step and token budgets |
+| **BudgetGovernor** | `core/governance/governance_kernel.py` | Active (evaluation mechanism correct; no accumulation source yet) | Correctly rejects when `step_count`/`token_spend` exceed threshold. Metadata propagation is wired end-to-end (`ExecutionContext` → `AbstractCognitiveWorker.execute()` → `Orchestrator.handle()`), but nothing in the repository currently increments these values beyond their `0`/`0.0` initialization — the REJECT branch is logically correct but currently unreachable in any production path. See KNOWN_ISSUES.md DEBT-007. |
 | **EvolutionGovernor** | `core/governance/governance_kernel.py` | Active | Controls self-modifying actions. HITL escalation when `requires_approval` is set. |
 | **OrchestrationGovernor** | `core/governance/orchestration_governor.py` | Active (permissive default) | Authorizes which worker types may execute |
 | **AgentGovernor** | `core/governance/agent_governor.py` | Active (no live trigger) | Per-call resource ceiling and delegation permission matrix |
@@ -87,7 +87,18 @@ All persistent memory mutations (write, update, delete) are governed before any 
 
 ---
 
-## Canonical Documents
+## Other Kernel Domains
+
+Explicitly checked in the July 18, 2026 Reality Synchronization pass; not previously listed in this document.
+
+| Domain | Status | Notes |
+|---|---|---|
+| **Scheduler (kernel-level)** | Missing — deliberate | No `SchedulerService` exists. Explicitly, repeatedly deferred by K1/K1.5/K1.6 ("not needed yet" — `asyncio.gather()` fan-out is sufficient at single-process scale; a dedicated scheduler is scoped to distributed/queue-mode execution, not yet built). Not a gap relative to current scope. |
+| **Scheduler (learning pipeline)** | Live, unrelated | `learning/scheduler.py`'s `Scheduler` class (crawl/clean/train/distill/gap-detect loops) is constructed at `main.py`'s composition root. A distinct subsystem from kernel-level task scheduling — do not conflate the two. |
+| **Resource Model** | Partially implemented | No formal `Resource` Protocol/ABC class exists anywhere — by design, per `OCBRAIN_K1.6_RESOURCE_MODEL.md`'s explicit decision to use structural typing rather than inheritance, to avoid touching `KnowledgeEntry`'s declaration. Two concrete Resource types exist (`HTTPClientResource`, `ModelResource` in `core/capabilities/resource.py`, K2.3) implementing a six-field shape. `KnowledgeEntry` — the one object K1.6's own migration plan said needed minor field alignment — has not been aligned (retains `trust_score`, not `trust`; no `version`/`dependencies` fields). See KNOWN_ISSUES.md DEBT-009 for the six-field shape's unratified-Constitution-amendment provenance. |
+| **Explainability** | No dedicated layer; diffuse partial compliance | No `Explain*` class or module exists anywhere in the repository. `GovernanceResult.reason` is populated on every REJECT/ESCALATE (governance-decision-level explainability, real and functional). The Constitution's broader Law 6 example — "before a workflow runs, the kernel can state plainly what it understood the goal to be, and what it's still uncertain about" — has no general-purpose implementation in `ExecutionRuntime` or `WorkflowRuntime`; no pre-execution confidence/justification surface exists. |
+
+---
 
 | Document | Location | Purpose |
 |---|---|---|
