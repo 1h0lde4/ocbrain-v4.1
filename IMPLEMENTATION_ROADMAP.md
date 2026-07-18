@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 2026
+**Last synchronized:** July 2026 (post-K3.5.1 Kernel Hardening)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -33,6 +33,21 @@ Completion reports:
 
 ---
 
+## Kernel Hardening Phase — ✅ Complete
+
+Consistency hardening on the already-complete Implementation Phase, addressing gaps DEBT-001 and (once-implicit) update/delete governance identified in `KNOWN_ISSUES.md`. Not a new architectural phase — no new subsystems, no public API changes.
+
+| Milestone | Status | Key Deliverables |
+|---|---|---|
+| K3.5 — Governance Wiring (`write()`) | ✅ Complete | `UnifiedMemory.write()` calls `GovernanceKernel.evaluate_action()` before any mutation. `ADR-K3.5-01` (EventStream vs EventBus boundary). Resolves DEBT-001 for the write path. |
+| K3.5.1 — Governance Consistency (`update()`, `delete()`) | ✅ Complete | `UnifiedMemory.update()` and `delete()` now call `evaluate_action()` before any mutation, using the identical pattern K3.5 established for `write()` (`memory_update` / `memory_delete` action types, matching reject/escalate event emission). Closes the last unguarded persistent-mutation entry points in `UnifiedMemory`. |
+
+**Invariant established:** no persistent state mutation inside `UnifiedMemory` (`write`, `update`, `delete`) bypasses `GovernanceKernel`. `search()` and `read()` remain intentionally exempt (read-only, no state mutation).
+
+**Scope note:** this closes the *structural* governance-bypass gap — every mutation now enters the same evaluation chain. It does not add new content-validation logic: `MemoryGovernor`'s confidence/growth-limit checks remain scoped to `memory_write` by its own existing design (see `CURRENT_STATE.md` Governance section). Extending `MemoryGovernor` to validate update/delete content specifically was not in scope for this hardening pass and was not attempted.
+
+---
+
 ## Validation Phase — ⬜ Next
 
 | Milestone | Status | Purpose |
@@ -44,6 +59,9 @@ Completion reports:
 - ✅ All K2 sub-phases verified complete
 - ✅ Constitution law count consistent across all documents
 - ✅ Navigation documents created for auditor entry
+- ✅ Kernel Hardening Phase complete (write/update/delete governance consistency)
+
+**Note:** K3 (Kernel Compliance Audit) has not yet been performed and remains the outstanding gate before Cognitive Phase work begins. Kernel Hardening Phase completion strengthens the case for K3, but does not substitute for it — several unrelated debt items remain open (see `KNOWN_ISSUES.md`: DEBT-002 AgentGovernor delegation dormancy, DEBT-003 checkpoint/resume, DEBT-004/DEBT-005 event-mechanism fragmentation, DEBT-006 L2 volatility). This document does not declare Kernel closure; K3 is the mechanism for that determination.
 
 ---
 

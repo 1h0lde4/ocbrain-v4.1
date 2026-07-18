@@ -1,6 +1,6 @@
 # OCBrain — Known Issues & Technical Debt Register
 
-**Last synchronized:** July 2026 (post-K2 completion)
+**Last synchronized:** July 2026 (post-K3.5.1 Kernel Hardening)
 **Authority:** This is the canonical register of known technical debt, deferred items, and future work.
 
 ---
@@ -11,12 +11,13 @@ Items that represent genuine gaps in the current implementation. These should be
 
 | ID | Area | Issue | Severity | Impact |
 |---|---|---|---|---|
-| DEBT-001 | Governance | **MemoryGovernor dormancy** — `MemoryGovernor` is registered and functional but no call site constructs `GovernanceAction(action_type="memory_write")`. `UnifiedMemory.write()` does not call `evaluate_action()`. Memory writes bypass governance. | Medium | Memory writes are ungoverned until a call site is wired. |
 | DEBT-002 | Governance | **AgentGovernor delegation dormancy** — `AgentGovernor` delegation permission matrix checks `metadata["delegating_worker_type"]`, but no worker currently populates this field. `SupervisorWorker` does not yet exist. The per-call cost ceiling check IS active. | Medium | Delegation permissions are unenforced until SupervisorWorker exists. |
 | DEBT-003 | Workflow | **Checkpoint/resume not implemented** — `WorkflowRuntime` tracks node state in local dicts (never persisted). `EventStream.create_checkpoint()` exists but is never called by WorkflowRuntime. Long-running workflows cannot survive process restart. | Medium | No workflow durability across restarts. |
 | DEBT-004 | Events | **KnowledgeEvent/EventStream duality** — Two separate event mechanisms exist: `KnowledgeEvent` (writes to L4 Archive via `ArchiveBackend.append_event()`) and `EventStream` (SQLite WAL, system-wide operational events). They record different facts about different concerns, but a consumer wanting a complete timeline must query both. Architecture research (FA §5.4) acknowledges this for future consolidation. | Low | No single unified audit trail. |
 | DEBT-005 | Events | **EventBus/EventStream relationship** — `EventBus` (`core/event_bus.py`) provides in-process pub/sub with no persistence. `EventStream` provides durable, append-only events. Both exist; `ARCHITECTURE_CHANGELOG.md` documents their relationship ("EventBus subscribes to EventStream"). Three event mechanisms total (EventBus + EventStream + KnowledgeEvent). | Low | Event infrastructure fragmentation. |
 | DEBT-006 | Memory | **L2 semantic memory loses embeddings on restart** — `InMemoryVectorBackend` is volatile. Embeddings are recomputed on startup from persisted entries. | Medium | Startup cost scales with entry count. |
+
+**Resolved (K3.5 / K3.5.1):** ~~DEBT-001 — MemoryGovernor dormancy~~. `UnifiedMemory.write()` (K3.5) and `update()`/`delete()` (K3.5.1) now all call `GovernanceKernel.evaluate_action()` before any state mutation. No persistent mutation entry point in `UnifiedMemory` bypasses governance. Note: this resolves the *structural* bypass only — `MemoryGovernor`'s own content-validation logic (confidence/growth-limit checks) remains scoped to `memory_write` by its own design; it does not independently validate update/delete content, and extending it to do so was not in scope for this hardening pass.
 
 ---
 
@@ -27,7 +28,6 @@ Items explicitly scoped out with architectural justification. These are NOT debt
 | Item | Rationale | Phase |
 |---|---|---|
 | Workflow checkpoint/resume persistence | Out of scope for K2.2 per session rules. EventStream checkpoint infrastructure exists; consumption deferred. | Post-K3 |
-| MemoryGovernor call-site wiring | K2.4 scope was governance components only, not Memory Runtime changes (Architecture Freeze rule). | Post-K3 |
 | AgentGovernor delegation wiring | Requires SupervisorWorker, which is Cognitive Phase work. | Cognitive Phase |
 | KnowledgeEvent/EventStream merge | FA §5.4 identifies this; requires Memory Runtime redesign. | Post-K3 |
 | ConversationGuardrails content policy | Default denylist is empty by design (permissive default, K2.4 risk mitigation). Content policy configuration is operational, not architectural. | Deployment |

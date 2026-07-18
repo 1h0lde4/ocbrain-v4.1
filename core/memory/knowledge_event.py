@@ -36,6 +36,11 @@ EVENT_TYPES = {
     # K3.5 — Governance rejection/escalation events (Law 1 + Law 2)
     "memory_write_rejected",   # Governance rejected a memory write
     "memory_write_escalated",  # Governance escalated a memory write (HITL required)
+    # K3.5.1 — Governance rejection/escalation events for update/delete
+    "memory_update_rejected",    # Governance rejected a memory update
+    "memory_update_escalated",   # Governance escalated a memory update (HITL required)
+    "memory_delete_rejected",    # Governance rejected a memory delete
+    "memory_delete_escalated",   # Governance escalated a memory delete (HITL required)
 }
 
 

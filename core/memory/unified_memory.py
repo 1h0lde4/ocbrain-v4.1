@@ -480,7 +480,7 @@ class UnifiedMemory:
                         entry_id=entry_id or "",
                         worker_id=worker_id,
                         workflow_id=workflow_id,
-                        payload={
+                        metadata={
                             "reason": gov_result.reason,
                             "governor": gov_result.governor,
                             "content_preview": content[:80],
@@ -503,7 +503,7 @@ class UnifiedMemory:
                         entry_id=entry_id or "",
                         worker_id=worker_id,
                         workflow_id=workflow_id,
-                        payload={
+                        metadata={
                             "reason": gov_result.reason,
                             "governor": gov_result.governor,
                             "content_preview": content[:80],
@@ -735,7 +735,79 @@ class UnifiedMemory:
         working, because only write() had graph logic. This closes that gap
         using the same GraphIndexer.sync() write() now uses, so create and
         update go through one code path.
+
+        K3.5.1: governed. Evaluated first, before storage mutation, cache
+        invalidation, archive write, or graph sync -- mirrors write()'s
+        placement exactly. update() has no before/after hook pair (unlike
+        write() and delete()), so there is nothing to place governance
+        "before" other than the mutation itself. If governance is not
+        registered, updates proceed ungoverned (write()'s permissive-when-
+        absent pattern).
         """
+        # ── K3.5.1: Governance evaluation (Law 1 — Bounded Autonomy) ───────
+        if self._governance is not None:
+            from core.governance.governance_kernel import (
+                GovernanceAction, GovernanceVerdict,
+            )
+            gov_action = GovernanceAction(
+                action_type="memory_update",
+                worker_id=worker_id or "UnifiedMemory",
+                description=f"memory_update: {entry_id}",
+                metadata={
+                    "entry": {
+                        "confidence": delta.get("confidence"),
+                        "content": delta.get("content"),
+                    },
+                    "current_count": self._write_count,
+                    "entry_id": entry_id,
+                },
+            )
+            gov_result = self._governance.evaluate_action(gov_action)
+
+            if gov_result.verdict == GovernanceVerdict.REJECT:
+                logger.warning(
+                    "[UnifiedMemory] Update rejected by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                try:
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    reject_ev = KnowledgeEvent(
+                        event_type="memory_update_rejected",
+                        entry_id=entry_id,
+                        worker_id=worker_id,
+                        metadata={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": str(delta.get("content", ""))[:80],
+                        },
+                    )
+                    await self._archive.append_event(reject_ev)
+                except Exception as e:
+                    logger.warning("memory_update_rejected event emission failed: %s", e)
+                return False
+
+            if gov_result.verdict == GovernanceVerdict.ESCALATE:
+                logger.info(
+                    "[UnifiedMemory] Update escalated by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                try:
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    escalate_ev = KnowledgeEvent(
+                        event_type="memory_update_escalated",
+                        entry_id=entry_id,
+                        worker_id=worker_id,
+                        metadata={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": str(delta.get("content", ""))[:80],
+                        },
+                    )
+                    await self._archive.append_event(escalate_ev)
+                except Exception as e:
+                    logger.warning("memory_update_escalated event emission failed: %s", e)
+                return False
+
         ok = await self._storage.update(entry_id, delta)
         if ok:
             self._l0.evict(entry_id)   # invalidate cache
@@ -757,24 +829,35 @@ class UnifiedMemory:
                      reason: str = "", worker_id: str = "") -> bool:
         """Delete an entry from all active memory layers.
 
-        Deletion orchestration order (UM §5, FA §8 Risk 7):
+        Deletion orchestration order (UM §5, FA §8 Risk 7; K3.5.1 governance):
           1. Load entry — must exist to proceed
-          2. before_delete hooks — None return blocks deletion
-          3. Archive: deletion event + entry snapshot (data preserved in L4)
-          4. Remove L3 graph node (if entry has graph_node_id and graph active)
-          5. Remove L2 vector index
-          6. Remove L1 storage record
-          7. Evict L0 cache (always — even if earlier steps failed)
-          8. after_delete hooks — fire-and-forget
+          2. Governance evaluation (Law 1 — Bounded Autonomy) — evaluated
+             against the real loaded entry, before any hook or mutation;
+             REJECT/ESCALATE short-circuits here
+          3. before_delete hooks — None return blocks deletion
+          4. Archive: deletion event + entry snapshot (data preserved in L4)
+          5. Remove L3 graph node (if entry has graph_node_id and graph active)
+          6. Remove L2 vector index
+          7. Remove L1 storage record
+          8. Evict L0 cache (always — even if earlier steps failed)
+          9. after_delete hooks — fire-and-forget
 
         Returns:
             True  — entry found and successfully deleted.
-            False — entry not found, OR blocked by a before_delete hook.
+            False — entry not found, blocked by governance, OR blocked by a
+                    before_delete hook.
 
         Non-blocking failures:
-            Steps 3–5 are non-blocking: partial failures are logged but do not
-            abort the delete.  L1 removal (step 6) is the authoritative deletion;
+            Steps 4–6 are non-blocking: partial failures are logged but do not
+            abort the delete.  L1 removal (step 7) is the authoritative deletion;
             if it fails, False is returned even though earlier steps may have run.
+
+        K3.5.1: governed. The entry is loaded first (read-only, no side
+        effect) so governance evaluates against real confidence/content
+        rather than blind IDs -- this is still strictly "governance before
+        any mutation," matching write()'s placement, since step 1 mutates
+        nothing. If governance is not registered, deletes proceed ungoverned
+        (write()/update()'s permissive-when-absent pattern).
         """
         # 1. Load entry
         entry = await self.read(entry_id)
@@ -782,7 +865,71 @@ class UnifiedMemory:
             logger.debug("delete: entry %s not found", entry_id[:8] if entry_id else "?")
             return False
 
-        # 2. Execute before_delete hooks
+        # 2. Governance evaluation — before any hook or mutation.
+        if self._governance is not None:
+            from core.governance.governance_kernel import (
+                GovernanceAction, GovernanceVerdict,
+            )
+            gov_action = GovernanceAction(
+                action_type="memory_delete",
+                worker_id=worker_id or "UnifiedMemory",
+                description=f"memory_delete: {entry_id}",
+                metadata={
+                    "entry": {
+                        "confidence": entry.confidence,
+                        "content": entry.content,
+                    },
+                    "current_count": self._write_count,
+                    "entry_id": entry_id,
+                },
+            )
+            gov_result = self._governance.evaluate_action(gov_action)
+
+            if gov_result.verdict == GovernanceVerdict.REJECT:
+                logger.warning(
+                    "[UnifiedMemory] Delete rejected by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                try:
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    reject_ev = KnowledgeEvent(
+                        event_type="memory_delete_rejected",
+                        entry_id=entry_id,
+                        worker_id=worker_id,
+                        metadata={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": (entry.content or "")[:80],
+                        },
+                    )
+                    await self._archive.append_event(reject_ev)
+                except Exception as e:
+                    logger.warning("memory_delete_rejected event emission failed: %s", e)
+                return False
+
+            if gov_result.verdict == GovernanceVerdict.ESCALATE:
+                logger.info(
+                    "[UnifiedMemory] Delete escalated by %s: %s",
+                    gov_result.governor, gov_result.reason,
+                )
+                try:
+                    from core.memory.knowledge_event import KnowledgeEvent
+                    escalate_ev = KnowledgeEvent(
+                        event_type="memory_delete_escalated",
+                        entry_id=entry_id,
+                        worker_id=worker_id,
+                        metadata={
+                            "reason": gov_result.reason,
+                            "governor": gov_result.governor,
+                            "content_preview": (entry.content or "")[:80],
+                        },
+                    )
+                    await self._archive.append_event(escalate_ev)
+                except Exception as e:
+                    logger.warning("memory_delete_escalated event emission failed: %s", e)
+                return False
+
+        # 3. Execute before_delete hooks
         for hook in self._hooks.before_delete:
             try:
                 result = hook(entry)
@@ -798,7 +945,7 @@ class UnifiedMemory:
             except Exception as e:
                 logger.warning("before_delete hook error: %s", e)
 
-        # 3. Archive deletion event + snapshot (data is preserved in L4 before removal)
+        # 4. Archive deletion event + snapshot (data is preserved in L4 before removal)
         try:
             ev = event_deleted(entry_id, reason=reason, worker_id=worker_id)
             await self._archive.append_event(ev)
@@ -806,7 +953,7 @@ class UnifiedMemory:
         except Exception as e:
             logger.warning("Archive deletion event failed (non-blocking): %s", e)
 
-        # 4. Remove L3 graph node (non-blocking; graph_node_id may not be set)
+        # 5. Remove L3 graph node (non-blocking; graph_node_id may not be set)
         # Session 5.25: routed through GraphIndexer.remove() (owns removal),
         # rather than calling self._graph directly here.
         if entry.graph_node_id and self._graph_indexer is not None:
@@ -818,22 +965,22 @@ class UnifiedMemory:
                     entry.graph_node_id, entry_id[:8],
                 )
 
-        # 5. Remove L2 vector index (non-blocking)
+        # 6. Remove L2 vector index (non-blocking)
         try:
             await self._vector.remove(entry_id)
         except Exception as e:
             logger.debug("Vector removal for %s: %s", entry_id[:8], e)
 
-        # 6. Remove L1 storage record (authoritative deletion)
+        # 7. Remove L1 storage record (authoritative deletion)
         try:
             await self._storage.delete(entry_id)
         except Exception as e:
             logger.warning("Storage deletion failed for %s: %s", entry_id[:8], e)
 
-        # 7. Evict L0 cache (always)
+        # 8. Evict L0 cache (always)
         self._l0.evict(entry_id)
 
-        # 8. Execute after_delete hooks (fire-and-forget)
+        # 9. Execute after_delete hooks (fire-and-forget)
         for hook in self._hooks.after_delete:
             try:
                 result = hook(entry)

@@ -1,6 +1,6 @@
 # OCBrain Kernel v1.0 — Current State
 
-**Last synchronized:** July 2026 (post-K2 completion)
+**Last synchronized:** July 2026 (post-K3.5.1 Kernel Hardening)
 **Authority:** This document is the authoritative answer to "what is actually built right now."
 
 ---
@@ -14,6 +14,8 @@
 | K2.2 — Workflow Runtime | ✅ Complete | July 2026 |
 | K2.3 — Capability Runtime | ✅ Complete | July 2026 |
 | K2.4 — Governance Completion | ✅ Complete | July 2026 |
+| K3.5 — Governance Wiring (`write()`) | ✅ Complete | July 2026 |
+| K3.5.1 — Governance Consistency (`update()`, `delete()`) | ✅ Complete | July 2026 |
 | K3 — Compliance Audit | ⬜ Next | — |
 
 ---
@@ -44,9 +46,11 @@
 | **OrchestrationGovernor** | `core/governance/orchestration_governor.py` | Active (permissive default) | Authorizes which worker types may execute |
 | **AgentGovernor** | `core/governance/agent_governor.py` | Active (no live trigger) | Per-call resource ceiling and delegation permission matrix |
 | **ConversationGuardrails** | `core/governance/conversation_guardrails.py` | Active (permissive default) | Session-level content policy via denylist |
-| **MemoryGovernor** | `core/governance/memory_governor.py` | Active (no live trigger) | Validates memory ingestion quality and growth limits |
+| **MemoryGovernor** | `core/governance/memory_governor.py` | Active (live trigger: `memory_write` only) | Validates memory ingestion quality and growth limits |
 
-> **Note:** OrchestrationGovernor, AgentGovernor, ConversationGuardrails, and MemoryGovernor are fully built and registered but have no active call sites that trigger their specific evaluation logic in the current production path. They become live automatically when future code constructs the appropriate `GovernanceAction` types. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for details.
+All persistent memory mutations (write, update, delete) are governed before any state change occurs. `UnifiedMemory.write()` (K3.5), `update()`, and `delete()` (K3.5.1) each call `GovernanceKernel.evaluate_action()` first — before storage mutation, cache invalidation, archive writes, graph sync, or hook execution — using `memory_write` / `memory_update` / `memory_delete` action types respectively. REJECT/ESCALATE short-circuits the operation and emits a durable `EventStream`/`KnowledgeEvent` record (`memory_{write,update,delete}_{rejected,escalated}`); every other governor still runs against all three action types in the same evaluation chain. No persistent state mutation inside `UnifiedMemory` bypasses `GovernanceKernel`.
+
+> **Note:** `MemoryGovernor`'s content-validation logic (confidence and growth-limit rejection) is scoped to `action_type == "memory_write"` by its own explicit design — it approves `memory_update`/`memory_delete` unconditionally rather than applying update/delete-specific content checks, since none currently exist. OrchestrationGovernor, AgentGovernor, and ConversationGuardrails remain permissive by default (empty deny-lists) — real, live checks that simply have nothing configured to reject yet, not dormant call sites. AgentGovernor's delegation permission matrix specifically still awaits `SupervisorWorker`, which does not yet exist. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for details.
 
 ---
 
