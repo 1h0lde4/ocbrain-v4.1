@@ -56,12 +56,7 @@ The Kernel Constitution defines nine laws, nine invariants, a three-gate admissi
 | 8 | Evidence over Assumption | Significant changes are justified against real precedent. A pattern five independent systems converged on is preferred over one adopted for being new. |
 | 9 | Single Source of Truth | At any moment, there is exactly one authoritative answer to "what is actually true right now." When documentation and reality disagree, reality wins. |
 
-Two additional laws from `PROJECT_INSTRUCTIONS.md` complement the Constitution:
-
-| # | Law | Engineering Implication |
-|---|---|---|
-| 10 | Contract Stability | Existing stable interfaces are not broken to satisfy new ones. Changes go through deprecation windows. |
-| 11 | Failure Containment | Execution failures never propagate as exceptions past the `ExecutionRuntime` boundary. Every failure becomes a `WorkerResult` with `success=False`. |
+> **Correction (July 22, 2026, DEBT-009):** this section previously listed two additional rows (10 "Contract Stability", 11 "Failure Containment") here, attributed to `PROJECT_INSTRUCTIONS.md`. Neither attribution nor the law count was accurate: `PROJECT_INSTRUCTIONS.md` contains no such laws, and both originated from the Kernel Constitution Pressure Test's proposed amendment, which was never ratified. Confirmed by the project owner: the Constitution is 9 laws, 9 invariants, as the table above already correctly states. The two engineering practices those rows described (deprecation windows over breaking changes; failures resolving to `WorkerResult(success=False)` rather than propagating) remain real, followed conventions in this codebase — they're just not Constitutional laws, and are not restated here as such.
 
 ## 3.2 Invariants
 

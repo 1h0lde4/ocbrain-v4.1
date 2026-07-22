@@ -56,8 +56,11 @@ class ResourceLifecycle:
 class HTTPClientResource:
     """Resource wrapping the shared core.runtime.network.client
     singleton. identity/lifecycle/version/dependencies/trust/provenance
-    fields per K1.6 §3's Resource Protocol (Invariant 4, six-field
-    version)."""
+    fields per K1.6 §3's Resource Protocol. Note (DEBT-009, resolved
+    July 22, 2026): the ratified Constitution's Invariant 4 is
+    three-field (identity/lifecycle/provenance); version/dependencies/
+    trust here are an additive K2.3 engineering choice, not a
+    Constitution-mandated shape. See KNOWN_ISSUES.md."""
     resource_id: str = "http-client-shared"
     lifecycle_state: str = ResourceLifecycle.ACTIVE
     created_at: float = field(default_factory=time.time)

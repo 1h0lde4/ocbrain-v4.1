@@ -2,7 +2,7 @@
 
 **Date:** July 20, 2026
 **Status:** AUTHORITATIVE — architecture freeze. Supersedes `OCBRAIN_K4_2_R_COGNITIVE_FRONTEND_RESEARCH.md` for all decisions restated or refined here. Zero code, zero implementation, zero repository modifications.
-**Precedence:** Subordinate to `OCBRAIN_KERNEL_CONSTITUTION.md` (11-law) and `PROJECT_INSTRUCTIONS.md`. Extends `OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` ("K4"), `OCBRAIN_K4_1_COGNITIVE_RUNTIME_FOUNDATION.md` ("K4.1"), and `OCBRAIN_K4_1_X_DELEGATION_ARCHITECTURE_AUTHORITATIVE.md` ("K4.1.x"). Nothing here contradicts any FINAL decision in those documents; every extension is marked as such.
+**Precedence:** Subordinate to `OCBRAIN_KERNEL_CONSTITUTION.md` (9-law — corrected July 22, 2026, `KNOWN_ISSUES.md` DEBT-009; this document previously said "11-law," which was never ratified) and `PROJECT_INSTRUCTIONS.md`. Extends `OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` ("K4"), `OCBRAIN_K4_1_COGNITIVE_RUNTIME_FOUNDATION.md` ("K4.1"), and `OCBRAIN_K4_1_X_DELEGATION_ARCHITECTURE_AUTHORITATIVE.md` ("K4.1.x"). Nothing here contradicts any FINAL decision in those documents; every extension is marked as such.
 
 ---
 

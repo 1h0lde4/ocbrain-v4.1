@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 18, 2026 (Repository Reality Synchronization pass)
+**Last synchronized:** July 22, 2026 (K3 status correction — see Validation Phase note below; prior full sync July 18, 2026)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -48,22 +48,28 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 
 ---
 
-## Validation Phase — ⬜ Next
+## Validation Phase — ✅ Complete
 
 | Milestone | Status | Purpose |
 |---|---|---|
-| K3 — Kernel Compliance Audit | ⬜ Next | Verify implementation against Constitution and Architecture spec |
+| K3 — Kernel Compliance Audit | ✅ Complete | Verify implementation against Constitution and Architecture spec |
 
-**Prerequisites for K3:**
+**Resolution (July 22, 2026):** This section previously marked K3 as `⬜ Next` and declined to adopt `docs/reports/K3.5 — Kernel Hardening Report (Final).md`'s certification framing, pending resolution of the tension recorded below. Confirmed by the project owner: K3 was performed — K3.5 and K3.5.1 are its remediation, not a parallel or preceding effort. Git history corroborates: `bebce09 ocbrain k3 audit` precedes `46f550c k3.5 hardening session` and `236e687 K3.5.1: Kernel governance consistency (update/delete) + write() event-emission fix`. This document's status line simply hadn't been updated. The Constitution law-count prerequisite below is resolved separately, same date — see `KNOWN_ISSUES.md` DEBT-009.
+
+**Prerequisites for K3 (historical — all now satisfied):**
 - ✅ Documentation synchronized with implementation
 - ✅ All K2 sub-phases verified complete
-- ⚠️ Constitution law count consistent across all documents — **true for all living top-level documents** (`README.md`, `CHANGELOG.md`, `PRODUCT.md`, `ARCHITECTURE_CHANGELOG.md`, this document, `CURRENT_STATE.md` all correctly state nine laws; confirmed by direct re-check July 18, 2026), **not yet true for `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §3.1**, whose own law table numbers unratified laws as rows 10–11 without disambiguating them from the ratified nine, and not yet true for `core/capabilities/resource.py`'s Resource dataclasses, which implement a six-field shape assuming the same unratified amendment. See `KNOWN_ISSUES.md` DEBT-009.
+- ✅ Constitution law count consistent across all documents — the `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §3.1 and `core/capabilities/resource.py` gaps flagged here are now corrected (`DEBT-009`, resolved); Constitution confirmed 9 laws / 9 invariants, project-wide.
 - ✅ Navigation documents created for auditor entry
 - ✅ Kernel Hardening Phase complete (write/update/delete governance consistency)
 
-**Note on certification claims:** `docs/reports/K3.5 — Kernel Hardening Report (Final).md` states "UNCONDITIONAL KERNEL v1.0 CERTIFICATION" and frames the Kernel as ready for K4. This document does not adopt that framing. K3 (Kernel Compliance Audit) — the mechanism this project's own roadmap defines for determining Kernel-complete status — has not been performed, per this document's own tracking above. The certification claim rests partly on BudgetGovernor being fully operational; direct verification (July 18, 2026 Reality Synchronization pass) found the evaluation mechanism correct but currently unreachable in production, since nothing accumulates real step/token usage (`KNOWN_ISSUES.md` DEBT-007). This tension between the K3.5 report and this document is recorded here for explicit resolution, not silently harmonized in either direction.
+**Historical record, kept verbatim rather than deleted** — consistent with this project's own discipline of recording tensions rather than silently harmonizing them:
 
-**Note:** K3 (Kernel Compliance Audit) has not yet been performed and remains the outstanding gate before Cognitive Phase work begins. Kernel Hardening Phase completion strengthens the case for K3, but does not substitute for it — several unrelated debt items remain open (see `KNOWN_ISSUES.md`: DEBT-002 AgentGovernor delegation dormancy, DEBT-003 checkpoint/resume, DEBT-004/DEBT-005 event-mechanism fragmentation, DEBT-006 L2 volatility, DEBT-007 BudgetGovernor accumulation gap, DEBT-008 EventStream test coverage, DEBT-009 Constitution amendment propagation). This document does not declare Kernel closure; K3 is the mechanism for that determination.
+> **Note on certification claims (as originally written, July 18, 2026):** `docs/reports/K3.5 — Kernel Hardening Report (Final).md` states "UNCONDITIONAL KERNEL v1.0 CERTIFICATION" and frames the Kernel as ready for K4. This document does not adopt that framing. K3 (Kernel Compliance Audit) — the mechanism this project's own roadmap defines for determining Kernel-complete status — has not been performed, per this document's own tracking above. The certification claim rests partly on BudgetGovernor being fully operational; direct verification (July 18, 2026 Reality Synchronization pass) found the evaluation mechanism correct but currently unreachable in production, since nothing accumulates real step/token usage (`KNOWN_ISSUES.md` DEBT-007 — still open, unaffected by K3's resolution). This tension between the K3.5 report and this document is recorded here for explicit resolution, not silently harmonized in either direction.
+>
+> **Note (as originally written, July 18, 2026):** K3 (Kernel Compliance Audit) has not yet been performed and remains the outstanding gate before Cognitive Phase work begins. Kernel Hardening Phase completion strengthens the case for K3, but does not substitute for it — several unrelated debt items remain open (see `KNOWN_ISSUES.md`: DEBT-002 AgentGovernor delegation dormancy, DEBT-003 checkpoint/resume, DEBT-004/DEBT-005 event-mechanism fragmentation, DEBT-006 L2 volatility, DEBT-007 BudgetGovernor accumulation gap, DEBT-008 EventStream test coverage, DEBT-009 Constitution amendment propagation). This document does not declare Kernel closure; K3 is the mechanism for that determination.
+
+**Current status (July 22, 2026):** DEBT-001 and DEBT-009 are resolved. DEBT-002 through DEBT-008 remain open, tracked debt — independent of K3, not gating it. K3's completion means the compliance-audit milestone occurred and its findings were remediated; it does not mean the codebase has zero remaining gaps.
 
 ---
 

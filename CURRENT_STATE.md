@@ -1,6 +1,6 @@
 # OCBrain Kernel v1.0 — Current State
 
-**Last synchronized:** July 18, 2026 (Repository Reality Synchronization pass)
+**Last synchronized:** July 22, 2026 (K3 status correction — see note below; prior full sync July 18, 2026)
 **Authority:** This document is the authoritative answer to "what is actually built right now."
 
 ---
@@ -16,7 +16,9 @@
 | K2.4 — Governance Completion | ✅ Complete | July 2026 |
 | K3.5 — Governance Wiring (`write()`) | ✅ Complete | July 2026 |
 | K3.5.1 — Governance Consistency (`update()`, `delete()`) | ✅ Complete | July 2026 |
-| K3 — Compliance Audit | ⬜ Next | — |
+| K3 — Compliance Audit | ✅ Complete | July 2026 |
+
+**K3 resolution note (July 22, 2026):** This table previously marked K3 as outstanding, and `IMPLEMENTATION_ROADMAP.md` explicitly declined to adopt `docs/reports/K3.5 — Kernel Hardening Report (Final).md`'s "UNCONDITIONAL KERNEL v1.0 CERTIFICATION" framing pending resolution. Confirmed by the project owner: K3 was in fact performed — the existence of K3.5/K3.5.1 is itself the result of doing it (K3 surfaced the governance-bypass gaps; K3.5/K3.5.1 remediated them). Git history corroborates the sequence: `bebce09 ocbrain k3 audit` precedes `46f550c k3.5 hardening session` and `236e687 K3.5.1: Kernel governance consistency...`. This document's status line simply hadn't been updated after K3 happened. Unrelated tracked debt (`KNOWN_ISSUES.md` DEBT-002 through DEBT-008) remains open regardless — K3's completion means the compliance-audit milestone occurred, not that zero debt remains.
 
 ---
 
