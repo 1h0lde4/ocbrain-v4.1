@@ -38,6 +38,7 @@ bypass anything with.
 from __future__ import annotations
 
 import dataclasses
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
@@ -179,3 +180,114 @@ class Intent:
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# RawRequest — canonical output of Input Normalization
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class RawRequest:
+    """Canonical, normalized request text.
+
+    Architecture: K4.2 §2 names this type ("Output: a canonical
+    RawRequest") but gives it no field-level schema in §12 the way
+    Intent/IntentHypothesis get. Consistent with K1.6's "ephemeral
+    parameter object" category (constructed, consumed, discarded within
+    one invocation; no resource_id, no persisted identity -- the same
+    category K4.1 Part III/§5 places PlannerRequest/PlannerResult in),
+    this is kept to the one field every description of normalization
+    supports, rather than speculating further ones.
+    """
+    text: str
+
+
+class NormalizationRejected(Exception):
+    """Raised by normalize_request() when input fails the malformed/
+    injection screen.
+
+    Architecture: K4.2 §2's failure-mode table -- "Rejected at Input
+    Normalization, before Intent inference runs at all; logged as a
+    distinct failure category, never reaches [inference]."
+
+    Ordinary Python control flow, not a new Kernel-level contract: no
+    event is emitted on this path. The packet's own Events line (§6)
+    authorizes exactly two events, neither a rejection event, and Input
+    Normalization is explicitly "ordinary, deterministic code... not
+    model-assisted reasoning" (K4.2 §2) -- it does not carry the
+    Worker-level governance/event ceremony reserved for inference.
+    """
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+_MAX_REQUEST_LENGTH = 8000
+
+_INJECTION_PATTERNS = (
+    re.compile(r"ignore (all |any )?(previous|prior|above) instructions", re.I),
+    re.compile(r"disregard (all |any )?(previous|prior|above) instructions", re.I),
+    re.compile(r"you are now (in )?(dan|developer mode|jailbreak)", re.I),
+    re.compile(r"reveal (your |the )?system prompt", re.I),
+)
+
+
+def normalize_request(raw_text: Optional[str]) -> RawRequest:
+    """Deterministic Input Normalization.
+
+    Architecture: K4.2 §2 -- "Input Normalization... deliberately ordinary,
+    deterministic code, not model-assisted reasoning. Responsibilities:
+    encoding/whitespace normalization, modality detection, and a
+    lightweight prompt-injection/malformed-input screen, reusing the same
+    screening discipline already adopted for the Knowledge Acquisition
+    pipeline (OCBRAIN_EXTERNAL_REPO_STUDY.md §5, Skill_Seekers-derived),
+    now applied at the front door instead of only the knowledge-ingestion
+    door. Output: a canonical RawRequest. Rejected input never reaches
+    Intent inference."
+
+    "Modality detection" here is Input Normalization's own responsibility
+    (input channel/format) and is distinct from Intent.dimensions.modality
+    (a semantic-act classifier computed later during inference -- see
+    _detect_modality() and IntentModality, added in the next implementation
+    step). No reusable, directly-importable screening utility for
+    front-door user input was found in the repository during the
+    Repository Audit (the only "injection"/"malformed" hits under core/
+    were unrelated dependency-injection and validation code inside the
+    memory/retrieval modules), so this is new, minimal, narrowly-scoped
+    infrastructure -- authorized because K4.2 §2 explicitly requires it,
+    and "lightweight" is honored by keeping the check narrow rather than
+    building a general-purpose classifier.
+
+    Raises:
+        NormalizationRejected: if raw_text is empty/whitespace-only,
+            exceeds a sane length bound, or matches an injection pattern.
+    """
+    if raw_text is None or not raw_text.strip():
+        raise NormalizationRejected("empty_or_whitespace_only")
+
+    text = raw_text.strip()
+    # Encoding normalization: drop control characters other than tab/newline.
+    text = "".join(ch for ch in text if ch in ("\n", "\t") or ord(ch) >= 0x20)
+    # Whitespace normalization.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    if not text:
+        raise NormalizationRejected("empty_after_normalization")
+
+    if len(text) > _MAX_REQUEST_LENGTH:
+        raise NormalizationRejected("exceeds_max_length")
+
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.search(text):
+            raise NormalizationRejected("injection_pattern_match")
+
+    # Modality (input-channel) detection: OCBrain has no live input channel
+    # other than text today -- voice/multimodal workers are a later,
+    # unbuilt phase. Kept a deliberate single-value pass-through rather
+    # than building unused multimodal detection ahead of any channel that
+    # would actually produce one (Future Compatibility Review: does not
+    # hard-code future assumptions, does not consume future
+    # responsibilities).
+
+    return RawRequest(text=text)
