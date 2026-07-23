@@ -335,7 +335,7 @@ def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
 
 
 _CANDIDATE_LINE = re.compile(
-    r"^\s*(?P<label>[^|]+?)\s*\|\s*(?P<score>[01](?:\.\d+)?)\s*$",
+    r"^[ \t]*(?P<label>[^|\n]+?)[ \t]*\|[ \t]*(?P<score>[01](?:\.\d+)?)[ \t]*$",
     re.MULTILINE,
 )
 
