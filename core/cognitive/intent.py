@@ -43,6 +43,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
+from core.events.event_stream import EventStream, get_event_stream
 from core.memory.assembly import ContextAssemblyEngine
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.provider_mesh import generate_with_fallback, resolve_provider
@@ -461,3 +462,79 @@ async def generate_hypotheses(
 
     hypotheses.sort(key=lambda h: h.score, reverse=True)
     return hypotheses
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Top-level entry point — K4.2 §15 roadmap, K4.2.1
+# ─────────────────────────────────────────────────────────────────────────
+
+async def interpret_request(
+    raw_text: str,
+    *,
+    memory: Optional[UnifiedMemory] = None,
+    event_stream: Optional[EventStream] = None,
+    known_categories: Optional[List[str]] = None,
+) -> Intent:
+    """Input Normalization + Intent Inference, producing one Intent artifact.
+
+    Architecture: K4.2 §15 roadmap, K4.2.1 entry -- "Objective: Implement
+    K4.2.1 Intent Interpreter logic (Normalization and Inference) to
+    convert RawRequest into IntentHypothesis objects." Scope stops here --
+    Goal Formation (K4.2.2) and Planning are explicitly out of scope for
+    this packet (Implementation Packet §5) and are not called from this
+    function.
+
+    Events (packet §6): emits exactly cognitive.intent_hypotheses_generated
+    and cognitive.intent_interpreted, matching K4.2 §11's event names, via
+    the existing EventStream.append() -- no new event-emission mechanism.
+
+    Raises:
+        NormalizationRejected: propagated from normalize_request() --
+            malformed/adversarial input never reaches inference (K4.2 §2's
+            failure-mode table). No event is emitted on this path (see
+            NormalizationRejected's docstring).
+    """
+    event_stream = event_stream or get_event_stream()
+
+    raw_request = normalize_request(raw_text)
+
+    hypotheses = await generate_hypotheses(
+        raw_request, memory=memory, known_categories=known_categories,
+    )
+
+    await event_stream.append(
+        "cognitive.intent_hypotheses_generated",
+        source="IntentInterpreter",
+        payload={
+            "hypothesis_count": len(hypotheses),
+            "labels": [h.label for h in hypotheses],
+        },
+    )
+
+    selected = hypotheses[0] if hypotheses else None
+    dimensions = IntentDimensions(
+        category=selected.label if selected else "novel",
+        modality=_detect_modality(raw_request.text),
+        complexity_estimate=_estimate_complexity(raw_request.text, len(hypotheses)),
+    )
+
+    intent = Intent(
+        raw_request=raw_request.text,
+        hypotheses=hypotheses,
+        selected=selected,
+        confidence=selected.score if selected else 0.0,
+        dimensions=dimensions,
+        lifecycle_state=IntentLifecycle.FINAL,
+    )
+
+    await event_stream.append(
+        "cognitive.intent_interpreted",
+        source="IntentInterpreter",
+        payload={
+            "intent_id": intent.resource_id,
+            "selected_label": selected.label if selected else None,
+            "confidence": intent.confidence,
+        },
+    )
+
+    return intent
