@@ -43,6 +43,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
+from core.memory.assembly import ContextAssemblyEngine
+from core.memory.unified_memory import UnifiedMemory, get_unified_memory
+from core.provider_mesh import generate_with_fallback, resolve_provider
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # CognitiveArtifact — K4.1 Final Consolidated Architecture, Part IV
@@ -291,3 +295,169 @@ def normalize_request(raw_text: Optional[str]) -> RawRequest:
     # responsibilities).
 
     return RawRequest(text=text)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Intent inference — K4.2 §2
+# ─────────────────────────────────────────────────────────────────────────
+
+_HYPOTHESIS_PROMPT_TEMPLATE = """You are the Intent Interpreter of a governed cognitive runtime.
+Given a user request and retrieved context, produce up to {n} ranked
+candidate interpretations of what the user wants.
+
+Output one candidate per line, in the exact form:
+label | score
+
+score is a number between 0.00 and 1.00, highest confidence first.
+
+Known intent categories (may be empty on a fresh system): {categories}
+If a candidate does not match a known category, prefix its label with
+"novel:".
+
+Context:
+{context}
+
+Request:
+{request}
+
+Candidates:"""
+
+
+def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
+                              known_categories: List[str]) -> str:
+    return _HYPOTHESIS_PROMPT_TEMPLATE.format(
+        n=5,
+        categories=", ".join(known_categories) if known_categories else "(none yet)",
+        context=context or "(no retrieved context)",
+        request=raw_request.text,
+    )
+
+
+_CANDIDATE_LINE = re.compile(
+    r"^\s*(?P<label>[^|]+?)\s*\|\s*(?P<score>[01](?:\.\d+)?)\s*$",
+    re.MULTILINE,
+)
+
+
+def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
+    """Parses the provider's raw completion into IntentHypothesis objects.
+
+    Malformed or unparseable lines are skipped rather than raised on --
+    inference degrading to fewer (or zero, handled by the caller) parsed
+    hypotheses is the documented open-category fallback path (K4.2 §2),
+    not a new failure mode requiring its own handling.
+    """
+    hypotheses: List[IntentHypothesis] = []
+    for match in _CANDIDATE_LINE.finditer(completion or ""):
+        label = match.group("label").strip()
+        if not label:
+            continue
+        score = max(0.0, min(1.0, float(match.group("score"))))
+        hypotheses.append(IntentHypothesis(label=label, score=score))
+    return hypotheses
+
+
+def _detect_modality(text: str) -> str:
+    """Minimal heuristic for Intent.dimensions.modality. K4.2 §2 mandates
+    the four possible values (IntentModality); it does not mandate a
+    classification method, so this is a deliberately simple, replaceable
+    heuristic over the normalized text -- the four VALUES it chooses among
+    are architecture-cited, the heuristic itself is not."""
+    stripped = text.strip()
+    lowered = stripped.lower()
+
+    feedback_starts = (
+        "thanks", "thank you", "that's wrong", "that is wrong", "no,",
+        "actually,", "that didn't", "that did not", "not quite",
+        "that's not", "that is not",
+    )
+    if any(lowered.startswith(w) for w in feedback_starts):
+        return IntentModality.FEEDBACK_ON_PRIOR_INTERACTION
+
+    question_starts = (
+        "what", "who", "when", "where", "why", "how", "which",
+        "is ", "are ", "does ", "do ", "can ", "could ", "would ",
+    )
+    if stripped.endswith("?") or any(lowered.startswith(w) for w in question_starts):
+        return IntentModality.INFORMATION_QUERY
+
+    if len(stripped) <= 40 and not stripped.endswith("."):
+        return IntentModality.CLARIFICATION_RESPONSE
+
+    return IntentModality.TASK_REQUEST
+
+
+def _estimate_complexity(text: str, hypothesis_count: int) -> float:
+    """Cheap, coarse complexity signal (K4.2 §2: "a cheap, coarse signal
+    Planner may consume as a PlannerHint"). Deliberately simple: length
+    and hypothesis-count are the two signals already available for free
+    at this point in the pipeline with no additional model call. Bounded
+    to [0, 1] for consistency with the rest of this document family's
+    confidence/score conventions -- §12 gives no explicit type or formula.
+    """
+    length_signal = min(1.0, len(text) / 500.0)
+    ambiguity_signal = min(1.0, max(0, hypothesis_count - 1) / 4.0)
+    return round(min(1.0, 0.6 * length_signal + 0.4 * ambiguity_signal), 2)
+
+
+async def generate_hypotheses(
+    raw_request: RawRequest,
+    *,
+    memory: Optional[UnifiedMemory] = None,
+    known_categories: Optional[List[str]] = None,
+) -> List[IntentHypothesis]:
+    """Multi-hypothesis Intent inference.
+
+    Architecture: K4.2 §2 -- "Not a classifier. A governed cognitive
+    subsystem... Intent inference produces a ranked N-best list of
+    IntentHypothesis, not a single label... reusing the existing
+    context_assembler/RetrievalFusionEngine path for context -- no new
+    retrieval mechanism... hypotheses [are] scored against the Intent
+    Ontology's structured categories where a match exists, degrade to a
+    looser, lower-confidence open-category hypothesis where none does."
+
+    Reuses core.memory.assembly.ContextAssemblyEngine ("the existing
+    context_assembler" -- confirmed live at core/memory/assembly.py, the
+    canonical Retrieval Runtime per KERNEL_ARCHITECTURE_v1.0.md §13.1) and
+    core.provider_mesh.generate_with_fallback ("provider routing", packet
+    §6's explicit dependency) -- no new retrieval or provider-selection
+    logic. generate_with_fallback already health-ranks providers, retries
+    on failure, and routes through the existing prompt cache and
+    safe_llm_call semaphore/timeout -- reusing it rather than calling
+    Provider.generate() directly avoids duplicating that machinery.
+
+    known_categories represents the Intent Ontology's current L3 entries
+    (K4.2 §2's "Intent memory" paragraph). Looking those up is not part of
+    this packet's scope (normalization and inference only); an empty/None
+    list is the correct, expected input on a system where nothing has
+    been promoted yet, and a caller that has access to the ontology may
+    supply it.
+    """
+    memory = memory or get_unified_memory()
+
+    try:
+        context = await ContextAssemblyEngine(memory).assemble_context(raw_request.text)
+    except Exception:
+        # assemble_context() already degrades to "" on no results; a hard
+        # failure in retrieval should not block inference -- proceed with
+        # no context rather than propagate.
+        context = ""
+
+    prompt = _build_hypothesis_prompt(raw_request, context, known_categories or [])
+
+    hypotheses: List[IntentHypothesis] = []
+    try:
+        completion = await generate_with_fallback(
+            resolve_provider("intent_interpreter"), prompt,
+        )
+        hypotheses = _parse_hypotheses(completion)
+    except Exception:
+        hypotheses = []
+
+    if not hypotheses:
+        # Open-category degrade path (K4.2 §2) -- every provider failed,
+        # or none produced a parseable candidate.
+        hypotheses = [IntentHypothesis(label="novel", score=0.1)]
+
+    hypotheses.sort(key=lambda h: h.score, reverse=True)
+    return hypotheses
