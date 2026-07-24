@@ -109,6 +109,32 @@ Not a classifier. A governed cognitive subsystem whose sole output is a `Goal` (
 
 **Intent → Goal relationship.** One Intent mints one or more Goals (via the hierarchy split above); every Goal carries `intent_id` provenance back to the Intent that produced it. Unchanged from K4.1 §2's original placement, now fully specified.
 
+**Goal Formation Boundary.** Goal Formation SHALL produce only a minimal cognitive representation of the user's objective. A Goal represents *what* the system intends to accomplish — never *how* the system will accomplish it. Goal Formation SHALL NOT determine or embed execution-oriented metadata. In particular, Goal Formation SHALL NOT determine or embed:
+
+- capability selection
+- execution ordering or scheduling
+- dependency graphs or work graphs
+- verification policies or acceptance policies
+- retry policies or escalation policies
+- execution boundaries or runtime routing
+- resource allocation
+- success criteria beyond the cognitive description in `structured_form`
+- confidence thresholds for execution decisions (Goal.confidence reflects *interpretation* confidence only, per §9)
+
+These concerns belong exclusively to later architectural stages. Execution-oriented metadata SHALL be introduced incrementally during:
+
+| Stage | Introduces |
+|---|---|
+| Planning (K4.2.3+) | Abstract Work Units, Constraints, PlannerHints — still capability-agnostic |
+| Capability Discovery (K4.2.4+) | CapabilityRequest resolution against registries |
+| Plan Compilation (K4.3) | WorkflowDefinition, execution-ready artifacts |
+| Cognitive Runtime (C-MoE) | Runtime routing, dynamic expert selection |
+| Execution Runtime | Scheduling, resource allocation, retry policies |
+| Verification Runtime | Acceptance policies, verification policies |
+| Reflection Runtime | Evaluation, learning signals |
+
+This separation preserves a strict boundary between cognition and execution: Goal Formation is the last purely cognitive stage. All subsequent stages may introduce execution-oriented metadata without requiring changes to Goal Formation, and Goal Formation may evolve its cognitive representation without affecting downstream execution contracts. The boundary is the `Goal` artifact itself — downstream consumers receive a Goal and are free to enrich it with execution metadata in their own artifacts (`ExecutionPlan`, `WorkflowDefinition`, etc.), but the Goal itself remains a cognitive-only object throughout its lifecycle.
+
 ---
 
 ## 5. Planner Interface
@@ -245,6 +271,8 @@ ReflectionRecord  (may propose an Adaptation-tier confidence-threshold
                    routed through meta-learning, §2, §8)
 ```
 
+**Confidence explainability.** Each adjustment point in the confidence chain above is traceable through the existing provenance system (`derived_from`, event correlation IDs, §10) — not through a separate confidence-specific audit trail. When a downstream stage adjusts confidence (e.g., schema-validation failure lowers `Goal.confidence`, §4; capability-match quality influences `ExecutionPlan.confidence`, §5), the adjustment reason is carried by the same event that records the state transition (§11, §13), not by a dedicated confidence-provenance structure. This preserves calibration explainability (the calibration system, K4 §8, can trace *why* a predicted confidence diverged from actual outcome) without introducing a second provenance mechanism.
+
 **How confidence influences clarification.** Fully answered by §2's `ClarificationPolicy`: the *only* point confidence can trigger a human-facing pause is the existing Plan Compilation gate. No other stage in this chain independently decides to interrupt.
 
 ---
@@ -347,6 +375,8 @@ LearningRecord (the shared shape produced by any Learning/Adaptation/
 **Intent lifecycle:**
 `draft → interpreted → [clarification_pending → clarified] → superseded`
 (`clarification_pending`/`clarified` only entered if `ClarificationPolicy` escalates, §2/§9; otherwise `interpreted → superseded` directly once its `Goal` is formed.)
+
+An Intent that has reached `interpreted` is immutable — reinterpretation (whether triggered by clarification, replanning, or Supervisor-driven revision) creates a **successor** Intent with its own `resource_id` and `derived_from` pointing at the predecessor, and transitions the predecessor to `superseded`. This preserves deterministic replay: the original Intent and its event trail remain unmodified regardless of subsequent reinterpretation.
 
 **Goal lifecycle:**
 `draft → verified → [refinement_pending → refined] → compiled → superseded`
