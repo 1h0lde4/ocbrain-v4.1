@@ -1,39 +1,35 @@
 """
-core/cognitive/intent.py — K4.2.1 Intent Interpreter: Input Normalization + Intent Inference.
+core/cognitive/intent.py — K4.2.1 Intent Interpreter + K4.2.2 Goal Formation.
 
 Architecture:
-    OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md §2 (Intent
-    Interpreter behavior), §12 (Data Contracts), §15 (K4.2.1 roadmap entry).
-    OCBRAIN_K4_1_FINAL_CONSOLIDATED_ARCHITECTURE.md Part IV (CognitiveArtifact,
-    cited by the Implementation Packet as "K4.1 §IV").
+    OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md §1 (interpret()
+    public entrypoint), §2 (Intent Interpreter behavior), §4 (Goal Formation),
+    §9 (Confidence Lifecycle), §10 (Provenance), §11 (Event Integration),
+    §12 (Data Contracts), §13 (State Machines), §15 (K4.2.1 + K4.2.2 roadmap).
+    OCBRAIN_K4_1_FINAL_CONSOLIDATED_ARCHITECTURE.md Part IV (CognitiveArtifact).
 Packet:
     IMPLEMENTATION_PACKET_K4_2_1_INTENT_INTERPRETER.md.
 
-Scope (K4.2 §15, K4.2.1 roadmap entry): Input Normalization and multi-hypothesis
-Intent inference only. Converts raw request text into a canonical RawRequest,
-then into a ranked, confidence-scored List[IntentHypothesis] carried on an
-Intent artifact. Goal Formation (K4.2.2) and Planning are explicitly out of
-scope for this packet (Implementation Packet §5) and are not implemented here.
+Scope:
+    K4.2.1 (Input Normalization + multi-hypothesis Intent inference) and
+    K4.2.2 (Goal Formation: Intent -> one or more Goal objects).
+    K4.2 §15 K4.2.2: "Modules: core/cognitive/intent.py (Goal Formation
+    logic). Interfaces: Goal dataclass (§12), interpret() public
+    entrypoint (§1)."
 
-Boundary (Implementation Packet §2; K4 §1): produces Cognitive Artifacts only.
-Never executes workflows, never invokes a Capability/Adapter through the
-governed WorkflowRuntime/AdapterRuntime path, never writes to UnifiedMemory.
-The provider_mesh.py call in generate_hypotheses() is the Cognitive Runtime's
-own reasoning -- Planner is described the same way ("already LLM-assisted",
-K4.1 Part III) -- not a governed capability execution; it is the "provider
-routing" dependency the packet's §6 explicitly authorizes for this packet.
+    K4.2 §1: "interpret(raw_request) -> Goal, covering Input
+    Normalization → Intent Interpretation → Goal Formation."
 
-Governance: none invoked directly. Per the Implementation Packet's own
-Governance review line ("Only inferences are produced; no capabilities
-executed"), K4.2.1 does not call GovernanceKernel.evaluate_action() -- that
-gate is reserved for Plan Compilation (K4 §15), a later, out-of-scope
-milestone.
+Boundary (K4 §1): produces Cognitive Artifacts only. Never executes
+workflows, never invokes a Capability/Adapter through the governed
+WorkflowRuntime/AdapterRuntime path, never writes to UnifiedMemory.
 
-Learning: none invoked. K4.2.1 produces no LearningCandidate and proposes no
-promotion, so K4.1-L's VALIDATE/GOVERN/PROMOTE pipeline is never entered --
-the packet's "Learning review: output does not bypass ValidationGate" is
-satisfied because there is no learning-tier action in this packet's scope to
-bypass anything with.
+Governance: none invoked directly. Per K4.2 §4, Goal validation is
+schema-validation only at this stage; governance evaluation is reserved
+for Plan Compilation (K4 §15, a later milestone).
+
+Learning: none invoked. Neither K4.2.1 nor K4.2.2 produces
+LearningCandidates or proposes promotions.
 """
 from __future__ import annotations
 
@@ -78,15 +74,21 @@ class CognitiveArtifact(Protocol):
 
 
 class IntentLifecycle:
-    """Lifecycle values for Intent. Per K1.6 §4, each Resource-shaped type
-    owns its own lifecycle enum -- the architecture does not enumerate
-    specific values for Intent, so this is the minimal set K4.2.1's own
-    scope needs: an Intent is produced (DRAFT while being assembled,
-    FINAL once returned). Promotion/supersession lifecycle states belong
-    to Reflection/Evaluation (K4 §7/§13), not exercised by this packet.
+    """Intent lifecycle states from K4.2 §13:
+
+    "draft → interpreted → [clarification_pending → clarified] → superseded"
+
+    K4.2.1/K4.2.2 scope: Intent Interpretation produces Intents in DRAFT
+    and transitions them to INTERPRETED once inference completes.
+    clarification_pending/clarified belong to ClarificationPolicy
+    escalation (K4.2 §2/§9, later milestones). superseded is set once
+    the Intent's Goal(s) are formed and the Intent is no longer current.
     """
     DRAFT = "draft"
-    FINAL = "final"
+    INTERPRETED = "interpreted"
+    CLARIFICATION_PENDING = "clarification_pending"
+    CLARIFIED = "clarified"
+    SUPERSEDED = "superseded"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -465,7 +467,241 @@ async def generate_hypotheses(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Top-level entry point — K4.2 §15 roadmap, K4.2.1
+# Goal — K4.2 §4, §12, §13 (K4.2.2)
+# ─────────────────────────────────────────────────────────────────────────
+
+class GoalLifecycle:
+    """Goal lifecycle states from K4.2 §13:
+
+    "draft → verified → [refinement_pending → refined] → compiled → superseded"
+
+    K4.2.2 scope: Goal Formation produces Goals in DRAFT and transitions
+    them to VERIFIED upon successful schema validation (or graceful
+    fallback). refinement_pending/refined belong to SupervisorWorker-driven
+    revision (K4.2 §4, later milestones). compiled belongs to Plan
+    Compilation (K4.3). superseded belongs to re-interpretation.
+    """
+    DRAFT = "draft"
+    VERIFIED = "verified"
+    REFINEMENT_PENDING = "refinement_pending"
+    REFINED = "refined"
+    COMPILED = "compiled"
+    SUPERSEDED = "superseded"
+
+
+@dataclass
+class Goal:
+    """A verified, disambiguated target state derived from an Intent.
+
+    Architecture: K4.2 §12 -- "Goal (CognitiveArtifact): resource_id,
+    intent_id, structured_form: dict, sub_goals: List[str], alternatives:
+    List[str], confidence: float, lifecycle_state: str."
+
+    CognitiveArtifact inherited fields (K4.1 Part IV): resource_id,
+    produced_by, derived_from, lifecycle_state. The same field-note from
+    Intent applies: §12's "illustrative... not frozen" list omits
+    produced_by and derived_from from the Goal-specific listing, but
+    headers Goal as "(CognitiveArtifact)", so the base contract's fields
+    are included.
+
+    K4.2 §4: "structured_form is schema-validated against the matched
+    Intent Ontology category, never a bare NL string internally; degrades
+    to a looser structure with lower confidence when no match exists."
+
+    K4.2 §4: "Goal.sub_goals: List[str], references only" -- string IDs
+    of sibling Goals from compound-request splitting.
+
+    K4.2 §10: "Goal provenance: intent_id (§4) + derived_from."
+    """
+    resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    produced_by: str = "IntentInterpreter"
+    intent_id: str = ""
+    structured_form: Dict[str, Any] = field(default_factory=dict)
+    sub_goals: List[str] = field(default_factory=list)
+    alternatives: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    derived_from: List[str] = field(default_factory=list)
+    lifecycle_state: str = GoalLifecycle.DRAFT
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Goal Formation — K4.2 §4 (K4.2.2)
+# ─────────────────────────────────────────────────────────────────────────
+
+# Confidence penalty applied when no ontology schema is available for
+# validation (K4.2 §4: "degrades to a looser structure with lower
+# confidence when no match exists"). This is an implementation choice for
+# the penalty magnitude -- K4.2 does not specify an exact value.
+_SCHEMA_VALIDATION_PENALTY = 0.1
+
+
+def _validate_structured_form(
+    intent: Intent,
+    ontology_schemas: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> tuple:
+    """Validate structured_form against ontology schema if available.
+
+    Architecture: K4.2 §4 -- "structured_form is schema-validated against
+    the matched Intent Ontology category... degrades to a looser structure
+    with lower confidence when no match exists."
+
+    K4.2 §15 K4.2.2 validation: "schema-validation failure correctly
+    lowers confidence rather than hard-failing."
+
+    Returns:
+        (structured_form, confidence_adjustment, validated) where
+        confidence_adjustment is the amount to subtract from the inherited
+        confidence (0.0 if validated, _SCHEMA_VALIDATION_PENALTY if not).
+    """
+    category = "novel"
+    if intent.dimensions:
+        category = intent.dimensions.category
+
+    # Build the structured_form from the Intent's selected hypothesis.
+    # K4.2 §4: "never a bare NL string internally" -- even without an
+    # ontology, the form carries structured fields.
+    structured_form: Dict[str, Any] = {
+        "description": intent.selected.label if intent.selected else "unknown",
+        "category": category,
+        "raw_request": intent.raw_request,
+    }
+
+    # If an ontology schema exists for this category, validate against it.
+    if ontology_schemas and category in ontology_schemas:
+        schema = ontology_schemas[category]
+        # Check required fields from the ontology schema are present.
+        # Implementation choice: a simple required-fields check. The
+        # architecture does not specify a schema language.
+        required = schema.get("required_fields", [])
+        missing = [f for f in required if f not in structured_form]
+        if missing:
+            # Schema validation failure: lower confidence, do not fail.
+            return structured_form, _SCHEMA_VALIDATION_PENALTY, False
+        return structured_form, 0.0, True
+
+    # No ontology schema available: graceful degradation.
+    # K4.2 §4: "degrades to a looser structure with lower confidence"
+    return structured_form, _SCHEMA_VALIDATION_PENALTY, False
+
+
+# Patterns for compound-goal detection (K4.2 §4).
+_COMPOUND_SEPARATORS = re.compile(
+    r"\b(?:and then|then|after that|also|additionally)\b",
+    re.IGNORECASE,
+)
+
+
+def _split_compound_goals(text: str) -> List[str]:
+    """Detect independently-plannable pieces in a compound request.
+
+    Architecture: K4.2 §4 -- "A single compound request may mint more
+    than one Goal at Goal Formation time... when the request is already
+    recognizable as independently-plannable pieces -- e.g., 'audit the
+    memory system and then propose a migration plan' is two Goals before
+    Planner ever runs."
+
+    K4.2 §4 also: "Planner's own decomposition (K4 §5, unchanged)
+    operates within one Goal, breaking it into ordered PlanSteps.
+    Conflating these two levels was a real risk worth naming explicitly
+    and closing."
+
+    Implementation choice: the architecture does not specify the exact
+    detection method. A deliberately simple heuristic using known compound
+    separators is used here. This is not Planner decomposition -- it only
+    separates obviously compound requests at the syntactic level.
+    """
+    parts = _COMPOUND_SEPARATORS.split(text)
+    parts = [p.strip() for p in parts if p.strip()]
+    # Only split if we get multiple substantive parts.
+    if len(parts) > 1:
+        return parts
+    return [text]
+
+
+def form_goals(
+    intent: Intent,
+    *,
+    ontology_schemas: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[Goal]:
+    """Goal Formation: Intent → one or more Goal objects.
+
+    Architecture: K4.2 §4 -- "One Intent mints one or more Goals (via the
+    hierarchy split); every Goal carries intent_id provenance back to the
+    Intent that produced it."
+
+    K4.2 §9 (Confidence Lifecycle): "Goal.confidence (adjusted by
+    schema-validation outcome, §4)" -- confidence is inherited from
+    Intent.confidence and then reduced if schema validation fails.
+
+    K4.2 §10 (Provenance): "Goal provenance: intent_id (§4) +
+    derived_from."
+
+    This function is deterministic given the same Intent and ontology
+    state: the compound-splitting heuristic and schema-validation are
+    both pure, non-model-assisted code (consistent with K4.2 §2's design
+    principle that non-model-assisted steps are preferred at boundary
+    seams for auditability).
+
+    Does NOT invoke Planner, Governance, Learning, or any Kernel execution
+    path.
+    """
+    # 1. Detect compound requests (K4.2 §4).
+    parts = _split_compound_goals(intent.raw_request)
+
+    goals: List[Goal] = []
+    for part_text in parts:
+        # Create a lightweight Intent-like view for each part if compound,
+        # or use the original Intent for single requests.
+        # Implementation choice: for compound goals, we use the same
+        # selected hypothesis and category since the compound split is
+        # syntactic, not semantic -- each sub-goal shares the parent
+        # intent's interpretation context.
+        structured_form, confidence_penalty, validated = _validate_structured_form(
+            intent, ontology_schemas,
+        )
+
+        # For compound goals, adjust the structured_form description
+        # to reflect the specific part.
+        if len(parts) > 1:
+            structured_form = dict(structured_form)  # copy
+            structured_form["description"] = part_text
+
+        # K4.2 §9: confidence inherited from Intent, adjusted by validation.
+        goal_confidence = max(0.0, intent.confidence - confidence_penalty)
+
+        goal = Goal(
+            intent_id=intent.resource_id,
+            structured_form=structured_form,
+            confidence=goal_confidence,
+            derived_from=[intent.resource_id],
+            lifecycle_state=GoalLifecycle.VERIFIED if validated else GoalLifecycle.DRAFT,
+        )
+        goals.append(goal)
+
+    # Wire sub_goals cross-references (K4.2 §4: "references only").
+    if len(goals) > 1:
+        all_ids = [g.resource_id for g in goals]
+        for goal in goals:
+            goal.sub_goals = [gid for gid in all_ids if gid != goal.resource_id]
+
+    # Carry alternatives from the Intent's non-selected hypotheses
+    # (K4.2 §2: "Multiple competing hypotheses... carried, never
+    # discarded before Plan Compilation").
+    alternative_labels = [
+        h.label for h in intent.hypotheses
+        if intent.selected and h.label != intent.selected.label
+    ]
+    for goal in goals:
+        goal.alternatives = alternative_labels
+
+    return goals
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Top-level entry point — K4.2 §1, §15 (K4.2.1 + K4.2.2)
 # ─────────────────────────────────────────────────────────────────────────
 
 async def interpret_request(
@@ -474,30 +710,34 @@ async def interpret_request(
     memory: Optional[UnifiedMemory] = None,
     event_stream: Optional[EventStream] = None,
     known_categories: Optional[List[str]] = None,
-) -> Intent:
-    """Input Normalization + Intent Inference, producing one Intent artifact.
+    ontology_schemas: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[Goal]:
+    """Input Normalization → Intent Inference → Goal Formation.
 
-    Architecture: K4.2 §15 roadmap, K4.2.1 entry -- "Objective: Implement
-    K4.2.1 Intent Interpreter logic (Normalization and Inference) to
-    convert RawRequest into IntentHypothesis objects." Scope stops here --
-    Goal Formation (K4.2.2) and Planning are explicitly out of scope for
-    this packet (Implementation Packet §5) and are not called from this
-    function.
+    Architecture: K4.2 §1 -- "interpret(raw_request) -> Goal, covering
+    Input Normalization → Intent Interpretation → Goal Formation."
 
-    Events (packet §6): emits exactly cognitive.intent_hypotheses_generated
-    and cognitive.intent_interpreted, matching K4.2 §11's event names, via
-    the existing EventStream.append() -- no new event-emission mechanism.
+    K4.2 §15, K4.2.2 entry -- "Interfaces: Goal dataclass (§12),
+    interpret() public entrypoint (§1)."
+
+    Returns a list of Goal objects because K4.2 §4 specifies that
+    compound requests may produce multiple Goals ("One Intent mints one
+    or more Goals"). A single-goal request returns a list of length 1.
+
+    Events: emits cognitive.intent_hypotheses_generated and
+    cognitive.intent_interpreted (K4.2.1, unchanged), then
+    cognitive.goal_formed (K4.2.2, K4.2 §11 / K4 §12).
 
     Raises:
         NormalizationRejected: propagated from normalize_request() --
-            malformed/adversarial input never reaches inference (K4.2 §2's
-            failure-mode table). No event is emitted on this path (see
-            NormalizationRejected's docstring).
+            malformed/adversarial input never reaches inference (K4.2 §2).
     """
     event_stream = event_stream or get_event_stream()
 
+    # ── K4.2.1: Input Normalization ──────────────────────────────────
     raw_request = normalize_request(raw_text)
 
+    # ── K4.2.1: Intent Inference ─────────────────────────────────────
     hypotheses = await generate_hypotheses(
         raw_request, memory=memory, known_categories=known_categories,
     )
@@ -524,7 +764,7 @@ async def interpret_request(
         selected=selected,
         confidence=selected.score if selected else 0.0,
         dimensions=dimensions,
-        lifecycle_state=IntentLifecycle.FINAL,
+        lifecycle_state=IntentLifecycle.INTERPRETED,
     )
 
     await event_stream.append(
@@ -537,4 +777,19 @@ async def interpret_request(
         },
     )
 
-    return intent
+    # ── K4.2.2: Goal Formation ───────────────────────────────────────
+    goals = form_goals(intent, ontology_schemas=ontology_schemas)
+
+    for goal in goals:
+        await event_stream.append(
+            "cognitive.goal_formed",
+            source="IntentInterpreter",
+            payload={
+                "goal_id": goal.resource_id,
+                "intent_id": goal.intent_id,
+                "confidence": goal.confidence,
+                "sub_goal_count": len(goal.sub_goals),
+            },
+        )
+
+    return goals
