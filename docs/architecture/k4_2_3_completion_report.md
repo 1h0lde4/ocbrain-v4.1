@@ -155,3 +155,68 @@ unavailable in this sandbox) — 811 passed, 0 failed
 both confirmed against §5 and §12 independently rather than against either
 document alone. Full regression suite green. Commit trail now exists for a
 packet that previously had none.
+
+---
+
+## Addendum — Second Independent Review (July 25, 2026)
+
+A second, independent Post-Implementation Review (per the request that
+produced this report's own review process) was performed against this
+same commit, in parallel, before this addendum was written. It found one
+additional real defect this report did not catch, and confirmed the two
+deviations above independently by the same method (reading §5/§12
+directly, then checking real code — not this report's claims).
+
+**Defect found:** `_extract_explicit_constraints()`'s pattern list checks
+`must\s+not` before plain `must` (and `should\s+not` before `should`) in
+priority order, but did not skip a later pattern's match when it fell
+inside an earlier, more specific match's span. The prior deduplication
+was by *rendered context string*, not by character span, and the two
+patterns' context windows only produce identical strings when both get
+clamped to end-of-string by `min(len(text), match.end() + 60)` — true for
+short constraint text, false once ~60+ characters follow the match.
+
+**Consequence:** `_extract_explicit_constraints("You must not use "
+"JavaScript for this task, since the team standard requires Python for "
+"all new automation scripts going forward.")` produced two constraints
+(a correct `negation_constraint` and a spurious `requirement_constraint`
+over the same words) instead of one, and `_detect_contradictions()`
+correctly found overlapping content words between them — correctly, given
+its own logic, but incorrectly overall, since there was only ever one
+constraint. Per §5, `check_precheck_rejection()` uses exactly this signal
+to reject a Goal as unsatisfiable before Planner attempts it — so an
+entirely ordinary, satisfiable request phrased as "must not X, because Y"
+with a normal-length trailing clause would have been wrongly rejected.
+
+**Why neither this report's own review nor the original implementation
+caught it:** every existing `TestPrecheckRejection` test constructs
+`Constraint` objects directly and asserts on `_detect_contradictions()`
+in isolation — none of them exercise real text through
+`_extract_explicit_constraints()` first. The two functions were each
+individually well-tested; the seam between them was not.
+
+**Fix:** track claimed character spans across the whole pattern loop
+(not per-pattern) and skip any match whose span overlaps one already
+claimed by an earlier, more specific pattern, rather than deduplicating
+by the rendered context string. Verified against: the false-positive case
+above (now 1 constraint, no contradiction); the analogous `should not`
+case; a genuine cross-sentence contradiction (`"...must use encryption... `
+`however... must not use encryption..."` — still correctly detected); and
+a sentence combining three genuinely distinct constraint types (`must` /
+`only` / `without` — still all three extracted, not over-suppressed).
+
+**Files touched by this addendum's fix:** `core/cognitive/planner.py`
+(`_extract_explicit_constraints` only — no other function changed),
+`tests/core/cognitive/test_planner.py` (`TestExtractionContradictionIntegration`,
+4 new tests exercising the extraction → detection seam directly with
+realistic text; `_detect_contradictions`/`_extract_explicit_constraints`
+added to the test file's imports).
+
+**Verification:** `test_planner.py` 54/54 passing (50 from the review
+above + 4 new). Full repository regression: 815/815 passing.
+
+**Status: still COMPLETE.** This addendum does not change the completion
+decision above — it corrects one additional implementation-level defect
+within Packet 01's own file ownership, found by the same class of review
+this report itself performed, using the same method (verify against
+architecture and real code, not against a prior report's claims).

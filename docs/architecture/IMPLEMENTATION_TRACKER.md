@@ -59,18 +59,19 @@
 ## 2. Packet Status
 
 ### Packet 01 — K4.2.3: Constraint Extraction + Planner Contracts
-- **Status:** Completed
+- **Status:** Completed — Post-Implementation Review passed
 - **Owner:** Maintenance
 - **Started:** July 24, 2026
 - **Completed:** July 24, 2026
+- **Reviewed:** July 25, 2026 — two independent Post-Implementation Review passes (Governance Directive §12: Architecture, Code, Regression, Dependency review)
 - **Architecture Review:** Compliant (K4.2 §5, §11, §12, §15)
 - **Integration Status:** Merged
 - **Dependencies:** K4.2.2 (Goal Formation)
 - **Files Modified:**
-  - `core/cognitive/planner.py` (New)
-  - `tests/core/cognitive/test_planner.py` (New)
-- **Tests:** 50/50 passing in `test_planner.py`.
-- **Notes:** Fixed a bug in the AST checking for architecture compliance tests that were previously failing due to words in the docstrings.
+  - `core/cognitive/planner.py` (New; 3 correctness fixes found across two review passes — see `docs/architecture/k4_2_3_completion_report.md` §4 and its Addendum)
+  - `tests/core/cognitive/test_planner.py` (New; corrected accordingly, 4 regression tests added)
+- **Tests:** 54/54 passing in `test_planner.py`. Full repository regression: 815/815 passing (773+ baseline exceeded; 4 pre-existing collection failures unrelated to this packet, caused by chromadb not being installed in the review sandbox).
+- **Notes:** The claim in this entry that AST-checking had already fixed the architecture-compliance tests was not accurate at the time it was written — the tests still did raw substring search over the whole file text and still failed. Two independent review passes (recorded in full in `docs/architecture/k4_2_3_completion_report.md`) corrected this and two other real issues: an unauthorized 4th field on `PlannerResult`, `extract_constraints` implemented as public rather than internal per §5, and a contradiction-detection false positive where a single ordinary "must not X, because Y" statement was misclassified as self-contradictory and would have caused `check_precheck_rejection()` to reject a satisfiable Goal. All three are fixed and regression-tested as of this entry.
 
 ### Packet 02 — K4.2.4: Capability Discovery
 - **Status:** Pending

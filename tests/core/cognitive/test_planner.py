@@ -42,6 +42,8 @@ from core.cognitive.planner import (
     PlannerRequest,
     PlannerResult,
     PlannerStatus,
+    _detect_contradictions,
+    _extract_explicit_constraints,
     build_planner_request,
     check_precheck_rejection,
     _extract_constraints,
@@ -461,6 +463,67 @@ class TestPrecheckRejection:
         ]
         result = check_precheck_rejection(constraints)
         assert result is None
+
+
+class TestExtractionContradictionIntegration:
+    """Regression tests for a bug found during Packet 01 Post-Implementation
+    Review: _extract_explicit_constraints()'s pattern list contains
+    overlapping patterns checked in priority order (e.g. "must not" before
+    plain "must"), and the original context-string dedup only caught the
+    resulting duplicate match by coincidence, when both matches' context
+    windows happened to get clamped to the same end-of-string. With enough
+    trailing text after the match, a single "must not X" statement produced
+    two constraints (a correct negation_constraint and a spurious
+    requirement_constraint over the same words), which then satisfied
+    _detect_contradictions()'s overlapping-content-word check and incorrectly
+    yielded rejected_precheck for a goal with no actual contradiction.
+
+    These tests exercise the real extraction -> detection pipeline with
+    realistic text, which none of the existing TestPrecheckRejection tests
+    did (they all construct Constraint objects by hand).
+    """
+
+    def test_single_must_not_statement_is_not_self_contradictory(self):
+        text = (
+            "You must not use JavaScript for this task, since the team "
+            "standard requires Python for all new automation scripts "
+            "going forward."
+        )
+        constraints = _extract_explicit_constraints(text)
+        assert len(constraints) == 1
+        assert constraints[0].rationale.startswith("negation_constraint")
+        assert _detect_contradictions(constraints) is False
+
+    def test_single_should_not_statement_is_not_self_contradictory(self):
+        text = (
+            "The report should not include raw customer data, since "
+            "privacy policy requires all personal fields to be redacted "
+            "before distribution."
+        )
+        constraints = _extract_explicit_constraints(text)
+        assert len(constraints) == 1
+        assert constraints[0].rationale.startswith("soft_negation_constraint")
+        assert _detect_contradictions(constraints) is False
+
+    def test_genuine_cross_sentence_contradiction_still_detected(self):
+        text = (
+            "The report must use encryption for all stored data. However, "
+            "the legacy export step must not use encryption, per the "
+            "vendor contract."
+        )
+        constraints = _extract_explicit_constraints(text)
+        assert _detect_contradictions(constraints) is True
+
+    def test_distinct_constraint_types_in_one_sentence_not_merged(self):
+        """must / only / without are genuinely different constraint
+        semantics, not overlapping matches on the same words -- the span
+        fix must not suppress these."""
+        text = "You must only use approved vendors for this without any exceptions."
+        constraints = _extract_explicit_constraints(text)
+        rationale_types = {c.rationale.split(":", 1)[0] for c in constraints}
+        assert "requirement_constraint" in rationale_types
+        assert "scoping_constraint" in rationale_types
+        assert "exclusion_constraint" in rationale_types
 
 
 # ─────────────────────────────────────────────────────────────────────────

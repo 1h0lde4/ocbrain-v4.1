@@ -258,22 +258,40 @@ def _extract_explicit_constraints(text: str) -> List[Constraint]:
     reasoning" for auditable seam-crossing operations). The VALUES
     and FIELDS it produces are architecture-cited; the heuristic
     itself is not.
+
+    Patterns are checked in priority order (e.g. "must not" before plain
+    "must"), and a match is skipped if its character span overlaps a span
+    already claimed by an earlier, more specific pattern -- otherwise
+    "must not" would independently match both the "must not" pattern and
+    the plain "must" pattern on the same words, producing a spurious
+    second constraint whose rationale text overlaps the first closely
+    enough to later read as a self-contradiction in _detect_contradictions
+    (bug found during Packet 01 Post-Implementation Review: a single
+    "must not do X, because Y" statement with a normal-length trailing
+    clause was misclassified as two constraints and incorrectly triggered
+    rejected_precheck on a goal with no actual contradiction). Deduplicating
+    by claimed span rather than by the rendered context string is what
+    makes this reliable regardless of surrounding text length -- the
+    previous context-string dedup only worked by accident, when both
+    matches' context windows happened to get clamped to the same
+    end-of-string.
     """
     constraints: List[Constraint] = []
-    seen_rationales: set = set()
+    claimed_spans: List[tuple] = []
+
+    def _overlaps_claimed(start: int, end: int) -> bool:
+        return any(start < c_end and end > c_start for c_start, c_end in claimed_spans)
 
     for pattern, kind, rationale_type in _EXPLICIT_CONSTRAINT_PATTERNS:
         for match in pattern.finditer(text):
+            if _overlaps_claimed(match.start(), match.end()):
+                continue
+            claimed_spans.append((match.start(), match.end()))
+
             # Extract context around the match for the rationale.
             start = max(0, match.start() - 20)
             end = min(len(text), match.end() + 60)
             context = text[start:end].strip()
-
-            # Deduplicate by context to avoid multiple constraints
-            # from overlapping patterns on the same text fragment.
-            if context in seen_rationales:
-                continue
-            seen_rationales.add(context)
 
             constraints.append(Constraint(
                 kind=kind,
