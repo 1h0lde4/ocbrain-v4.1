@@ -1,6 +1,6 @@
 # OCBrain Kernel v1.0 — Current State
 
-**Last synchronized:** July 22, 2026 (K3 status correction — see note below; prior full sync July 18, 2026)
+**Last synchronized:** July 24, 2026 (added missing Cognitive Front-End status section for K4.2.1–K4.2.3 — see note below; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This document is the authoritative answer to "what is actually built right now."
 
 ---
@@ -19,6 +19,21 @@
 | K3 — Compliance Audit | ✅ Complete | July 2026 |
 
 **K3 resolution note (July 22, 2026):** This table previously marked K3 as outstanding, and `IMPLEMENTATION_ROADMAP.md` explicitly declined to adopt `docs/reports/K3.5 — Kernel Hardening Report (Final).md`'s "UNCONDITIONAL KERNEL v1.0 CERTIFICATION" framing pending resolution. Confirmed by the project owner: K3 was in fact performed — the existence of K3.5/K3.5.1 is itself the result of doing it (K3 surfaced the governance-bypass gaps; K3.5/K3.5.1 remediated them). Git history corroborates the sequence: `bebce09 ocbrain k3 audit` precedes `46f550c k3.5 hardening session` and `236e687 K3.5.1: Kernel governance consistency...`. This document's status line simply hadn't been updated after K3 happened. Unrelated tracked debt (`KNOWN_ISSUES.md` DEBT-002 through DEBT-008) remains open regardless — K3's completion means the compliance-audit milestone occurred, not that zero debt remains.
+
+---
+
+## Cognitive Front-End Implementation Status
+
+**Added July 24, 2026** — this section did not previously exist; K4.2.1–K4.2.3 had been implemented (the first two properly, K4.2.3 via an unreviewed upload — see `docs/architecture/k4_2_3_completion_report.md` §0) but never rolled into this document, the same kind of doc/reality lag this file's own K3 note above already describes once. Corrected via direct code audit, not by trusting any prior report's claim.
+
+| Milestone | Status | Completion | Key Deliverables |
+|---|---|---|---|
+| K4.2.1 — Intent Interpreter | ✅ Complete | July 2026 | `Intent`, `IntentHypothesis`, `CognitiveArtifact` protocol, multi-hypothesis inference, input normalization (`core/cognitive/intent.py`) |
+| K4.2.2 — Goal Formation | ✅ Complete | July 2026 | `Goal`, `GoalLifecycle`, `form_goals()`, compound-request splitting, `interpret_request()` public entrypoint |
+| K4.2.3 — Constraint Extraction + Planner Contracts | ✅ Complete | July 24, 2026 | `Constraint`, `PlannerRequest`, `PlannerHint`, `PlannerResult`, `_extract_constraints()`, `cognitive.constraints_extracted` event, `rejected_precheck` contradiction detection (`core/cognitive/planner.py`) |
+| K4.2.4 — Capability Discovery refinements | ⬜ Not started | — | See `IMPLEMENTATION_ROADMAP.md` |
+
+Boundary holds as specified (K4.2 §1): `interpret()` and `plan()`-adjacent contracts exist; neither touches Kernel execution. `Planner.plan()` itself, capability selection, and Plan Compilation are all still unimplemented — only the data contracts and constraint-extraction sub-step exist so far. See `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, and `k4_2_3_completion_report.md` for full detail per milestone.
 
 ---
 

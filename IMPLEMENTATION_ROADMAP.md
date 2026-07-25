@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 22, 2026 (K3 status correction — see Validation Phase note below; prior full sync July 18, 2026)
+**Last synchronized:** July 24, 2026 (added Cognitive Front-End Phase for K4.2.1–K4.2.3 — see note below; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -73,13 +73,30 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 
 ---
 
+## Cognitive Front-End Phase — In Progress
+
+**Added July 24, 2026.** This phase did not previously appear in this document — K4.2.1 and K4.2.2 had already been implemented, and K4.2.3 was implemented in a prior session but uploaded rather than committed through the packet process, so none of the three were ever reflected here. Corrected via direct code + test audit (see `CURRENT_STATE.md`'s new Cognitive Front-End section and `docs/architecture/k4_2_3_completion_report.md`).
+
+| Milestone | Status | Key Deliverables |
+|---|---|---|
+| K4.2.1 — Intent Interpreter | ✅ Complete | `Intent`, `IntentHypothesis` dataclasses; input normalization; multi-hypothesis inference |
+| K4.2.2 — Goal Formation | ✅ Complete | `Goal` dataclass; compound-request splitting; `interpret_request()` entrypoint |
+| K4.2.3 — Constraint Extraction + Planner Contracts | ✅ Complete | `Constraint`/`PlannerRequest`/`PlannerHint`/`PlannerResult`; `_extract_constraints()`; `cognitive.constraints_extracted`; `rejected_precheck` on contradictory hard constraints |
+| K4.2.4 — Capability Discovery refinements | ⬜ Next | Layers onto existing `CapabilityResolver`, unmodified — see `docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md` §15 |
+
+Completion reports: `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, `k4_2_3_completion_report.md`.
+
+K4.2.1–K4.2.3 have zero live-path interaction with Kernel execution (per the architecture doc §15) and did not require K3 resolution to proceed — consistent with K3 having been separately confirmed complete above.
+
+---
+
 ## Cognitive Phase — Future (Post-Kernel)
 
-These items are beyond Kernel scope. They build ON the kernel, not AS the kernel.
+These items are beyond Kernel scope. They build ON the kernel, not AS the kernel. (K4.2.1–K4.2.3 are no longer listed here — see the Cognitive Front-End Phase above.)
 
 - Self-Identity Model
 - Reflection Engine
-- Planning Engine (full, beyond PlannerWorker)
+- Planning Engine (full — `Planner.plan()`, decomposition, capability selection; beyond the K4.2.3 data contracts and beyond `PlannerWorker`)
 - Skills Runtime
 - External Knowledge Pipeline
 - Multi-Agent Runtime (SupervisorWorker)

@@ -215,7 +215,6 @@ class PlannerResult:
     status: str = PlannerStatus.READY_FOR_COMPILATION
     execution_plan: Optional[Any] = None
     impasse_detail: Optional[ImpasseRecord] = None
-    constraints: List[Constraint] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -371,7 +370,7 @@ def _detect_contradictions(constraints: List[Constraint]) -> bool:
     return False
 
 
-async def extract_constraints(
+async def _extract_constraints(
     goal: Goal,
     *,
     event_stream: Optional[EventStream] = None,
@@ -449,7 +448,6 @@ def check_precheck_rejection(constraints: List[Constraint]) -> Optional[PlannerR
     if _detect_contradictions(constraints):
         return PlannerResult(
             status=PlannerStatus.REJECTED_PRECHECK,
-            constraints=constraints,
             impasse_detail=ImpasseRecord(
                 reason="contradictory_hard_constraints",
             ),

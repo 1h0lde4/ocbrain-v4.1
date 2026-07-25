@@ -1,6 +1,6 @@
 # OCBrain — Known Issues & Technical Debt Register
 
-**Last synchronized:** July 22, 2026 (DEBT-009 resolution; prior full sync July 18, 2026)
+**Last synchronized:** July 24, 2026 (clarified Cognitive Front-End vs. future-worker scope; prior sync July 22, 2026 DEBT-009 resolution; prior full sync July 18, 2026)
 **Authority:** This is the canonical register of known technical debt, deferred items, and future work.
 
 ---
@@ -43,6 +43,16 @@ Items explicitly scoped out with architectural justification. These are NOT debt
 ## Future Roadmap (Not Debt)
 
 Items that are correctly absent because they belong to future phases.
+
+**Clarification (added July 24, 2026):** everything below remains accurate —
+`SupervisorWorker`, `ReflectionWorker`, and the future capability adapters
+genuinely do not exist yet. What changed is narrower: the Cognitive
+Front-End *data-contract plumbing* that feeds `Planner` — Intent
+Interpretation (K4.2.1), Goal Formation (K4.2.2), and Constraint Extraction
+(K4.2.3) — is now implemented (see `CURRENT_STATE.md`'s Cognitive Front-End
+section). None of it required any item below; Capability Discovery (K4.2.4,
+the next milestone) is the first piece of Cognitive Phase work that
+overlaps this table, specifically the future capability adapters.
 
 ### Future Cognitive Workers
 

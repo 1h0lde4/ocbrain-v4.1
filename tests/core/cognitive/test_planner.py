@@ -10,8 +10,8 @@ Tests:
     - PlannerRequest dataclass fields match K4.2 §12
     - PlannerResult dataclass fields match K4.2 §12
     - ImpasseRecord dataclass
-    - extract_constraints() produces well-formed constraints
-    - extract_constraints() emits cognitive.constraints_extracted event
+    - _extract_constraints() produces well-formed constraints
+    - _extract_constraints() emits cognitive.constraints_extracted event
     - Contradictory hard constraints yield rejected_precheck
     - build_planner_request() produces valid PlannerRequest with hints
     - CognitiveArtifact protocol not violated
@@ -44,7 +44,7 @@ from core.cognitive.planner import (
     PlannerStatus,
     build_planner_request,
     check_precheck_rejection,
-    extract_constraints,
+    _extract_constraints,
 )
 from core.events.event_stream import EventStream
 
@@ -219,12 +219,16 @@ class TestPlannerResultDataclass:
     """Verify PlannerResult fields match K4.2 §12."""
 
     def test_fields_match_architecture(self):
-        """K4.2 §12: status, execution_plan, impasse_detail."""
+        """K4.2 §12: status, execution_plan, impasse_detail. Exactly
+        these three — no additional fields (K4.2 §5/§12 both specify
+        this shape precisely; a 4th field previously slipped in here
+        and was removed as a verified spec deviation)."""
         r = PlannerResult()
         assert hasattr(r, "status")
         assert hasattr(r, "execution_plan")
         assert hasattr(r, "impasse_detail")
-        assert hasattr(r, "constraints")
+        field_names = {f.name for f in dataclasses.fields(PlannerResult)}
+        assert field_names == {"status", "execution_plan", "impasse_detail"}
 
     def test_status_values(self):
         """K4.2 §12: status: 'ready_for_compilation'|'impasse'|
@@ -260,7 +264,7 @@ class TestImpasseRecordDataclass:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# extract_constraints() — K4.2 §5
+# _extract_constraints() — K4.2 §5
 # ─────────────────────────────────────────────────────────────────────────
 
 class TestExtractConstraints:
@@ -271,7 +275,7 @@ class TestExtractConstraints:
         """K4.2 §5: extract_constraints produces well-formed constraints."""
         goal = _make_goal(description="The system must handle errors gracefully")
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         assert isinstance(constraints, list)
         assert all(isinstance(c, Constraint) for c in constraints)
 
@@ -280,7 +284,7 @@ class TestExtractConstraints:
         """Extract 'must' as hard explicit constraint."""
         goal = _make_goal(description="The output must be JSON formatted")
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         hard = [c for c in constraints if c.kind == ConstraintKind.HARD
                 and c.source == ConstraintSource.EXPLICIT]
         assert len(hard) >= 1
@@ -290,7 +294,7 @@ class TestExtractConstraints:
         """Extract 'should' as soft explicit constraint."""
         goal = _make_goal(description="The response should be concise")
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         soft = [c for c in constraints if c.kind == ConstraintKind.SOFT
                 and c.source == ConstraintSource.EXPLICIT]
         assert len(soft) >= 1
@@ -300,7 +304,7 @@ class TestExtractConstraints:
         """Low confidence goal produces inferred constraint."""
         goal = _make_goal(confidence=0.3)
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         inferred = [c for c in constraints
                     if c.source == ConstraintSource.INFERRED
                     and "low_confidence" in c.rationale]
@@ -311,7 +315,7 @@ class TestExtractConstraints:
         """Compound goal produces inferred constraint."""
         goal = _make_goal(sub_goals=["goal-2", "goal-3"])
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         compound = [c for c in constraints
                     if c.source == ConstraintSource.INFERRED
                     and "compound_goal" in c.rationale]
@@ -325,7 +329,7 @@ class TestExtractConstraints:
             confidence=0.9,
         )
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         # May have zero or some explicit constraints depending on text,
         # but no inferred ones.
         inferred = [c for c in constraints
@@ -337,7 +341,7 @@ class TestExtractConstraints:
         """K4.2 §11: cognitive.constraints_extracted event emitted."""
         goal = _make_goal(description="must handle errors")
         es = MockEventStream()
-        await extract_constraints(goal, event_stream=es)
+        await _extract_constraints(goal, event_stream=es)
         assert len(es.events) == 1
         event = es.events[0]
         assert event["event_type"] == "cognitive.constraints_extracted"
@@ -356,7 +360,7 @@ class TestExtractConstraints:
             confidence=0.3,
         )
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         payload = es.events[0]["payload"]
         assert payload["constraint_count"] == len(constraints)
         hard_actual = sum(1 for c in constraints
@@ -374,7 +378,7 @@ class TestExtractConstraints:
             raw_request="please use encryption if possible",
         )
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         hard = [c for c in constraints if c.kind == ConstraintKind.HARD]
         assert len(hard) >= 1
 
@@ -386,7 +390,7 @@ class TestExtractConstraints:
             raw_request="must validate input",
         )
         es = MockEventStream()
-        constraints = await extract_constraints(goal, event_stream=es)
+        constraints = await _extract_constraints(goal, event_stream=es)
         hard = [c for c in constraints if c.kind == ConstraintKind.HARD]
         assert len(hard) >= 1
 
@@ -515,6 +519,38 @@ class TestBuildPlannerRequest:
 # Architecture compliance
 # ─────────────────────────────────────────────────────────────────────────
 
+def _real_code_identifiers(filepath: str) -> set:
+    """Names actually used as code in a module: imports, bare names, and
+    attribute accesses. Deliberately excludes docstrings and comments —
+    a raw substring search over the whole file text (the previous
+    approach) false-positives on explanatory prose like "never writes
+    to UnifiedMemory", which mentions the forbidden name specifically
+    to disclaim it. Parsing via `ast` and collecting only Name/Attribute/
+    Import nodes inspects what the code actually does, not what its
+    docstrings say about what it doesn't do.
+    """
+    import ast
+
+    tree = ast.parse(open(filepath).read())
+    identifiers: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                identifiers.add(alias.name.split(".")[-1])
+                if alias.asname:
+                    identifiers.add(alias.asname)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                identifiers.add(alias.name)
+                if alias.asname:
+                    identifiers.add(alias.asname)
+        elif isinstance(node, ast.Name):
+            identifiers.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            identifiers.add(node.attr)
+    return identifiers
+
+
 class TestArchitectureCompliance:
     """Verify Packet 01 does not violate architectural boundaries."""
 
@@ -541,21 +577,21 @@ class TestArchitectureCompliance:
     def test_no_capability_imports(self):
         """Evolution Directive: capability selection forbidden in K4.2."""
         import core.cognitive.planner as mod
-        source = open(mod.__file__).read()
-        assert "AdapterRuntime" not in source
-        assert "CapabilityType" not in source
-        assert "invoke" not in source.split("def ")[0]  # No invoke calls
+        identifiers = _real_code_identifiers(mod.__file__)
+        assert "AdapterRuntime" not in identifiers
+        assert "CapabilityType" not in identifiers
+        assert "invoke" not in identifiers  # no real .invoke(...) call
 
     def test_no_memory_writes(self):
         """K4 §1: Cognitive Front-End never writes to UnifiedMemory."""
         import core.cognitive.planner as mod
-        source = open(mod.__file__).read()
-        assert "UnifiedMemory" not in source
-        assert ".write(" not in source
+        identifiers = _real_code_identifiers(mod.__file__)
+        assert "UnifiedMemory" not in identifiers
+        assert "write" not in identifiers  # no real .write(...) call
 
     def test_no_governance_invocation(self):
         """Governance evaluation reserved for Plan Compilation."""
         import core.cognitive.planner as mod
-        source = open(mod.__file__).read()
-        assert "GovernanceKernel" not in source
-        assert "evaluate_action" not in source
+        identifiers = _real_code_identifiers(mod.__file__)
+        assert "GovernanceKernel" not in identifiers
+        assert "evaluate_action" not in identifiers
