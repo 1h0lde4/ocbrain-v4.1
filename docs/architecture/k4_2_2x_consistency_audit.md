@@ -203,7 +203,7 @@ K4.2 §12 defines Goal fields:
 |:---|:---|
 | PlannerRequest | ❌ No |
 | ExecutionPlan | ❌ No |
-| CapabilityRequest | ❌ No |
+| CapabilityDiscoveryRequest | ❌ No |
 | ConstraintModel | ❌ No |
 | TaskGraph | ❌ No |
 | Workflow | ❌ No |

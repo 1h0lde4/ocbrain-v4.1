@@ -126,7 +126,7 @@ These concerns belong exclusively to later architectural stages. Execution-orien
 | Stage | Introduces |
 |---|---|
 | Planning (K4.2.3+) | Abstract Work Units, Constraints, PlannerHints — still capability-agnostic |
-| Capability Discovery (K4.2.4+) | CapabilityRequest resolution against registries |
+| Capability Discovery (K4.2.4+) | CapabilityDiscoveryRequest resolution against registries |
 | Plan Compilation (K4.3) | WorkflowDefinition, execution-ready artifacts |
 | Cognitive Runtime (C-MoE) | Runtime routing, dynamic expert selection |
 | Execution Runtime | Scheduling, resource allocation, retry policies |
@@ -173,7 +173,7 @@ PlannerResult:
 
 **Constraint handling.** Unchanged from K4.2-R §4.7 — `_extract_constraints(goal)` produces the `List[Constraint]` attached to the in-progress `ExecutionPlan`, sourced explicit/inferred/policy.
 
-**Capability requests.** Unchanged from K4.2-R §4.8 — one `CapabilityRequest` per sub-goal, resolved against the existing `CapabilityRegistry`/`CognitiveService` Registry pair, never a third registry.
+**Capability requests.** One `CapabilityDiscoveryRequest` per sub-goal (renamed from the `CapabilityRequest` used in earlier revisions of this document — see the July 25, 2026 correction note after §15 for why). Resolved by querying `CapabilityRegistry` directly, using its actual public methods (`list_capabilities()`, `get_contract()`, `get_adapters()`), and scoring each returned `CapabilityContract` against the request's `description` — not by a `.resolve()` method, which `CapabilityRegistry` does not define. **Future Work / Deferred Architecture:** this document previously described requests as "resolved against the existing `CapabilityRegistry`/`CognitiveService` Registry pair" — no `CognitiveService Registry` implementation exists anywhere in this codebase (verified by repository-wide search during K4.2.4). Only `CapabilityRegistry` is queried today. Planner-facing interfaces (`CapabilityDiscoveryRequest`, `discover_capabilities()`) are written to accept an explicit registry parameter rather than a global accessor specifically so that a `CognitiveService Registry`, if and when it is built, can be integrated without changing this packet's call sites — this is the extent of "staying extensible," not a claim that integration work has been done.
 
 **Failure handling.** An empty or all-below-threshold capability resolution, or a decomposition that can't complete within budget, produces `status: "impasse"` — routed through the Soar-derived impasse→subgoaling pattern (K4.2-R §4.9, unchanged): `Planner` inserts a "resolve this impasse" `PlanStep`, which may in turn delegate to a skill-creation-capable `CognitiveService` per the K4.1 §9 walkthrough. `status: "rejected_precheck"` covers cases `Planner` can determine are hopeless before even attempting decomposition (e.g., a Goal whose hard `Constraint`s are mutually contradictory) — surfaced immediately rather than spending a full decomposition attempt on a provably-unsatisfiable Goal.
 
@@ -284,7 +284,7 @@ ReflectionRecord  (may propose an Adaptation-tier confidence-threshold
 | Intent | `derived_from` + originating event correlation ID |
 | Goal | `intent_id` (§4) + `derived_from` |
 | Constraints | `Constraint.source` (explicit/inferred/policy) + `rationale` field (K4.2-R §4.7, unchanged) |
-| Capability selection | `CapabilityRequest.description` + the resolved candidate's own registry entry, correlated via the `cognitive.capabilities_discovered` event (§11) |
+| Capability selection | `CapabilityDiscoveryRequest.description` + the resolved candidate's own registry entry, correlated via the `cognitive.capabilities_discovered` event (§11) |
 | Planner decisions | `ExecutionPlan.justification` (K4 §6, unchanged) + `PlannerResult.impasse_detail` where applicable |
 
 No new provenance mechanism anywhere in this table — every row reuses `derived_from`, `ProvenanceRecord`, or an existing field. This is deliberate: provenance that requires its own bespoke storage per artifact type is itself a Single-Source-of-Truth risk.
@@ -338,7 +338,7 @@ Constraint (embedded, not a Resource):
     source: "explicit"|"inferred"|"policy", rationale: str,
     validated_by: Optional[str]
 
-CapabilityRequest (ephemeral parameter object):
+CapabilityDiscoveryRequest (ephemeral parameter object):
     subgoal_ref, description, applicable_constraints: List[Constraint],
     context_view_ref
 
@@ -366,7 +366,7 @@ LearningRecord (the shared shape produced by any Learning/Adaptation/
     resulting_entry_ref: Optional[str]
 ```
 
-`Intent` and `Goal` satisfy the K1.6 Resource Protocol. `Constraint` and `PlannerHint` are embedded field-sets, not independently identified. `CapabilityRequest` and `PlannerRequest`/`PlannerResult` are ephemeral parameter objects (K1.6's fourth category) — constructed, consumed, discarded within one invocation. `CognitiveDecision` and `LearningRecord` are log/record shapes, written as part of an Event or a `KnowledgeEntry`, not independent Resources with their own registry.
+`Intent` and `Goal` satisfy the K1.6 Resource Protocol. `Constraint` and `PlannerHint` are embedded field-sets, not independently identified. `CapabilityDiscoveryRequest` and `PlannerRequest`/`PlannerResult` are ephemeral parameter objects (K1.6's fourth category) — constructed, consumed, discarded within one invocation. `CognitiveDecision` and `LearningRecord` are log/record shapes, written as part of an Event or a `KnowledgeEntry`, not independent Resources with their own registry.
 
 ---
 
@@ -442,11 +442,9 @@ K4.2.3  Constraint Extraction + Planner request/result contracts
                         yields rejected_precheck
 
 K4.2.4  Capability Discovery refinements  [regression-gated]
-        Objective:    description-and-schema matching + staged exposure,
-                        layered onto the EXISTING, UNMODIFIED
-                        CapabilityResolver.select()/ServiceProfile match
-        Modules:       core/cognitive/planner.py (CapabilityRequest handling)
-        Interfaces:     CapabilityRequest (§12)
+        Objective:    description-and-schema matching + staged exposure
+        Modules:       core/cognitive/planner.py (CapabilityDiscoveryRequest handling)
+        Interfaces:     CapabilityDiscoveryRequest (§12)
         Dependencies:    K4.2.3; K3 (Kernel Compliance Audit) status resolved
                         or explicitly deferred, per K4 §0/K4.1 §0's carried
                         caveat -- this is the first milestone touching a
@@ -454,6 +452,21 @@ K4.2.4  Capability Discovery refinements  [regression-gated]
         Validation:      resolves to the same-or-better candidate set as
                         today's exact-match baseline on a fixed sub-goal
                         description test set
+
+        Correction (July 25, 2026): this entry previously said Capability
+        Discovery would be "layered onto the EXISTING, UNMODIFIED
+        CapabilityResolver.select()/ServiceProfile match." No
+        CapabilityResolver class exists anywhere in this codebase, and it
+        was never registered or planned -- confirmed by repository-wide
+        search during K4.2.4's implementation. The actual implementation
+        queries CapabilityRegistry directly via its real API
+        (list_capabilities()/get_contract()/get_adapters()) and scores
+        candidates by deterministic description overlap; it does not
+        layer onto, wrap, or assume any resolver/selector component. See
+        docs/architecture/k4_2_4_completion_report.md for full detail,
+        including the CapabilityDiscoveryRequest/CapabilityRequest naming
+        resolution and the CognitiveService Registry future-work note in
+        §5 above (Planner Interface, "Capability requests").
 
 K4.2.5  Planner completion — HTN reframing + impasse handling
         Objective:    Skill preconditions wired into _decompose(); impasse

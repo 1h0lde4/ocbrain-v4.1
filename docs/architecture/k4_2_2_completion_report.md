@@ -63,7 +63,7 @@ These features belong to later milestones and were **NOT** implemented:
 |:---|:---|:---|
 | Planner / ExecutionPlan | K4.2.3+ | Not implemented, not imported, not referenced |
 | Constraint extraction | K4.2.3 | Not implemented |
-| CapabilityRequest / discovery | K4.2.4 | Not implemented |
+| CapabilityDiscoveryRequest / discovery | K4.2.4 | Not implemented |
 | PlannerHint / PlannerRequest / PlannerResult | K4.2.3 | Not implemented |
 | ValidationGate | K4.2.6 | Not implemented |
 | LearningRecord | K4.2.6 | Not implemented |

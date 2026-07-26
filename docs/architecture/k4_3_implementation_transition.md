@@ -167,7 +167,7 @@ Per K4.2 §5 and Evolution Directive:
 **Dependencies:** Packet 01 (K4.2.3)
 
 **Scope:**
-- `CapabilityRequest` handling (K4.2 §12: `subgoal_ref, description, applicable_constraints, context_view_ref`)
+- `CapabilityDiscoveryRequest` handling (K4.2 §12: `subgoal_ref, description, applicable_constraints, context_view_ref`)
 - Description-and-schema matching against existing `CapabilityRegistry`
 - Event: `cognitive.capabilities_discovered` (K4.2 §11)
 

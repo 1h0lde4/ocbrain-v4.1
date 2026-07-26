@@ -532,35 +532,28 @@ def build_planner_request(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# CapabilityRequest — K4.2 §12 (Packet 02 / K4.2.4 Capability Discovery)
+# CapabilityDiscoveryRequest — K4.2 §12 (Packet 02 / K4.2.4 Capability Discovery)
 # ─────────────────────────────────────────────────────────────────────────
 
 @dataclass
-class CapabilityRequest:
+class CapabilityDiscoveryRequest:
     """A discovery-time query: "what capabilities might satisfy this
     sub-goal, given these constraints?"
 
-    Architecture: K4.2 §12 -- "CapabilityRequest (ephemeral parameter
-    object): subgoal_ref, description, applicable_constraints:
-    List[Constraint], context_view_ref."
-
-    Name collision, flagged rather than silently resolved either way:
-    core.capabilities.capability.CapabilityRequest already exists in this
-    codebase and is a *different type with the same name* --
-    the K2.3, execution-time input to one Adapter.execute() call
-    (capability_type, payload, trace_id, metadata). That type asks an
-    Adapter to actually do something; this type asks the
-    CapabilityRegistry what might be able to do something, before
-    anything is selected or invoked. K4.2 §12 assigns this name without
-    evident awareness that it was already taken at the Kernel layer --
-    the collision predates this packet and correcting it (by renaming
-    either type) is not something this packet can do unilaterally
-    without deviating from the architecture's stated name (Governance
-    Directive §5: no unauthorized public-interface changes). Implemented
-    here under the architecture's exact name; the two types are never
-    imported into the same namespace anywhere in this codebase as of
-    this packet. Worth a deliberate disambiguation decision in a future
-    architecture-evolution session.
+    Architecture: K4.2 §12. Named `CapabilityDiscoveryRequest` per the
+    July 25, 2026 architecture correction -- K4.2 §12 originally called
+    this type `CapabilityRequest`, which collided with the unrelated,
+    pre-existing K2.3 execution-time type at
+    core.capabilities.capability.CapabilityRequest (the input to one
+    Adapter.execute() call: capability_type, payload, trace_id,
+    metadata). That type asks an Adapter to actually do something; this
+    type asks the CapabilityRegistry what might be able to do something,
+    before anything is selected or invoked. The K2.3 type keeps its
+    original name unchanged; only this, the newer and not-yet-depended-
+    upon type, was renamed -- see docs/architecture/
+    k4_2_4_completion_report.md's Addendum for the full resolution and
+    docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md
+    §5/§12/§15 for the corresponding architecture-document updates.
     """
     subgoal_ref: str
     description: str
@@ -568,12 +561,12 @@ class CapabilityRequest:
     context_view_ref: str = ""
 
 
-def build_capability_request(
+def build_capability_discovery_request(
     goal: Goal,
     constraints: List[Constraint],
     context_view_ref: str = "",
-) -> CapabilityRequest:
-    """Constructs a CapabilityRequest from a Goal and its Constraints.
+) -> CapabilityDiscoveryRequest:
+    """Constructs a CapabilityDiscoveryRequest from a Goal and its Constraints.
 
     Architecture: K4.2 §12; mirrors build_planner_request's established
     pattern (Packet 01).
@@ -589,7 +582,7 @@ def build_capability_request(
     Documented here, not silently assumed, so Packet 03 knows to replace
     this call site once real sub-goals exist.
     """
-    return CapabilityRequest(
+    return CapabilityDiscoveryRequest(
         subgoal_ref=goal.resource_id,
         description=(goal.structured_form or {}).get("description", ""),
         applicable_constraints=list(constraints),
@@ -615,7 +608,7 @@ def _tokenize(text: str) -> set:
     return set(re.findall(r"[a-z0-9]+", text.lower()))
 
 
-def _capability_match_score(request: CapabilityRequest,
+def _capability_match_score(request: CapabilityDiscoveryRequest,
                              contract: CapabilityContract) -> float:
     """Deterministic description-overlap score in [0, 1].
 
@@ -638,20 +631,20 @@ def _capability_match_score(request: CapabilityRequest,
 
 
 async def discover_capabilities(
-    request: CapabilityRequest,
+    request: CapabilityDiscoveryRequest,
     registry: CapabilityRegistry,
     *,
     event_stream: Optional[EventStream] = None,
     min_score: float = 0.0,
 ) -> List[CapabilityContract]:
-    """Discovers candidate capabilities for a CapabilityRequest.
+    """Discovers candidate capabilities for a CapabilityDiscoveryRequest.
 
     Architecture: this packet's own task spec -- "discovering candidate
     capabilities; querying the Capability Registry; matching capabilities
     against the Goal and extracted Constraints; returning deterministic
     capability candidates together with their published schemas." K4.2
-    §12 line 176: resolved against "the existing CapabilityRegistry/
-    CognitiveService Registry pair, never a third registry."
+    §5 ("Capability requests," corrected July 25, 2026): resolved by
+    querying CapabilityRegistry directly via its real API.
 
     Only CapabilityRegistry is queried: no CognitiveService Registry
     exists anywhere in this codebase (confirmed by repository-wide

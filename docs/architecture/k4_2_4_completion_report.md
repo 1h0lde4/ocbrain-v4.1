@@ -119,3 +119,71 @@ Replaced with a behavioral check before it was ever committed.
 Packet 01's exports were not modified. Both discrepancies found are
 documented, not hidden, and neither blocks correct implementation of this
 packet's own scope.
+
+---
+
+## Addendum — Discrepancy Resolution (July 25, 2026)
+
+Following acceptance of Packet 02, the three discrepancies documented in
+§0 above were resolved as architecture-maintenance work (not treated as
+implementation bugs, and the implementation itself was not rewritten or
+redesigned):
+
+**Discrepancy 1 resolved — renamed, not disambiguated-in-place.**
+`core/cognitive/planner.py`'s `CapabilityRequest` is now
+`CapabilityDiscoveryRequest` (and `build_capability_request` is now
+`build_capability_discovery_request` for internal consistency). The
+unrelated K2.3 execution-time type at
+`core.capabilities.capability.CapabilityRequest` was **not** touched and
+keeps its original name. Every reference across `docs/architecture/`
+was updated to match (`OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md`
+§1/§5/§12/§15, `OCBRAIN_K4_3_IMPLEMENTATION_TRANSITION.md` and its
+identical duplicate, `k4_2_2x_consistency_audit.md`,
+`k4_2_2_completion_report.md`, `k4_2_3_completion_report.md`,
+`IMPLEMENTATION_TRACKER.md`, and this report). The one reference correctly
+left unchanged is `docs/architecture/decisions/ADR_K2_EXT_01_EXTENSION_OVER_MODIFICATION.md`,
+which genuinely describes the K2.3 execution-time type. No backward-
+compatibility shim (e.g. a `CapabilityRequest = CapabilityDiscoveryRequest`
+alias) was added: nothing outside this session's own tests imported the
+old name, so none was necessary, and adding one anyway would have been
+exactly the "speculative infrastructure" this project's standing practice
+rejects building ahead of evidence.
+
+**Discrepancy 2 resolved, plus one additional instance found in the same
+document.** K4.2 §5's "Capability requests" paragraph no longer claims
+resolution against a `CapabilityRegistry.resolve()` method; it now
+describes the actual algorithm (`list_capabilities()`/`get_contract()`/
+`get_adapters()`, scored by description overlap). While resolving this,
+K4.2 §15's own K4.2.4 roadmap entry was found to contain a closely
+related, previously-unflagged instance of the same underlying problem:
+it said this packet would be "layered onto the EXISTING, UNMODIFIED
+`CapabilityResolver.select()`/`ServiceProfile` match" — no
+`CapabilityResolver` class exists anywhere in this codebase either,
+confirmed by the same repository-wide search. This was corrected
+alongside Discrepancy 2 (same document, same packet, same class of
+issue) rather than left standing next to the fix; flagged here as an
+addition beyond the three discrepancies as originally named, not a
+silent scope expansion. `KERNEL_ARCHITECTURE_v1.0.md`'s own
+`CapabilityRegistry.resolve()` mention (in its K1.5-era Worker execution-
+flow diagram) and `OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` /
+`OCBRAIN_K4_1_FINAL_CONSOLIDATED_ARCHITECTURE.md`'s mentions (describing
+Planner's future capability *selection* step, K4.2.5/Packet 03 and
+beyond) were deliberately left untouched — different layer and different,
+not-yet-built stage respectively; correcting assumptions about unbuilt
+future work is not this packet's call to make.
+
+**Discrepancy 3 resolved.** K4.2 §5 now states plainly that no
+CognitiveService Registry implementation exists, that only
+`CapabilityRegistry` is queried today, and that `discover_capabilities()`
+takes its registry as an explicit parameter specifically so a future
+CognitiveService Registry could be integrated without changing this
+packet's call sites — framed as the extent of "staying extensible," not
+as integration work already done. No CognitiveService Registry, and no
+`CapabilityRegistry.resolve()` method, were added anywhere.
+
+**Verification:** `test_planner.py` 79/79 passing (unchanged from
+acceptance — no test was added, removed, or altered in behavior; only
+names updated to match the rename). Full repository regression: 840/840
+passing. No public API outside `core/cognitive/planner.py` was touched;
+within it, the only change was the rename itself, and nothing else in
+this codebase imported the old name.

@@ -82,10 +82,10 @@
 - **Integration Status:** Merged
 - **Dependencies:** Packet 01
 - **Files Modified:**
-  - `core/cognitive/planner.py` (added `CapabilityRequest`, `build_capability_request`, `discover_capabilities`, matching helpers)
-  - `tests/core/cognitive/test_planner.py` (25 new tests)
+  - `core/cognitive/planner.py` (added `CapabilityDiscoveryRequest`, `build_capability_discovery_request`, `discover_capabilities`, matching helpers; renamed from `CapabilityRequest`/`build_capability_request` on July 25, 2026 to resolve a name collision — see Notes)
+  - `tests/core/cognitive/test_planner.py` (25 new tests; updated for the rename)
 - **Tests:** 79/79 passing in `test_planner.py`. Full repository regression: 840/840 passing.
-- **Notes:** `CapabilityRequest` (K4.2 §12) shares its name with an unrelated, pre-existing K2.3 type (`core.capabilities.capability.CapabilityRequest`) — flagged, not renamed, since renaming either would be an unauthorized interface change; disambiguated by docstring instead. `CapabilityRegistry.resolve()` and the "CognitiveService Registry" referenced in K4.1 Part III/K4.2 §12 do not exist in code — discovery uses the registry's real API (`list_capabilities`/`get_contract`/`get_adapters`) and queries only `CapabilityRegistry`, not a stand-in for the CognitiveService Registry. See completion report for full detail.
+- **Notes:** `CapabilityDiscoveryRequest` (originally named `CapabilityRequest` in K4.2 §12) collided with an unrelated, pre-existing K2.3 type of the same name (`core.capabilities.capability.CapabilityRequest`, an execution-time Adapter input) — resolved by renaming the newer, not-yet-depended-upon discovery type; the K2.3 type is unchanged. `CapabilityRegistry.resolve()` and the "CognitiveService Registry" referenced in K4.1 Part III/K4.2 §12 (plus a related `CapabilityResolver.select()` reference found in K4.2 §15's own K4.2.4 entry) did not and do not exist in code — the architecture document has been corrected to describe the actual algorithm (`list_capabilities`/`get_contract`/`get_adapters`, description-overlap scoring) rather than a nonexistent API; no such methods or registry were added. See `k4_2_4_completion_report.md`'s Addendum for full detail.
 
 ### Packet 03 — K4.2.5: Planner Completion
 - **Status:** Pending

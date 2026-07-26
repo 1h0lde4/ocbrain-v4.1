@@ -35,7 +35,7 @@ from core.cognitive.intent import (
 from core.capabilities.capability import BaseAdapter, CapabilityContract
 from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.planner import (
-    CapabilityRequest,
+    CapabilityDiscoveryRequest,
     Constraint,
     ConstraintKind,
     ConstraintRelation,
@@ -50,7 +50,7 @@ from core.cognitive.planner import (
     _detect_contradictions,
     _extract_explicit_constraints,
     _tokenize,
-    build_capability_request,
+    build_capability_discovery_request,
     build_planner_request,
     check_precheck_rejection,
     discover_capabilities,
@@ -669,7 +669,7 @@ class TestArchitectureCompliance:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# CapabilityRequest — K4.2 §12 (Packet 02)
+# CapabilityDiscoveryRequest — K4.2 §12 (Packet 02)
 # ─────────────────────────────────────────────────────────────────────────
 
 def _make_registry(entries=None):
@@ -694,9 +694,9 @@ def _make_registry(entries=None):
     return registry
 
 
-class TestCapabilityRequestDataclass:
+class TestCapabilityDiscoveryRequestDataclass:
     def test_construction(self):
-        request = CapabilityRequest(
+        request = CapabilityDiscoveryRequest(
             subgoal_ref="goal-1",
             description="summarize a document",
         )
@@ -708,19 +708,19 @@ class TestCapabilityRequestDataclass:
     def test_has_no_resource_id(self):
         """K4.2 §12: ephemeral parameter object, not a CognitiveArtifact --
         same category as PlannerRequest/PlannerResult."""
-        assert not hasattr(CapabilityRequest, "resource_id")
-        assert not dataclasses.fields(CapabilityRequest)[0].name == "resource_id"
+        assert not hasattr(CapabilityDiscoveryRequest, "resource_id")
+        assert not dataclasses.fields(CapabilityDiscoveryRequest)[0].name == "resource_id"
 
 
-class TestBuildCapabilityRequest:
+class TestBuildCapabilityDiscoveryRequest:
     def test_uses_goal_resource_id_as_subgoal_ref(self):
         goal = _make_goal(description="summarize a document")
-        request = build_capability_request(goal, [])
+        request = build_capability_discovery_request(goal, [])
         assert request.subgoal_ref == goal.resource_id
 
     def test_extracts_description_from_structured_form(self):
         goal = _make_goal(description="generate an image of a cat")
-        request = build_capability_request(goal, [])
+        request = build_capability_discovery_request(goal, [])
         assert request.description == "generate an image of a cat"
 
     def test_carries_constraints_through(self):
@@ -730,17 +730,17 @@ class TestBuildCapabilityRequest:
             source=ConstraintSource.EXPLICIT,
             rationale="requirement_constraint: must use Python",
         )
-        request = build_capability_request(goal, [constraint])
+        request = build_capability_discovery_request(goal, [constraint])
         assert request.applicable_constraints == [constraint]
 
     def test_carries_context_view_ref(self):
         goal = _make_goal()
-        request = build_capability_request(goal, [], context_view_ref="ctx-42")
+        request = build_capability_discovery_request(goal, [], context_view_ref="ctx-42")
         assert request.context_view_ref == "ctx-42"
 
     def test_handles_missing_structured_form_gracefully(self):
         goal = Goal(intent_id="x", structured_form={})
-        request = build_capability_request(goal, [])
+        request = build_capability_discovery_request(goal, [])
         assert request.description == ""
 
 
@@ -750,7 +750,7 @@ class TestBuildCapabilityRequest:
 
 class TestCapabilityMatchScore:
     def test_identical_description_scores_high(self):
-        request = CapabilityRequest(subgoal_ref="g", description="generate text from a prompt")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g", description="generate text from a prompt")
         contract = CapabilityContract(
             capability_type="llm_completion",
             description="generate text from a prompt",
@@ -758,7 +758,7 @@ class TestCapabilityMatchScore:
         assert _capability_match_score(request, contract) == pytest.approx(1.0)
 
     def test_unrelated_description_scores_zero(self):
-        request = CapabilityRequest(subgoal_ref="g", description="book a flight to Tokyo")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g", description="book a flight to Tokyo")
         contract = CapabilityContract(
             capability_type="llm_completion",
             description="generate text from a prompt via a language model",
@@ -766,7 +766,7 @@ class TestCapabilityMatchScore:
         assert _capability_match_score(request, contract) == 0.0
 
     def test_score_is_bounded(self):
-        request = CapabilityRequest(subgoal_ref="g", description="search the web for news")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g", description="search the web for news")
         contract = CapabilityContract(
             capability_type="web_search",
             description="search the web for current information",
@@ -775,12 +775,12 @@ class TestCapabilityMatchScore:
         assert 0.0 <= score <= 1.0
 
     def test_empty_description_scores_zero(self):
-        request = CapabilityRequest(subgoal_ref="g", description="")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g", description="")
         contract = CapabilityContract(capability_type="x", description="does something")
         assert _capability_match_score(request, contract) == 0.0
 
     def test_deterministic(self):
-        request = CapabilityRequest(subgoal_ref="g", description="generate an image")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g", description="generate an image")
         contract = CapabilityContract(capability_type="image_generation", description="generate an image from text")
         first = _capability_match_score(request, contract)
         second = _capability_match_score(request, contract)
@@ -805,7 +805,7 @@ class TestDiscoverCapabilities:
     @pytest.mark.asyncio
     async def test_matches_relevant_capability(self):
         registry = _make_registry()
-        request = CapabilityRequest(
+        request = CapabilityDiscoveryRequest(
             subgoal_ref="g1", description="generate text from a prompt using a model",
         )
         mock_stream = AsyncMock()
@@ -819,7 +819,7 @@ class TestDiscoverCapabilities:
             ("llm_completion", "Generate text from a prompt via a language model.", True),
             ("web_search", "Search the web for current information.", False),
         ])
-        request = CapabilityRequest(subgoal_ref="g1", description="search the web for news")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search the web for news")
         mock_stream = AsyncMock()
         candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
         assert all(c.capability_type != "web_search" for c in candidates)
@@ -830,7 +830,7 @@ class TestDiscoverCapabilities:
             ("llm_completion", "Generate text from a prompt via a language model.", True),
             ("web_search", "Search the web for current news and information.", True),
         ])
-        request = CapabilityRequest(subgoal_ref="g1", description="search the web for current news")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search the web for current news")
         mock_stream = AsyncMock()
         candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
         assert candidates[0].capability_type == "web_search"
@@ -838,7 +838,7 @@ class TestDiscoverCapabilities:
     @pytest.mark.asyncio
     async def test_empty_registry_returns_empty_list(self):
         registry = CapabilityRegistry()
-        request = CapabilityRequest(subgoal_ref="g1", description="do anything")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="do anything")
         mock_stream = AsyncMock()
         candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
         assert candidates == []
@@ -846,7 +846,7 @@ class TestDiscoverCapabilities:
     @pytest.mark.asyncio
     async def test_no_relevant_match_still_returns_gracefully(self):
         registry = _make_registry()
-        request = CapabilityRequest(subgoal_ref="g1", description="book a flight to Tokyo")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="book a flight to Tokyo")
         mock_stream = AsyncMock()
         candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
         # No error, no exception -- an empty or low-scored list is a valid,
@@ -856,7 +856,7 @@ class TestDiscoverCapabilities:
     @pytest.mark.asyncio
     async def test_min_score_filters_low_relevance(self):
         registry = _make_registry()
-        request = CapabilityRequest(subgoal_ref="g1", description="completely unrelated topic xyz")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="completely unrelated topic xyz")
         mock_stream = AsyncMock()
         candidates = await discover_capabilities(
             request, registry, event_stream=mock_stream, min_score=0.5,
@@ -866,7 +866,7 @@ class TestDiscoverCapabilities:
     @pytest.mark.asyncio
     async def test_event_emitted_once_with_expected_shape(self):
         registry = _make_registry()
-        request = CapabilityRequest(subgoal_ref="g1", description="generate text from a prompt")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="generate text from a prompt")
         mock_stream = AsyncMock()
         await discover_capabilities(request, registry, event_stream=mock_stream)
         mock_stream.append.assert_called_once()
@@ -882,7 +882,7 @@ class TestDiscoverCapabilities:
             ("llm_completion", "Generate text from a prompt via a language model.", True),
             ("web_search", "Search the web for current news and information.", True),
         ])
-        request = CapabilityRequest(subgoal_ref="g1", description="search news on the web")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search news on the web")
         mock_stream = AsyncMock()
         first = await discover_capabilities(request, registry, event_stream=mock_stream)
         second = await discover_capabilities(request, registry, event_stream=mock_stream)
@@ -903,7 +903,7 @@ class TestDiscoverCapabilities:
                 raise AssertionError("Capability Discovery must never invoke an adapter")
 
         registry._adapters["llm_completion"] = [WatchedAdapter()]
-        request = CapabilityRequest(subgoal_ref="g1", description="generate text from a prompt")
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="generate text from a prompt")
         mock_stream = AsyncMock()
         await discover_capabilities(request, registry, event_stream=mock_stream)
         assert call_log == []

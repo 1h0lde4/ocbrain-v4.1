@@ -89,7 +89,7 @@ already-correct code path — `_extract_explicit_constraints`,
 
 | Feature | Milestone | Status |
 |:---|:---|:---|
-| Capability discovery / `CapabilityRequest` resolution | K4.2.4 | Not implemented, not imported |
+| Capability discovery / `CapabilityDiscoveryRequest` resolution | K4.2.4 | Not implemented, not imported |
 | `_select_capabilities` | K4.2.4 | Not implemented |
 | Planner completion / `plan()` / HTN decomposition | K4.2.5 | Not implemented |
 | `ClarificationPolicy` | K4.2.5 | Not implemented |
