@@ -17,9 +17,10 @@ Tests:
     - CognitiveArtifact protocol not violated
     - No forbidden work present
 """
-import asyncio
 import dataclasses
+
 import pytest
+from unittest.mock import AsyncMock
 
 from core.cognitive.intent import (
     CognitiveArtifact,
@@ -31,7 +32,10 @@ from core.cognitive.intent import (
     IntentLifecycle,
     IntentModality,
 )
+from core.capabilities.capability import BaseAdapter, CapabilityContract
+from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.planner import (
+    CapabilityRequest,
     Constraint,
     ConstraintKind,
     ConstraintRelation,
@@ -42,10 +46,14 @@ from core.cognitive.planner import (
     PlannerRequest,
     PlannerResult,
     PlannerStatus,
+    _capability_match_score,
     _detect_contradictions,
     _extract_explicit_constraints,
+    _tokenize,
+    build_capability_request,
     build_planner_request,
     check_precheck_rejection,
+    discover_capabilities,
     _extract_constraints,
 )
 from core.events.event_stream import EventStream
@@ -658,3 +666,266 @@ class TestArchitectureCompliance:
         identifiers = _real_code_identifiers(mod.__file__)
         assert "GovernanceKernel" not in identifiers
         assert "evaluate_action" not in identifiers
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CapabilityRequest — K4.2 §12 (Packet 02)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _make_registry(entries=None):
+    """Builds a CapabilityRegistry for testing. entries is a list of
+    (capability_type, description, has_adapter) tuples; defaults to a
+    single llm_completion capability with an adapter, matching the live
+    composition root (main.py)."""
+    registry = CapabilityRegistry()
+    entries = entries or [
+        ("llm_completion", "Generate text from a prompt via a language model.", True),
+    ]
+    for capability_type, description, has_adapter in entries:
+        registry.register_capability(CapabilityContract(
+            capability_type=capability_type,
+            description=description,
+        ))
+        if has_adapter:
+            adapter = BaseAdapter()
+            adapter.adapter_name = f"fake-{capability_type}"
+            adapter.capability_type = capability_type
+            registry.register_adapter(capability_type, adapter)
+    return registry
+
+
+class TestCapabilityRequestDataclass:
+    def test_construction(self):
+        request = CapabilityRequest(
+            subgoal_ref="goal-1",
+            description="summarize a document",
+        )
+        assert request.subgoal_ref == "goal-1"
+        assert request.description == "summarize a document"
+        assert request.applicable_constraints == []
+        assert request.context_view_ref == ""
+
+    def test_has_no_resource_id(self):
+        """K4.2 §12: ephemeral parameter object, not a CognitiveArtifact --
+        same category as PlannerRequest/PlannerResult."""
+        assert not hasattr(CapabilityRequest, "resource_id")
+        assert not dataclasses.fields(CapabilityRequest)[0].name == "resource_id"
+
+
+class TestBuildCapabilityRequest:
+    def test_uses_goal_resource_id_as_subgoal_ref(self):
+        goal = _make_goal(description="summarize a document")
+        request = build_capability_request(goal, [])
+        assert request.subgoal_ref == goal.resource_id
+
+    def test_extracts_description_from_structured_form(self):
+        goal = _make_goal(description="generate an image of a cat")
+        request = build_capability_request(goal, [])
+        assert request.description == "generate an image of a cat"
+
+    def test_carries_constraints_through(self):
+        goal = _make_goal()
+        constraint = Constraint(
+            kind=ConstraintKind.HARD,
+            source=ConstraintSource.EXPLICIT,
+            rationale="requirement_constraint: must use Python",
+        )
+        request = build_capability_request(goal, [constraint])
+        assert request.applicable_constraints == [constraint]
+
+    def test_carries_context_view_ref(self):
+        goal = _make_goal()
+        request = build_capability_request(goal, [], context_view_ref="ctx-42")
+        assert request.context_view_ref == "ctx-42"
+
+    def test_handles_missing_structured_form_gracefully(self):
+        goal = Goal(intent_id="x", structured_form={})
+        request = build_capability_request(goal, [])
+        assert request.description == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _capability_match_score / _tokenize
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestCapabilityMatchScore:
+    def test_identical_description_scores_high(self):
+        request = CapabilityRequest(subgoal_ref="g", description="generate text from a prompt")
+        contract = CapabilityContract(
+            capability_type="llm_completion",
+            description="generate text from a prompt",
+        )
+        assert _capability_match_score(request, contract) == pytest.approx(1.0)
+
+    def test_unrelated_description_scores_zero(self):
+        request = CapabilityRequest(subgoal_ref="g", description="book a flight to Tokyo")
+        contract = CapabilityContract(
+            capability_type="llm_completion",
+            description="generate text from a prompt via a language model",
+        )
+        assert _capability_match_score(request, contract) == 0.0
+
+    def test_score_is_bounded(self):
+        request = CapabilityRequest(subgoal_ref="g", description="search the web for news")
+        contract = CapabilityContract(
+            capability_type="web_search",
+            description="search the web for current information",
+        )
+        score = _capability_match_score(request, contract)
+        assert 0.0 <= score <= 1.0
+
+    def test_empty_description_scores_zero(self):
+        request = CapabilityRequest(subgoal_ref="g", description="")
+        contract = CapabilityContract(capability_type="x", description="does something")
+        assert _capability_match_score(request, contract) == 0.0
+
+    def test_deterministic(self):
+        request = CapabilityRequest(subgoal_ref="g", description="generate an image")
+        contract = CapabilityContract(capability_type="image_generation", description="generate an image from text")
+        first = _capability_match_score(request, contract)
+        second = _capability_match_score(request, contract)
+        assert first == second
+
+
+class TestTokenize:
+    def test_lowercases_and_strips_punctuation(self):
+        assert _tokenize("Generate Text, From a Prompt!") == {
+            "generate", "text", "from", "a", "prompt",
+        }
+
+    def test_empty_string(self):
+        assert _tokenize("") == set()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# discover_capabilities() — integration
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestDiscoverCapabilities:
+    @pytest.mark.asyncio
+    async def test_matches_relevant_capability(self):
+        registry = _make_registry()
+        request = CapabilityRequest(
+            subgoal_ref="g1", description="generate text from a prompt using a model",
+        )
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert len(candidates) == 1
+        assert candidates[0].capability_type == "llm_completion"
+
+    @pytest.mark.asyncio
+    async def test_excludes_capability_with_no_adapter(self):
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True),
+            ("web_search", "Search the web for current information.", False),
+        ])
+        request = CapabilityRequest(subgoal_ref="g1", description="search the web for news")
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert all(c.capability_type != "web_search" for c in candidates)
+
+    @pytest.mark.asyncio
+    async def test_ranks_best_match_first(self):
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True),
+            ("web_search", "Search the web for current news and information.", True),
+        ])
+        request = CapabilityRequest(subgoal_ref="g1", description="search the web for current news")
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert candidates[0].capability_type == "web_search"
+
+    @pytest.mark.asyncio
+    async def test_empty_registry_returns_empty_list(self):
+        registry = CapabilityRegistry()
+        request = CapabilityRequest(subgoal_ref="g1", description="do anything")
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert candidates == []
+
+    @pytest.mark.asyncio
+    async def test_no_relevant_match_still_returns_gracefully(self):
+        registry = _make_registry()
+        request = CapabilityRequest(subgoal_ref="g1", description="book a flight to Tokyo")
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
+        # No error, no exception -- an empty or low-scored list is a valid,
+        # deterministic outcome, not a failure state.
+        assert isinstance(candidates, list)
+
+    @pytest.mark.asyncio
+    async def test_min_score_filters_low_relevance(self):
+        registry = _make_registry()
+        request = CapabilityRequest(subgoal_ref="g1", description="completely unrelated topic xyz")
+        mock_stream = AsyncMock()
+        candidates = await discover_capabilities(
+            request, registry, event_stream=mock_stream, min_score=0.5,
+        )
+        assert candidates == []
+
+    @pytest.mark.asyncio
+    async def test_event_emitted_once_with_expected_shape(self):
+        registry = _make_registry()
+        request = CapabilityRequest(subgoal_ref="g1", description="generate text from a prompt")
+        mock_stream = AsyncMock()
+        await discover_capabilities(request, registry, event_stream=mock_stream)
+        mock_stream.append.assert_called_once()
+        call = mock_stream.append.call_args
+        assert call.args[0] == "cognitive.capabilities_discovered"
+        assert call.kwargs["payload"]["subgoal_ref"] == "g1"
+        assert "candidate_count" in call.kwargs["payload"]
+        assert "candidates" in call.kwargs["payload"]
+
+    @pytest.mark.asyncio
+    async def test_deterministic_across_repeated_calls(self):
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True),
+            ("web_search", "Search the web for current news and information.", True),
+        ])
+        request = CapabilityRequest(subgoal_ref="g1", description="search news on the web")
+        mock_stream = AsyncMock()
+        first = await discover_capabilities(request, registry, event_stream=mock_stream)
+        second = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert [c.capability_type for c in first] == [c.capability_type for c in second]
+
+    @pytest.mark.asyncio
+    async def test_never_calls_adapter_execute(self):
+        """Discovery must not invoke any capability -- get_adapters() is
+        used only to check registration, never to call .execute()."""
+        registry = _make_registry()
+        call_log = []
+
+        class WatchedAdapter(BaseAdapter):
+            adapter_name = "watched"
+            capability_type = "llm_completion"
+            async def execute(self, request, resources):
+                call_log.append("execute called")
+                raise AssertionError("Capability Discovery must never invoke an adapter")
+
+        registry._adapters["llm_completion"] = [WatchedAdapter()]
+        request = CapabilityRequest(subgoal_ref="g1", description="generate text from a prompt")
+        mock_stream = AsyncMock()
+        await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert call_log == []
+
+
+class TestCapabilityDiscoveryArchitectureCompliance:
+    """Mirrors TestArchitectureCompliance's boundary checks, specifically
+    for the capability-discovery additions."""
+
+    def test_returns_ranked_list_not_a_single_winner(self):
+        """Discovery returns a list (behavioral evidence, not a text
+        search over the source -- a raw substring check here would repeat
+        the exact false-failure class found and fixed during the Packet 01
+        review, e.g. tripping on this file's own docstrings)."""
+        import inspect
+        signature = inspect.signature(discover_capabilities)
+        assert "List" in str(signature.return_annotation) or \
+            signature.return_annotation is list or \
+            "list" in str(signature.return_annotation).lower()
+
+    def test_no_capability_execution_identifiers(self):
+        import core.cognitive.planner as mod
+        identifiers = _real_code_identifiers(mod.__file__)
+        assert "AdapterRuntime" not in identifiers
+        assert "execute" not in identifiers

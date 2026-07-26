@@ -44,6 +44,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from core.capabilities.capability import CapabilityContract
+from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.intent import Goal
 from core.events.event_stream import EventStream, get_event_stream
 
@@ -527,3 +529,189 @@ def build_planner_request(
         context_view_ref=context_view_ref,
         hints=hints,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CapabilityRequest — K4.2 §12 (Packet 02 / K4.2.4 Capability Discovery)
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class CapabilityRequest:
+    """A discovery-time query: "what capabilities might satisfy this
+    sub-goal, given these constraints?"
+
+    Architecture: K4.2 §12 -- "CapabilityRequest (ephemeral parameter
+    object): subgoal_ref, description, applicable_constraints:
+    List[Constraint], context_view_ref."
+
+    Name collision, flagged rather than silently resolved either way:
+    core.capabilities.capability.CapabilityRequest already exists in this
+    codebase and is a *different type with the same name* --
+    the K2.3, execution-time input to one Adapter.execute() call
+    (capability_type, payload, trace_id, metadata). That type asks an
+    Adapter to actually do something; this type asks the
+    CapabilityRegistry what might be able to do something, before
+    anything is selected or invoked. K4.2 §12 assigns this name without
+    evident awareness that it was already taken at the Kernel layer --
+    the collision predates this packet and correcting it (by renaming
+    either type) is not something this packet can do unilaterally
+    without deviating from the architecture's stated name (Governance
+    Directive §5: no unauthorized public-interface changes). Implemented
+    here under the architecture's exact name; the two types are never
+    imported into the same namespace anywhere in this codebase as of
+    this packet. Worth a deliberate disambiguation decision in a future
+    architecture-evolution session.
+    """
+    subgoal_ref: str
+    description: str
+    applicable_constraints: List[Constraint] = field(default_factory=list)
+    context_view_ref: str = ""
+
+
+def build_capability_request(
+    goal: Goal,
+    constraints: List[Constraint],
+    context_view_ref: str = "",
+) -> CapabilityRequest:
+    """Constructs a CapabilityRequest from a Goal and its Constraints.
+
+    Architecture: K4.2 §12; mirrors build_planner_request's established
+    pattern (Packet 01).
+
+    subgoal_ref: Decomposition -- breaking a Goal into the sub-goals
+    Planner will actually execute -- is Planner's own job and does not
+    exist yet (Packet 03: Planner Completion, K4.2.5). Goal.sub_goals
+    (K4.2 §4) is a different thing: sibling-Goal references from
+    compound-request splitting, not Planner-decomposition sub-goals.
+    Until decomposition exists, this uses the Goal's own resource_id as
+    subgoal_ref -- there is exactly one thing to discover capabilities
+    for (the whole Goal) until decomposition produces real sub-goals.
+    Documented here, not silently assumed, so Packet 03 knows to replace
+    this call site once real sub-goals exist.
+    """
+    return CapabilityRequest(
+        subgoal_ref=goal.resource_id,
+        description=(goal.structured_form or {}).get("description", ""),
+        applicable_constraints=list(constraints),
+        context_view_ref=context_view_ref,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Capability matching and discovery — K4.2 §12 line 176, §11
+# ─────────────────────────────────────────────────────────────────────────
+
+_CAPABILITY_STOP_WORDS = frozenset({
+    "a", "an", "the", "to", "of", "for", "in", "on", "and", "or", "is",
+    "this", "that", "with", "from", "via", "by", "at", "as",
+})
+
+
+def _tokenize(text: str) -> set:
+    """Lowercase word tokens, stripped of punctuation. Deterministic, no
+    external dependency -- consistent with this module's existing
+    pattern-based (not model-assisted) approach to text analysis
+    (_extract_explicit_constraints uses the same style of plain regex)."""
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _capability_match_score(request: CapabilityRequest,
+                             contract: CapabilityContract) -> float:
+    """Deterministic description-overlap score in [0, 1].
+
+    This task's Step 6/8 require "deterministic discovery" and
+    "description-and-schema matching"; no specific scoring formula is
+    given anywhere read in K4.2 -- discovery method, like constraint
+    extraction's method, is left to implementation judgment. Token
+    overlap (Jaccard similarity over non-stopword tokens) is used for
+    the same reason it was used for constraint extraction: simple,
+    auditable, no model call -- not a claim that this exact formula is
+    architecture-mandated.
+    """
+    request_tokens = _tokenize(request.description) - _CAPABILITY_STOP_WORDS
+    contract_tokens = _tokenize(contract.description) - _CAPABILITY_STOP_WORDS
+    if not request_tokens or not contract_tokens:
+        return 0.0
+    overlap = request_tokens & contract_tokens
+    union = request_tokens | contract_tokens
+    return len(overlap) / len(union)
+
+
+async def discover_capabilities(
+    request: CapabilityRequest,
+    registry: CapabilityRegistry,
+    *,
+    event_stream: Optional[EventStream] = None,
+    min_score: float = 0.0,
+) -> List[CapabilityContract]:
+    """Discovers candidate capabilities for a CapabilityRequest.
+
+    Architecture: this packet's own task spec -- "discovering candidate
+    capabilities; querying the Capability Registry; matching capabilities
+    against the Goal and extracted Constraints; returning deterministic
+    capability candidates together with their published schemas." K4.2
+    §12 line 176: resolved against "the existing CapabilityRegistry/
+    CognitiveService Registry pair, never a third registry."
+
+    Only CapabilityRegistry is queried: no CognitiveService Registry
+    exists anywhere in this codebase (confirmed by repository-wide
+    search during this packet's audit) -- K4.1 Part III describes one
+    conceptually but it was never implemented. Querying it is Not
+    Applicable, not a gap this packet leaves open; nothing here invents
+    a stand-in for it.
+
+    registry is an explicit parameter, not a singleton accessor:
+    CapabilityRegistry's own module docstring states "No global state.
+    No singleton lookups. No hidden dependencies," and no
+    get_capability_registry() accessor exists anywhere in this codebase
+    -- inventing one here would contradict that stated design.
+
+    Returns existing CapabilityContract objects (core/capabilities/
+    capability.py) rather than a new "CapabilityCandidate" type: a
+    CapabilityContract already is a published schema (capability_type,
+    description, required_resources, version) -- nothing read in the
+    architecture asks for a different shape, and inventing a parallel
+    type would duplicate one that already exists.
+
+    Candidates with zero registered adapters (CapabilityRegistry's own
+    "declared but unfulfilled" category, per its validate() method) are
+    excluded: a capability nothing can currently execute is not a usable
+    candidate for whatever selects from this list next. This does not
+    invoke, or even inspect, any adapter beyond confirming one is
+    registered -- get_adapters() returns a list; it calls nothing.
+
+    Never calls Adapter.execute(), never ranks down to a single winner
+    (selection is explicitly deferred to a future Cognitive Runtime
+    packet, per the Evolution Directive's discovery/selection split),
+    never touches memory or governance.
+    """
+    event_stream = event_stream or get_event_stream()
+
+    scored: List[tuple] = []
+    for capability_type in registry.list_capabilities():
+        contract = registry.get_contract(capability_type)
+        if contract is None:
+            continue
+        if not registry.get_adapters(capability_type):
+            continue
+        score = _capability_match_score(request, contract)
+        if score >= min_score:
+            scored.append((score, contract))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    result = [contract for _, contract in scored]
+
+    await event_stream.append(
+        "cognitive.capabilities_discovered",
+        source="CapabilityDiscovery",
+        payload={
+            "subgoal_ref": request.subgoal_ref,
+            "candidate_count": len(result),
+            "candidates": [
+                {"capability_type": c.capability_type, "score": round(s, 3)}
+                for s, c in scored
+            ],
+        },
+    )
+
+    return result

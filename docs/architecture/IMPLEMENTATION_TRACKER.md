@@ -74,16 +74,18 @@
 - **Notes:** The claim in this entry that AST-checking had already fixed the architecture-compliance tests was not accurate at the time it was written — the tests still did raw substring search over the whole file text and still failed. Two independent review passes (recorded in full in `docs/architecture/k4_2_3_completion_report.md`) corrected this and two other real issues: an unauthorized 4th field on `PlannerResult`, `extract_constraints` implemented as public rather than internal per §5, and a contradiction-detection false positive where a single ordinary "must not X, because Y" statement was misclassified as self-contradictory and would have caused `check_precheck_rejection()` to reject a satisfiable Goal. All three are fixed and regression-tested as of this entry.
 
 ### Packet 02 — K4.2.4: Capability Discovery
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 25, 2026
+- **Completed:** July 25, 2026
+- **Architecture Review:** Compliant (K4.2 §12, §11; task spec Steps 6/7). Two architecture-level discrepancies found and documented rather than silently resolved — see `docs/architecture/k4_2_4_completion_report.md` §0.
+- **Integration Status:** Merged
 - **Dependencies:** Packet 01
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/cognitive/planner.py` (added `CapabilityRequest`, `build_capability_request`, `discover_capabilities`, matching helpers)
+  - `tests/core/cognitive/test_planner.py` (25 new tests)
+- **Tests:** 79/79 passing in `test_planner.py`. Full repository regression: 840/840 passing.
+- **Notes:** `CapabilityRequest` (K4.2 §12) shares its name with an unrelated, pre-existing K2.3 type (`core.capabilities.capability.CapabilityRequest`) — flagged, not renamed, since renaming either would be an unauthorized interface change; disambiguated by docstring instead. `CapabilityRegistry.resolve()` and the "CognitiveService Registry" referenced in K4.1 Part III/K4.2 §12 do not exist in code — discovery uses the registry's real API (`list_capabilities`/`get_contract`/`get_adapters`) and queries only `CapabilityRegistry`, not a stand-in for the CognitiveService Registry. See completion report for full detail.
 
 ### Packet 03 — K4.2.5: Planner Completion
 - **Status:** Pending
