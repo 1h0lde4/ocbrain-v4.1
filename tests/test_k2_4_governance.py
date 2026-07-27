@@ -152,6 +152,85 @@ class TestOrchestrationGovernor:
         assert result.governor == "OrchestrationGovernor"
 
 
+class TestOrchestrationGovernorClarificationPolicy:
+    """K4.2.5 (Packet 03): ClarificationPolicy evaluation, added to
+    OrchestrationGovernor per K4.2 §2/§14. Orthogonal to the worker_type
+    check above -- none of these tests set worker_type, and none of the
+    worker_type tests above set confidence."""
+
+    def test_no_confidence_key_falls_through_to_worker_type_check(self):
+        """Absence of 'confidence' in metadata means this isn't a
+        confidence-bearing action at all -- permissive-on-absence,
+        matching the worker_type check's own established pattern."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={}))
+        assert result.verdict == GovernanceVerdict.APPROVE
+
+    def test_confidence_at_or_above_threshold_approves(self):
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(
+            metadata={"confidence": 0.5, "confidence_threshold": 0.5},
+        ))
+        assert result.verdict == GovernanceVerdict.APPROVE
+
+    def test_low_confidence_first_attempt_escalates(self):
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.3, "confidence_threshold": 0.5,
+            "clarification_attempt": 0, "max_escalations": 2,
+        }))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+        assert "0.30" in result.reason
+
+    def test_low_confidence_within_bound_escalates_again(self):
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.3, "confidence_threshold": 0.5,
+            "clarification_attempt": 1, "max_escalations": 2,
+        }))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+
+    def test_low_confidence_at_bound_rejects_as_stalled(self):
+        """The 'escalate exactly once, not repeatedly' bound: once
+        clarification_attempt reaches max_escalations, the verdict flips
+        to REJECT rather than escalating indefinitely (K4.2 §14)."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.3, "confidence_threshold": 0.5,
+            "clarification_attempt": 2, "max_escalations": 2,
+        }))
+        assert result.verdict == GovernanceVerdict.REJECT
+        assert "stalled" in result.reason.lower()
+        assert "SupervisorWorker" in result.reason
+
+    def test_defaults_used_when_policy_fields_absent(self):
+        """confidence_threshold/clarification_attempt/max_escalations all
+        default sensibly when a caller supplies confidence alone."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={"confidence": 0.1}))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+
+    def test_worker_type_check_unaffected_by_clarification_addition(self):
+        """Regression: the pre-existing K2.4 worker_type behavior is
+        completely unchanged by this addition."""
+        gov = OrchestrationGovernor(deny_worker_types=frozenset({"CoderWorker"}))
+        result = gov.evaluate(GovernanceAction(metadata={"worker_type": "CoderWorker"}))
+        assert result.verdict == GovernanceVerdict.REJECT
+
+    def test_wired_into_kernel_escalation_short_circuits(self):
+        kernel = GovernanceKernel()
+        kernel._governors = [g for g in kernel._governors
+                              if g.name != "OrchestrationGovernor"]
+        kernel.register_governor(OrchestrationGovernor())
+        result = kernel.evaluate_action(GovernanceAction(
+            action_type="plan_compilation",
+            metadata={"confidence": 0.2, "confidence_threshold": 0.5,
+                      "clarification_attempt": 0, "max_escalations": 2},
+        ))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+        assert result.governor == "OrchestrationGovernor"
+
+
 # ── AgentGovernor ─────────────────────────────────────────────────────────────
 
 class TestAgentGovernor:

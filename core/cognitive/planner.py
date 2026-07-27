@@ -48,6 +48,12 @@ from core.capabilities.capability import CapabilityContract
 from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.intent import Goal
 from core.events.event_stream import EventStream, get_event_stream
+from core.governance.governance_kernel import (
+    GovernanceAction,
+    GovernanceResult,
+    GovernanceVerdict,
+)
+from core.provider_mesh import generate_with_fallback, resolve_provider
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -708,3 +714,492 @@ async def discover_capabilities(
     )
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Planner Completion — K4 §5/§6, K4.2 §5/§12/§14/§15 (Packet 03 / K4.2.5)
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ClarificationPolicy:
+    """Policy data governing when a low-confidence ExecutionPlan should be
+    escalated for human clarification rather than compiled and run.
+
+    Architecture: K4.2 §2 -- "ClarificationPolicy -- Policy data
+    (Constitution glossary: 'a specific, declared rule constraining what
+    a capability or resource may do'), owned by GovernanceKernel like any
+    other Policy, evaluated by the OrchestrationGovernor rule, not a new
+    component or a new gate." K4.2 §14 -- the escalation path is itself
+    bounded: a Goal escalated more than max_escalations times on the same
+    underlying ambiguity is handed to SupervisorWorker as a stalled case
+    rather than re-escalated indefinitely, "reusing RecursionGovernor's
+    existing bounded-loop principle rather than inventing a second one."
+
+    Design note (per explicit direction received during this packet's
+    planning phase): implemented as narrowly-scoped policy parameters
+    consumed by OrchestrationGovernor.evaluate() -- not a generic rule
+    registry, not a new governor, not a plugin system. confidence_threshold
+    and max_escalations are the two parameters the architecture actually
+    names (a confidence bound, and a bound on repetition); nothing beyond
+    that is added.
+
+    max_escalations is a policy parameter here rather than reusing
+    RecursionGovernor's shared, general-purpose max_depth: RecursionGovernor
+    already exists and is registered independently in GovernanceKernel for
+    unrelated recursion contexts elsewhere in the system, with its own
+    general default (10). Overloading the same field+threshold for a
+    semantically different, much smaller ceiling (clarification retries
+    specifically) risked exactly the kind of conflation "reuse... rather
+    than inventing a second one" is trying to avoid, not the thing it
+    endorses -- the principle being reused is the shape of the check
+    (bounded counter compared against a small configured ceiling, REJECT
+    once exceeded), applied within OrchestrationGovernor's own evaluate()
+    using the same action.metadata pattern it already uses for
+    worker_type, not RecursionGovernor's specific field. Documented here
+    as a judgment call, not a silent assumption.
+    """
+    confidence_threshold: float = 0.5
+    max_escalations: int = 2
+
+
+class ExecutionPlanLifecycle:
+    """Lifecycle values for ExecutionPlan. Architecture: K4 §6 --
+    "lifecycle_state: str # draft -> compiled -> executing -> completed |
+    failed | superseded." Packet 03 (Planner) only ever produces DRAFT --
+    the remaining states belong to Plan Compilation and WorkflowRuntime,
+    neither of which this packet touches."""
+    DRAFT = "draft"
+    COMPILED = "compiled"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SUPERSEDED = "superseded"
+
+
+@dataclass
+class PlanStep:
+    """One step of an in-progress ExecutionPlan.
+
+    Architecture: K4 §6 -- "steps: List[PlanStep] # ordered; each maps to
+    one eventual WorkflowNode" and "PlanStep maps onto WorkflowNode
+    roughly 1:1 (WorkflowNode is confirmed minimal: node_id, worker_type,
+    config, retry_policy, error_branch -- one worker per node)."
+
+    Fields chosen to carry what Planning-time reasoning actually knows
+    (step_id/description/capability_type/error_branch) without
+    prematurely deciding Plan Compiler's worker_type mapping mechanics --
+    which specific WorkerType executes a given capability_type is
+    Compilation's job (K4 §6: "Plan Compiler's actual job is narrow:
+    reduce Planner's richer reasoning... down to the single concrete
+    sequence WorkflowRuntime already knows how to run"), not something
+    this packet needs to resolve to produce a valid, "roughly 1:1"
+    PlanStep.
+    """
+    step_id: str
+    description: str
+    capability_type: str
+    error_branch: Optional[str] = None
+
+
+@dataclass
+class ExecutionPlan:
+    """Planner's own output: an ordered set of steps intended to satisfy
+    a Goal, not yet compiled into a runnable WorkflowDefinition.
+
+    Architecture: K4 §6 -- "resource_id, goal_id, steps: List[PlanStep],
+    confidence: float, alternatives: List[str] # references to
+    alternative ExecutionPlan.resource_id, not embedded copies,
+    justification: str, lifecycle_state: str." Specializes CognitiveArtifact
+    (K4.1 Part IV) the same way Intent/Goal do -- resource_id is present
+    here (unlike the ephemeral parameter objects PlannerRequest/
+    CapabilityDiscoveryRequest/PlannerResult), matching K4 §6's own
+    "ExecutionPlan is a Cognitive Runtime artifact" framing and its
+    explicit resource_id field.
+
+    produced_by/derived_from are included for the same reason they were
+    added to Intent in K4.2.1: this type is explicitly framed as a
+    CognitiveArtifact by K4 §6 ("provenance... the naming convention
+    already established in core/capabilities/resource.py"), and K4.1 Part
+    IV's base contract requires them even where a specific field-level
+    schema (here, K4 §6's) doesn't re-list every inherited field.
+    """
+    resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    produced_by: str = "Planner"
+    goal_id: str = ""
+    steps: List[PlanStep] = field(default_factory=list)
+    confidence: float = 0.0
+    alternatives: List[str] = field(default_factory=list)
+    justification: str = ""
+    derived_from: List[str] = field(default_factory=list)
+    lifecycle_state: str = ExecutionPlanLifecycle.DRAFT
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+_DECOMPOSITION_PROMPT_TEMPLATE = """You are the Planner of a governed cognitive runtime.
+Given a goal, break it into an ordered list of concrete steps needed to
+achieve it. Most goals need only one step; only split into multiple
+steps when the goal genuinely requires distinct, sequential actions that
+cannot be done as a single step.
+
+Output one step per line, describing what that step must accomplish.
+Do not number the steps or add any other text.
+
+Goal:
+{description}
+
+Steps:"""
+
+
+def _parse_decomposition(completion: Optional[str]) -> List[str]:
+    """Parses the provider's raw completion into step descriptions -- one
+    non-empty line per step, consistent with _parse_hypotheses's
+    established line-based parsing style (K4.2.1)."""
+    lines = [line.strip() for line in (completion or "").splitlines()]
+    return [line for line in lines if line]
+
+
+async def _decompose(
+    goal: Goal,
+    registry: CapabilityRegistry,
+    *,
+    event_stream: Optional[EventStream] = None,
+) -> List[tuple]:
+    """Breaks a Goal into an ordered list of steps, each grounded in real
+    discovered capability candidates.
+
+    Architecture: K4 §5's illustrative pseudocode -- "candidate_steps =
+    self._decompose(goal) # goal -> ordered tasks." K4.1 Part III
+    describes Planner's reasoning as "already LLM-assisted" -- consistent
+    with that precedent (and with Intent Interpretation's own use of
+    provider_mesh, K4.2.1), step proposal is model-assisted; matching
+    candidates against CapabilityRegistry per proposed step reuses
+    discover_capabilities() (Packet 02) directly -- no second retrieval
+    or matching mechanism.
+
+    Skill preconditions (this packet's task spec: "skill preconditions
+    wired into decomposition") are NOT wired in here: no Skill or
+    SkillRuntime implementation exists anywhere in this codebase
+    (confirmed by repository-wide search during this packet's planning
+    phase). There is nothing to wire into. Each PlanStep carries a
+    capability_type a future precondition check could gate on, so
+    decomposition is not structurally closed to this -- but nothing here
+    fabricates a stand-in Skill system to have something to check
+    against. Flagged, not silently dropped.
+
+    Returns a list of (PlanStep, candidates) tuples -- not just the
+    PlanSteps -- so callers (impasse detection, confidence estimation,
+    alternative-plan generation) can inspect each step's full ranked
+    candidate list without re-querying the registry.
+    """
+    description = (goal.structured_form or {}).get("description", "")
+    prompt = _DECOMPOSITION_PROMPT_TEMPLATE.format(description=description)
+
+    step_descriptions: List[str] = []
+    try:
+        completion = await generate_with_fallback(
+            resolve_provider("planner_decompose"), prompt,
+        )
+        step_descriptions = _parse_decomposition(completion)
+    except Exception:
+        step_descriptions = []
+
+    if not step_descriptions:
+        # Degrade to a single step covering the whole goal description --
+        # the same "open-category fallback" spirit as Intent Interpretation's
+        # degrade-to-novel path (K4.2 §2): a plan with one broad step is a
+        # more useful, still-deterministic outcome than no plan at all.
+        step_descriptions = [description or "unspecified"]
+
+    results: List[tuple] = []
+    for i, step_description in enumerate(step_descriptions):
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref=f"{goal.resource_id}:{i}",
+            description=step_description,
+        )
+        # min_score=0.01 (not discover_capabilities' own permissive
+        # default of 0.0): a score of exactly 0.0 means zero token
+        # overlap between the step and the capability's description --
+        # no relevance signal at all, not a weak-but-real match. Without
+        # this, any registered capability with at least one adapter
+        # would count as a "candidate" for every step regardless of
+        # relevance (e.g. "book a flight" matching "generate text via a
+        # language model" purely because nothing else is registered),
+        # which would make impasse detection (below) fire only when the
+        # registry is completely empty -- not the "no *matching*
+        # capability" signal K4.2 §5/§14 actually describe. This is
+        # decomposition-side filtering, not a change to
+        # discover_capabilities itself (Packet 02's own conservative
+        # "rank, don't filter, by default" choice is unchanged and still
+        # correct for its own direct callers).
+        candidates = await discover_capabilities(
+            request, registry, event_stream=event_stream, min_score=0.01,
+        )
+        step = PlanStep(
+            step_id=f"step-{i}",
+            description=step_description,
+            capability_type=candidates[0].capability_type if candidates else "",
+        )
+        results.append((step, candidates))
+
+    return results
+
+
+def _sequence(steps_with_candidates: List[tuple],
+              constraints: List[Constraint]) -> List[PlanStep]:
+    """Orders steps for execution.
+
+    Architecture: K4 §5's pseudocode -- "ordering =
+    self._sequence(candidate_steps, constraints)." No sequencing
+    algorithm is specified anywhere read in K4/K4.2 beyond naming the
+    step's existence and its inputs -- implementation judgment, same
+    category as _capability_match_score's scoring formula (K4.2.4), not
+    a cited formula.
+
+    Decomposition's own proposed order is preserved as the default: the
+    model was asked for an ORDERED list, and reordering without a
+    specified algorithm risks discarding real ordering information it
+    inferred (e.g. "download the file, then summarize it") for no
+    architecturally justified reason. constraints is accepted, matching
+    the cited signature, but does not currently reorder steps: as with
+    capability matching (K4.2.4), hard constraints are frequently
+    negative ("must not do X before Y"), and no architecture section
+    specifies how constraint text should translate into a reordering
+    rule. Flagged as a conservative choice, not silently decided.
+    """
+    return [step for step, _ in steps_with_candidates]
+
+
+def _fallback_paths(steps: List[PlanStep]) -> List[PlanStep]:
+    """Assigns each step's error_branch.
+
+    Architecture: K4 §5 -- "fallbacks = self._fallback_paths(ordering) #
+    per-step error_branch candidates." No fallback-selection algorithm
+    is specified. Left as a documented no-op for this packet: same-step
+    retry is already RetryPolicy's job (K4 §6, an existing, separate
+    WorkflowNode field this type deliberately doesn't duplicate), and
+    assigning a DIFFERENT step as a fallback target requires a selection
+    rule this packet has no architectural basis for inventing.
+    error_branch stays None; a future packet with an actual
+    fallback-selection specification can populate it without changing
+    this function's signature or PlanStep's shape.
+    """
+    return list(steps)
+
+
+def _estimate_confidence(steps_with_candidates: List[tuple]) -> float:
+    """Estimates overall plan confidence.
+
+    Architecture: K4 §5 -- "confidence =
+    self._estimate_confidence(ordering, capabilities)." No formula is
+    specified. Deterministic and auditable: the plan's confidence is the
+    match score of its WEAKEST step's best candidate -- a plan is only
+    as strong as its least-supported step, consistent with K4.2 §9's
+    general confidence-propagation philosophy of not letting one strong
+    step mask a genuinely weak one. A step with zero candidates
+    contributes 0.0 (in practice this is caught by impasse detection
+    before confidence is ever estimated, but the formula stays correct
+    if called on its own).
+    """
+    if not steps_with_candidates:
+        return 0.0
+    step_scores = []
+    for step, candidates in steps_with_candidates:
+        if not candidates:
+            step_scores.append(0.0)
+            continue
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref=step.step_id, description=step.description,
+        )
+        step_scores.append(_capability_match_score(request, candidates[0]))
+    return round(min(step_scores), 3)
+
+
+def _alternative_plans(goal: Goal, steps_with_candidates: List[tuple],
+                        *, top_n: int = 2) -> List[str]:
+    """Generates up to top_n alternative ExecutionPlans, returning
+    references to their resource_id only.
+
+    Architecture: K4 §5 -- "alternatives =
+    self._alternative_plans(goal, top_n=2) # generated, not necessarily
+    compiled." K4 §6 -- alternatives are "references to alternative
+    ExecutionPlan.resource_id, not embedded copies."
+
+    Minimal, honestly-scoped: for each step that has a second-ranked
+    capability candidate (already available from _decompose's own
+    discovery pass -- no second registry query), constructs one
+    alternative ExecutionPlan substituting that step's second-best
+    candidate for its top-ranked one. This is a real, if narrow, notion
+    of "a genuinely different plan," grounded in what discovery actually
+    found, rather than a second LLM decomposition pass -- which would
+    double this function's provider calls and add a second source of
+    non-determinism with no clearer specification to justify it. Returns
+    fewer than top_n, or none, when the primary plan's steps each have
+    at most one candidate -- an honest short list rather than a
+    fabricated one.
+    """
+    alternatives: List[str] = []
+    base_steps = [step for step, _ in steps_with_candidates]
+    for i, (step, candidates) in enumerate(steps_with_candidates):
+        if len(alternatives) >= top_n:
+            break
+        if len(candidates) < 2:
+            continue
+        alt_steps = list(base_steps)
+        alt_steps[i] = dataclasses.replace(
+            alt_steps[i], capability_type=candidates[1].capability_type,
+        )
+        alt_plan = ExecutionPlan(
+            goal_id=goal.resource_id,
+            steps=alt_steps,
+            justification=(
+                f"Alternative: {step.step_id} using "
+                f"{candidates[1].capability_type} instead of "
+                f"{candidates[0].capability_type}"
+            ),
+            derived_from=[goal.resource_id],
+        )
+        alternatives.append(alt_plan.resource_id)
+    return alternatives
+
+
+def _justify(steps: List[PlanStep], constraints: List[Constraint]) -> str:
+    """Produces a human-readable justification for the plan's ordering
+    and capability choices.
+
+    Architecture: K4 §6 -- ExecutionPlan.justification: "why this
+    ordering, why these capabilities"; K4 §5's pseudocode calls
+    self._justify(ordering, constraints). No format is specified beyond
+    "why" -- a deterministic, templated summary is used rather than an
+    LLM call, keeping this seam auditable and matching the determinism
+    this document family favors wherever a choice is not otherwise
+    forced (K4.2.1's normalize_request is the precedent for this same
+    judgment call).
+    """
+    if not steps:
+        return "No steps were produced for this goal."
+    step_summary = "; ".join(
+        f"{s.step_id}: {s.description} "
+        f"(via {s.capability_type or 'no matching capability'})"
+        for s in steps
+    )
+    constraint_summary = (
+        f" Constrained by {len(constraints)} requirement(s)."
+        if constraints else ""
+    )
+    return f"{len(steps)} step(s) in decomposition order: {step_summary}.{constraint_summary}"
+
+
+def _detect_impasse(steps_with_candidates: List[tuple]) -> Optional[ImpasseRecord]:
+    """Detects whether decomposition has hit an impasse: one or more
+    steps for which no capability candidate was found at all.
+
+    Architecture: K4.2 §12 -- "impasse_detail: Optional[ImpasseRecord] --
+    present iff status == impasse." K4.2 §14 -- "Planner impasse
+    (status: 'impasse') | Soar-derived impasse->subgoaling... routes
+    through Capability Discovery and, if nothing resolves it, Skill
+    Runtime delegation."
+
+    This implements the detection and the ImpasseRecord it produces
+    (K4.2.1's own ImpasseRecord shape: reason, unresolved_subgoals,
+    attempted_capabilities). It does NOT implement Skill Runtime
+    delegation as a further fallback after impasse: no Skill or
+    SkillRuntime exists anywhere in this codebase (confirmed by
+    repository-wide search during this packet's planning). An impasse
+    here is a genuine, final "no capability could be found" outcome for
+    this packet's scope, not yet followed by a skill-delegation retry --
+    a documented gap, not silently treated as fully resolved impasse
+    handling.
+    """
+    unresolved = [
+        step.description for step, candidates in steps_with_candidates
+        if not candidates
+    ]
+    if not unresolved:
+        return None
+    attempted = sorted({
+        c.capability_type
+        for _, candidates in steps_with_candidates
+        for c in candidates
+    })
+    return ImpasseRecord(
+        reason=(
+            f"No matching capability found for {len(unresolved)} of "
+            f"{len(steps_with_candidates)} step(s)."
+        ),
+        unresolved_subgoals=unresolved,
+        attempted_capabilities=attempted,
+    )
+
+
+async def plan(
+    request: PlannerRequest,
+    registry: CapabilityRegistry,
+    *,
+    event_stream: Optional[EventStream] = None,
+) -> PlannerResult:
+    """Top-level Planner entry point: Goal -> PlannerResult.
+
+    Architecture: K4 §5's illustrative signature ("async def
+    plan(self, goal, context) -> ExecutionPlan"), formalized by K4.2 §5
+    as "Planner.plan(request: PlannerRequest) -> PlannerResult." Reuses
+    _extract_constraints, check_precheck_rejection (Packet 01) and
+    discover_capabilities (Packet 02) directly -- no new precheck,
+    extraction, or discovery logic.
+
+    Module-level function, not a Planner class method: consistent with
+    every other function already established in this file
+    (build_planner_request, build_capability_discovery_request,
+    discover_capabilities), rather than introducing a class construct
+    nothing else here uses. K4 §5's "Planner.plan(...)" dot-notation is
+    read as informal/illustrative -- this document family consistently
+    marks its schemas "illustrative," and no section mandates a class
+    specifically.
+
+    Does not call governance: K4.2 §2 places the ClarificationPolicy /
+    OrchestrationGovernor confidence check "at the Plan Compilation
+    gate" (K4 §15) -- a later, not-yet-built stage, not inside
+    Planner.plan() itself. K4's own pseudocode for plan() does not call
+    governance either. This function produces an ExecutionPlan with a
+    correctly estimated confidence; a future Plan Compilation packet is
+    what invokes ClarificationPolicy/OrchestrationGovernor against it.
+    ClarificationPolicy and the corresponding OrchestrationGovernor
+    extension are built and tested standalone in this same packet (see
+    core/governance/orchestration_governor.py) precisely so that future
+    integration point exists without this function needing to change.
+    """
+    event_stream = event_stream or get_event_stream()
+    goal = request.goal
+
+    constraints = await _extract_constraints(goal)
+
+    precheck_rejection = check_precheck_rejection(constraints)
+    if precheck_rejection is not None:
+        return precheck_rejection
+
+    steps_with_candidates = await _decompose(goal, registry, event_stream=event_stream)
+
+    impasse = _detect_impasse(steps_with_candidates)
+    if impasse is not None:
+        return PlannerResult(status=PlannerStatus.IMPASSE, impasse_detail=impasse)
+
+    ordered = _sequence(steps_with_candidates, constraints)
+    with_fallbacks = _fallback_paths(ordered)
+    confidence = _estimate_confidence(steps_with_candidates)
+    alternatives = _alternative_plans(goal, steps_with_candidates)
+    justification = _justify(with_fallbacks, constraints)
+
+    execution_plan = ExecutionPlan(
+        goal_id=goal.resource_id,
+        steps=with_fallbacks,
+        confidence=confidence,
+        alternatives=alternatives,
+        justification=justification,
+        derived_from=[goal.resource_id],
+    )
+
+    return PlannerResult(
+        status=PlannerStatus.READY_FOR_COMPILATION,
+        execution_plan=execution_plan,
+    )

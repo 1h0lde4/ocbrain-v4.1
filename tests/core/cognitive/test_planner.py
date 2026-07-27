@@ -20,7 +20,7 @@ Tests:
 import dataclasses
 
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from core.cognitive.intent import (
     CognitiveArtifact,
@@ -36,24 +36,37 @@ from core.capabilities.capability import BaseAdapter, CapabilityContract
 from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.planner import (
     CapabilityDiscoveryRequest,
+    ClarificationPolicy,
     Constraint,
     ConstraintKind,
     ConstraintRelation,
     ConstraintSource,
+    ExecutionPlan,
+    ExecutionPlanLifecycle,
     HintSource,
     ImpasseRecord,
+    PlanStep,
     PlannerHint,
     PlannerRequest,
     PlannerResult,
     PlannerStatus,
+    _alternative_plans,
     _capability_match_score,
+    _decompose,
     _detect_contradictions,
+    _detect_impasse,
+    _estimate_confidence,
     _extract_explicit_constraints,
+    _fallback_paths,
+    _justify,
+    _parse_decomposition,
+    _sequence,
     _tokenize,
     build_capability_discovery_request,
     build_planner_request,
     check_precheck_rejection,
     discover_capabilities,
+    plan,
     _extract_constraints,
 )
 from core.events.event_stream import EventStream
@@ -929,3 +942,372 @@ class TestCapabilityDiscoveryArchitectureCompliance:
         identifiers = _real_code_identifiers(mod.__file__)
         assert "AdapterRuntime" not in identifiers
         assert "execute" not in identifiers
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Planner Completion — K4 §5/§6, K4.2 §5/§12/§14/§15 (Packet 03)
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestClarificationPolicyDataclass:
+    def test_defaults(self):
+        policy = ClarificationPolicy()
+        assert policy.confidence_threshold == 0.5
+        assert policy.max_escalations == 2
+
+    def test_custom_values(self):
+        policy = ClarificationPolicy(confidence_threshold=0.7, max_escalations=1)
+        assert policy.confidence_threshold == 0.7
+        assert policy.max_escalations == 1
+
+
+class TestExecutionPlanDataclass:
+    def test_default_construction(self):
+        p = ExecutionPlan()
+        assert p.resource_id
+        assert p.produced_by == "Planner"
+        assert p.lifecycle_state == ExecutionPlanLifecycle.DRAFT
+        assert p.steps == []
+        assert p.alternatives == []
+        assert p.derived_from == []
+
+    def test_resource_ids_are_unique(self):
+        assert ExecutionPlan().resource_id != ExecutionPlan().resource_id
+
+    def test_satisfies_cognitive_artifact(self):
+        from core.cognitive.intent import CognitiveArtifact
+        assert isinstance(ExecutionPlan(), CognitiveArtifact)
+
+    def test_to_dict(self):
+        p = ExecutionPlan(goal_id="g1", confidence=0.7)
+        d = p.to_dict()
+        assert d["goal_id"] == "g1"
+        assert d["confidence"] == 0.7
+
+
+class TestPlanStepDataclass:
+    def test_construction(self):
+        step = PlanStep(step_id="s1", description="do a thing", capability_type="llm_completion")
+        assert step.error_branch is None
+
+
+# ── _parse_decomposition ─────────────────────────────────────────────────
+
+class TestParseDecomposition:
+    def test_parses_multiple_lines(self):
+        assert _parse_decomposition("Do X\nDo Y\nDo Z") == ["Do X", "Do Y", "Do Z"]
+
+    def test_strips_blank_lines(self):
+        assert _parse_decomposition("Do X\n\n\nDo Y\n") == ["Do X", "Do Y"]
+
+    def test_empty_or_none(self):
+        assert _parse_decomposition("") == []
+        assert _parse_decomposition(None) == []
+
+
+# ── _decompose ───────────────────────────────────────────────────────────
+
+class TestDecompose:
+    @pytest.mark.asyncio
+    async def test_single_step_goal(self):
+        registry = _make_registry()
+        goal = _make_goal(description="generate text from a prompt using a model")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Generate text from a prompt.")):
+            result = await _decompose(goal, registry)
+        assert len(result) == 1
+        step, candidates = result[0]
+        assert step.capability_type == "llm_completion"
+        assert len(candidates) >= 1
+
+    @pytest.mark.asyncio
+    async def test_multi_step_goal(self):
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True),
+            ("web_search", "Search the web for current news and information.", True),
+        ])
+        goal = _make_goal(description="search the web then summarize")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Search the web for current news.\nSummarize the results using a language model.")):
+            result = await _decompose(goal, registry)
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_provider_failure_degrades_to_single_step(self):
+        registry = _make_registry()
+        goal = _make_goal(description="generate a summary")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(side_effect=RuntimeError("all providers failed"))):
+            result = await _decompose(goal, registry)
+        assert len(result) == 1
+        assert result[0][0].description == "generate a summary"
+
+    @pytest.mark.asyncio
+    async def test_unparseable_completion_degrades_to_single_step(self):
+        registry = _make_registry()
+        goal = _make_goal(description="generate a summary")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="")):
+            result = await _decompose(goal, registry)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_step_with_no_matching_capability_has_empty_candidates(self):
+        registry = _make_registry()  # only llm_completion
+        goal = _make_goal(description="book a flight")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Book a flight to Tokyo.")):
+            result = await _decompose(goal, registry)
+        step, candidates = result[0]
+        assert candidates == []
+        assert step.capability_type == ""
+
+    @pytest.mark.asyncio
+    async def test_zero_relevance_capability_not_treated_as_a_candidate(self):
+        """Regression: _decompose applies a minimum-relevance floor
+        (min_score=0.01) when calling discover_capabilities. Without it,
+        a step with zero token overlap against every registered
+        capability would still receive that capability as its "match"
+        (Packet 02's own discover_capabilities correctly ranks rather
+        than filters by default) -- which would make impasse detection
+        fire only on a completely empty registry, not on "nothing here
+        actually fits," as K4.2 §5/§14 describe."""
+        registry = _make_registry()  # only llm_completion, unrelated description
+        goal = _make_goal(description="reserve a table at a restaurant")
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Reserve a table at a restaurant.")):
+            result = await _decompose(goal, registry)
+        step, candidates = result[0]
+        assert candidates == [], (
+            "a capability with zero description overlap must not be "
+            "surfaced as a candidate for an unrelated step"
+        )
+
+
+# ── _sequence / _fallback_paths ─────────────────────────────────────────
+
+class TestSequence:
+    def test_preserves_decomposition_order(self):
+        step1 = PlanStep(step_id="s1", description="first", capability_type="x")
+        step2 = PlanStep(step_id="s2", description="second", capability_type="y")
+        result = _sequence([(step1, []), (step2, [])], [])
+        assert [s.step_id for s in result] == ["s1", "s2"]
+
+
+class TestFallbackPaths:
+    def test_does_not_alter_step_count_or_identity(self):
+        steps = [
+            PlanStep(step_id="s1", description="a", capability_type="x"),
+            PlanStep(step_id="s2", description="b", capability_type="y"),
+        ]
+        result = _fallback_paths(steps)
+        assert len(result) == 2
+        assert [s.step_id for s in result] == ["s1", "s2"]
+
+
+# ── _estimate_confidence ─────────────────────────────────────────────────
+
+class TestEstimateConfidence:
+    def test_empty_steps_is_zero(self):
+        assert _estimate_confidence([]) == 0.0
+
+    def test_step_with_no_candidates_drags_confidence_to_zero(self):
+        step = PlanStep(step_id="s1", description="x", capability_type="")
+        assert _estimate_confidence([(step, [])]) == 0.0
+
+    def test_confidence_is_bounded(self):
+        step = PlanStep(step_id="s1", description="generate text from a prompt", capability_type="llm_completion")
+        contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
+        confidence = _estimate_confidence([(step, [contract])])
+        assert 0.0 <= confidence <= 1.0
+
+    def test_weakest_step_determines_overall_confidence(self):
+        strong_step = PlanStep(step_id="s1", description="generate text from a prompt", capability_type="llm_completion")
+        strong_contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
+        weak_step = PlanStep(step_id="s2", description="completely unrelated topic", capability_type="llm_completion")
+        weak_contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
+        confidence = _estimate_confidence([
+            (strong_step, [strong_contract]), (weak_step, [weak_contract]),
+        ])
+        assert confidence <= _capability_match_score(
+            CapabilityDiscoveryRequest(subgoal_ref="x", description="generate text from a prompt"),
+            strong_contract,
+        )
+
+
+# ── _alternative_plans ───────────────────────────────────────────────────
+
+class TestAlternativePlans:
+    def test_no_alternatives_when_no_step_has_second_candidate(self):
+        goal = _make_goal()
+        step = PlanStep(step_id="s1", description="x", capability_type="llm_completion")
+        contract = CapabilityContract(capability_type="llm_completion", description="x")
+        alternatives = _alternative_plans(goal, [(step, [contract])])
+        assert alternatives == []
+
+    def test_generates_alternative_when_second_candidate_exists(self):
+        goal = _make_goal()
+        step = PlanStep(step_id="s1", description="x", capability_type="a")
+        contract_a = CapabilityContract(capability_type="a", description="x")
+        contract_b = CapabilityContract(capability_type="b", description="x")
+        alternatives = _alternative_plans(goal, [(step, [contract_a, contract_b])])
+        assert len(alternatives) == 1
+        # Returns resource_id references only, not embedded ExecutionPlan objects.
+        assert isinstance(alternatives[0], str)
+
+    def test_respects_top_n(self):
+        goal = _make_goal()
+        contract_a = CapabilityContract(capability_type="a", description="x")
+        contract_b = CapabilityContract(capability_type="b", description="x")
+        steps_with_candidates = [
+            (PlanStep(step_id=f"s{i}", description="x", capability_type="a"),
+             [contract_a, contract_b])
+            for i in range(5)
+        ]
+        alternatives = _alternative_plans(goal, steps_with_candidates, top_n=2)
+        assert len(alternatives) == 2
+
+
+# ── _justify ──────────────────────────────────────────────────────────────
+
+class TestJustify:
+    def test_empty_steps(self):
+        assert "No steps" in _justify([], [])
+
+    def test_includes_step_descriptions_and_capabilities(self):
+        step = PlanStep(step_id="s1", description="generate a summary", capability_type="llm_completion")
+        justification = _justify([step], [])
+        assert "generate a summary" in justification
+        assert "llm_completion" in justification
+
+    def test_mentions_constraint_count(self):
+        constraint = Constraint(kind=ConstraintKind.HARD, source=ConstraintSource.EXPLICIT, rationale="x")
+        step = PlanStep(step_id="s1", description="x", capability_type="y")
+        justification = _justify([step], [constraint])
+        assert "1 requirement" in justification
+
+
+# ── _detect_impasse ───────────────────────────────────────────────────────
+
+class TestDetectImpasse:
+    def test_no_impasse_when_every_step_has_a_candidate(self):
+        step = PlanStep(step_id="s1", description="x", capability_type="llm_completion")
+        contract = CapabilityContract(capability_type="llm_completion", description="x")
+        assert _detect_impasse([(step, [contract])]) is None
+
+    def test_impasse_when_a_step_has_no_candidates(self):
+        step = PlanStep(step_id="s1", description="book a flight", capability_type="")
+        record = _detect_impasse([(step, [])])
+        assert isinstance(record, ImpasseRecord)
+        assert "book a flight" in record.unresolved_subgoals
+
+    def test_attempted_capabilities_collected_across_steps(self):
+        step1 = PlanStep(step_id="s1", description="a", capability_type="")
+        step2 = PlanStep(step_id="s2", description="b", capability_type="")
+        contract = CapabilityContract(capability_type="llm_completion", description="x")
+        record = _detect_impasse([(step1, [contract]), (step2, [])])
+        assert record is not None
+        assert "llm_completion" in record.attempted_capabilities
+
+
+# ── plan() — full integration ────────────────────────────────────────────
+
+class TestPlan:
+    @pytest.mark.asyncio
+    async def test_ready_for_compilation_on_success(self):
+        registry = _make_registry()
+        goal = _make_goal(description="generate text from a prompt using a model")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Generate text from a prompt.")):
+            result = await plan(request, registry, event_stream=AsyncMock())
+        assert result.status == PlannerStatus.READY_FOR_COMPILATION
+        assert result.execution_plan is not None
+        assert result.execution_plan.goal_id == goal.resource_id
+
+    @pytest.mark.asyncio
+    async def test_impasse_when_no_capability_matches(self):
+        registry = CapabilityRegistry()  # empty
+        goal = _make_goal(description="book a flight to Tokyo")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Book a flight to Tokyo.")):
+            result = await plan(request, registry, event_stream=AsyncMock())
+        assert result.status == PlannerStatus.IMPASSE
+        assert result.impasse_detail is not None
+
+    @pytest.mark.asyncio
+    async def test_rejected_precheck_on_contradictory_constraints(self):
+        """Reuses Packet 01's check_precheck_rejection directly -- a Goal
+        whose description (the field _extract_constraints actually reads
+        when it isn't 'unknown') contains contradictory hard constraints
+        is rejected before decomposition is ever attempted."""
+        registry = _make_registry()
+        goal = _make_goal(
+            description=(
+                "The report must use encryption for all stored data. "
+                "However, the legacy export step must not use "
+                "encryption, per the vendor contract."
+            ),
+        )
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        mock_generate = AsyncMock()
+        with patch("core.cognitive.planner.generate_with_fallback", new=mock_generate):
+            result = await plan(request, registry, event_stream=AsyncMock())
+        assert result.status == PlannerStatus.REJECTED_PRECHECK
+        # Decomposition never ran -- precheck short-circuits before it.
+        mock_generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deterministic_confidence_across_repeated_calls(self):
+        registry = _make_registry()
+        goal = _make_goal(description="generate text from a prompt")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Generate text from a prompt.")):
+            first = await plan(request, registry, event_stream=AsyncMock())
+            second = await plan(request, registry, event_stream=AsyncMock())
+        assert first.execution_plan.confidence == second.execution_plan.confidence
+
+
+# ── End-to-end: Planner confidence feeding OrchestrationGovernor ────────
+
+class TestPlannerGovernanceIntegration:
+    """Confirms the seam between Planner's own output (ExecutionPlan.confidence)
+    and OrchestrationGovernor's ClarificationPolicy check actually lines up --
+    plan() itself does not call governance (K4.2 §2 places that at Plan
+    Compilation, a later packet), so this test exercises the handoff
+    explicitly rather than asserting plan() does something it correctly
+    does not do."""
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_plan_would_escalate_via_orchestration_governor(self):
+        from core.governance.orchestration_governor import OrchestrationGovernor
+        from core.governance.governance_kernel import GovernanceAction, GovernanceVerdict
+
+        registry = _make_registry()
+        # Weak but non-zero overlap with llm_completion's description
+        # (score ~0.1, verified below threshold but above _decompose's
+        # own min_score=0.01 relevance floor) -- tests genuine low
+        # confidence, not the impasse path (zero candidates), which is
+        # covered separately by TestPlan.test_impasse_when_no_capability_matches.
+        goal = _make_goal(description="write some text about the weather report")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Write some text about the weather report.")):
+            result = await plan(request, registry, event_stream=AsyncMock())
+
+        assert result.status == PlannerStatus.READY_FOR_COMPILATION
+        assert result.execution_plan.confidence < 0.5
+
+        governor = OrchestrationGovernor()
+        policy = ClarificationPolicy()
+        governance_result = governor.evaluate(GovernanceAction(
+            worker_id="plan_compiler", action_type="plan_compilation",
+            metadata={
+                "confidence": result.execution_plan.confidence,
+                "confidence_threshold": policy.confidence_threshold,
+                "clarification_attempt": 0,
+                "max_escalations": policy.max_escalations,
+            },
+        ))
+        assert governance_result.verdict == GovernanceVerdict.ESCALATE

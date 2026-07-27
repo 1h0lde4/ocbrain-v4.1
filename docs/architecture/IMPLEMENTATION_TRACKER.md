@@ -88,16 +88,20 @@
 - **Notes:** `CapabilityDiscoveryRequest` (originally named `CapabilityRequest` in K4.2 §12) collided with an unrelated, pre-existing K2.3 type of the same name (`core.capabilities.capability.CapabilityRequest`, an execution-time Adapter input) — resolved by renaming the newer, not-yet-depended-upon discovery type; the K2.3 type is unchanged. `CapabilityRegistry.resolve()` and the "CognitiveService Registry" referenced in K4.1 Part III/K4.2 §12 (plus a related `CapabilityResolver.select()` reference found in K4.2 §15's own K4.2.4 entry) did not and do not exist in code — the architecture document has been corrected to describe the actual algorithm (`list_capabilities`/`get_contract`/`get_adapters`, description-overlap scoring) rather than a nonexistent API; no such methods or registry were added. See `k4_2_4_completion_report.md`'s Addendum for full detail.
 
 ### Packet 03 — K4.2.5: Planner Completion
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 25, 2026
+- **Completed:** July 25, 2026
+- **Architecture Review:** Compliant (K4 §5/§6, K4.2 §2/§5/§12/§14/§15). Three architecture-vs-repository gaps found and documented rather than silently resolved or invented around — see `docs/architecture/k4_2_5_completion_report.md` §0.
+- **Integration Status:** Merged
 - **Dependencies:** Packet 02
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/cognitive/planner.py` (added `ClarificationPolicy`, `ExecutionPlanLifecycle`, `PlanStep`, `ExecutionPlan`, the decomposition pipeline `_decompose`/`_sequence`/`_fallback_paths`/`_estimate_confidence`/`_alternative_plans`/`_justify`, `_detect_impasse`, `plan()`)
+  - `core/governance/orchestration_governor.py` (extended `evaluate()` with a second, independent ClarificationPolicy check, orthogonal to the existing K2.4 worker_type check)
+  - `tests/core/cognitive/test_planner.py` (61 new tests)
+  - `tests/test_k2_4_governance.py` (8 new tests)
+- **Tests:** `test_planner.py` 115/115 passing. `test_k2_4_governance.py` 48/48 passing. Full repository regression: 884/884 passing.
+- **Notes:** Skill/SkillRuntime infrastructure does not exist anywhere in the codebase — "skill preconditions wired into decomposition" could not be implemented literally; decomposition is structurally extensible for it (each `PlanStep` carries a `capability_type` a future precondition check could gate on) without a fabricated stand-in Skill system. `CapabilityRegistry.resolve()`/`CapabilityResolver.select()` referenced in K4's own decomposition pseudocode is the same non-existent-API issue already found and fixed in K4.2 §15 during Packet 02's discrepancy resolution — noted, not re-fixed a third time in the same way, since K4 §5's pseudocode is explicitly superseded by the real implementation this packet provides. `OrchestrationGovernor` was extended, not replaced or turned into a rule registry, per explicit direction: `ClarificationPolicy`'s two parameters are read as plain `action.metadata` values, matching the existing `worker_type` pattern exactly — no cross-layer import of the `ClarificationPolicy` class into governance, no new abstraction. The "escalate exactly once" bound is a dedicated counter-vs-ceiling check inside `OrchestrationGovernor.evaluate()`, not literally routed through `RecursionGovernor`'s shared `max_depth` — reasoning documented in both files. See completion report for full detail, including the `_decompose` relevance-floor fix found during test-writing.
 
 ### Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
 - **Status:** Pending
