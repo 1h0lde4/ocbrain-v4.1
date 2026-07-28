@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 24, 2026 (added Cognitive Front-End Phase for K4.2.1–K4.2.3 — see note below; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
+**Last synchronized:** July 29, 2026 (corrected Cognitive Front-End Phase below — K4.2.4/K4.2.5 had completed July 25, 2026 but this document still showed K4.2.4 as `⬜ Next`; Plan Compilation, Packet 06, completed this session — see note below; prior sync July 24, 2026 added the Cognitive Front-End Phase for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -75,28 +75,32 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 
 ## Cognitive Front-End Phase — In Progress
 
-**Added July 24, 2026.** This phase did not previously appear in this document — K4.2.1 and K4.2.2 had already been implemented, and K4.2.3 was implemented in a prior session but uploaded rather than committed through the packet process, so none of the three were ever reflected here. Corrected via direct code + test audit (see `CURRENT_STATE.md`'s new Cognitive Front-End section and `docs/architecture/k4_2_3_completion_report.md`).
+**Added July 24, 2026.** This phase did not previously appear in this document — K4.2.1 and K4.2.2 had already been implemented, and K4.2.3 was implemented in a prior session but uploaded rather than committed through the packet process, so none of the three were ever reflected here. Corrected via direct code + test audit (see `CURRENT_STATE.md`'s new Cognitive Front-End section and `docs/architecture/k4_2_3_completion_report.md`). **Updated July 29, 2026** — K4.2.4 and K4.2.5 (Packets 02/03, git commits `be07a97`/`1e903c1`) had completed July 25, 2026 but this table still showed K4.2.4 as `⬜ Next` and omitted K4.2.5. Plan Compilation (Packet 06) completed this session, closing out Phase A and one of the two Phase B tracks (`IMPLEMENTATION_TRACKER.md` §1 Integration Notes). Re-verified via direct code + full test-suite audit (922/922 passing) before correcting.
 
 | Milestone | Status | Key Deliverables |
 |---|---|---|
 | K4.2.1 — Intent Interpreter | ✅ Complete | `Intent`, `IntentHypothesis` dataclasses; input normalization; multi-hypothesis inference |
 | K4.2.2 — Goal Formation | ✅ Complete | `Goal` dataclass; compound-request splitting; `interpret_request()` entrypoint |
 | K4.2.3 — Constraint Extraction + Planner Contracts | ✅ Complete | `Constraint`/`PlannerRequest`/`PlannerHint`/`PlannerResult`; `_extract_constraints()`; `cognitive.constraints_extracted`; `rejected_precheck` on contradictory hard constraints |
-| K4.2.4 — Capability Discovery refinements | ⬜ Next | Layers onto existing `CapabilityResolver`, unmodified — see `docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md` §15 |
+| K4.2.4 — Capability Discovery | ✅ Complete | `CapabilityDiscoveryRequest`, `discover_capabilities()`; description-overlap ranking over existing `list_capabilities`/`get_contract`/`get_adapters` — no `CapabilityRegistry.resolve()` API exists or was added, see `k4_2_4_completion_report.md` |
+| K4.2.5 — Planner Completion | ✅ Complete | `ClarificationPolicy`, `ExecutionPlanLifecycle`, `PlanStep`, `ExecutionPlan`; decomposition/sequencing/fallback-path/confidence/impasse pipeline; `plan()` entrypoint |
+| Plan Compilation (Packet 06 — K4 §6/§15, K4.2 §1) | ✅ Complete | `CompilationResult`, `compile()` entrypoint; `plan_compile` governance gate reusing `AbstractCognitiveWorker.execute()`'s pattern; `ExecutionPlan` → `WorkflowDefinition` mapping |
 
-Completion reports: `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, `k4_2_3_completion_report.md`.
+Completion reports: `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, `k4_2_3_completion_report.md`, `k4_2_4_completion_report.md`, `k4_2_5_completion_report.md`, `packet_06_plan_compilation_completion_report.md`.
 
-K4.2.1–K4.2.3 have zero live-path interaction with Kernel execution (per the architecture doc §15) and did not require K3 resolution to proceed — consistent with K3 having been separately confirmed complete above.
+K4.2.1–K4.2.5 and Plan Compilation have zero live-path interaction with Kernel execution — `compile()` *produces* a `WorkflowDefinition` under governance but nothing in the Cognitive Front-End invokes `WorkflowRuntime` — and none required K3 resolution to proceed, consistent with K3 having been separately confirmed complete above.
+
+**Remaining in this phase:** Packet 04 (K4.2.6 — Shared ValidationGate + Learning Wiring, unblocked, depends on Packet 03), Packet 05 (K4.2.7 — User Cognitive Model, depends on Packet 04), Packet 07 (Reflection + Evaluation Workers, depends on Packet 06), Packet 08 (Supervisor Worker, depends on Packet 07), Packet 09 (Integration: Full Cognitive Pipeline, depends on all prior packets). See `docs/architecture/IMPLEMENTATION_TRACKER.md` for per-packet status, owners, and cross-packet dependencies — that document, not this section, is the authoritative packet-level tracker.
 
 ---
 
 ## Cognitive Phase — Future (Post-Kernel)
 
-These items are beyond Kernel scope. They build ON the kernel, not AS the kernel. (K4.2.1–K4.2.3 are no longer listed here — see the Cognitive Front-End Phase above.)
+These items are beyond Kernel scope. They build ON the kernel, not AS the kernel. (K4.2.1–K4.2.5 and Plan Compilation are no longer listed here — see the Cognitive Front-End Phase above. `Planner.plan()`/decomposition (K4.2.5) and Plan Compilation (Packet 06) are complete; capability *selection* specifically — resolving a `capability_type` to a concrete registered adapter, as opposed to the discovery/ranking K4.2.4 already does — remains future work below, reserved for the Cognitive Runtime.)
 
 - Self-Identity Model
 - Reflection Engine
-- Planning Engine (full — `Planner.plan()`, decomposition, capability selection; beyond the K4.2.3 data contracts and beyond `PlannerWorker`)
+- Cognitive Runtime (C-MoE) — capability *selection*: resolving a `PlanStep.capability_type` (and the `WorkflowNode.worker_type` Plan Compilation carries forward unchanged) to a concrete registered `WorkerRegistry`/adapter entry
 - Skills Runtime
 - External Knowledge Pipeline
 - Multi-Agent Runtime (SupervisorWorker)

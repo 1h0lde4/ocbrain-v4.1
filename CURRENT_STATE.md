@@ -1,6 +1,6 @@
 # OCBrain Kernel v1.0 — Current State
 
-**Last synchronized:** July 24, 2026 (added missing Cognitive Front-End status section for K4.2.1–K4.2.3 — see note below; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
+**Last synchronized:** July 29, 2026 (corrected Cognitive Front-End status section below — it had not been updated since July 24, 2026 despite K4.2.4/K4.2.5 (Packets 02/03) completing July 25–27, and Plan Compilation (Packet 06) completing this session; prior sync July 24, 2026 added the section for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This document is the authoritative answer to "what is actually built right now."
 
 ---
@@ -24,16 +24,18 @@
 
 ## Cognitive Front-End Implementation Status
 
-**Added July 24, 2026** — this section did not previously exist; K4.2.1–K4.2.3 had been implemented (the first two properly, K4.2.3 via an unreviewed upload — see `docs/architecture/k4_2_3_completion_report.md` §0) but never rolled into this document, the same kind of doc/reality lag this file's own K3 note above already describes once. Corrected via direct code audit, not by trusting any prior report's claim.
+**Added July 24, 2026** — this section did not previously exist; K4.2.1–K4.2.3 had been implemented (the first two properly, K4.2.3 via an unreviewed upload — see `docs/architecture/k4_2_3_completion_report.md` §0) but never rolled into this document, the same kind of doc/reality lag this file's own K3 note above already describes once. Corrected via direct code audit, not by trusting any prior report's claim. **Updated July 29, 2026** — K4.2.4, K4.2.5, and Plan Compilation (Packets 02, 03, 06) had the same lag: all three were complete (git commits `be07a97`, `1e903c1`, and this session respectively) but this table still showed K4.2.4 as "Not started" and omitted K4.2.5 entirely. Re-verified via direct code audit and a full test run (922/922 passing) before correcting, not by trusting `IMPLEMENTATION_TRACKER.md`'s prose alone.
 
 | Milestone | Status | Completion | Key Deliverables |
 |---|---|---|---|
 | K4.2.1 — Intent Interpreter | ✅ Complete | July 2026 | `Intent`, `IntentHypothesis`, `CognitiveArtifact` protocol, multi-hypothesis inference, input normalization (`core/cognitive/intent.py`) |
 | K4.2.2 — Goal Formation | ✅ Complete | July 2026 | `Goal`, `GoalLifecycle`, `form_goals()`, compound-request splitting, `interpret_request()` public entrypoint |
 | K4.2.3 — Constraint Extraction + Planner Contracts | ✅ Complete | July 24, 2026 | `Constraint`, `PlannerRequest`, `PlannerHint`, `PlannerResult`, `_extract_constraints()`, `cognitive.constraints_extracted` event, `rejected_precheck` contradiction detection (`core/cognitive/planner.py`) |
-| K4.2.4 — Capability Discovery refinements | ⬜ Not started | — | See `IMPLEMENTATION_ROADMAP.md` |
+| K4.2.4 — Capability Discovery | ✅ Complete | July 25, 2026 | `CapabilityDiscoveryRequest`, `discover_capabilities()`, description-overlap ranking (`core/cognitive/planner.py`) |
+| K4.2.5 — Planner Completion | ✅ Complete | July 25, 2026 | `ClarificationPolicy`, `ExecutionPlanLifecycle`, `PlanStep`, `ExecutionPlan`, decomposition/sequencing/impasse pipeline, `plan()` public entrypoint (`core/cognitive/planner.py`) |
+| Plan Compilation (Packet 06 — K4 §6/§15, K4.2 §1) | ✅ Complete | July 29, 2026 | `CompilationStatus`, `CompilationResult`, `compile()` public entrypoint, `plan_compile` governance gate, ExecutionPlan→WorkflowDefinition mapping (`core/cognitive/compiler.py`) |
 
-Boundary holds as specified (K4.2 §1): `interpret()` and `plan()`-adjacent contracts exist; neither touches Kernel execution. `Planner.plan()` itself, capability selection, and Plan Compilation are all still unimplemented — only the data contracts and constraint-extraction sub-step exist so far. See `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, and `k4_2_3_completion_report.md` for full detail per milestone.
+Boundary holds as specified (K4.2 §1): the full three-entrypoint public surface — `interpret()`, `plan()`, `compile()` — now exists. `compile()` is the single seam to Kernel execution (K4.2 §1/§6): it produces a `WorkflowDefinition` under governance, but nothing in the Cognitive Front-End executes one — `WorkflowRuntime` invocation of a compiled plan remains untouched, as does capability *selection* (resolving a `capability_type` to a specific registered adapter), both reserved for future work (`SupervisorWorker`/Packet 08, the Cognitive Runtime/C-MoE). See `docs/architecture/k4_2_1_completion_report.md` through `k4_2_5_completion_report.md` and `packet_06_plan_compilation_completion_report.md` for full detail per milestone.
 
 ---
 

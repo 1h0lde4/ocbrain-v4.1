@@ -1,10 +1,10 @@
 # OCBrain Implementation Tracker
 
-**Date:** July 24, 2026
+**Date:** July 24, 2026 (packet entries below updated through July 29, 2026 — see individual **Completed** dates; this header's own date was not kept in sync with the entries as Packets 02/03/06 completed and is corrected here per PROJECT_INSTRUCTIONS.md §18.4.7 Session Continuity)
 **Architecture Version:** K4.2 (Cognitive Front-End)
 **Repository Status:** Architecture Frozen, Implementation in progress
-**Current Implementation Campaign:** Phase A — Cognitive Front-End Completion (Sequential)
-**Active Packet Count:** 9 total (1 completed, 0 in progress, 8 waiting)
+**Current Implementation Campaign:** Phase B — Parallel Track (Packet 04 pending; Packet 06 complete)
+**Active Packet Count:** 9 total (4 completed, 0 in progress, 5 waiting)
 
 ---
 
@@ -12,22 +12,22 @@
 
 ### Completed Packets
 - Packet 01 — K4.2.3: Constraint Extraction + Planner Contracts
+- Packet 02 — K4.2.4: Capability Discovery
+- Packet 03 — K4.2.5: Planner Completion
+- Packet 06 — Plan Compilation
 
 ### In-Progress Packets
 - None
 
 ### Waiting Packets
-- Packet 02 — K4.2.4: Capability Discovery
-- Packet 03 — K4.2.5: Planner Completion
 - Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
 - Packet 05 — K4.2.7: User Cognitive Model
-- Packet 06 — Plan Compilation
 - Packet 07 — Reflection + Evaluation Workers
 - Packet 08 — Supervisor Worker
 - Packet 09 — Integration: Full Cognitive Pipeline
 
 ### Known Blockers
-- None. Packet 02 is unblocked.
+- None. Packet 04 is unblocked (depends on Packet 03, complete). Packet 07 is unblocked per its listed dependency (Packet 06, complete) but Phase C (Packet 05, depends on Packet 04) is not yet started.
 
 ### Cross-Packet Dependencies
 - Packet 02 depends on Packet 01
@@ -128,16 +128,18 @@
 - **Notes:** 
 
 ### Packet 06 — Plan Compilation
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 29, 2026
+- **Completed:** July 29, 2026
+- **Architecture Review:** Compliant (K4 §6, §12, §15, §16; K4.2 §1). No architecture-vs-repository gaps found; one pre-existing inconsistency found in a Packet 03 test and documented, not modified — see Notes.
+- **Integration Status:** Merged
 - **Dependencies:** Packet 03
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/cognitive/compiler.py` (New — `CompilationStatus`, `CompilationResult`, `_validate_plan_structure`, `_compile_step`, `_compile_workflow`, `compile()`)
+  - `tests/core/cognitive/test_compiler.py` (New — 38 tests)
+- **Tests:** 38/38 passing in `test_compiler.py`. Full repository regression: 922/922 passing (884 baseline + 38 new; same 4 pre-existing chromadb-import collection failures as every prior packet's entry, environment-only, unrelated to this packet).
+- **Notes:** `WorkflowNode.worker_type` is set to `PlanStep.capability_type` unchanged rather than resolved to a concrete registered `WorkerRegistry` entry. This is a deliberate, documented judgment call, not an oversight: resolving `capability_type` to a specific adapter is capability *selection*, reserved exclusively for the future Cognitive Runtime (C-MoE) by this packet's own "Explicitly forbidden" list; no such resolution mechanism exists anywhere in the repository today (`WorkerRegistry` is a static, explicit, composition-root-populated map with exactly `PlannerWorker` and `MemoryCuratorWorker` registered — neither is a `capability_type`). K4.2 §1's illustrative `compile(plan) -> WorkflowDefinition` is formalized as `compile(plan: ExecutionPlan) -> CompilationResult`, exactly mirroring how Packet 03 already formalized K4 §5's illustrative `plan(goal) -> ExecutionPlan` into the real `plan(request) -> PlannerResult` — REJECT, ESCALATE, and a new `rejected_precheck` status (mirroring `PlannerStatus.REJECTED_PRECHECK`) must all be expressible without a `WorkflowDefinition` ever existing. Two of the three structural precheck rules (non-empty `steps`, unique `step_id` values) are implementation judgment, not separately cited in architecture text — justified by this packet's own "produces a valid `WorkflowDefinition`" completion criterion, since both are minimum preconditions for `WorkflowDefinition.validate()` to be satisfiable at all; the third (non-empty `goal_id`) is K4 §16's explicitly named invariant. A pre-existing discrepancy was found, not fixed: `tests/core/cognitive/test_planner.py`'s `TestPlannerGovernanceIntegration` (written during Packet 03 as a forward-looking rehearsal of this exact seam) constructs its `GovernanceAction` with `action_type="plan_compilation"`, not the `"plan_compile"` string K4 §15 and this tracker's own Packet 06 entry both specify. This does not affect that test's own correctness — `OrchestrationGovernor._evaluate_clarification_policy()` does not branch on `action_type` at all, only on `action.metadata` — and that test does not call this packet's code, so it was left as Packet 03's committed, reviewed work rather than edited outside this packet's scope. `core/cognitive/planner.py`'s module docstring still describes itself as "Packet 01" scope only, pre-dating Packets 02/03 being added to the same file; noted, not corrected, as pre-existing documentation debt outside this packet's file (`compiler.py` is new; `planner.py` was not otherwise modified). `CURRENT_STATE.md` and `IMPLEMENTATION_ROADMAP.md` (both dated July 24, 2026) had not been updated to reflect Packets 02/03's July 25-27 completion before this session — corrected as part of this packet's Documentation Synchronization step (PROJECT_INSTRUCTIONS.md §18.4.7), not a Packet 06 architectural change.
 
 ### Packet 07 — Reflection + Evaluation Workers
 - **Status:** Pending
