@@ -35,6 +35,21 @@ Boundary (K4 §1, Evolution Directive):
     caller's responsibility; this module owns only the shared
     accept/reject/escalate policy applied uniformly once a score exists.
 
+    Lifecycle ownership (K4.2 §13): this module's entry point is
+    candidate formation, not observation. The `observed -> accumulated ->
+    candidate` stages of the Learning lifecycle belong to upstream
+    learning/accumulation systems -- whatever clusters raw signals into a
+    candidate worth gating -- and this module never constructs a record
+    in those states. `validation_gate()` receives an already-formed
+    candidate and owns only the `gated -> [promoted | rejected]` portion
+    (plus, for Evolution tier, the transient GATED-pending-approval state
+    under ESCALATE). `LearningRecord.lifecycle_state` is therefore only
+    ever set by this module to GATED, PROMOTED, or REJECTED -- never
+    OBSERVED, ACCUMULATED, or CANDIDATE. Those three are restated on
+    LearningLifecycle below for §13 citation completeness and so a future
+    upstream caller has the shared vocabulary already defined in one
+    place, not because this module assigns them.
+
 Explicitly NOT in scope:
     - User Cognitive Model projection/read path (Packet 05 / K4.2.7).
     - A genuine Skill Runtime or skill-creation pipeline (no such system
@@ -141,7 +156,14 @@ class LearningLifecycle:
     """K4.2 §13 Learning lifecycle: observed -> accumulated -> candidate
     -> gated -> [promoted | rejected]; a promoted entry may later become
     deprecated via the rollback mechanism (§8). States restated exactly
-    as specified, not redefined or renamed."""
+    as specified, not redefined or renamed.
+
+    Ownership: core.cognitive.learning (this module) only ever produces
+    GATED, PROMOTED, or REJECTED. OBSERVED/ACCUMULATED/CANDIDATE are
+    upstream states a candidate has already passed through by the time
+    it reaches validation_gate() -- listed here for §13 citation
+    completeness, not because this module sets them. See the module
+    docstring's "Lifecycle ownership" note for the full boundary."""
     OBSERVED = "observed"
     ACCUMULATED = "accumulated"
     CANDIDATE = "candidate"
@@ -167,6 +189,14 @@ class CognitiveVerdict:
 # prior to compare against). Matches the existing
 # MemoryGovernor.quality_threshold default (0.6) for consistency with
 # this codebase's established quality bar.
+#
+# Exclusivity: baseline_score and DEFAULT_SCORE_FLOOR are alternatives,
+# never blended or averaged. Whenever baseline_score is supplied,
+# promotion is decided solely by strict improvement over that baseline
+# -- DEFAULT_SCORE_FLOOR does not enter the comparison at all in that
+# case. See the `floor = baseline_score if baseline_score is not None
+# else DEFAULT_SCORE_FLOOR` line in validation_gate(): it is a strict
+# either/or, by construction, not a fallback blended into the result.
 DEFAULT_SCORE_FLOOR = 0.6
 
 
@@ -227,6 +257,20 @@ class LearningRecord:
 # conservative negation-cue heuristic mirroring
 # core.cognitive.planner._detect_contradictions' documented approach and
 # stated limits.
+#
+# Replaceability boundary: _is_textual_contradiction/_find_contradiction
+# are an intentionally conservative *lexical* implementation of the K4.2
+# §8 contradiction-check requirement -- not the only implementation this
+# architecture permits, just the one that satisfies it today without
+# adding a new dependency or retrieval path. Both are fully isolated
+# behind _find_contradiction's single call site inside validation_gate()
+# (below): a future semantic/embedding-based, graph-native, or
+# LLM-judged contradiction engine can replace either function's
+# internals, or _find_contradiction wholesale, without changing
+# validation_gate()'s signature, call site, or contract.
+# validation_gate() depends only on "_find_contradiction returns an
+# entry_id or None (or raises ContradictionCheckError)" -- never on how
+# that answer is produced.
 # ─────────────────────────────────────────────────────────────────────────
 
 _NEGATION_MARKERS = {
@@ -352,6 +396,22 @@ async def validation_gate(
         docstring — no such surface is built here, and no code path in
         this module sets the flag on a caller's behalf).
 
+        Governance boundary: every Evolution-tier code path that can
+        possibly reach PROMOTED calls `governance.evaluate_action()`
+        exactly once -- there is exactly one call site for it in this
+        function, and it is unconditional on that path (see
+        TestValidationGateEvolutionTier's evaluate_calls assertions,
+        which pin this down as an executable check, not just a
+        read-through-the-code claim). `hitl_approved` only changes the
+        `requires_approval` value passed *into* that one call -- it
+        never skips the call. The only Evolution-tier paths that reach
+        REJECTED without calling governance are ones that could never
+        have been promoted anyway (missing held_out_score, failed
+        improvement, contradiction found, or an unregistered
+        action_type) -- so "no promotion without a real
+        EvolutionGovernor evaluation" holds unconditionally, not just in
+        the common case.
+
     Args:
         tier: LearningTier.LEARNING | ADAPTATION | EVOLUTION.
         content_domain: ContentDomain.SKILL | INTENT_ONTOLOGY | USER_MODEL.
@@ -368,8 +428,10 @@ async def validation_gate(
             this function owns the shared accept/reject/escalate policy
             applied once a score exists, not domain-specific scoring.
         baseline_score: the current/prior score the candidate must
-            strictly exceed. None for a genuinely new candidate with
-            nothing to compare against, in which case
+            strictly exceed. When supplied, it is the sole basis for the
+            improvement check -- DEFAULT_SCORE_FLOOR is not applied and
+            the two are never averaged or blended. None for a genuinely
+            new candidate with nothing to compare against, in which case
             DEFAULT_SCORE_FLOOR is used instead.
         importance: KnowledgeEntry importance for a resulting write.
         hitl_approved: see EVOLUTION behavior above. Ignored for

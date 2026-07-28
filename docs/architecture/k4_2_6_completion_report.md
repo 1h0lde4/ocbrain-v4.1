@@ -269,6 +269,78 @@ Packet 05 (K4.2.7, User Cognitive Model) depends on this packet and can rely on:
 
 ---
 
+## 6.5. Post-Completion Verification Pass (July 29, 2026)
+
+Before Packet 05 began, six targeted checks were requested against this packet's actual current
+state (not against memory of the original session). Recorded here as an addendum rather than
+silently folded into the sections above, so the audit trail shows what was verified when. All six
+were checked against the real file contents in this repository; two were genuine documentation
+gaps and were closed with comment/docstring-only changes (no behavior change); one prompted a test
+strengthening (no new behavior, an existing invariant made into an executable assertion); one
+prompted a documentation strengthening for maximal explicitness of already-correct behavior; two
+already passed as originally written.
+
+1. **Contradiction engine boundary — gap closed.** The module already documented the lexical
+   heuristic's conservative nature and stated limits, but did not explicitly frame it as a
+   swappable component. Added an explicit "Replaceability boundary" paragraph to the contradiction-
+   detection comment block in `core/cognitive/learning.py`: `_is_textual_contradiction`/
+   `_find_contradiction` are isolated behind `_find_contradiction`'s single call site, so a future
+   semantic/embedding-based, graph-native, or LLM-judged engine can replace either function's
+   internals — or `_find_contradiction` wholesale — without changing `validation_gate()`'s
+   signature, call site, or contract.
+
+2. **Lifecycle ownership — gap closed.** The `LearningLifecycle` docstring restated all six §13
+   states but did not say which ones *this module* actually produces. Added an explicit "Lifecycle
+   ownership" note to the module docstring's Boundary section and a local pointer on
+   `LearningLifecycle` itself: `validation_gate()`'s entry point is an already-formed candidate, not
+   raw observation; `OBSERVED`/`ACCUMULATED`/`CANDIDATE` belong to upstream learning/accumulation
+   systems and this module never constructs a record in those states — it only ever sets
+   `lifecycle_state` to `GATED`, `PROMOTED`, or `REJECTED`.
+
+3. **`truth_status="candidate"` — verified, not previously stated in this report.** Re-confirmed
+   directly against `core/memory/knowledge_entry.py`'s current `TRUTH_STATUS` dict on this review
+   pass (not just recalled from the original implementation session):
+   `"candidate": "From trusted source, not yet cross-validated"` and
+   `"verified": "Confirmed by multiple sources or curator approval"` are both still present,
+   unmodified, exactly as used by this module's Adaptation-tier and HITL-approved Evolution-tier
+   writes respectively. This verification existed implicitly in the original implementation (the
+   code was written against the real vocabulary) but was not previously called out explicitly in
+   this report — it is now.
+
+4. **`DEFAULT_SCORE_FLOOR` semantics — already correct in code, strengthened in documentation.**
+   `floor = baseline_score if baseline_score is not None else DEFAULT_SCORE_FLOOR` is a strict
+   either/or with no blending, and was correct from the original implementation. The comment above
+   `DEFAULT_SCORE_FLOOR` and the `baseline_score` docstring parameter were both strengthened to say
+   so explicitly — whenever `baseline_score` is supplied, it is the sole basis for the improvement
+   check, and `DEFAULT_SCORE_FLOOR` does not enter the comparison at all in that case.
+
+5. **Governance boundary — verified correct in code; strengthened with an executable test.**
+   Direct code review confirms `governance.evaluate_action()` has exactly one call site in
+   `validation_gate()`, reached only after held-out-improvement, contradiction, and registered-
+   action-type checks all clear, and that `hitl_approved` only changes the `requires_approval` value
+   passed *into* that one call — it never skips the call. Every Evolution-tier path that rejects
+   before reaching governance is a path that could never have promoted anyway. This was previously
+   true by construction but only demonstrated behaviorally (ESCALATE vs. PROMOTED outcomes); it is
+   now pinned down as an explicit count, not just an outcome: `CountingGovernanceKernel` (a real
+   `GovernanceKernel` subclass that counts `evaluate_action()` calls, previously duplicated locally
+   in two tests, hoisted to module scope) is now used to assert `evaluate_calls == 1` in
+   `test_never_automatic_escalates_by_default`, `test_completes_when_hitl_approved`, and
+   `test_skill_domain_already_registered` — the three paths that reach a real governance decision.
+   Also added an explicit "Governance boundary" paragraph to `validation_gate()`'s own docstring
+   stating this invariant in prose, not just in test form.
+
+6. **Cross-packet contract — already passed as originally written.** §6 above already states, in
+   the original completion report text: Packet 05's only required governance addition is
+   `"user_model_promote"` to `EvolutionGovernor.SELF_MODIFYING_ACTIONS`, and "No other change to
+   `core/cognitive/learning.py` is required for this to start working." No change was needed here.
+
+**Files touched by this addendum:** `core/cognitive/learning.py` (comments/docstrings only — no
+behavior change), `tests/core/cognitive/test_learning.py` (test strengthening: one helper class
+hoisted to module scope, three existing tests gained an additional `evaluate_calls == 1`
+assertion; test count unchanged at 40, all still passing), this report.
+
+---
+
 ## 7. Final Checklist
 
 ```

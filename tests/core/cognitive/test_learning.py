@@ -95,6 +95,24 @@ class MockMemory:
         return self._search_results
 
 
+class CountingGovernanceKernel(GovernanceKernel):
+    """Real GovernanceKernel (not a mock of it) that additionally counts
+    evaluate_action() calls. Used to pin down, as an executable
+    assertion rather than just a read-through-the-code claim, that every
+    Evolution-tier code path in validation_gate() consults
+    EvolutionGovernor through exactly one evaluate_action() call --
+    never zero on a path that promotes/escalates, never more than one on
+    any path."""
+
+    def __init__(self):
+        super().__init__()
+        self.evaluate_calls = 0
+
+    def evaluate_action(self, action):
+        self.evaluate_calls += 1
+        return super().evaluate_action(action)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Data contracts — K4.2 §12
 # ─────────────────────────────────────────────────────────────────────────
@@ -422,6 +440,7 @@ class TestValidationGateEvolutionTier:
         # single most safety-relevant property of this tier.
         memory = MockMemory(search_results=[])
         events = MockEventStream()
+        governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION,
             content_domain=ContentDomain.INTENT_ONTOLOGY,
@@ -429,16 +448,20 @@ class TestValidationGateEvolutionTier:
             candidate_content="a brand new archetype",
             trigger_signals=["reflection"],
             held_out_score=0.95, baseline_score=None,
-            memory=memory, governance=GovernanceKernel(), event_stream=events,
+            memory=memory, governance=governance, event_stream=events,
         )
         assert record.lifecycle_state == LearningLifecycle.GATED
         assert record.gate_result.verdict == CognitiveVerdict.ESCALATE
+        # Governance boundary: consulted exactly once, not skipped (this
+        # is what makes "never automatic" real rather than aspirational).
+        assert governance.evaluate_calls == 1
         assert memory.writes == []
         assert events.events == []
 
     async def test_completes_when_hitl_approved(self):
         memory = MockMemory(search_results=[])
         events = MockEventStream()
+        governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION,
             content_domain=ContentDomain.INTENT_ONTOLOGY,
@@ -446,26 +469,33 @@ class TestValidationGateEvolutionTier:
             candidate_content="a brand new archetype",
             trigger_signals=["reflection"],
             held_out_score=0.95, baseline_score=None, hitl_approved=True,
-            memory=memory, governance=GovernanceKernel(), event_stream=events,
+            memory=memory, governance=governance, event_stream=events,
         )
         assert record.lifecycle_state == LearningLifecycle.PROMOTED
         assert record.gate_result.verdict == CognitiveVerdict.PROCEED
         assert len(memory.writes) == 1
         assert memory.writes[0]["truth_status"] == "verified"
         assert events.events[0]["event_type"] == "cognitive.ontology_evolved"
+        # Governance boundary: hitl_approved changed what GovernanceKernel
+        # answered (APPROVE instead of ESCALATE), not whether it was
+        # asked -- still exactly one real evaluate_action() call, proving
+        # hitl_approved cannot be used to skip governance entirely.
+        assert governance.evaluate_calls == 1
 
     async def test_skill_domain_already_registered(self):
         # "skill_promote" pre-dates K4.2.6 -- proves this packet did not
         # need to (and did not) touch it.
         memory = MockMemory(search_results=[])
+        governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION, content_domain=ContentDomain.SKILL,
             subject_ref="new-skill", candidate_content="a new skill",
             trigger_signals=[], held_out_score=0.95, hitl_approved=True,
-            memory=memory, governance=GovernanceKernel(),
+            memory=memory, governance=governance,
             event_stream=MockEventStream(),
         )
         assert record.lifecycle_state == LearningLifecycle.PROMOTED
+        assert governance.evaluate_calls == 1
 
     async def test_user_model_not_yet_registered_rejects_even_if_approved(self):
         # "user_model_promote" is intentionally NOT in
@@ -492,15 +522,6 @@ class TestValidationGateEvolutionTier:
         )
         memory = MockMemory(search_results=[FakeSearchResult(entry)])
 
-        class CountingGovernanceKernel(GovernanceKernel):
-            def __init__(self):
-                super().__init__()
-                self.evaluate_calls = 0
-
-            def evaluate_action(self, action):
-                self.evaluate_calls += 1
-                return super().evaluate_action(action)
-
         governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION,
@@ -515,15 +536,6 @@ class TestValidationGateEvolutionTier:
         assert memory.writes == []
 
     async def test_rejected_without_held_out_score_never_reaches_governance(self):
-        class CountingGovernanceKernel(GovernanceKernel):
-            def __init__(self):
-                super().__init__()
-                self.evaluate_calls = 0
-
-            def evaluate_action(self, action):
-                self.evaluate_calls += 1
-                return super().evaluate_action(action)
-
         governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION,
