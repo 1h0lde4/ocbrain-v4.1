@@ -240,9 +240,20 @@ class EvolutionGovernor(Governor):
 
     name = "EvolutionGovernor"
 
+    # "intent_ontology_promote" added by K4.2.6 (Packet 04) — the shared
+    # ValidationGate's Evolution-tier action_type for the Intent Ontology
+    # content-domain (core/cognitive/learning.py). "skill_promote"/
+    # "skill_create" pre-date K4.2.6 and are unmodified. "user_model_promote"
+    # is intentionally NOT added here: K4.2.6 names it as a future
+    # content-domain (K4.2 §12), but no caller produces it until Packet 05
+    # (User Cognitive Model) exists — see core/cognitive/learning.py's
+    # module docstring and k4_2_6_completion_report.md for the reasoning,
+    # and ValidationGate's explicit reject-rather-than-silently-approve
+    # guard for any action_type not registered here.
     SELF_MODIFYING_ACTIONS = {
         "memory_curate", "skill_create", "skill_promote",
         "memory_derive", "memory_prune", "memory_merge",
+        "intent_ontology_promote",
     }
 
     def evaluate(self, action: GovernanceAction) -> GovernanceResult:
