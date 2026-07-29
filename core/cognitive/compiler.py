@@ -189,6 +189,14 @@ def _compile_step(step: PlanStep) -> WorkflowNode:
     scoring, no choice among alternatives (Planner already committed to
     exactly one capability_type per step) — a structural rename, not
     reasoning or selection.
+
+    This mapping is expected to evolve once the Cognitive Runtime
+    (C-MoE) and a real WorkerRegistry resolution mechanism exist — at
+    that point worker_type may need to become the resolved adapter
+    identity rather than a raw capability_type passthrough. Until then,
+    per the Architecture Freeze Principle, this is not something to
+    pre-emptively redesign in anticipation of C-MoE; it changes only
+    when C-MoE's own architecture is specified and actually lands.
     """
     return WorkflowNode(
         node_id=step.step_id,
@@ -212,6 +220,15 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
     never re-plans": this function does not re-sequence, branch, or
     otherwise reason about the steps it is given, only translate them.
 
+    K4 §6 is explicit that Plan Compiler's job is to reduce Planner's
+    "richer reasoning (candidate alternatives, justification, confidence)
+    down to the single concrete sequence... discarding or archiving (not
+    executing) everything that didn't get selected." confidence is named
+    there specifically as something to discard, not carry forward — so,
+    unlike execution_plan_id and goal_id (pure identity/provenance, not
+    reasoning about the plan's content), it is deliberately left out of
+    metadata below. Do not add it back without re-reading K4 §6.
+
     Precondition: plan has already passed _validate_plan_structure()
     (non-empty steps, unique step_ids) — callers must not call this
     directly on unvalidated input.
@@ -233,7 +250,6 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
         metadata={
             "execution_plan_id": plan.resource_id,
             "goal_id": plan.goal_id,
-            "confidence": plan.confidence,
         },
     )
 

@@ -219,7 +219,16 @@ class TestCompileWorkflow:
         wd = _compile_workflow(plan)
         assert wd.metadata["goal_id"] == "goal-42"
         assert wd.metadata["execution_plan_id"] == plan.resource_id
-        assert wd.metadata["confidence"] == plan.confidence
+
+    def test_confidence_does_not_leak_into_workflow_metadata(self):
+        """K4 §6: Plan Compiler discards Planner's 'richer reasoning
+        (candidate alternatives, justification, confidence)' rather than
+        carrying it into the compiled artifact. Only identity/provenance
+        (execution_plan_id, goal_id) belongs in WorkflowDefinition.metadata."""
+        plan = _make_plan(confidence=0.42)
+        wd = _compile_workflow(plan)
+        assert "confidence" not in wd.metadata
+        assert set(wd.metadata.keys()) == {"execution_plan_id", "goal_id"}
 
     def test_returns_workflow_definition_instance(self):
         assert isinstance(_compile_workflow(_make_plan()), WorkflowDefinition)
@@ -485,3 +494,18 @@ class TestArchitectureCompliance:
         import core.cognitive.compiler as mod
 
         assert asyncio.iscoroutinefunction(mod.compile)
+
+    @pytest.mark.asyncio
+    async def test_compiled_workflow_metadata_is_identity_only(self):
+        """End-to-end guard (not just on the _compile_workflow helper):
+        WorkflowDefinition.metadata produced via the real compile() entry
+        point carries only identity/provenance keys, never Planner's
+        'richer reasoning' (K4 §6) such as confidence, justification, or
+        alternatives."""
+        plan = _make_plan(confidence=0.99)
+        result = await compile_plan(plan, event_stream=MockEventStream())
+        assert result.status == CompilationStatus.COMPILED
+        assert set(result.workflow_definition.metadata.keys()) == {
+            "execution_plan_id",
+            "goal_id",
+        }

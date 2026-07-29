@@ -82,3 +82,17 @@ All five items are implemented exactly as specified; none were expanded, narrowe
 - `WorkflowRuntime` execution of a produced `WorkflowDefinition` — not this packet's concern
 - `SupervisorWorker`'s handling of an ESCALATE/REJECT `CompilationResult`, including revised-plan resubmission with an incrementing `clarification_attempt` — Packet 08
 - Wiring `compile()` into `main.py`'s composition root as part of an end-to-end `interpret() → plan() → compile()` pipeline — Packet 09
+
+---
+
+## §6 — Post-Completion Verification Pass (same day)
+
+A follow-up review requested five targeted checks before proceeding to the next packet. Two produced real, fixed findings; three passed with no change required.
+
+1. **Pure translation layer** — ✅ Pass, no change. Re-verified by fresh reading of `compile()`'s full body and re-running `TestArchitectureCompliance`: exactly one control-flow path (precheck → governance → map → validate → emit), no reasoning, no capability invocation, no memory writes, no runtime behavior.
+2. **`WorkflowDefinition` ownership** — Fixed. `_compile_workflow()` was placing `plan.confidence` into `WorkflowDefinition.metadata`. K4 §6 names confidence specifically as part of the "richer reasoning" Plan Compiler must discard, not carry into the compiled artifact — unlike `execution_plan_id`/`goal_id`, which are identity, not reasoning. Removed; `metadata` now carries exactly `{execution_plan_id, goal_id}`. Two new tests lock this in (`test_confidence_does_not_leak_into_workflow_metadata`, `test_compiled_workflow_metadata_is_identity_only` — the latter through the real `compile()` entrypoint, not just the internal helper).
+3. **Governance boundary (evaluated exactly once)** — ✅ Pass, no change. Confirmed via grep: exactly one `evaluate_action()` call site in the module; `_compile_step()`/`_compile_workflow()` contain zero governance references.
+4. **`worker_type = capability_type` mapping note** — Added. `_compile_step()`'s docstring already explained *why* this passthrough is correct today, but did not say it may need to change once C-MoE exists, nor that it must not be pre-emptively redesigned now. Added explicitly, citing the Architecture Freeze Principle.
+5. **Documentation consistency** — Fixed one item. `IMPLEMENTATION_TRACKER.md`'s own Packet 02/03 entries both self-report `Completed: July 25, 2026`, which doesn't match either packet's actual commit date (`be07a97` July 26, `1e903c1` July 27) — a pre-existing minor imprecision in already-reviewed work from prior sessions, noted here rather than edited (out of this packet's scope). This session's own `CURRENT_STATE.md` table, however, is this session's own writing and had no such excuse: it listed "July 25, 2026" for both K4.2.4 and K4.2.5 while its own top-of-file sync note already said "July 25–27" — corrected to July 26 / July 27 respectively, matching git history precisely. All other cross-file figures (922 baseline+new test count, packet-completed counts, K4.2.4/K4.2.5 status) were checked and are consistent.
+
+Result: `core/cognitive/compiler.py` and `tests/core/cognitive/test_compiler.py` modified; `CURRENT_STATE.md` corrected. 40/40 `test_compiler.py` (38 + 2 new), 924/924 full suite (922 + 2 new; same 4 pre-existing chromadb errors). Separate commit, not folded into the original Packet 06 commit, since that commit was already pushed and history is not rewritten.
