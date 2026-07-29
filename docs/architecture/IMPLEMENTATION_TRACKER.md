@@ -1,10 +1,10 @@
 # OCBrain Implementation Tracker
 
-**Date:** July 24, 2026 (packet entries below updated through July 29, 2026 — see individual **Completed** dates; this header's own date was not kept in sync with the entries as Packets 02/03/06 completed and is corrected here per PROJECT_INSTRUCTIONS.md §18.4.7 Session Continuity)
+**Date:** July 29, 2026
 **Architecture Version:** K4.2 (Cognitive Front-End)
 **Repository Status:** Architecture Frozen, Implementation in progress
-**Current Implementation Campaign:** Phase B — Parallel Track (Packet 04 pending; Packet 06 complete)
-**Active Packet Count:** 9 total (4 completed, 0 in progress, 5 waiting)
+**Current Implementation Campaign:** Phase B complete (Packet 04 + Packet 06, parallel track) — Phase C next
+**Active Packet Count:** 9 total (5 completed, 0 in progress, 4 waiting)
 
 ---
 
@@ -14,20 +14,20 @@
 - Packet 01 — K4.2.3: Constraint Extraction + Planner Contracts
 - Packet 02 — K4.2.4: Capability Discovery
 - Packet 03 — K4.2.5: Planner Completion
+- Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
 - Packet 06 — Plan Compilation
 
 ### In-Progress Packets
 - None
 
 ### Waiting Packets
-- Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
 - Packet 05 — K4.2.7: User Cognitive Model
 - Packet 07 — Reflection + Evaluation Workers
 - Packet 08 — Supervisor Worker
 - Packet 09 — Integration: Full Cognitive Pipeline
 
 ### Known Blockers
-- None. Packet 04 is unblocked (depends on Packet 03, complete). Packet 07 is unblocked per its listed dependency (Packet 06, complete) but Phase C (Packet 05, depends on Packet 04) is not yet started.
+- None. Packet 05 is unblocked (depends on Packet 04, complete). Packet 07 is unblocked (depends on Packet 06, complete).
 
 ### Cross-Packet Dependencies
 - Packet 02 depends on Packet 01
@@ -104,16 +104,19 @@
 - **Notes:** Skill/SkillRuntime infrastructure does not exist anywhere in the codebase — "skill preconditions wired into decomposition" could not be implemented literally; decomposition is structurally extensible for it (each `PlanStep` carries a `capability_type` a future precondition check could gate on) without a fabricated stand-in Skill system. `CapabilityRegistry.resolve()`/`CapabilityResolver.select()` referenced in K4's own decomposition pseudocode is the same non-existent-API issue already found and fixed in K4.2 §15 during Packet 02's discrepancy resolution — noted, not re-fixed a third time in the same way, since K4 §5's pseudocode is explicitly superseded by the real implementation this packet provides. `OrchestrationGovernor` was extended, not replaced or turned into a rule registry, per explicit direction: `ClarificationPolicy`'s two parameters are read as plain `action.metadata` values, matching the existing `worker_type` pattern exactly — no cross-layer import of the `ClarificationPolicy` class into governance, no new abstraction. The "escalate exactly once" bound is a dedicated counter-vs-ceiling check inside `OrchestrationGovernor.evaluate()`, not literally routed through `RecursionGovernor`'s shared `max_depth` — reasoning documented in both files. See completion report for full detail, including the `_decompose` relevance-floor fix found during test-writing.
 
 ### Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 28, 2026
+- **Completed:** July 28, 2026
+- **Architecture Review:** Compliant (K4.2 §6/§7/§8/§11/§12/§13/§16 item 1). One architecture-vs-repository gap found and documented rather than silently resolved or invented around — see `docs/architecture/k4_2_6_completion_report.md` §0.
+- **Integration Status:** Merged
 - **Dependencies:** Packet 03
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/cognitive/learning.py` (new — `LearningTier`, `ContentDomain`, `LearningLifecycle`, `CognitiveVerdict`, `CognitiveDecision`, `LearningRecord`, `ContradictionCheckError`, `_is_textual_contradiction`, `_find_contradiction`, `validation_gate`)
+  - `core/governance/governance_kernel.py` (added `"intent_ontology_promote"` to `EvolutionGovernor.SELF_MODIFYING_ACTIONS`; `"skill_promote"`/`"skill_create"` pre-existed and are unmodified)
+  - `tests/core/cognitive/test_learning.py` (new, 40 tests)
+- **Tests:** `test_learning.py` 40/40 passing. `test_planner.py` 115/115 passing (unmodified, regression-checked). `test_k2_4_governance.py` 48/48 passing. Full repository regression: 924/924 passing (884 baseline + 40 new).
+- **Notes:** K4.2 §15's dependency on an "existing v4.3.9 Instinct->Skill pipeline" and K4.2 §6's claim that Skills already reuse "the SkillOpt-style validation gate... already adopted" do not hold — no such pipeline, registry, or gate exists anywhere in the codebase (confirmed by repository-wide search); it exists only as a proposed future item in `docs/archive/research/OCBRAIN_FUTURE_ARCHITECTURE.md`. `core/learning/gate.py` is a real but unrelated gate (scores web-acquisition content for the crawl/extract/.../memory pipeline; no held-out scoring, no contradiction check, no governance integration) and was deliberately not reused or merged into. `EvolutionGovernor.SELF_MODIFYING_ACTIONS` already had `"skill_promote"`/`"skill_create"` pre-registered (unmodified), so `ContentDomain.SKILL` is genuinely exercised by this packet's own tests via the same shared code path as the other two domains, with no production caller yet — the same situation and handling Packet 03 documented for Skill preconditions. `"user_model_promote"` is intentionally not added to `SELF_MODIFYING_ACTIONS` (no caller until Packet 05); `validation_gate` defensively rejects rather than risking silent auto-approval for any Evolution-tier `action_type` not registered there, verified by a dedicated test. No existing memory primitive checks an unwritten candidate against the graph before write (`GraphEngine.find_contradictions`/`UnifiedMemory.find_contradictions` are both parameterless whole-graph sweeps over already-indexed nodes) — the pre-write contradiction check required by K4.2 §8 is implemented in this module via the existing hybrid `UnifiedMemory.search()` plus a conservative negation-cue heuristic mirroring `core.cognitive.planner._detect_contradictions`' documented approach, and fails closed (rejects) if the underlying search itself errors. Evolution-tier promotion is "never automatic" (§8) by construction: `requires_approval` is always derived as `not hitl_approved`, never caller-settable directly, and `hitl_approved` defaults to `False` with no code path in this module setting it to `True` on a caller's behalf — a future HITL-approval surface (not built by this packet) is the only intended way to flip it. See completion report for full detail, including the `lifecycle_state` field added to `LearningRecord` (§12's data contracts are "illustrative... not frozen") and why Adaptation-tier promotions emit no dedicated event (§11 names events for Learning and Evolution tiers only).
 
 ### Packet 05 — K4.2.7: User Cognitive Model
 - **Status:** Pending
