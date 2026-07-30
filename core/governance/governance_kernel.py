@@ -243,17 +243,24 @@ class EvolutionGovernor(Governor):
     # "intent_ontology_promote" added by K4.2.6 (Packet 04) — the shared
     # ValidationGate's Evolution-tier action_type for the Intent Ontology
     # content-domain (core/cognitive/learning.py). "skill_promote"/
-    # "skill_create" pre-date K4.2.6 and are unmodified. "user_model_promote"
-    # is intentionally NOT added here: K4.2.6 names it as a future
-    # content-domain (K4.2 §12), but no caller produces it until Packet 05
-    # (User Cognitive Model) exists — see core/cognitive/learning.py's
-    # module docstring and k4_2_6_completion_report.md for the reasoning,
-    # and ValidationGate's explicit reject-rather-than-silently-approve
-    # guard for any action_type not registered here.
+    # "skill_create" pre-date K4.2.6 and are unmodified.
+    #
+    # "user_model_propose"/"user_model_promote" added by K4.2.7 (Packet 05,
+    # User Cognitive Model). Note the correction from K4.2.6's own
+    # completion report, which anticipated only a single
+    # "user_model_promote" string (following the f"{domain}_promote"
+    # pattern used by the other two domains): K4.2 §3 is explicit that
+    # User Model needs *two* — "gated identically to Intent Ontology
+    # promotion, via two new EvolutionGovernor.SELF_MODIFYING_ACTIONS
+    # strings — user_model_propose, user_model_promote." validation_gate()
+    # picks between them based on whether the candidate is a genuinely new
+    # entry (propose) or a revision of an existing one (promote) — see its
+    # docstring and k4_2_7_completion_report.md for the reasoning.
     SELF_MODIFYING_ACTIONS = {
         "memory_curate", "skill_create", "skill_promote",
         "memory_derive", "memory_prune", "memory_merge",
         "intent_ontology_promote",
+        "user_model_propose", "user_model_promote",
     }
 
     def evaluate(self, action: GovernanceAction) -> GovernanceResult:

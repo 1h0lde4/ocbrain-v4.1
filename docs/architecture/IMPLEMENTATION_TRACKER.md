@@ -1,10 +1,10 @@
 # OCBrain Implementation Tracker
 
-**Date:** July 29, 2026
+**Date:** July 30, 2026
 **Architecture Version:** K4.2 (Cognitive Front-End)
 **Repository Status:** Architecture Frozen, Implementation in progress
-**Current Implementation Campaign:** Phase B complete (Packet 04 + Packet 06, parallel track) — Phase C next
-**Active Packet Count:** 9 total (5 completed, 0 in progress, 4 waiting)
+**Current Implementation Campaign:** Phase C complete (Packet 05) — Phase D next
+**Active Packet Count:** 9 total (6 completed, 0 in progress, 3 waiting)
 
 ---
 
@@ -15,19 +15,19 @@
 - Packet 02 — K4.2.4: Capability Discovery
 - Packet 03 — K4.2.5: Planner Completion
 - Packet 04 — K4.2.6: Shared ValidationGate + Learning Wiring
+- Packet 05 — K4.2.7: User Cognitive Model
 - Packet 06 — Plan Compilation
 
 ### In-Progress Packets
 - None
 
 ### Waiting Packets
-- Packet 05 — K4.2.7: User Cognitive Model
 - Packet 07 — Reflection + Evaluation Workers
 - Packet 08 — Supervisor Worker
 - Packet 09 — Integration: Full Cognitive Pipeline
 
 ### Known Blockers
-- None. Packet 05 is unblocked (depends on Packet 04, complete). Packet 07 is unblocked (depends on Packet 06, complete).
+- None. Packet 07 is unblocked (depends on Packet 06, complete).
 
 ### Cross-Packet Dependencies
 - Packet 02 depends on Packet 01
@@ -119,16 +119,23 @@
 - **Notes:** K4.2 §15's dependency on an "existing v4.3.9 Instinct->Skill pipeline" and K4.2 §6's claim that Skills already reuse "the SkillOpt-style validation gate... already adopted" do not hold — no such pipeline, registry, or gate exists anywhere in the codebase (confirmed by repository-wide search); it exists only as a proposed future item in `docs/archive/research/OCBRAIN_FUTURE_ARCHITECTURE.md`. `core/learning/gate.py` is a real but unrelated gate (scores web-acquisition content for the crawl/extract/.../memory pipeline; no held-out scoring, no contradiction check, no governance integration) and was deliberately not reused or merged into. `EvolutionGovernor.SELF_MODIFYING_ACTIONS` already had `"skill_promote"`/`"skill_create"` pre-registered (unmodified), so `ContentDomain.SKILL` is genuinely exercised by this packet's own tests via the same shared code path as the other two domains, with no production caller yet — the same situation and handling Packet 03 documented for Skill preconditions. `"user_model_promote"` is intentionally not added to `SELF_MODIFYING_ACTIONS` (no caller until Packet 05); `validation_gate` defensively rejects rather than risking silent auto-approval for any Evolution-tier `action_type` not registered there, verified by a dedicated test. No existing memory primitive checks an unwritten candidate against the graph before write (`GraphEngine.find_contradictions`/`UnifiedMemory.find_contradictions` are both parameterless whole-graph sweeps over already-indexed nodes) — the pre-write contradiction check required by K4.2 §8 is implemented in this module via the existing hybrid `UnifiedMemory.search()` plus a conservative negation-cue heuristic mirroring `core.cognitive.planner._detect_contradictions`' documented approach, and fails closed (rejects) if the underlying search itself errors. Evolution-tier promotion is "never automatic" (§8) by construction: `requires_approval` is always derived as `not hitl_approved`, never caller-settable directly, and `hitl_approved` defaults to `False` with no code path in this module setting it to `True` on a caller's behalf — a future HITL-approval surface (not built by this packet) is the only intended way to flip it. See completion report for full detail, including the `lifecycle_state` field added to `LearningRecord` (§12's data contracts are "illustrative... not frozen") and why Adaptation-tier promotions emit no dedicated event (§11 names events for Learning and Evolution tiers only).
 
 ### Packet 05 — K4.2.7: User Cognitive Model
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 30, 2026
+- **Completed:** July 30, 2026
+- **Architecture Review:** Compliant (K4.2 §3, §11, §15). One correction to Packet 04's own cross-packet prediction found and documented — see `k4_2_7_completion_report.md` §0.
+- **Integration Status:** Merged
 - **Dependencies:** Packet 04
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/cognitive/user_model.py` (new — `UserCognitiveModelProjection`, `assemble_user_cognitive_model`, `list_user_model_entries`, `delete_user_model_entry`, `procedure_name_for`, `cross_instance_excluded_metadata`)
+  - `core/cognitive/learning.py` (extended `validation_gate()`: `is_new_entry`/`procedure_name` parameters, added additively with safe defaults; domain-conditional Evolution-tier promotion event)
+  - `core/governance/governance_kernel.py` (added `"user_model_propose"` and `"user_model_promote"` to `EvolutionGovernor.SELF_MODIFYING_ACTIONS` — corrects Packet 04's prediction of a single string)
+  - `core/memory/unified_memory.py` (added `"user_model": "l3"` to `LayerRouter.CONTENT_TYPE_ROUTES`)
+  - `tests/core/cognitive/test_user_model.py` (new, 34 tests)
+  - `tests/core/cognitive/test_learning.py` (3 tests updated/added for the propose/promote split and the now-obsolete "not yet registered" assumption; net +2, 42 total)
+  - `tests/test_session4b_memory_hardening.py` (updated a pre-existing routing-table snapshot count, 14 → 15, to reflect the one new, cited route)
+- **Tests:** `test_user_model.py` 34/34 passing. `test_learning.py` 42/42 passing. Full repository regression: 998/998 passing (964 baseline + 34 new; same 4 pre-existing chromadb-related collection errors as always, unrelated).
+- **Notes:** K4.2.6's own completion report predicted Packet 05 would need to add a single `"user_model_promote"` string to `EvolutionGovernor.SELF_MODIFYING_ACTIONS` with no further change to `validation_gate()`. K4.2 §3 is explicit that two strings are needed — `user_model_propose` (a genuinely new entry) and `user_model_promote` (a revision of an existing one) — so `validation_gate()` gained two small, additive, backward-compatible parameters (`is_new_entry`, `procedure_name`) to support this; Skill/Intent Ontology's existing behavior is completely unchanged (all 40 pre-existing K4.2.6 tests still pass unmodified). K4.2 §11 also gives User Model its own dedicated event, `cognitive.user_model_updated`, distinct from `cognitive.ontology_evolved` — the promotion event is now domain-conditional. `HintSource.USER_MODEL` was found pre-existing (unused) in `core/cognitive/planner.py` from Packets 01-03; confirmed correct and left untouched — wiring the projection into Intent Interpretation/Goal Formation is not in this packet's scope. See completion report for full detail, including why no caching layer was built (K4.2 §3 names no TTL/eviction policy) and the privacy-invariant design (inspect/delete reuse existing `UnifiedMemory` primitives; "excluded from cross-instance advisory" is verified structurally, since no such mechanism exists yet).
 
 ### Packet 06 — Plan Compilation
 - **Status:** Completed

@@ -674,9 +674,24 @@ class TestGoal8ArchitectureClean:
     def test_layer_router_content_type_routes_unmodified(self):
         """Do NOT replace LayerRouter -- confirm the routing table this
         session relies on (interaction -> l1) is exactly what Session 4
-        left it as, not something Session 4B silently changed."""
+        left it as, not something Session 4B silently changed.
+
+        Updated by K4.2.7 (Packet 05, User Cognitive Model): one new
+        entry, "user_model" -> "l3", was added deliberately and is
+        documented in core/memory/unified_memory.py's CONTENT_TYPE_ROUTES
+        and in k4_2_7_completion_report.md -- K4.2 Section 3 requires
+        User Cognitive Model entries to land on L3, and without this
+        entry they would fall through to the importance/length heuristic
+        instead. This is the same category of legitimate, cited update as
+        test_memory_curator_worker_file_untouched's own revision just
+        below: the entries this session cares about protecting
+        ("interaction" -> "l1", and everything else pre-existing) remain
+        exactly as Session 4 left them; only the count grows to reflect
+        one new, justified route.
+        """
         assert LayerRouter.CONTENT_TYPE_ROUTES["interaction"] == "l1"
-        assert len(LayerRouter.CONTENT_TYPE_ROUTES) == 14
+        assert LayerRouter.CONTENT_TYPE_ROUTES["user_model"] == "l3"
+        assert len(LayerRouter.CONTENT_TYPE_ROUTES) == 15
 
     def test_write_still_routes_through_the_router_not_hardcoded(self):
         src = inspect.getsource(UnifiedMemory.write)

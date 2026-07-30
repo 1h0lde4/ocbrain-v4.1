@@ -7,6 +7,7 @@ Architecture: OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md
 import ast
 import inspect
 from typing import Any, Dict, List
+from unittest.mock import patch
 
 import pytest
 
@@ -75,7 +76,7 @@ class MockMemory:
 
     async def write(self, *, content, content_type="", importance=0.5,
                      truth_status=None, metadata=None, derived_from=None,
-                     source="", **kwargs):
+                     source="", procedure_name=None, **kwargs):
         entry_id = f"entry-{len(self.writes) + 1}"
         self.writes.append({
             "entry_id": entry_id,
@@ -85,6 +86,7 @@ class MockMemory:
             "truth_status": truth_status,
             "metadata": metadata,
             "derived_from": derived_from,
+            "procedure_name": procedure_name,
         })
         return entry_id
 
@@ -497,20 +499,64 @@ class TestValidationGateEvolutionTier:
         assert record.lifecycle_state == LearningLifecycle.PROMOTED
         assert governance.evaluate_calls == 1
 
-    async def test_user_model_not_yet_registered_rejects_even_if_approved(self):
-        # "user_model_promote" is intentionally NOT in
-        # EvolutionGovernor.SELF_MODIFYING_ACTIONS yet (Packet 05's job).
-        # Even an explicit hitl_approved=True must not silently succeed --
-        # this proves the defensive guard, not just the escalation path.
-        assert "user_model_promote" not in EvolutionGovernor.SELF_MODIFYING_ACTIONS
+    async def test_user_model_propose_for_new_entry(self):
+        # K4.2 §3: a genuinely new User Model entry uses "user_model_propose",
+        # registered by this packet (Packet 05). is_new_entry defaults to
+        # True, matching "propose" being the common case (first-time
+        # capture of a preference/pattern never recorded before).
         memory = MockMemory(search_results=[])
+        events = MockEventStream()
+        governance = CountingGovernanceKernel()
         record = await validation_gate(
             tier=LearningTier.EVOLUTION, content_domain=ContentDomain.USER_MODEL,
             subject_ref="new-insight", candidate_content="a new insight",
             trigger_signals=[], held_out_score=0.95, hitl_approved=True,
-            memory=memory, governance=GovernanceKernel(),
-            event_stream=MockEventStream(),
+            procedure_name="user_model:communication_style",
+            memory=memory, governance=governance, event_stream=events,
         )
+        assert record.lifecycle_state == LearningLifecycle.PROMOTED
+        assert record.gate_result.action_type == "user_model_propose"
+        assert governance.evaluate_calls == 1
+        assert memory.writes[0]["procedure_name"] == "user_model:communication_style"
+        # K4.2 §11: User Model gets its own event, not cognitive.ontology_evolved.
+        assert events.events[0]["event_type"] == "cognitive.user_model_updated"
+
+    async def test_user_model_promote_for_revision(self):
+        # is_new_entry=False -- revising an existing, already-promoted
+        # entry uses "user_model_promote" instead (reusing the same verb
+        # SKILL/INTENT_ONTOLOGY already use for their one-and-only action).
+        memory = MockMemory(search_results=[])
+        events = MockEventStream()
+        governance = CountingGovernanceKernel()
+        record = await validation_gate(
+            tier=LearningTier.EVOLUTION, content_domain=ContentDomain.USER_MODEL,
+            subject_ref="existing-entry-1", candidate_content="a revised insight",
+            trigger_signals=[], held_out_score=0.95, hitl_approved=True,
+            is_new_entry=False,
+            memory=memory, governance=governance, event_stream=events,
+        )
+        assert record.lifecycle_state == LearningLifecycle.PROMOTED
+        assert record.gate_result.action_type == "user_model_promote"
+        assert governance.evaluate_calls == 1
+        assert events.events[0]["event_type"] == "cognitive.user_model_updated"
+
+    async def test_unregistered_action_type_defensive_guard(self):
+        # The original point of this test (before Packet 05 legitimately
+        # registered user_model_propose/user_model_promote) was to prove
+        # the defensive "reject rather than silently auto-approve" guard
+        # for any action_type EvolutionGovernor doesn't recognize. With
+        # all three real content domains now registered, that guard is
+        # exercised here via a temporarily patched registry instead --
+        # same invariant, no longer tied to a domain's registration status.
+        with patch.object(EvolutionGovernor, "SELF_MODIFYING_ACTIONS", {"skill_promote"}):
+            memory = MockMemory(search_results=[])
+            record = await validation_gate(
+                tier=LearningTier.EVOLUTION, content_domain=ContentDomain.USER_MODEL,
+                subject_ref="new-insight", candidate_content="a new insight",
+                trigger_signals=[], held_out_score=0.95, hitl_approved=True,
+                memory=memory, governance=GovernanceKernel(),
+                event_stream=MockEventStream(),
+            )
         assert record.lifecycle_state == LearningLifecycle.REJECTED
         assert memory.writes == []
 

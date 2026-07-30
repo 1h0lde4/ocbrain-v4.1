@@ -201,6 +201,16 @@ class LayerRouter:
                               # when truth_status qualifies -- NOT a layer route
         "skill":      "l2",
         "procedure":  "l2",
+        # "user_model" added by K4.2.7 (Packet 05) -- K4.2 Section 3 requires
+        # User Cognitive Model entries to land on L3 (Procedural Memory) so
+        # core.cognitive.user_model's own read-side projection, which queries
+        # L3 for promoted preference/pattern records, can find what
+        # validation_gate() writes. Adaptation/Evolution-tier User Model
+        # writes use content_type="user_model" (via validation_gate()'s
+        # existing content_type=content_domain passthrough, unchanged since
+        # K4.2.6) and now land here instead of falling through to the
+        # importance/length heuristic below.
+        "user_model": "l3",
         "audit":      "l4",
         "provenance": "l4",
         "quarantined":"l4",

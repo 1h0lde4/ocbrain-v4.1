@@ -363,6 +363,8 @@ async def validation_gate(
     baseline_score: Optional[float] = None,
     importance: float = 0.5,
     hitl_approved: bool = False,
+    is_new_entry: bool = True,
+    procedure_name: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     memory: Optional[UnifiedMemory] = None,
     governance: Optional[GovernanceKernel] = None,
@@ -395,6 +397,30 @@ async def validation_gate(
         has actually approved this exact candidate (see module
         docstring — no such surface is built here, and no code path in
         this module sets the flag on a caller's behalf).
+
+        Action type and event name are content_domain-conditional at this
+        tier (K4.2 §3, §11 — added by Packet 05/K4.2.7, User Cognitive
+        Model, the first domain that actually needs this distinction):
+          * SKILL / INTENT_ONTOLOGY: action_type is always
+            f"{content_domain}_promote" (unchanged from K4.2.6); on
+            APPROVE, emits `cognitive.ontology_evolved` (unchanged).
+          * USER_MODEL: action_type is "user_model_propose" when
+            `is_new_entry` is True (default — a genuinely new preference/
+            pattern never captured before), or "user_model_promote" when
+            False (a revision of an existing, already-promoted entry) —
+            K4.2 §3: "gated identically to Intent Ontology promotion, via
+            two new EvolutionGovernor.SELF_MODIFYING_ACTIONS strings —
+            user_model_propose, user_model_promote." On APPROVE, emits
+            `cognitive.user_model_updated` instead of
+            `cognitive.ontology_evolved` — K4.2 §11's Event Integration
+            table gives User Model its own dedicated event row
+            (`PreferenceUpdated -> cognitive.user_model_updated`),
+            separate from Intent Ontology's, not a third alias for the
+            same one.
+        `is_new_entry` is ignored for SKILL/INTENT_ONTOLOGY (they have
+        exactly one action_type each, as before) and for LEARNING/
+        ADAPTATION tiers (neither computes a "_promote"-suffixed
+        action_type at all).
 
         Governance boundary: every Evolution-tier code path that can
         possibly reach PROMOTED calls `governance.evaluate_action()`
@@ -436,6 +462,15 @@ async def validation_gate(
         importance: KnowledgeEntry importance for a resulting write.
         hitl_approved: see EVOLUTION behavior above. Ignored for
             LEARNING/ADAPTATION (neither ever calls GovernanceKernel).
+        is_new_entry: see EVOLUTION behavior above (action_type/event
+            selection for USER_MODEL). Ignored for SKILL/INTENT_ONTOLOGY
+            and for LEARNING/ADAPTATION tiers.
+        procedure_name: passed through verbatim to KnowledgeEntry's own
+            `procedure_name` field on any resulting write, at every tier.
+            K4.2 §3 requires User Cognitive Model entries to carry
+            `procedure_name` "scoped to a user_model:* namespace"; other
+            domains may leave this None (unchanged from K4.2.6, where no
+            caller ever set it).
         metadata: additional KnowledgeEntry metadata for a resulting
             write. "content_domain" is always set to `content_domain` by
             this function (overwriting any caller-supplied value), so
@@ -475,6 +510,7 @@ async def validation_gate(
             metadata=entry_metadata,
             derived_from=[subject_ref] if subject_ref else None,
             source="ValidationGate",
+            procedure_name=procedure_name,
         )
         await event_stream.append(
             "cognitive.pattern_learned",
@@ -504,10 +540,18 @@ async def validation_gate(
         )
 
     # ── ADAPTATION / EVOLUTION: strict held-out improvement required ───
-    action_type = (
-        f"{content_domain}_promote" if tier == LearningTier.EVOLUTION
-        else f"{content_domain}_adapt"
-    )
+    if tier == LearningTier.EVOLUTION and content_domain == ContentDomain.USER_MODEL:
+        # K4.2 §3: "two new EvolutionGovernor.SELF_MODIFYING_ACTIONS
+        # strings -- user_model_propose, user_model_promote." Unlike
+        # SKILL/INTENT_ONTOLOGY (one action_type each), USER_MODEL needs
+        # two: a genuinely new entry is "proposed"; a revision of an
+        # already-promoted entry is "promoted" -- reusing the same verb
+        # the other two domains already use for their one-and-only action.
+        action_type = "user_model_propose" if is_new_entry else "user_model_promote"
+    elif tier == LearningTier.EVOLUTION:
+        action_type = f"{content_domain}_promote"
+    else:
+        action_type = f"{content_domain}_adapt"
 
     def _rejected(reason: str) -> LearningRecord:
         return LearningRecord(
@@ -563,6 +607,7 @@ async def validation_gate(
             metadata=entry_metadata,
             derived_from=[subject_ref] if subject_ref else None,
             source="ValidationGate",
+            procedure_name=procedure_name,
         )
         return LearningRecord(
             tier=tier,
@@ -627,9 +672,18 @@ async def validation_gate(
         metadata=entry_metadata,
         derived_from=[subject_ref] if subject_ref else None,
         source="ValidationGate",
+        procedure_name=procedure_name,
+    )
+    # K4.2 §11's Event Integration table gives User Model its own row
+    # (PreferenceUpdated -> cognitive.user_model_updated), separate from
+    # Intent Ontology's/Skill's (cognitive.ontology_evolved) -- not a
+    # third alias for the same event.
+    promotion_event = (
+        "cognitive.user_model_updated" if content_domain == ContentDomain.USER_MODEL
+        else "cognitive.ontology_evolved"
     )
     await event_stream.append(
-        "cognitive.ontology_evolved",
+        promotion_event,
         source="ValidationGate",
         payload={
             "content_domain": content_domain,
