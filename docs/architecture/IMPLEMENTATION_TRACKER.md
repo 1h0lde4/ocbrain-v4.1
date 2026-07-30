@@ -3,8 +3,8 @@
 **Date:** July 30, 2026
 **Architecture Version:** K4.2 (Cognitive Front-End)
 **Repository Status:** Architecture Frozen, Implementation in progress
-**Current Implementation Campaign:** Phase D complete (Packet 07) — Phase E next
-**Active Packet Count:** 9 total (7 completed, 0 in progress, 2 waiting)
+**Current Implementation Campaign:** Phase E complete (Packet 08) — Phase F next
+**Active Packet Count:** 9 total (8 completed, 0 in progress, 1 waiting)
 
 ---
 
@@ -18,16 +18,16 @@
 - Packet 05 — K4.2.7: User Cognitive Model
 - Packet 06 — Plan Compilation
 - Packet 07 — Reflection + Evaluation Workers
+- Packet 08 — Supervisor Worker
 
 ### In-Progress Packets
 - None
 
 ### Waiting Packets
-- Packet 08 — Supervisor Worker
 - Packet 09 — Integration: Full Cognitive Pipeline
 
 ### Known Blockers
-- None. Packet 08 is unblocked (depends on Packet 07, complete).
+- None. Packet 09 is unblocked (depends on all prior packets, all complete).
 
 ### Cross-Packet Dependencies
 - Packet 02 depends on Packet 01
@@ -168,16 +168,18 @@
 - **Notes:** Documented discrepancy, resolved in architecture's favor per this project's own rule: `OCBRAIN_K4_3_IMPLEMENTATION_TRANSITION.md`'s Packet 07 summary says ReflectionWorker "produces ReflectionRecord from EvaluationRecord," but K4 §7 — the section specifically dedicated to answering "how are reflections stored" — is explicit that reflections are `KnowledgeEntry` instances, "not a new object type." Implemented per K4 §7; no `ReflectionRecord` dataclass exists anywhere in the repository (locked in by a dedicated architecture-compliance test). `EvaluationRecord`, by contrast, is a legitimate new type — K4 §8 specifies its exact schema field-by-field. Both workers are stateless `AbstractCognitiveWorker` subclasses (K4 §4); neither is separately governance-gated beyond the standard per-worker `execute()` gate every worker already gets — K4 §15 is explicit that `ReflectionRecord`/`EvaluationRecord` "are not separately gated," only their consequence (a memory write) is, and that write's governance is already handled internally by `UnifiedMemory.write()` (K4 §13, K3.5). Neither worker calls Packet 04's `validation_gate()`/`LearningRecord` — K4 §13 names `UnifiedMemory.write()` as Reflection's one write path ("no second write path is introduced"); wiring candidate `KnowledgeEntry` writes into the Learning pipeline, if ever done, is a future integration decision (locked in by an architecture-compliance test). `EvaluatorWorker` computes `EvaluationRecord` fields from real `WorkflowRuntime`/`AbstractCognitiveWorker` events (`workflow.completed`, `worker.completed`/`worker.failed`) when they exist for the given `workflow_id`, confirmed via direct reading of `core/workflow/runtime.py` to be real, working code (not a stub) — it is simply not yet invoked automatically by anything in the Cognitive Front-End, consistent with Packet 06's own "WorkflowRuntime execution remains untouched" note. Two `EvaluationRecord` fields (`reasoning_valid`, `quality_score`) have no deterministic execution-only signal available anywhere in this repository and default to documented, narrow proxies (`goal_completed` and `tool_success_rate` respectively), overridable by an explicit, more-informed caller via `context.parameters` — building a genuine quality-scoring or reasoning-validation mechanism is explicitly out of this packet's scope. `ReflectionWorker`'s pattern set (four fixed, threshold-based, documented rules) is deliberately narrow and does not attempt the full "Reflection Runtime" vision described in `docs/architecture/OCBrain Architecture Evolution Directive.md` — that document's own scope statement marks Reflection/Verification Runtime as "architectural placeholders only... no implementation planning," and this packet implements only what K4 §7 concretely specifies today, not that broader future vision. An out-of-band "Architecture Evolution Directive" message received mid-session (Packet 06) asking for unrelated changes to already-completed packets was not acted on; the real, pre-existing file of that name (committed July 24, 2026, before any packet work began) was read directly as part of this packet's own required reading and directly corroborates that declining that message was correct — it explicitly forbids exactly what that message asked for ("DO NOT modify completed milestones," "DO NOT write code").
 
 ### Packet 08 — Supervisor Worker
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 30, 2026
+- **Completed:** July 30, 2026
+- **Architecture Review:** Compliant (K4 §4, §9, §12, §15, §16 invariant 9).
+- **Integration Status:** Merged
 - **Dependencies:** Packet 07
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `core/workers/supervisor.py` (New — `SupervisorOutcome`, `_classify_compilation_outcome`, `SupervisorWorker`)
+  - `tests/test_supervisor_worker.py` (New — 25 tests)
+- **Tests:** 25/25 passing. Full repository regression: 1073/1073 passing (1048 baseline + 25 new; same 4 pre-existing chromadb-import collection errors as every prior packet, environment-only, unrelated to this packet).
+- **Notes:** `SupervisorWorker` has two independent, structurally separate responsibilities. (1) Reacting to a `CompilationResult` from Packet 06: `REJECTED`/`REJECTED_PRECHECK`/`ESCALATED` are surfaced as a failed `WorkerResult`, never retried — K4 §16 invariant 9 ("a rejected or escalated plan is not silently retried as-is") is enforced structurally, not by a counter: the surfacing code path (`_surface_compilation_outcome`) contains no call capable of resubmitting the plan, verified by a test that supplies a valid retry input alongside a rejected/escalated `CompilationResult` and asserts `ExecutionRuntime.invoke()` is never called. (2) Retrying a failed worker invocation via `ExecutionRuntime.invoke()` — confirmed by reading `core/runtime/execution_runtime.py` directly that this method already has a `parent_worker_id` parameter documented "for Supervisor pattern," so this is that pattern's first real use, not a new addition to `ExecutionRuntime`. Also confirmed by reading `core/workflow/runtime.py`'s `_execute_node_with_retry()` that per-node retry via `WorkflowNode.retry_policy` already happens inside `WorkflowRuntime` itself — Supervisor's retry is a second, higher-level attempt layered above that, not a duplicate of it. Bounded by an explicit, caller-supplied `supervisor_retry_attempt`/`max_supervisor_retries` pair (default max 1) — Supervisor itself holds no state (K4 §4: stateless, matching every other worker in this packet family). `cognitive.supervision_escalated` is the only new event this packet introduces — confirmed present in K4 §12's full event list (not the narrower "Frozen Events" tracking table in the transition document, which stops at K4.2.7's scope, same situation already documented in Packet 07's own completion report for `cognitive.reflection_completed`/`cognitive.evaluation_completed`). No event was invented for the `REJECTED` (non-escalated) case or for retry initiation/exhaustion: the underlying governance verdict was already recorded by `cognitive.plan_rejected` (Packet 06) at compile time, and a retried worker emits its own standard `worker.*` lifecycle events via the same governed `execute()` path every worker already uses — inventing parallel events for the same facts was judged unnecessary rather than assumed necessary. `ExecutionContext`→`WorkerContext` parameter threading (`metadata["parameters"]` → `WorkerContext.parameters`) was confirmed by reading `core/runtime/execution_context.py`'s `to_worker_context()` directly rather than assumed from `ExecutionRuntime.invoke()`'s signature alone. Explicitly not implemented, per this packet's own scope: handing a revised Goal back to Planner (K4 §15 describes this as Supervisor's eventual recovery path, but Planner has no mechanism today to accept feedback from a prior attempt) and an actual HITL approval queue (`GovernanceKernel`'s own docstring says "queue for HITL approval," but no such queue exists anywhere in this repository — emitting `cognitive.supervision_escalated` is the surfacing this packet is responsible for, not building the queue itself).
 
 ### Packet 09 — Integration: Full Cognitive Pipeline
 - **Status:** Pending

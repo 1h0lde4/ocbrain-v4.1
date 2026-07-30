@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 30, 2026 (added missing K4.2.6/K4.2.7 rows and Packet 07 — see note below; prior sync July 29, 2026 corrected K4.2.4/K4.2.5 and added Plan Compilation; prior sync July 24, 2026 added the Cognitive Front-End Phase for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
+**Last synchronized:** July 30, 2026 (added Packet 08 — see note below; prior sync same day added missing K4.2.6/K4.2.7 rows and Packet 07; prior sync July 29, 2026 corrected K4.2.4/K4.2.5 and added Plan Compilation; prior sync July 24, 2026 added the Cognitive Front-End Phase for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -88,12 +88,13 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 | K4.2.6 — Shared ValidationGate + Learning Wiring | ✅ Complete | `LearningTier`, `ContentDomain`, `CognitiveDecision`, `LearningRecord`, `validation_gate()` (`core/cognitive/learning.py`) |
 | K4.2.7 — User Cognitive Model | ✅ Complete | `UserCognitiveModelProjection`, `assemble_user_cognitive_model()` (`core/cognitive/user_model.py`) |
 | Reflection + Evaluation Workers (Packet 07 — K4 §7/§8) | ✅ Complete | `EvaluatorWorker`/`EvaluationRecord` (`core/workers/evaluator.py`); `ReflectionWorker` (`core/workers/reflection.py`); reflections stored as `KnowledgeEntry`, not a new type (K4 §7) |
+| Supervisor Worker (Packet 08 — K4 §9) | ✅ Complete | `SupervisorWorker`/`SupervisorOutcome` (`core/workers/supervisor.py`); reacts to `CompilationResult` REJECT/ESCALATE (never retries, invariant 9) and retries failed invocations via `ExecutionRuntime.invoke()`; no governance authority of its own |
 
-Completion reports: `docs/architecture/k4_2_1_completion_report.md` through `k4_2_7_completion_report.md`, `packet_06_plan_compilation_completion_report.md`, `packet_07_reflection_evaluation_completion_report.md`.
+Completion reports: `docs/architecture/k4_2_1_completion_report.md` through `k4_2_7_completion_report.md`, `packet_06_plan_compilation_completion_report.md`, `packet_07_reflection_evaluation_completion_report.md`, `packet_08_supervisor_worker_completion_report.md`.
 
-K4.2.1–K4.2.7, Plan Compilation, and Reflection/Evaluation have zero live-path interaction with Kernel execution — `compile()` *produces* a `WorkflowDefinition` under governance and `EvaluatorWorker`/`ReflectionWorker` *read* whatever execution events already exist for a `workflow_id`, but nothing in the Cognitive Front-End invokes `WorkflowRuntime` or triggers Evaluator/Reflection automatically after an execution — and none required K3 resolution to proceed, consistent with K3 having been separately confirmed complete above.
+K4.2.1–K4.2.7, Plan Compilation, Reflection/Evaluation, and Supervision have zero live-path interaction with Kernel execution — `compile()` *produces* a `WorkflowDefinition` under governance, `EvaluatorWorker`/`ReflectionWorker` *read* whatever execution events already exist, and `SupervisorWorker` *reacts* to a `CompilationResult`/failed `WorkerResult` it is given, but nothing in the Cognitive Front-End invokes `WorkflowRuntime` or triggers any of these workers automatically after an execution — and none required K3 resolution to proceed, consistent with K3 having been separately confirmed complete above.
 
-**Remaining in this phase:** Packet 08 (Supervisor Worker, unblocked, depends on Packet 07), Packet 09 (Integration: Full Cognitive Pipeline, depends on all prior packets). See `docs/architecture/IMPLEMENTATION_TRACKER.md` for per-packet status, owners, and cross-packet dependencies — that document, not this section, is the authoritative packet-level tracker.
+**Remaining in this phase:** Packet 09 (Integration: Full Cognitive Pipeline, unblocked, depends on all prior packets, all complete). See `docs/architecture/IMPLEMENTATION_TRACKER.md` for per-packet status, owners, and cross-packet dependencies — that document, not this section, is the authoritative packet-level tracker.
 
 ---
 
