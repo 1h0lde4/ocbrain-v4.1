@@ -1,6 +1,6 @@
 # OCBrain — Implementation Roadmap
 
-**Last synchronized:** July 29, 2026 (corrected Cognitive Front-End Phase below — K4.2.4/K4.2.5 had completed July 25, 2026 but this document still showed K4.2.4 as `⬜ Next`; Plan Compilation, Packet 06, completed this session — see note below; prior sync July 24, 2026 added the Cognitive Front-End Phase for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
+**Last synchronized:** July 30, 2026 (added missing K4.2.6/K4.2.7 rows and Packet 07 — see note below; prior sync July 29, 2026 corrected K4.2.4/K4.2.5 and added Plan Compilation; prior sync July 24, 2026 added the Cognitive Front-End Phase for K4.2.1–K4.2.3; prior sync July 22, 2026 K3 status correction; prior full sync July 18, 2026)
 **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
 
 ---
@@ -75,7 +75,7 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 
 ## Cognitive Front-End Phase — In Progress
 
-**Added July 24, 2026.** This phase did not previously appear in this document — K4.2.1 and K4.2.2 had already been implemented, and K4.2.3 was implemented in a prior session but uploaded rather than committed through the packet process, so none of the three were ever reflected here. Corrected via direct code + test audit (see `CURRENT_STATE.md`'s new Cognitive Front-End section and `docs/architecture/k4_2_3_completion_report.md`). **Updated July 29, 2026** — K4.2.4 and K4.2.5 (Packets 02/03, git commits `be07a97`/`1e903c1`) had completed July 25, 2026 but this table still showed K4.2.4 as `⬜ Next` and omitted K4.2.5. Plan Compilation (Packet 06) completed this session, closing out Phase A and one of the two Phase B tracks (`IMPLEMENTATION_TRACKER.md` §1 Integration Notes). Re-verified via direct code + full test-suite audit (922/922 passing) before correcting.
+**Added July 24, 2026.** This phase did not previously appear in this document — K4.2.1 and K4.2.2 had already been implemented, and K4.2.3 was implemented in a prior session but uploaded rather than committed through the packet process, so none of the three were ever reflected here. Corrected via direct code + test audit (see `CURRENT_STATE.md`'s new Cognitive Front-End section and `docs/architecture/k4_2_3_completion_report.md`). **Updated July 29, 2026** — K4.2.4/K4.2.5 and Plan Compilation (Packet 06) corrected/added. **Updated July 30, 2026** — K4.2.6 and K4.2.7 (Packets 04, 05 — completed by a separate parallel session, merged in via `git merge`/fast-forward, never previously added to this document even though `IMPLEMENTATION_TRACKER.md` had them) are added, and Reflection + Evaluation (Packet 07) completes this phase's sequential/dependency chain up through Packet 07. Re-verified via direct code + full test-suite audit (1048/1048 passing) before correcting.
 
 | Milestone | Status | Key Deliverables |
 |---|---|---|
@@ -85,12 +85,15 @@ Consistency hardening on the already-complete Implementation Phase, addressing g
 | K4.2.4 — Capability Discovery | ✅ Complete | `CapabilityDiscoveryRequest`, `discover_capabilities()`; description-overlap ranking over existing `list_capabilities`/`get_contract`/`get_adapters` — no `CapabilityRegistry.resolve()` API exists or was added, see `k4_2_4_completion_report.md` |
 | K4.2.5 — Planner Completion | ✅ Complete | `ClarificationPolicy`, `ExecutionPlanLifecycle`, `PlanStep`, `ExecutionPlan`; decomposition/sequencing/fallback-path/confidence/impasse pipeline; `plan()` entrypoint |
 | Plan Compilation (Packet 06 — K4 §6/§15, K4.2 §1) | ✅ Complete | `CompilationResult`, `compile()` entrypoint; `plan_compile` governance gate reusing `AbstractCognitiveWorker.execute()`'s pattern; `ExecutionPlan` → `WorkflowDefinition` mapping |
+| K4.2.6 — Shared ValidationGate + Learning Wiring | ✅ Complete | `LearningTier`, `ContentDomain`, `CognitiveDecision`, `LearningRecord`, `validation_gate()` (`core/cognitive/learning.py`) |
+| K4.2.7 — User Cognitive Model | ✅ Complete | `UserCognitiveModelProjection`, `assemble_user_cognitive_model()` (`core/cognitive/user_model.py`) |
+| Reflection + Evaluation Workers (Packet 07 — K4 §7/§8) | ✅ Complete | `EvaluatorWorker`/`EvaluationRecord` (`core/workers/evaluator.py`); `ReflectionWorker` (`core/workers/reflection.py`); reflections stored as `KnowledgeEntry`, not a new type (K4 §7) |
 
-Completion reports: `docs/architecture/k4_2_1_completion_report.md`, `k4_2_2_completion_report.md`, `k4_2_3_completion_report.md`, `k4_2_4_completion_report.md`, `k4_2_5_completion_report.md`, `packet_06_plan_compilation_completion_report.md`.
+Completion reports: `docs/architecture/k4_2_1_completion_report.md` through `k4_2_7_completion_report.md`, `packet_06_plan_compilation_completion_report.md`, `packet_07_reflection_evaluation_completion_report.md`.
 
-K4.2.1–K4.2.5 and Plan Compilation have zero live-path interaction with Kernel execution — `compile()` *produces* a `WorkflowDefinition` under governance but nothing in the Cognitive Front-End invokes `WorkflowRuntime` — and none required K3 resolution to proceed, consistent with K3 having been separately confirmed complete above.
+K4.2.1–K4.2.7, Plan Compilation, and Reflection/Evaluation have zero live-path interaction with Kernel execution — `compile()` *produces* a `WorkflowDefinition` under governance and `EvaluatorWorker`/`ReflectionWorker` *read* whatever execution events already exist for a `workflow_id`, but nothing in the Cognitive Front-End invokes `WorkflowRuntime` or triggers Evaluator/Reflection automatically after an execution — and none required K3 resolution to proceed, consistent with K3 having been separately confirmed complete above.
 
-**Remaining in this phase:** Packet 04 (K4.2.6 — Shared ValidationGate + Learning Wiring, unblocked, depends on Packet 03), Packet 05 (K4.2.7 — User Cognitive Model, depends on Packet 04), Packet 07 (Reflection + Evaluation Workers, depends on Packet 06), Packet 08 (Supervisor Worker, depends on Packet 07), Packet 09 (Integration: Full Cognitive Pipeline, depends on all prior packets). See `docs/architecture/IMPLEMENTATION_TRACKER.md` for per-packet status, owners, and cross-packet dependencies — that document, not this section, is the authoritative packet-level tracker.
+**Remaining in this phase:** Packet 08 (Supervisor Worker, unblocked, depends on Packet 07), Packet 09 (Integration: Full Cognitive Pipeline, depends on all prior packets). See `docs/architecture/IMPLEMENTATION_TRACKER.md` for per-packet status, owners, and cross-packet dependencies — that document, not this section, is the authoritative packet-level tracker.
 
 ---
 
