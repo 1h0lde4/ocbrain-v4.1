@@ -75,7 +75,7 @@ All items implemented exactly as specified.
 
 ## §5 — Explicitly Not Done (Later Packets / Future Work)
 
-- Handing a revised Goal back to Planner after a rejected plan — Planner has no mechanism today to accept feedback from a prior attempt; building one is not this packet's job
+- Sending a revised plan back to Planner after a rejection — no Planner feedback interface exists anywhere in this repository today (Planner has no mechanism to accept a prior outcome and revise a plan accordingly); this is therefore intentionally deferred to a future architecture revision, not invented here
 - An actual HITL approval queue/UI — `cognitive.supervision_escalated` is the surfacing this packet is responsible for, not the queue itself, which does not exist anywhere in this repository
 - Automatic invocation of `SupervisorWorker` after a workflow/compilation failure — no autonomous trigger exists anywhere in this repository for any worker; this packet does not add one
 - Retry backoff/jitter scheduling — `ExecutionRuntime.invoke()` is called once per `SupervisorWorker._run()` call; scheduling repeated calls is an orchestration concern for whatever eventually invokes Supervisor

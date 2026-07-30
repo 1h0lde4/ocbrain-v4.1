@@ -60,12 +60,15 @@ Explicitly forbidden (K4 §9, §16):
       "RecursionGovernor/cancellation-token territory, unchanged").
 
 Explicitly NOT in scope (future work):
-    - Actually handing a revised Goal back to Planner (K4 §15 describes
-      this as Supervisor's eventual recovery path for a rejected plan,
-      but Planner has no mechanism today to accept feedback from a
-      prior attempt — building one is not this packet's job). This
-      packet surfaces the rejection; it does not attempt to recover
-      from it by generating a new plan.
+    - Sending a revised plan back to Planner. K4 §15 describes this as
+      Supervisor's eventual recovery path for a rejected plan, but no
+      Planner feedback interface exists anywhere in this repository
+      today — Planner has no mechanism to accept a prior outcome and
+      revise a plan accordingly. This is therefore intentionally
+      deferred to a future architecture revision, not invented here:
+      this packet surfaces the rejection/escalation and stops there —
+      it does not attempt to recover from it by generating or
+      requesting a new plan.
     - An actual HITL approval queue. GovernanceKernel's own docstring
       already says what a caller should do on ESCALATE: "queue for HITL
       approval" — but no queue, UI, or approval workflow exists anywhere
