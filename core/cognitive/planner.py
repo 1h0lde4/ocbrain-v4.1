@@ -1172,7 +1172,7 @@ async def plan(
     event_stream = event_stream or get_event_stream()
     goal = request.goal
 
-    constraints = await _extract_constraints(goal)
+    constraints = await _extract_constraints(goal, event_stream=event_stream)
 
     precheck_rejection = check_precheck_rejection(constraints)
     if precheck_rejection is not None:

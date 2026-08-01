@@ -3,8 +3,8 @@
 **Date:** July 30, 2026
 **Architecture Version:** K4.2 (Cognitive Front-End)
 **Repository Status:** Architecture Frozen, Implementation in progress
-**Current Implementation Campaign:** Phase E complete (Packet 08) — Phase F next
-**Active Packet Count:** 9 total (8 completed, 0 in progress, 1 waiting)
+**Current Implementation Campaign:** Phase F complete (Packet 09) — all packets complete
+**Active Packet Count:** 9 total (9 completed, 0 in progress, 0 waiting)
 
 ---
 
@@ -19,15 +19,16 @@
 - Packet 06 — Plan Compilation
 - Packet 07 — Reflection + Evaluation Workers
 - Packet 08 — Supervisor Worker
+- Packet 09 — Integration: Full Cognitive Pipeline
 
 ### In-Progress Packets
 - None
 
 ### Waiting Packets
-- Packet 09 — Integration: Full Cognitive Pipeline
+- None
 
 ### Known Blockers
-- None. Packet 09 is unblocked (depends on all prior packets, all complete).
+- None. All 9 packets complete.
 
 ### Cross-Packet Dependencies
 - Packet 02 depends on Packet 01
@@ -182,13 +183,15 @@
 - **Notes:** `SupervisorWorker` has two independent, structurally separate responsibilities. (1) Reacting to a `CompilationResult` from Packet 06: `REJECTED`/`REJECTED_PRECHECK`/`ESCALATED` are surfaced as a failed `WorkerResult`, never retried — K4 §16 invariant 9 ("a rejected or escalated plan is not silently retried as-is") is enforced structurally, not by a counter: the surfacing code path (`_surface_compilation_outcome`) contains no call capable of resubmitting the plan, verified by a test that supplies a valid retry input alongside a rejected/escalated `CompilationResult` and asserts `ExecutionRuntime.invoke()` is never called. (2) Retrying a failed worker invocation via `ExecutionRuntime.invoke()` — confirmed by reading `core/runtime/execution_runtime.py` directly that this method already has a `parent_worker_id` parameter documented "for Supervisor pattern," so this is that pattern's first real use, not a new addition to `ExecutionRuntime`. Also confirmed by reading `core/workflow/runtime.py`'s `_execute_node_with_retry()` that per-node retry via `WorkflowNode.retry_policy` already happens inside `WorkflowRuntime` itself — Supervisor's retry is a second, higher-level attempt layered above that, not a duplicate of it. Bounded by an explicit, caller-supplied `supervisor_retry_attempt`/`max_supervisor_retries` pair (default max 1) — Supervisor itself holds no state (K4 §4: stateless, matching every other worker in this packet family). `cognitive.supervision_escalated` is the only new event this packet introduces — confirmed present in K4 §12's full event list (not the narrower "Frozen Events" tracking table in the transition document, which stops at K4.2.7's scope, same situation already documented in Packet 07's own completion report for `cognitive.reflection_completed`/`cognitive.evaluation_completed`). No event was invented for the `REJECTED` (non-escalated) case or for retry initiation/exhaustion: the underlying governance verdict was already recorded by `cognitive.plan_rejected` (Packet 06) at compile time, and a retried worker emits its own standard `worker.*` lifecycle events via the same governed `execute()` path every worker already uses — inventing parallel events for the same facts was judged unnecessary rather than assumed necessary. `ExecutionContext`→`WorkerContext` parameter threading (`metadata["parameters"]` → `WorkerContext.parameters`) was confirmed by reading `core/runtime/execution_context.py`'s `to_worker_context()` directly rather than assumed from `ExecutionRuntime.invoke()`'s signature alone. Explicitly not implemented, per this packet's own scope: handing a revised Goal back to Planner (K4 §15 describes this as Supervisor's eventual recovery path, but Planner has no mechanism today to accept feedback from a prior attempt) and an actual HITL approval queue (`GovernanceKernel`'s own docstring says "queue for HITL approval," but no such queue exists anywhere in this repository — emitting `cognitive.supervision_escalated` is the surfacing this packet is responsible for, not building the queue itself).
 
 ### Packet 09 — Integration: Full Cognitive Pipeline
-- **Status:** Pending
-- **Owner:** 
-- **Started:** 
-- **Completed:** 
-- **Architecture Review:** 
-- **Integration Status:** 
+- **Status:** Completed
+- **Owner:** Maintenance
+- **Started:** July 30, 2026
+- **Completed:** July 30, 2026
+- **Architecture Review:** Compliant. Test packet per its own scope statement — no new production modules; one genuine bug found and fixed in already-reviewed code (see Notes).
+- **Integration Status:** Merged
 - **Dependencies:** Packets 01-08
-- **Files Modified:** 
-- **Tests:** 
-- **Notes:** 
+- **Files Modified:**
+  - `tests/test_integration_full_pipeline.py` (New — 20 tests)
+  - `core/cognitive/planner.py` (Modified — one-line bugfix, see Notes)
+- **Tests:** 20/20 passing in the new integration suite. Full repository regression: 1093/1093 passing (1073 baseline + 20 new; same 4 pre-existing chromadb-import collection errors as every prior packet, environment-only, unrelated to this packet). The transition document's own completion criterion cites "773+" as the baseline test count — stale, written before Packets 01-08 existed; 1073 (pre-Packet-09) is the real baseline this session verified.
+- **Notes:** This is deliberately a testing packet, not a new production module, per `OCBRAIN_K4_3_IMPLEMENTATION_TRANSITION.md`'s own scope statement ("Future Architectural Placeholders... no implementation packets produced" for C-MoE/Execution Runtime/etc.) — `main.py`'s composition root is intentionally left unwired, matching every completion report from Packet 06 onward. **A genuine, previously-undiscovered bug was found and fixed**: `plan()` (`core/cognitive/planner.py`, Packet 03/K4.2.5) called `_extract_constraints(goal)` without forwarding its own `event_stream` parameter, so `cognitive.constraints_extracted` silently escaped to the global singleton `EventStream` instead of whatever explicit stream a caller passed to `plan()` — while the very next line, `_decompose(goal, registry, event_stream=event_stream)`, forwards it correctly. This surfaced only under genuine end-to-end testing with a real, isolated `EventStream` (this packet's own "event trail complete and replayable" completion criterion required exactly that), not under any existing isolated unit test — confirmed by checking: no existing test in `tests/core/cognitive/test_planner.py` asserts on the specific event list `plan()` forwards to an explicitly-passed stream (`TestPlan`'s own tests pass a generic `AsyncMock()` and never inspect call contents), and the direct `cognitive.constraints_extracted` test calls `_extract_constraints()` in isolation, passing `event_stream` directly to it, which bypasses this exact bug by construction. Fixed with the smallest possible change — a single added keyword argument (`event_stream=event_stream`) — per this project's own "document first, smallest correction necessary" rule for bugs discovered while implementing a packet; not a redesign, and verified against the full 1093-test suite to introduce zero regressions. All 9 K4 §16 Runtime Invariants are individually verified (`TestRuntimeInvariants`), 5 via a fresh assertion against genuinely pipeline-produced objects (1, 2, 3, 4, 6) and 4 via structural/AST checks complementing (not duplicating) the runtime tests elsewhere in the same file or in earlier packets (5, 7, 8, 9). `Goal.lifecycle_state` correctly stays `DRAFT` (not `VERIFIED`) throughout this suite's happy-path tests — confirmed to be correct, expected behavior (no Intent Ontology category exists anywhere in this repository yet to validate against), not a gap; documented directly in the relevant test's own docstring to prevent a future reader mistaking it for one.
