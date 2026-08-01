@@ -13,6 +13,8 @@
 
 One genuine, previously-undiscovered bug was found in already-reviewed, already-merged code, surfaced only by genuine end-to-end testing. Reported here per this project's own "document first, smallest correction necessary" rule; fixed, not worked around.
 
+**For the historical record: this is a pre-existing defect in Packet 03's implementation (July 2026, K4.2.5), not a defect introduced by or attributable to Packet 09.** Packet 09 contributed the end-to-end test methodology that was capable of detecting it — a category of testing no earlier packet's own unit tests performed — and, having found it, fixed it under this project's "document first, smallest correction necessary" rule rather than leaving it in place or working around it in the test.
+
 **`plan()` (`core/cognitive/planner.py`, Packet 03/K4.2.5) did not forward `event_stream` to `_extract_constraints()`.**
 
 ```python

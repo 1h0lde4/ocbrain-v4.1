@@ -256,6 +256,32 @@ class TestEventTrailCompleteAndReplayable:
         assert ordered_types[-1] == "cognitive.plan_rejected"
         assert "cognitive.plan_compiled" not in ordered_types
 
+    @pytest.mark.asyncio
+    async def test_sequence_numbers_gapless_across_multiple_compile_calls(self, tmp_path):
+        """Replay completeness under a more demanding scenario than a
+        single pipeline run: several compile() calls against the same
+        plan on the same stream (exactly TestClarificationBoundedRetry's
+        own scenario below) must still produce gapless, non-duplicate,
+        monotonically increasing sequence numbers end to end."""
+        from core.cognitive.planner import ClarificationPolicy
+
+        event_stream = _real_event_stream(tmp_path)
+        registry = _make_registry()
+        policy = ClarificationPolicy()
+
+        goals, planner_result = await _run_to_planner_result(event_stream, registry)
+        execution_plan = planner_result.execution_plan
+        execution_plan.confidence = 0.1
+
+        for attempt in range(policy.max_escalations + 2):
+            await compile_plan(execution_plan, event_stream=event_stream,
+                                clarification_attempt=attempt)
+
+        replayed = [e async for e in event_stream.replay(since_sequence=0)]
+        seqs = [e.sequence for e in replayed]
+        assert seqs == list(range(1, len(seqs) + 1))
+        assert len(seqs) == len(set(seqs))
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Governance gates at Plan Compilation — against a real pipeline plan
