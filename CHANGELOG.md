@@ -1,5 +1,47 @@
 # Changelog
 
+## [4.2.0] — 2026-08 — K4.2 Cognitive Front-End Complete
+
+All 9 K4.2 implementation packets verified complete. Tag: `v4.2.0-k4.2-cognitive-frontend`.
+
+### Packets 01–03 — Intent, Goal Formation, Planner Contracts
+- **Intent / IntentHypothesis** — multi-hypothesis inference, input normalization (`core/cognitive/intent.py`)
+- **Goal / interpret_request()** — goal formation, compound-request splitting
+- **Constraint / PlannerRequest / PlannerResult** — constraint extraction, contradiction detection (`core/cognitive/planner.py`)
+
+### Packets 02, 03 — Capability Discovery, Planner Completion
+- **discover_capabilities()** — description-overlap capability ranking
+- **ExecutionPlan / PlanStep / plan()** — decomposition, sequencing, impasse detection, the second public entrypoint
+
+### Packet 06 — Plan Compilation
+- **compile()** — the third public entrypoint; the single seam from reasoning to execution
+- **CompilationResult** — governed `ExecutionPlan` → `WorkflowDefinition` translation, `plan_compile` governance gate
+
+### Packet 04 — Shared ValidationGate + Learning Wiring
+- **validation_gate() / LearningRecord / CognitiveDecision** — governed learning-candidate evaluation (`core/cognitive/learning.py`)
+
+### Packet 05 — User Cognitive Model
+- **assemble_user_cognitive_model()** — read-only projection over existing memory (`core/cognitive/user_model.py`)
+
+### Packet 07 — Reflection + Evaluation Workers
+- **EvaluatorWorker / EvaluationRecord** — objective, deterministic post-execution measurement (`core/workers/evaluator.py`)
+- **ReflectionWorker** — deterministic hypothesis detection, candidate `KnowledgeEntry` writes (`core/workers/reflection.py`)
+
+### Packet 08 — Supervisor Worker
+- **SupervisorWorker** — reacts to compilation-gate outcomes and retries failed worker invocations via the existing `ExecutionRuntime.invoke()`; introduces no governance authority of its own (`core/workers/supervisor.py`)
+
+### Packet 09 — Integration: Full Cognitive Pipeline
+- End-to-end test suite proving `interpret() → plan() → compile()` works correctly together with real objects
+- Found and fixed one pre-existing defect from Packet 03: `plan()` wasn't forwarding `event_stream` to `_extract_constraints()`
+- All 9 K4 §16 Runtime Invariants individually verified
+
+### Documentation
+- `IMPLEMENTATION_TRACKER.md`, `CURRENT_STATE.md`, `IMPLEMENTATION_ROADMAP.md` — synchronized, all 9 packets marked complete
+- 9 per-packet completion reports plus this baseline in `docs/architecture/`
+- `main.py` runtime wiring intentionally deferred — not part of this release
+
+---
+
 ## [4.1.1] — 2026-07 — K2 Implementation Complete
 
 Documentation synchronization release. All K2 sub-phases verified complete.
