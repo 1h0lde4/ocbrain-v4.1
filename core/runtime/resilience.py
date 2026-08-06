@@ -60,6 +60,16 @@ class AdaptiveSemaphore:
     """
     Adjusts concurrency limit based on observed latency (EMA-smoothed AIMD).
     Slow responses -> Reduce limit. Fast responses -> Gradually increase limit.
+
+    Shrinking correctness:
+        When the limit decreases, _drain_count is incremented.  Finishing
+        tasks consult _drain_count under the adaptation lock: if positive,
+        the finishing task absorbs its permit (skips release()) and
+        decrements _drain_count, effectively removing one slot from the
+        semaphore.  This is race-safe because:
+          - _drain_count is only read/written under self._lock (asyncio.Lock)
+          - No task is interrupted — only finishing tasks participate
+          - The underlying asyncio.Semaphore is never replaced
     """
     def __init__(self, min_limit: int = 1, max_limit: int = 10, target_latency_ms: float = 5000):
         self.min_limit = min_limit
@@ -72,6 +82,7 @@ class AdaptiveSemaphore:
         self._alpha = 0.4 # Faster reaction to latency spikes
         self._acquired = False  # BUG FIX: track acquisition state
         self._start_time = 0.0
+        self._drain_count = 0   # permits to absorb on release
 
     async def __aenter__(self):
         await self._semaphore.acquire()
@@ -83,24 +94,39 @@ class AdaptiveSemaphore:
             return
         self._acquired = False
         latency = time.perf_counter() - self._start_time
-        self._semaphore.release()
-        
+
         async with self._lock:
+            # Drain: absorb permit instead of releasing to shrink capacity
+            if self._drain_count > 0:
+                self._drain_count -= 1
+                # Do NOT release the semaphore — permit is absorbed
+            else:
+                self._semaphore.release()
+
             # Update EMA latency
             self._avg_latency = (self._alpha * latency) + ((1 - self._alpha) * self._avg_latency)
-            
+
             # Use smoothed latency for limit decisions to avoid jitter
             if self._avg_latency > self.target_latency:
                 new_limit = max(self.min_limit, int(self.current_limit * 0.9))
             else:
                 new_limit = min(self.max_limit, self.current_limit + 1)
-            
+
             if new_limit != self.current_limit:
                 diff = new_limit - self.current_limit
                 if diff > 0:
-                    for _ in range(diff):
+                    # Growing: first satisfy pending drain, then release surplus
+                    absorb = min(diff, self._drain_count)
+                    self._drain_count -= absorb
+                    for _ in range(diff - absorb):
                         self._semaphore.release()
+                else:
+                    # Shrinking: schedule permits for absorption by finishing tasks
+                    self._drain_count += abs(diff)
                 self.current_limit = new_limit
-                logger.debug(f"[AdaptiveSemaphore] Limit: {new_limit} (ema_lat: {self._avg_latency:.2f}s)")
+                logger.debug(f"[AdaptiveSemaphore] Limit: {new_limit} "
+                             f"(ema_lat: {self._avg_latency:.2f}s, "
+                             f"drain: {self._drain_count})")
 
 # Global instances can be managed here or in limits.py
+
