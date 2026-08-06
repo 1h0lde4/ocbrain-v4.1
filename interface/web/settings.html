@@ -190,7 +190,7 @@ async function saveAll() {
   try {
     await fetch(`${API}/config`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify(updates),
     });
     const toast = document.getElementById('toast');
@@ -207,7 +207,7 @@ async function wipePairs() {
   try {
     await fetch(`${API}/config`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify({ 'privacy.save_training_pairs': false }),
     });
     alert('Training pairs wiped (privacy flag set to false).');

@@ -199,7 +199,7 @@ async function init() {
 async function runDetection() {
   document.getElementById('scan-status').textContent = 'Scanning GPU, CPU and RAM...';
   try {
-    const r = await fetch(`${API}/api/wizard/detect`, { method: 'POST' });
+    const r = await fetch(`${API}/api/wizard/detect`, { method: 'POST', headers: {'X-OCBrain-Local': '1'} });
     state = await r.json();
     showReview();
   } catch (e) {
@@ -291,7 +291,7 @@ async function chooseMode(mode) {
   try {
     const r = await fetch(`${API}/api/wizard/configure`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify({ mode }),
     });
     const result = await r.json();
@@ -363,7 +363,7 @@ async function proceedToValidation() {
   try {
     const r = await fetch(`${API}/api/wizard/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify({ models: [...selectedModels] }),
     });
     const result = await r.json();

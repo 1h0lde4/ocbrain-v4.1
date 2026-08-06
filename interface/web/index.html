@@ -284,7 +284,7 @@ async function sendQuery() {
   try {
     const r = await fetch(`${API}/query`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ query }),
     });
     const d = await r.json();
@@ -340,7 +340,7 @@ async function loadModules() {
 async function trainModule(name) {
   if (!confirm(`Trigger training for '${name}'?`)) return;
   try {
-    const r = await fetch(`${API}/train/${name}`, {method:'POST'});
+    const r = await fetch(`${API}/train/${name}`, {method:'POST', headers: {'X-OCBrain-Local': '1'}});
     const d = await r.json();
     alert(d.result);
   } catch (e) { alert(e.message); }
@@ -386,7 +386,7 @@ async function toggleSetting(key, el) {
   try {
     await fetch(`${API}/config`, {
       method: 'PUT',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ [key]: val }),
     });
   } catch {}
@@ -409,7 +409,7 @@ async function createModule() {
   try {
     const r = await fetch(`${API}/modules/new`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ name, desc, model, keywords, sources }),
     });
     if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
