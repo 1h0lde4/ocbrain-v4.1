@@ -313,6 +313,31 @@ async def main():
         "adapter_runtime": adapter_runtime,
         "memory": memory,
     })
+
+    # Runtime Integration Task 1 — K4.2 Cognitive Front-End workers.
+    # Same registration pattern as PlannerWorker/MemoryCuratorWorker
+    # above; no behavioral change to either existing registration.
+    # EvaluatorWorker/ReflectionWorker take no domain dependencies beyond
+    # what every worker already gets (governance/event_stream, injected
+    # automatically by WorkerRegistry.construct() the same way as for
+    # MemoryCuratorWorker above) plus memory, which defaults to
+    # get_unified_memory() -- the same singleton `memory` already is --
+    # if not supplied, so no constructor_kwargs are required for them.
+    from core.workers.evaluator import EvaluatorWorker
+    from core.workers.reflection import ReflectionWorker
+    from core.workers.supervisor import SupervisorWorker
+    from core.workers.capability_executor import CapabilityExecutorWorker
+
+    worker_registry.register(EvaluatorWorker, constructor_kwargs={"memory": memory})
+    worker_registry.register(ReflectionWorker, constructor_kwargs={"memory": memory})
+    # capability_executor.py's own module docstring explains why
+    # worker_type must equal the literal capability_type string
+    # ("llm_completion") for this registration to resolve correctly --
+    # this is the worker_type <-> capability_type bridge (Runtime
+    # Integration Task 4), not a new worker category.
+    worker_registry.register(CapabilityExecutorWorker, constructor_kwargs={
+        "adapter_runtime": adapter_runtime,
+    })
     log.info(f"WorkerRegistry ready ({worker_registry.list_types()})")
 
     execution_runtime = ExecutionRuntime(
@@ -321,6 +346,17 @@ async def main():
         event_stream=event_stream,
     )
     log.info("ExecutionRuntime ready")
+
+    # SupervisorWorker registered here, not with the other three K4.2
+    # workers above: it needs execution_runtime (its own retry path,
+    # core/workers/supervisor.py), which does not exist as a constructed
+    # object until this line -- WorkerRegistry.register()'s
+    # constructor_kwargs values are evaluated immediately (a plain dict
+    # literal), not lazily, so this ordering is required, not stylistic.
+    worker_registry.register(SupervisorWorker, constructor_kwargs={
+        "execution_runtime": execution_runtime,
+    })
+    log.info("SupervisorWorker registered (post-ExecutionRuntime)")
 
     # Step 6c: K2.2 — WorkflowRuntime (canonical workflow coordinator)
     # Coordinates a DAG of ExecutionRuntime invocations. Orchestrator.handle()
@@ -350,13 +386,18 @@ async def main():
     except Exception as e:
         log.warning(f"MemoryCuratorWorker hook registration failed (non-fatal): {e}")
 
+    from core.config import config
+    use_k42_frontend = config.get("runtime.use_k42_frontend", False)
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
                                  event_stream=event_stream,
                                  execution_runtime=execution_runtime,
-                                 workflow_runtime=workflow_runtime)
-    log.info("Orchestrator ready (WorkflowRuntime: production execution owner)")
+                                 workflow_runtime=workflow_runtime,
+                                 capability_registry=capability_registry,
+                                 use_k42_frontend=use_k42_frontend)
+    log.info("Orchestrator ready (WorkflowRuntime: production execution owner, "
+             f"K4.2 frontend: {'ON' if use_k42_frontend else 'off'})")
 
     # Step 7: Scheduler
     from learning.scheduler import Scheduler

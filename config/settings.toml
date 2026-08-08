@@ -10,6 +10,9 @@ web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
 
+[runtime]
+use_k42_frontend = false
+
 [privacy]
 save_history = true
 save_training_pairs = true

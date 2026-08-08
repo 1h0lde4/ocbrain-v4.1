@@ -70,13 +70,23 @@ class Orchestrator:
                  governance: Optional[GovernanceKernel] = None,
                  event_stream: Optional[EventStream] = None,
                  execution_runtime: Optional["ExecutionRuntime"] = None,
-                 workflow_runtime: Optional["WorkflowRuntime"] = None):
+                 workflow_runtime: Optional["WorkflowRuntime"] = None,
+                 capability_registry: Optional["CapabilityRegistry"] = None,
+                 use_k42_frontend: bool = False):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
 
         execution_runtime: K2.1 — The canonical execution service.
         workflow_runtime: K2.2 — The canonical workflow coordinator.
+        capability_registry: Runtime Integration Task 3 — required only when
+            use_k42_frontend is True (plan() needs it); None is safe
+            otherwise, matching every other Optional[...] dependency here.
+        use_k42_frontend: Runtime Integration Task 2/3 — feature flag,
+            default False. See config/settings.toml's [runtime] section
+            and handle()'s own new branch for the exact behavior; when
+            False, handle() is byte-for-byte identical to before this
+            parameter existed.
 
         When workflow_runtime is provided, handle() delegates through:
             WorkflowRuntime → PlannerWorker → ExecutionRuntime
@@ -91,6 +101,8 @@ class Orchestrator:
         self._event_stream: EventStream = event_stream or get_event_stream()
         self._execution_runtime = execution_runtime
         self._workflow_runtime = workflow_runtime
+        self._capability_registry = capability_registry
+        self._use_k42_frontend = use_k42_frontend
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
@@ -226,6 +238,144 @@ class Orchestrator:
                 "interaction_id": interaction_id,
                 "query_preview": query[:120],
             })
+
+            # ── Runtime Integration — K4.2 Cognitive Front-End (feature-flagged) ──
+            # Config: [runtime] use_k42_frontend in config/settings.toml, default
+            # false. Additive only -- when the flag is False (the default),
+            # execution falls through unchanged to the existing K2.2 branch
+            # immediately below; this block is not entered at all, and no line
+            # in that branch or the legacy branch beneath it was modified to
+            # add this one. See docs/architecture/K4_2_RUNTIME_INTEGRATION_PLAN.md
+            # and the follow-up Runtime Integration Report for the analysis
+            # this branch implements, including the worker_type <->
+            # capability_type bridge (core/workers/capability_executor.py)
+            # this branch relies on to make the compiled WorkflowDefinition
+            # executable at all.
+            #
+            # Compound requests (interpret_request() returning more than one
+            # Goal) are handled narrowly: only the first Goal is planned,
+            # compiled, and executed here. Multi-goal merge/aggregation
+            # through the K4.2 pipeline is not specified anywhere in the K4.2
+            # architecture and is not invented here -- deferred, documented
+            # future work (see the Runtime Integration Report's Final Notes).
+            if self._use_k42_frontend and self._workflow_runtime is not None:
+                try:
+                    from core.cognitive.compiler import CompilationStatus
+                    from core.cognitive.compiler import compile as compile_plan
+                    from core.cognitive.intent import interpret_request
+                    from core.cognitive.planner import (
+                        PlannerRequest, PlannerStatus, plan as plan_fn,
+                    )
+                    from core.workers.evaluator import EvaluationRecord
+
+                    goals = await interpret_request(
+                        query, memory=self.memory, event_stream=self._event_stream)
+                    goal = goals[0]
+
+                    planner_request = PlannerRequest(goal_id=goal.resource_id, goal=goal)
+                    planner_result = await plan_fn(
+                        planner_request, self._capability_registry,
+                        event_stream=self._event_stream)
+
+                    if planner_result.status != PlannerStatus.READY_FOR_COMPILATION:
+                        await self._emit_event("orchestrator.query_failed", {
+                            "interaction_id": interaction_id,
+                            "error": str(planner_result.impasse_detail),
+                            "error_type": "PlannerImpasse",
+                        })
+                        return ("Sorry, I could not form a plan for this "
+                                f"request: {planner_result.status}")
+
+                    execution_plan = planner_result.execution_plan
+                    compilation_result = await compile_plan(
+                        execution_plan, event_stream=self._event_stream,
+                        governance=self._governance)
+
+                    if compilation_result.status != CompilationStatus.COMPILED:
+                        # K4 §16 invariant 9: never retried here or anywhere
+                        # -- SupervisorWorker only surfaces this outcome.
+                        if self._execution_runtime is not None:
+                            await self._execution_runtime.invoke(
+                                "SupervisorWorker",
+                                query=query,
+                                workflow_id=execution_plan.resource_id,
+                                metadata={"parameters": {
+                                    "compilation_result": compilation_result}},
+                            )
+                        await self._emit_event("orchestrator.query_failed", {
+                            "interaction_id": interaction_id,
+                            "error": compilation_result.status,
+                            "error_type": "CompilationRejected",
+                        })
+                        return ("Sorry, this request could not be compiled "
+                                f"into a runnable plan ({compilation_result.status}).")
+
+                    workflow_definition = compilation_result.workflow_definition
+                    wf_result = await self._workflow_runtime.execute(
+                        workflow_definition,
+                        query=query,
+                        session_id=interaction_id,
+                        metadata={"interaction_id": interaction_id},
+                    )
+                    answer = wf_result.output or ""
+
+                    # Task 5 — post-execution hooks. Same governed
+                    # ExecutionRuntime.invoke() path as the SupervisorWorker
+                    # call above and PlannerWorker's own invocation in the
+                    # existing branch below.
+                    if self._execution_runtime is not None:
+                        eval_result = await self._execution_runtime.invoke(
+                            "EvaluatorWorker",
+                            query=query,
+                            workflow_id=execution_plan.resource_id,
+                            metadata={"parameters": {"execution_plan": execution_plan}},
+                        )
+                        if (eval_result.success
+                                and "evaluation_record" in eval_result.artifacts):
+                            record = EvaluationRecord(
+                                **eval_result.artifacts["evaluation_record"])
+                            await self._execution_runtime.invoke(
+                                "ReflectionWorker",
+                                query=query,
+                                workflow_id=execution_plan.resource_id,
+                                metadata={"parameters": {
+                                    "evaluation_record": record,
+                                    "execution_plan": execution_plan,
+                                }},
+                            )
+
+                    capability_types = ", ".join(
+                        step.capability_type for step in execution_plan.steps)
+                    shadow_learner.record_interaction(
+                        query=query,
+                        answer=answer,
+                        module_name=capability_types,
+                        confidence=execution_plan.confidence,
+                    )
+
+                    await self._emit_event("orchestrator.query_completed", {
+                        "interaction_id": interaction_id,
+                        "outcome": "success",
+                        "execution_path": "k42_cognitive_frontend",
+                    })
+                    return answer
+
+                except Exception as e:
+                    # Mirrors the existing workflow-runtime branch's own
+                    # containment immediately below -- WorkflowRuntime.
+                    # execute() itself never raises (Failure Containment),
+                    # but interpret_request()/plan()/compile() are new call
+                    # sites this branch introduces, so containment here is
+                    # not merely defensive the way it is in the K2.2 branch.
+                    logger.error("[Orchestrator] Unexpected error in "
+                                 "K4.2 cognitive-frontend path: %s", e, exc_info=True)
+                    await self._emit_event("orchestrator.query_failed", {
+                        "interaction_id": interaction_id,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    })
+                    return (f"Sorry, I encountered an internal error: "
+                            f"{type(e).__name__}")
 
             # ── K2.2 — Production Runtime Migration ────────────────────────
             # When a WorkflowRuntime was supplied at construction (main.py,
