@@ -180,6 +180,7 @@ class WorkflowRuntime:
         })
 
         # ── Step 4: Execute DAG from entry_node ──────────────────────────
+        run_metadata = {**(metadata or {}), "instance_id": instance_id}
         try:
             last_result = await self._execute_from(
                 definition=definition,
@@ -189,7 +190,7 @@ class WorkflowRuntime:
                 query=query,
                 session_id=session_id,
                 instance_id=instance_id,
-                metadata=metadata or {},
+                metadata=run_metadata,
                 cancel_token=cancel_token,
             )
         except Exception as e:
@@ -288,7 +289,7 @@ class WorkflowRuntime:
             node=node,
             query=query,
             session_id=session_id,
-            instance_id=instance_id,
+            workflow_id=definition.workflow_id,
             metadata=metadata,
             cancel_token=cancel_token,
             node_states=node_states,
@@ -331,7 +332,7 @@ class WorkflowRuntime:
         node: WorkflowNode,
         query: str,
         session_id: str,
-        instance_id: str,
+        workflow_id: str,
         metadata: Dict[str, Any],
         cancel_token: CancellationToken,
         node_states: Dict[str, WorkflowNodeState],
@@ -348,9 +349,13 @@ class WorkflowRuntime:
                 return WorkerResult(success=False, error="Cancelled during retry")
 
             # Build context for this node
+            # workflow_id = definition.workflow_id (canonical, matches
+            # workflow lifecycle events and EvaluatorWorker lookups).
+            # The per-execution instance_id is in metadata["instance_id"]
+            # for tracing.
             ctx = ExecutionContext(
                 session_id=session_id,
-                workflow_id=instance_id,
+                workflow_id=workflow_id,
                 metadata={
                     "query": query,
                     "node_id": node.node_id,

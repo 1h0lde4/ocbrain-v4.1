@@ -114,13 +114,15 @@ async def _fetch_workflow_events(
 ) -> List[StreamEvent]:
     """Read-only lookup of events for a specific workflow_id.
 
-    EventStream.query() (core/events/event_stream.py) has no workflow_id
-    parameter — this queries broadly by event_type (newest-first, the
-    store's own ordering) and filters by payload["workflow_id"] in
-    Python. No new query capability is added to EventStream/EventStore.
+    Uses EventStream.query()'s payload_workflow_id parameter for
+    database-level filtering (indexed via json_extract in SQLite).
+    No Python-level post-filtering required.
     """
-    events = await event_stream.query(event_type=event_type, limit=limit)
-    return [e for e in events if e.payload.get("workflow_id") == workflow_id]
+    return await event_stream.query(
+        event_type=event_type,
+        payload_workflow_id=workflow_id,
+        limit=limit,
+    )
 
 
 def _build_evaluation_record(

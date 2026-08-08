@@ -27,7 +27,7 @@ def _get(path: str) -> dict:
 
 
 def _post(path: str, data: dict = None) -> dict:
-    resp = httpx.post(f"{BASE}{path}", json=data or {}, timeout=120)
+    resp = httpx.post(f"{BASE}{path}", json=data or {}, headers={"X-OCBrain-Local": "1"}, timeout=120)
     resp.raise_for_status()
     return resp.json()
 

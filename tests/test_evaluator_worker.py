@@ -78,9 +78,13 @@ class FakeEventStream:
             {"event_type": event_type, "source": source, "payload": payload})
 
     async def query(self, *, event_type=None, source=None,
-                     since=0.0, until=0.0, limit=100):
+                     since=0.0, until=0.0, limit=100,
+                     payload_workflow_id=None):
         results = [e for e in self._events
                    if event_type is None or e.event_type == event_type]
+        if payload_workflow_id is not None:
+            results = [e for e in results
+                       if e.payload.get("workflow_id") == payload_workflow_id]
         return results[:limit]
 
 

@@ -122,8 +122,15 @@ class EventStore(ABC):
                     source: Optional[str] = None,
                     since: float = 0.0,
                     until: float = 0.0,
-                    limit: int = 100) -> List[StreamEvent]:
-        """Query events by type, source, and time range."""
+                    limit: int = 100,
+                    payload_workflow_id: Optional[str] = None) -> List[StreamEvent]:
+        """Query events by type, source, time range, and optional workflow_id.
+
+        Args:
+            payload_workflow_id: When set, only return events whose payload
+                contains a matching workflow_id.  Implementations should
+                filter at the storage level (not in Python) for efficiency.
+        """
         ...
 
     @abstractmethod
@@ -193,6 +200,11 @@ class SQLiteEventStore(EventStore):
                 CREATE INDEX IF NOT EXISTS idx_events_checkpoint
                 ON events(checkpoint) WHERE checkpoint != ''
             """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_events_workflow_id
+                ON events(json_extract(payload, '$.workflow_id'))
+                WHERE json_extract(payload, '$.workflow_id') IS NOT NULL
+            """)
             conn.commit()
 
             # Recover sequence counter
@@ -235,15 +247,18 @@ class SQLiteEventStore(EventStore):
                     source: Optional[str] = None,
                     since: float = 0.0,
                     until: float = 0.0,
-                    limit: int = 100) -> List[StreamEvent]:
+                    limit: int = 100,
+                    payload_workflow_id: Optional[str] = None) -> List[StreamEvent]:
         """Query events with optional filters."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._query_sync, event_type, source, since, until, limit,
+            payload_workflow_id,
         )
 
     def _query_sync(self, event_type: Optional[str], source: Optional[str],
-                    since: float, until: float, limit: int) -> List[StreamEvent]:
+                    since: float, until: float, limit: int,
+                    payload_workflow_id: Optional[str] = None) -> List[StreamEvent]:
         clauses: List[str] = []
         params: List[Any] = []
         if event_type:
@@ -258,6 +273,9 @@ class SQLiteEventStore(EventStore):
         if until > 0:
             clauses.append("timestamp <= ?")
             params.append(until)
+        if payload_workflow_id is not None:
+            clauses.append("json_extract(payload, '$.workflow_id') = ?")
+            params.append(payload_workflow_id)
 
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         sql = f"SELECT * FROM events{where} ORDER BY sequence DESC LIMIT ?"

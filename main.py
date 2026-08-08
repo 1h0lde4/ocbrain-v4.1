@@ -472,4 +472,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         log.info("Stopped.")
     finally:
+        from core.config import config as _cfg
+        _cfg.flush()          # persist any deferred model state
         asyncio.run(state_store.stop())
+

@@ -12,6 +12,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from core.config import config
 from core.event_bus import bus
@@ -25,6 +28,43 @@ app = FastAPI(
     version="2.1.0",
     description="OCBrain API — local self-learning AI assistant",
 )
+
+# ── CSRF protection ───────────────────────────────────────────
+# Require X-OCBrain-Local header on mutating requests to prevent
+# cross-origin attacks against the localhost API.
+# Read-only methods (GET, HEAD, OPTIONS) are exempt.
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_CSRF_HEADER = "x-ocbrain-local"
+# Paths exempt from CSRF check (OpenAPI docs, static assets)
+_CSRF_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json", "/static")
+
+
+class CSRFHeaderMiddleware(BaseHTTPMiddleware):
+    """Reject mutating requests that lack the X-OCBrain-Local header.
+
+    This prevents browser-based CSRF attacks: browsers cannot send
+    custom headers cross-origin without a CORS preflight, which would
+    fail because this server does not set Access-Control-Allow-Origin.
+
+    Legitimate clients (web UI served from same origin, CLI, desktop
+    tray, curl) must include: X-OCBrain-Local: 1
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method in _CSRF_SAFE_METHODS:
+            return await call_next(request)
+        if any(request.url.path.startswith(p) for p in _CSRF_EXEMPT_PREFIXES):
+            return await call_next(request)
+        if not request.headers.get(_CSRF_HEADER):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Missing X-OCBrain-Local header. "
+                         "Add 'X-OCBrain-Local: 1' to mutating requests."},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(CSRFHeaderMiddleware)
 
 _orchestrator: Optional[Orchestrator] = None
 _scheduler    = None
@@ -82,6 +122,18 @@ class ExportRequest(BaseModel):
 class ImportRequest(BaseModel):
     bundle_path: str
     overwrite: bool = False
+
+
+# ── Config validation ─────────────────────────────────────────
+# Keys explicitly permitted for runtime modification via PUT /config.
+# Keys not in this set are rejected to prevent unintended side effects.
+MUTABLE_CONFIG_KEYS = frozenset({
+    "global.ollama_host",
+    "global.debug",
+    "global.log_level",
+    "global.web_ui_port",
+    "global.auto_update",
+})
 
 
 # ── Routes ─────────────────────────────────────────────────────
@@ -365,9 +417,16 @@ async def get_config():
 
 @app.put("/config")
 async def set_config(updates: dict):
+    rejected = [k for k in updates if k not in MUTABLE_CONFIG_KEYS]
+    if rejected:
+        raise HTTPException(
+            400,
+            f"Rejected unknown or immutable config keys: {rejected}. "
+            f"Allowed: {sorted(MUTABLE_CONFIG_KEYS)}",
+        )
     for k, v in updates.items():
         config.set(k, v)
-    return {"status": "updated"}
+    return {"status": "updated", "keys": list(updates.keys())}
 
 
 @app.get("/updates")
