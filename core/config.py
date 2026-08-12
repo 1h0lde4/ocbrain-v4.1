@@ -20,6 +20,21 @@ import yaml   # FIX BUG 5+6: load YAML config files
 
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
+# A6 audit fix: per-module state keys that are rare, identity/lifecycle-defining
+# writes (module stage transitions, which model backs a module) and must hit disk
+# immediately so a crash can never lose them. Everything else in a module's state
+# (e.g. query_count, maturity_score, train_pairs, last_trained) is a
+# high-frequency, low-value-per-write field — those are deferred in memory and
+# flushed in batches instead of synchronously blocking on every write. See
+# `set_module_state()` / `flush()` below and docs/Bugs Hunt & fix reports/
+# implementation_plan.md (A6) for the original finding this resolves.
+_CRITICAL_STATE_KEYS = frozenset({
+    "stage",
+    "bootstrap_model",
+    "base_model",
+    "active_weights",
+})
+
 
 class Config:
     def __init__(self):
@@ -29,14 +44,25 @@ class Config:
         self._models: dict   = {}
         self._yaml_settings: dict = {}   # from settings.yaml
         self._user_prefs: dict    = {}   # from user_prefs.yaml
+        self._models_dirty = False       # True when _models has unflushed writes
         self._load_all()
         self._start_watcher()
 
     def _load_all(self):
         with self._lock:
-            self._settings      = self._read_toml(CONFIG_DIR / "settings.toml")
-            self._sources       = self._read_toml(CONFIG_DIR / "sources.toml")
-            self._models        = self._read_toml(CONFIG_DIR / "models.toml")
+            self._settings = self._read_toml(CONFIG_DIR / "settings.toml")
+            self._sources  = self._read_toml(CONFIG_DIR / "sources.toml")
+            # A6: if a deferred (non-critical) write is sitting in memory and
+            # hasn't been flushed yet, do NOT clobber it by re-reading the
+            # (now stale, from this instance's point of view) models.toml —
+            # in-memory stays authoritative until flush() next runs, same as
+            # this class already behaves for any other write made between
+            # reloads. This is a read-side skip only; it never writes, so a
+            # hot-reload triggered mid-test (e.g. via the watcher thread
+            # outliving a `patch("core.config.CONFIG_DIR", ...)` block) can
+            # never leak test-instance state onto the real config directory.
+            if not self._models_dirty:
+                self._models = self._read_toml(CONFIG_DIR / "models.toml")
             self._yaml_settings = self._read_yaml(CONFIG_DIR / "settings.yaml")
             self._user_prefs    = self._read_yaml(CONFIG_DIR / "user_prefs.yaml")
 
@@ -156,12 +182,42 @@ class Config:
             return dict(self._models.get(module_name, {}))
 
     def set_module_state(self, module_name: str, key: str, value: Any):
+        """Update a module's state.
+
+        A6 audit fix: this used to write models.toml synchronously on every
+        call while holding self._lock, which blocks the async event loop on
+        every query (set_module_state is called via
+        ModelRouter._increment_query_count() on the request hot path — see
+        docs/Bugs Hunt & fix reports/implementation_plan.md, finding A6).
+        Critical, rarely-changing keys (_CRITICAL_STATE_KEYS) still persist
+        immediately, since losing one of those to a crash is a real
+        correctness risk. Everything else updates in memory immediately and
+        is deferred until flush() is called explicitly (main.py's shutdown
+        path already does this — see the `finally` block under
+        `if __name__ == "__main__"`) or until the next critical-key write,
+        which persists the full in-memory model-state dict as a side effect.
+        """
         with self._lock:
             if module_name not in self._models:
                 self._models[module_name] = {}
             self._models[module_name][key] = value
-            with open(CONFIG_DIR / "models.toml", "wb") as f:
-                tomli_w.dump(self._models, f)
+            if key in _CRITICAL_STATE_KEYS:
+                self._persist_models()
+            else:
+                self._models_dirty = True
+
+    def _persist_models(self):
+        """Write self._models to models.toml. Caller must hold self._lock."""
+        with open(CONFIG_DIR / "models.toml", "wb") as f:
+            tomli_w.dump(self._models, f)
+        self._models_dirty = False
+
+    def flush(self):
+        """Persist any deferred module state to disk (A6). Safe to call
+        even when there is nothing dirty — it's then a no-op."""
+        with self._lock:
+            if self._models_dirty:
+                self._persist_models()
 
     def get_module_keywords(self, module_name: str) -> list[str]:
         with self._lock:
@@ -182,8 +238,7 @@ class Config:
                 "base_model": "mistral:7b", "active_weights": "",
                 "last_trained": "", "train_pairs": 0,
             }
-            with open(CONFIG_DIR / "models.toml", "wb") as f:
-                tomli_w.dump(self._models, f)
+            self._persist_models()
 
             self._settings.setdefault("modules", {})[name] = {
                 "enabled": True, "keywords": keywords,

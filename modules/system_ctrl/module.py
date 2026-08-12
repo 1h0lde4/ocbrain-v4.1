@@ -5,7 +5,9 @@ The LLM NEVER executes shell directly.
 """
 import json
 import logging
+import os
 import platform
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -45,15 +47,64 @@ def _safe_path(target: str) -> Path:
     return requested
 
 
+# A7 audit fix: allowlist of characters permitted in an "open/launch" target.
+# Letters, digits, and the punctuation actually needed for app names, file
+# paths, and URLs ('. _ - : / ~'). Anything else (shell metacharacters like
+# & | ; $ ` ( ) { } < > ! ' " and control characters) is rejected outright,
+# rather than trying to enumerate and block every dangerous character.
+_SAFE_OPEN_TARGET_RE = re.compile(r"^[A-Za-z0-9._~:/-]+$")
+
+
+def _validate_open_target(target: str) -> str:
+    """
+    Validate a target before it is ever handed to the OS "open/launch" call
+    in _open_app(). This is defense-in-depth: _open_app() itself no longer
+    invokes a shell, but a target that isn't validated could still smuggle
+    flag-injection (e.g. "-malicious-flag" read as an option by whatever
+    ultimately opens it) or characters with special meaning to some target
+    handler. Raises ValueError on anything unsafe; returns the stripped,
+    validated target otherwise.
+    """
+    stripped = target.strip()
+    if not stripped:
+        raise ValueError("Empty target is not allowed for open/launch actions.")
+    if stripped.startswith("-"):
+        raise ValueError(
+            f"Target must not start with '-': {stripped!r} looks like a "
+            "command-line flag, not a target."
+        )
+    if not _SAFE_OPEN_TARGET_RE.match(stripped):
+        raise ValueError(
+            f"Target contains unsafe characters: {stripped!r}. Allowed: "
+            "letters, digits, and '. _ - : / ~'."
+        )
+    return stripped
+
+
 def _open_app(target: str) -> str:
+    """Open/launch a target using safe, shell-free platform APIs.
+
+    A7 audit fix: this used to run subprocess.Popen(cmd, shell=(SYSTEM ==
+    "Windows")) — shell=True on Windows with an unvalidated, attacker-
+    controlled target is a direct shell-injection vulnerability (e.g.
+    "notepad & del /f /q C:\\" would execute the second command). Windows
+    now uses os.startfile(), which launches via the shell's file-association
+    handler without ever spawning a command interpreter. Linux/macOS already
+    used argv-list subprocess calls (never vulnerable to shell injection
+    since there was no shell), and keep doing so. All platforms validate the
+    target through _validate_open_target() first.
+    """
+    target = _validate_open_target(target)
+    if SYSTEM == "Windows":
+        os.startfile(target)
+        return f"Opened: {target}"
     cmds = {
-        "Linux":   ["xdg-open", target],
-        "Darwin":  ["open", target],
-        "Windows": ["start", target],
+        "Linux":  ["xdg-open", target],
+        "Darwin": ["open", target],
     }
     cmd = cmds.get(SYSTEM)
     if cmd:
-        subprocess.Popen(cmd, shell=(SYSTEM == "Windows"))
+        subprocess.Popen(cmd)
         return f"Opened: {target}"
     return "Unsupported OS for open action."
 
