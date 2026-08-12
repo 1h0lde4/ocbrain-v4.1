@@ -14,21 +14,25 @@ VERSION = (ROOT / "version.txt").read_text().strip() if (ROOT / "version.txt").e
 DIST    = ROOT / "dist"
 
 
-def clean():
-    if DIST.exists():
-        shutil.rmtree(DIST)
-    DIST.mkdir(parents=True)
+def clean(target="all"):
+    if target == "all":
+        if DIST.exists():
+            shutil.rmtree(DIST)
+        DIST.mkdir(parents=True)
+    else:
+        DIST.mkdir(parents=True, exist_ok=True)
 
 
 def build_binary():
     """PyInstaller → single self-contained binary (no Python needed on target)."""
     print("[build] Building binary with PyInstaller...")
+    sep = os.pathsep
     subprocess.run([
         "pyinstaller",
         "--onefile",
         "--name", "ocbrain",
-        "--add-data", f"{ROOT / 'config'}:config",
-        "--add-data", f"{ROOT / 'interface' / 'web'}:interface/web",
+        "--add-data", f"{ROOT / 'config'}{sep}config",
+        "--add-data", f"{ROOT / 'interface' / 'web'}{sep}interface/web",
         str(ROOT / "main.py"),
     ], check=True)
     print("[build] Binary built.")
@@ -187,6 +191,29 @@ def build_macos_pkg():
 """)
     print("[build] macOS LaunchAgent plist written.")
 
+    # Also build usr/local/bin structure for the binary if it was already built
+    bin_dir = pkg_dir / "usr" / "local" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    src_bin = DIST / "ocbrain"
+    if src_bin.exists():
+        shutil.copy(src_bin, bin_dir / "ocbrain")
+        os.chmod(bin_dir / "ocbrain", 0o755)
+        print("[build] macOS binary copied to package root.")
+
+    # Check if pkgbuild tool is available, and run it to produce .pkg
+    if shutil.which("pkgbuild"):
+        print("[build] Building macOS package installer (.pkg) with pkgbuild...")
+        subprocess.run([
+            "pkgbuild",
+            "--identifier", "io.ocbrain",
+            "--version", VERSION,
+            "--root", str(pkg_dir),
+            str(DIST / "ocbrain-macos.pkg")
+        ], check=True)
+        print(f"[build] macOS .pkg built at {DIST / 'ocbrain-macos.pkg'}")
+    else:
+        print("[build] pkgbuild not found in PATH, skipping macOS .pkg creation (expected on non-macOS host).")
+
 
 def build_homebrew_formula():
     """Update Homebrew tap formula."""
@@ -205,8 +232,8 @@ end
 
 
 if __name__ == "__main__":
-    clean()
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
+    clean(target)
 
     builders = {
         "binary":    build_binary,
