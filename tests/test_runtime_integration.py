@@ -27,7 +27,7 @@ convention, reused here), and the capability adapter itself
 AdapterRuntime.invoke() actually calls).
 """
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -128,7 +128,7 @@ def _build_runtime_stack(tmp_path, *, use_k42_frontend: bool,
     workflow_runtime = WorkflowRuntime(execution_runtime, event_stream)
 
     orchestrator = Orchestrator(
-        {}, object(), object(), memory,
+        {}, MagicMock(), object(), memory,
         governance=governance, event_stream=event_stream,
         execution_runtime=execution_runtime, workflow_runtime=workflow_runtime,
         capability_registry=capability_registry, use_k42_frontend=use_k42_frontend,
@@ -420,6 +420,39 @@ class TestMemoryWrites:
         entry = await memory.read(entry_id)
         assert entry is not None
         assert entry.source == "EvaluatorWorker"
+
+    @pytest.mark.asyncio
+    async def test_interaction_persisted_to_memory_and_context(self, tmp_path):
+        """Bug fix regression test: the K4.2 success path must persist the
+        interaction to UnifiedMemory (content_type="interaction") and to
+        short-term ContextMemory, exactly as the K2.2 path already does
+        internally via PlannerWorker (core/workers/planner.py Steps 7-8).
+        Before this fix, CapabilityExecutorWorker's deliberately narrow
+        scope (single-step execution only, see its own module docstring)
+        meant neither ever happened for a K4.2-processed query."""
+        from core.orchestrator import _interaction_id
+
+        orchestrator, event_stream, memory, _, _ = _build_runtime_stack(
+            tmp_path, use_k42_frontend=True)
+        query = "Summarize the quarterly report."
+        p1, p2, p3 = _mock_llm_calls()
+        try:
+            with p1 as mock_engine_cls, p2, p3:
+                mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                answer = await orchestrator.handle(query)
+        finally:
+            await orchestrator.close()
+
+        entry = await memory.read(_interaction_id(query))
+        assert entry is not None
+        assert entry.source == "orchestrator_k42"
+        assert entry.content == answer
+        assert entry.metadata.get("execution_path") == "k42_cognitive_frontend"
+
+        orchestrator.context.save.assert_called_once()
+        call_args = orchestrator.context.save.call_args.args
+        assert call_args[0] == query
+        assert call_args[2] == answer
 
 
 # ─────────────────────────────────────────────────────────────────────────

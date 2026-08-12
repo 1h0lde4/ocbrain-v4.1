@@ -344,12 +344,53 @@ class Orchestrator:
                                 }},
                             )
 
-                    capability_types = ", ".join(
-                        step.capability_type for step in execution_plan.steps)
+                    capability_types = [
+                        step.capability_type for step in execution_plan.steps]
+
+                    # Interaction persistence (memory + short-term context).
+                    #
+                    # Bug fix (Runtime Integration bug hunt): the K2.2 branch
+                    # gets both of these "for free" -- PlannerWorker does its
+                    # own self._memory.write(content_type="interaction", ...)
+                    # and self._context_memory.save(...) internally (see
+                    # core/workers/planner.py's Steps 7-8), and PlannerWorker
+                    # is constructed with the exact same `context_memory` /
+                    # `memory` singletons this Orchestrator itself holds
+                    # (main.py's composition root, confirmed by direct
+                    # reading). CapabilityExecutorWorker is deliberately
+                    # narrower -- a single compiled-step executor, not a
+                    # whole-query handler (see its own module docstring) --
+                    # and correctly has no memory/context wiring of its own.
+                    # Without this, every K4.2-processed query would be
+                    # invisible to memory-based retrieval and short-term
+                    # conversational continuity, while every K2.2-processed
+                    # query is not. This mirrors PlannerWorker's own pattern
+                    # exactly, including non-blocking failure handling.
+                    self.context.save(query, capability_types, answer, {})
+                    try:
+                        await self.memory.write(
+                            content=answer,
+                            content_type="interaction",
+                            source="orchestrator_k42",
+                            importance=0.5,
+                            entry_id=interaction_id,
+                            metadata={
+                                "interaction_id": interaction_id,
+                                "query": query,
+                                "capability_types": capability_types,
+                                "timestamp": time.time(),
+                                "response_length": len(answer),
+                                "execution_path": "k42_cognitive_frontend",
+                            },
+                        )
+                    except Exception as e:
+                        logger.warning("[Orchestrator] Memory write failed "
+                                        "(non-blocking): %s", e)
+
                     shadow_learner.record_interaction(
                         query=query,
                         answer=answer,
-                        module_name=capability_types,
+                        module_name=", ".join(capability_types),
                         confidence=execution_plan.confidence,
                     )
 
