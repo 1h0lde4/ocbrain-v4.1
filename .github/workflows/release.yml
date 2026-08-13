@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The release version tag (e.g., v2.0.0)'
+        required: true
+        default: 'v2.0.0'
 
 permissions:
   contents: write
@@ -20,6 +23,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
+
+      - name: Write version file
+        run: |
+          echo "${{ github.event.inputs.version }}" | sed 's/^v//' > version.txt
+        shell: bash
 
       - name: Install dependencies
         run: |
@@ -64,6 +72,11 @@ jobs:
         with:
           python-version: '3.12'
           cache: 'pip'
+
+      - name: Write version file
+        run: |
+          echo "${{ github.event.inputs.version }}" | sed 's/^v//' > version.txt
+        shell: bash
 
       - name: Install dependencies
         run: |
@@ -111,6 +124,11 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Write version file
+        run: |
+          echo "${{ github.event.inputs.version }}" | sed 's/^v//' > version.txt
+        shell: bash
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -149,6 +167,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Write version file
+        run: |
+          echo "${{ github.event.inputs.version }}" | sed 's/^v//' > version.txt
+        shell: bash
 
       - name: Install System Dependencies
         run: |
@@ -218,6 +241,8 @@ jobs:
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
           files: |
             release-dist/ocbrain-linux-amd64
             release-dist/*.deb
