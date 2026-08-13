@@ -87,6 +87,13 @@ jobs:
 
       - name: Install NSIS
         run: choco install nsis -y
+        shell: cmd
+
+      - name: Add NSIS to PATH
+        run: |
+          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
+          echo "C:\Program Files\NSIS" >> $GITHUB_PATH
+        shell: bash
 
       - name: Build Binary
         run: python install/build.py binary
@@ -94,7 +101,7 @@ jobs:
       - name: Build Windows Installer
         run: |
           python install/build.py windows
-          makensis dist/ocbrain_installer.nsi
+          makensis dist\ocbrain_installer.nsi
         shell: cmd
 
       - name: Rename binary for release
