@@ -6,7 +6,7 @@ on:
       version:
         description: 'The release version tag (e.g., v2.0.0)'
         required: true
-        default: 'v2.0.0'
+        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -85,13 +85,16 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Install NSIS
+        run: choco install nsis -y
+
       - name: Build Binary
         run: python install/build.py binary
 
       - name: Build Windows Installer
         run: |
           python install/build.py windows
-          "C:\Program Files (x86)\NSIS\makensis.exe" dist/ocbrain_installer.nsi
+          makensis dist/ocbrain_installer.nsi
         shell: cmd
 
       - name: Rename binary for release
