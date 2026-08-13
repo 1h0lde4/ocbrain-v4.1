@@ -88,16 +88,11 @@ jobs:
       - name: Build Binary
         run: python install/build.py binary
 
-      - name: Setup NSIS
-        run: |
-          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
-        shell: bash
-
       - name: Build Windows Installer
         run: |
           python install/build.py windows
-          makensis dist/ocbrain_installer.nsi
-        shell: bash
+          "C:\Program Files (x86)\NSIS\makensis.exe" dist/ocbrain_installer.nsi
+        shell: cmd
 
       - name: Rename binary for release
         run: |
