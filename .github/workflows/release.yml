@@ -86,7 +86,11 @@ jobs:
           pip install pyinstaller
 
       - name: Install NSIS
-        run: choco install nsis -y
+        run: |
+          choco install nsis -y
+          if not exist "C:\Program Files (x86)\NSIS\makensis.exe" exit /b 1
+          "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
+        shell: cmd
 
       - name: Build Binary
         run: python install/build.py binary
@@ -94,7 +98,7 @@ jobs:
       - name: Build Windows Installer
         run: |
           python install/build.py windows
-          makensis dist/ocbrain_installer.nsi
+          "C:\Program Files (x86)\NSIS\makensis.exe" dist\ocbrain_installer.nsi
         shell: cmd
 
       - name: Rename binary for release
