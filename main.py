@@ -263,6 +263,14 @@ async def main():
         capability_type=CapabilityType.LLM_COMPLETION,
         description="Generate text from a prompt via a language model.",
         required_resources=["http-client-shared"],
+        # K4.2-H1 D2 (ADR-K4.2-H-02, fixes K42-002): LLM_COMPLETION can
+        # plausibly attempt almost any text-shaped subgoal even when its
+        # own description shares no tokens with the subgoal -- exactly
+        # what is_general_purpose means. Without this flag set True on
+        # the actual registered contract, D2's fallback mechanism exists
+        # in the type system but never fires: this is the one line that
+        # makes the fix real rather than theoretical.
+        is_general_purpose=True,
     ))
     # Adapter order = attempt order (subject to health-based re-ranking).
     # ModelRouterAdapter first: preserves the bootstrap/shadow/native
@@ -388,6 +396,7 @@ async def main():
 
     from core.config import config
     use_k42_frontend = config.get("runtime.use_k42_frontend", False)
+    max_recovery_attempts = config.get("runtime.max_recovery_attempts", 3)
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
@@ -395,7 +404,8 @@ async def main():
                                  execution_runtime=execution_runtime,
                                  workflow_runtime=workflow_runtime,
                                  capability_registry=capability_registry,
-                                 use_k42_frontend=use_k42_frontend)
+                                 use_k42_frontend=use_k42_frontend,
+                                 max_recovery_attempts=max_recovery_attempts)
     log.info("Orchestrator ready (WorkflowRuntime: production execution owner, "
              f"K4.2 frontend: {'ON' if use_k42_frontend else 'off'})")
 

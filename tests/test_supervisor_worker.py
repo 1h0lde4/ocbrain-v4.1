@@ -25,6 +25,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from core.cognitive.compiler import CompilationResult, CompilationStatus
+from core.cognitive.recovery import OperationRecoveryBudget
 from core.governance.governance_kernel import GovernanceResult, GovernanceVerdict
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.workers.base import WorkerContext, WorkerResult
@@ -319,6 +320,112 @@ class TestSupervisorRetryPath:
         )
         result = await worker.execute(context)
         assert result.output["outcome"] == SupervisorOutcome.RETRY_EXHAUSTED
+        execution_runtime.invoke.assert_not_called()
+
+
+class TestSupervisorSharedRecoveryBudget:
+    """K4.2-H1 D5 (ADR-K4.2-H-05). The mandatory Planner/Supervisor
+    SAME-instance integration proof lives in
+    tests/test_orchestrator_recovery.py (H1-G5); this class covers
+    _attempt_retry()'s own budget-consuming behavior and legacy-path
+    preservation in isolation."""
+
+    @pytest.mark.asyncio
+    async def test_recovery_budget_consumed_when_present(self):
+        execution_runtime = AsyncMock(spec=ExecutionRuntime)
+        execution_runtime.invoke = AsyncMock(
+            return_value=WorkerResult(success=True, output={"ok": True}))
+        worker = SupervisorWorker(event_stream=FakeEventStream(),
+                                   execution_runtime=execution_runtime)
+        budget = OperationRecoveryBudget(max_total_recovery_attempts=3)
+        context = WorkerContext(
+            query="do the thing", workflow_id="wf-1",
+            parameters={
+                "failed_worker_result": WorkerResult(success=False, error="boom"),
+                "retry_worker_type": "SomeWorker",
+                "recovery_budget": budget,
+            },
+        )
+        result = await worker.execute(context)
+        assert result.success is True
+        assert result.output["outcome"] == SupervisorOutcome.RETRY_INITIATED
+        assert budget.internal_recovery_used == 1
+        assert budget.remaining == 2
+
+    @pytest.mark.asyncio
+    async def test_recovery_budget_authority_ignores_legacy_counters(self):
+        """When a recovery_budget is present, it is the SOLE authority
+        -- max_supervisor_retries/supervisor_retry_attempt (which alone
+        would signal exhaustion here: attempt >= max) are not consulted
+        at all."""
+        execution_runtime = AsyncMock(spec=ExecutionRuntime)
+        execution_runtime.invoke = AsyncMock(
+            return_value=WorkerResult(success=True, output={"ok": True}))
+        worker = SupervisorWorker(event_stream=FakeEventStream(),
+                                   execution_runtime=execution_runtime)
+        budget = OperationRecoveryBudget(max_total_recovery_attempts=3)
+        context = WorkerContext(
+            query="do the thing",
+            parameters={
+                "failed_worker_result": WorkerResult(success=False, error="boom"),
+                "retry_worker_type": "SomeWorker",
+                "max_supervisor_retries": 1,
+                "supervisor_retry_attempt": 5,  # would exhaust the legacy path
+                "recovery_budget": budget,
+            },
+        )
+        result = await worker.execute(context)
+        assert result.output["outcome"] == SupervisorOutcome.RETRY_INITIATED, (
+            "a present recovery_budget must override the legacy "
+            "max_supervisor_retries/supervisor_retry_attempt check entirely"
+        )
+        execution_runtime.invoke.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_retry_exhausted_when_budget_exhausted(self):
+        execution_runtime = AsyncMock(spec=ExecutionRuntime)
+        worker = SupervisorWorker(event_stream=FakeEventStream(),
+                                   execution_runtime=execution_runtime)
+        budget = OperationRecoveryBudget(max_total_recovery_attempts=1)
+        budget.consume()  # pre-exhaust, simulating a prior Planner re-plan
+        context = WorkerContext(
+            query="supervise",
+            parameters={
+                "failed_worker_result": WorkerResult(success=False, error="boom"),
+                "retry_worker_type": "SomeWorker",
+                "recovery_budget": budget,
+            },
+        )
+        result = await worker.execute(context)
+        assert result.success is False
+        assert result.output["outcome"] == SupervisorOutcome.RETRY_EXHAUSTED
+        assert result.output["budget_remaining"] == 0
+        execution_runtime.invoke.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_recovery_budget_falls_back_to_legacy_path_unchanged(self):
+        """Backward compatibility: every pre-H1 caller (and every
+        existing test above this class) supplies no recovery_budget at
+        all -- the legacy max_supervisor_retries/supervisor_retry_attempt
+        path must be byte-for-byte unchanged. Exercises the exact
+        boundary case from test_retry_exhausted_when_attempt_meets_max
+        above, confirming H1 did not silently alter it."""
+        execution_runtime = AsyncMock(spec=ExecutionRuntime)
+        worker = SupervisorWorker(event_stream=FakeEventStream(),
+                                   execution_runtime=execution_runtime)
+        context = WorkerContext(
+            query="supervise",
+            parameters={
+                "failed_worker_result": WorkerResult(success=False, error="boom"),
+                "retry_worker_type": "SomeWorker",
+                "max_supervisor_retries": 2,
+                "supervisor_retry_attempt": 2,
+            },
+        )
+        result = await worker.execute(context)
+        assert result.output["outcome"] == SupervisorOutcome.RETRY_EXHAUSTED
+        assert result.output["attempts"] == 2
+        assert "budget_remaining" not in result.output
         execution_runtime.invoke.assert_not_called()
 
 

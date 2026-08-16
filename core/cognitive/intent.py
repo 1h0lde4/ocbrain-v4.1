@@ -42,6 +42,7 @@ from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from core.events.event_stream import EventStream, get_event_stream
 from core.memory.assembly import ContextAssemblyEngine
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
+from core.observability.tracer import get_trace_id
 from core.provider_mesh import generate_with_fallback, resolve_provider
 
 
@@ -66,10 +67,24 @@ class CognitiveArtifact(Protocol):
     Adapter resource binding, not a general Resource Protocol -- so this
     defines the contract standalone, matching K4.1 Part IV's field list
     exactly and no further.
+
+    caused_by (K4.2-H1 D9, ADR-K4.2-H-09): the causal counterpart to
+    derived_from. Kept semantically distinct and independently populated:
+        derived_from: List[str] -- artifact/resource lineage ONLY (which
+            prior CognitiveArtifact(s) this one was formed from).
+        caused_by: Optional[str] -- the single EventStream event_id that
+            triggered this artifact's creation (e.g. a recovery re-plan
+            triggered by an impasse event), or None for an artifact
+            produced through the ordinary, non-recovery path.
+    derived_from MUST NOT contain event IDs; caused_by MUST NOT contain
+    artifact/resource IDs. Optional (defaults to None everywhere it is
+    added) -- populating it is not required for artifacts produced
+    outside a recovery/causal-chaining path.
     """
     resource_id: str
     produced_by: str
     derived_from: List[str]
+    caused_by: Optional[str]
     lifecycle_state: str
 
 
@@ -173,9 +188,25 @@ class Intent:
     is an ephemeral parameter object with no identity of its own, so there
     is nothing to reference by ID (K1.6 §6) -- its content is captured
     directly instead.
+
+    D1 -- Layered Semantic Authority (K4.2-H1, ADR-K4.2-H-01): the above
+    is now the frozen, normative reading, not just an implementation
+    note. RawRequest is immutable (frozen=True, see RawRequest below);
+    Goal is the authoritative cognitive interpretation. raw_request's
+    type confirms the boundary: it is the str VALUE of RawRequest.text
+    captured at construction time, never a nested RawRequest reference
+    -- there is no live/mutable link back to a RawRequest instance for
+    downstream code to (re-)observe. Downstream cognitive stages MUST
+    consume Goal (the disambiguated, schema-validated artifact), not
+    re-derive semantics from raw_request independently; reading
+    raw_request here for diagnostic/audit purposes is observational
+    only, not a substitute for Goal.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "IntentInterpreter"
+    # D1 (ADR-K4.2-H-01): str value captured from RawRequest.text at
+    # construction time -- not a RawRequest reference. See class
+    # docstring's "Layered Semantic Authority" paragraph.
     raw_request: str = ""
     hypotheses: List[IntentHypothesis] = field(default_factory=list)
     selected: Optional[IntentHypothesis] = None
@@ -183,6 +214,7 @@ class Intent:
     dimensions: Optional[IntentDimensions] = None
     ontology_ref: Optional[str] = None
     derived_from: List[str] = field(default_factory=list)
+    caused_by: Optional[str] = None  # D9 (ADR-K4.2-H-09): event_id or None.
     lifecycle_state: str = IntentLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -193,7 +225,7 @@ class Intent:
 # RawRequest — canonical output of Input Normalization
 # ─────────────────────────────────────────────────────────────────────────
 
-@dataclass
+@dataclass(frozen=True)
 class RawRequest:
     """Canonical, normalized request text.
 
@@ -205,6 +237,15 @@ class RawRequest:
     category K4.1 Part III/§5 places PlannerRequest/PlannerResult in),
     this is kept to the one field every description of normalization
     supports, rather than speculating further ones.
+
+    frozen=True (K4.2-H1 D1, ADR-K4.2-H-01): RawRequest is the immutable
+    base layer of Layered Semantic Authority -- constructed once by
+    normalize_request() (its sole canonical builder; DRIFT-04) and never
+    mutated afterward. Repository-verified: no code anywhere assigns to
+    a constructed RawRequest's .text after return. Only one field exists
+    today, so immutability has no migration cost; H2 adds
+    detected_language following the same frozen-construction pattern
+    (language detected before construction, not written in afterward).
     """
     text: str
 
@@ -512,6 +553,13 @@ class Goal:
     of sibling Goals from compound-request splitting.
 
     K4.2 §10: "Goal provenance: intent_id (§4) + derived_from."
+
+    caused_by (K4.2-H1 D9, ADR-K4.2-H-09): Optional[str] event_id -- see
+    CognitiveArtifact's docstring for the derived_from/caused_by
+    separation. None for a Goal formed through the ordinary
+    interpret_request() -> form_goals() path (the overwhelming majority);
+    populated only when a Goal's formation was itself caused by a
+    specific prior event (e.g. a recovery re-plan).
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "IntentInterpreter"
@@ -521,6 +569,7 @@ class Goal:
     alternatives: List[str] = field(default_factory=list)
     confidence: float = 0.0
     derived_from: List[str] = field(default_factory=list)
+    caused_by: Optional[str] = None
     lifecycle_state: str = GoalLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -560,11 +609,25 @@ def _validate_structured_form(
     if intent.dimensions:
         category = intent.dimensions.category
 
-    # Build the structured_form from the Intent's selected hypothesis.
+    # Build the structured_form from the Intent's actual request content.
     # K4.2 §4: "never a bare NL string internally" -- even without an
     # ontology, the form carries structured fields.
+    #
+    # K42-001 fix (K4.2-H1 D1, ADR-K4.2-H-01): description was
+    # previously `intent.selected.label if intent.selected else
+    # "unknown"` -- an intent-hypothesis LABEL (e.g. "novel"), not the
+    # user's actual content, and "unknown" whenever no hypothesis was
+    # selected at all. This silently replaced the real request with a
+    # classifier label downstream of Goal Formation (a Layered Semantic
+    # Authority violation: Goal.structured_form["description"] must
+    # preserve the actual request, never be overwritten by a label from
+    # a layer Goal itself is supposed to supersede). intent.raw_request
+    # is always available on a constructed Intent (default ""), so the
+    # `else "unknown"` branch had no correct use. Fixed unconditionally
+    # -- confirmed independently by two separate sessions working from
+    # different repository snapshots, converging on this same fix.
     structured_form: Dict[str, Any] = {
-        "description": intent.selected.label if intent.selected else "unknown",
+        "description": intent.raw_request,
         "category": category,
         "raw_request": intent.raw_request,
     }
@@ -733,6 +796,17 @@ async def interpret_request(
             malformed/adversarial input never reaches inference (K4.2 §2).
     """
     event_stream = event_stream or get_event_stream()
+    # D8 (ADR-K4.2-H-08): trace_id scopes the entire user request/trace --
+    # get_trace_id() is a ContextVar accessor (core/observability/tracer.py)
+    # that returns the same value for every call within this async
+    # context, generating one on first access. This is distinct from
+    # operation_id, which plan()/compile() each generate fresh per
+    # top-level call (see core/cognitive/planner.py, core/cognitive/
+    # compiler.py) -- interpret_request() itself is not one of the two
+    # operation_id-scoped stages (D8: "operation_id scopes to top-level
+    # cognitive stage calls (plan(), compile()) only"), so only trace_id
+    # is included here.
+    trace_id = get_trace_id()
 
     # ── K4.2.1: Input Normalization ──────────────────────────────────
     raw_request = normalize_request(raw_text)
@@ -746,6 +820,7 @@ async def interpret_request(
         "cognitive.intent_hypotheses_generated",
         source="IntentInterpreter",
         payload={
+            "trace_id": trace_id,
             "hypothesis_count": len(hypotheses),
             "labels": [h.label for h in hypotheses],
         },
@@ -771,6 +846,7 @@ async def interpret_request(
         "cognitive.intent_interpreted",
         source="IntentInterpreter",
         payload={
+            "trace_id": trace_id,
             "intent_id": intent.resource_id,
             "selected_label": selected.label if selected else None,
             "confidence": intent.confidence,
@@ -785,6 +861,7 @@ async def interpret_request(
             "cognitive.goal_formed",
             source="IntentInterpreter",
             payload={
+                "trace_id": trace_id,
                 "goal_id": goal.resource_id,
                 "intent_id": goal.intent_id,
                 "confidence": goal.confidence,

@@ -144,7 +144,18 @@ class LearningTier:
 
 
 class ContentDomain:
-    """K4.2 §6: the three content domains sharing one ValidationGate."""
+    """K4.2 §6: the three content domains sharing one ValidationGate.
+
+    RECONCILE-PENDING (K4.2-H1 D6, ADR-K4.2-H-06): this is a closed set,
+    frozen for K4.2.6+ implementation purposes -- but it is NOT
+    reconciled against OCBRAIN_K4_1_L_FINAL_LEARNING_ARCHITECTURE.md's
+    explicitly open-domain LearningCandidate model. K4.1-L outranks K4.2
+    in this project's own document-precedence hierarchy, so this closed
+    set is a deliberate, tracked DEFERRAL (see KNOWN_ISSUES.md), not a
+    resolution of that contradiction -- do not treat the absence of a
+    marker elsewhere as this having been decided in K4.2's favor.
+    Opening this set requires a dedicated future ADR performing the
+    actual K4.1-L reconciliation pass."""
     SKILL = "skill"
     INTENT_ONTOLOGY = "intent_ontology"
     USER_MODEL = "user_model"
@@ -224,24 +235,35 @@ class CognitiveDecision:
     """K4.2 §12: the shared shape logged at any governance-style
     evaluation originating from the Cognitive Front-End — generalizes
     plan_compile, intent_ontology_promote, user_model_promote,
-    meta_parameter_adjust into one consistent log shape."""
+    meta_parameter_adjust into one consistent log shape.
+
+    caused_by (K4.2-H1 D9, ADR-K4.2-H-09): Optional[str] event_id, or
+    None. Added per frozen.md's exact H1 instruction for this type
+    specifically (not the full CognitiveArtifact field set — this type
+    has no resource_id/produced_by/derived_from and is not being
+    retrofitted into full CognitiveArtifact conformance here)."""
     action_type: str = ""
     subject_ref: str = ""
     verdict: str = CognitiveVerdict.REJECT
     reason: str = ""
     evaluated_at: float = field(default_factory=time.time)
+    caused_by: Optional[str] = None
 
 
 @dataclass
 class LearningRecord:
     """K4.2 §12: the shared shape produced by any Learning/Adaptation/
-    Evolution-tier event (§8)."""
+    Evolution-tier event (§8).
+
+    caused_by (K4.2-H1 D9, ADR-K4.2-H-09): Optional[str] event_id, or
+    None. Same scope note as CognitiveDecision.caused_by above."""
     tier: str = LearningTier.LEARNING
     content_domain: str = ""
     trigger_signals: List[str] = field(default_factory=list)
     gate_result: CognitiveDecision = field(default_factory=CognitiveDecision)
     resulting_entry_ref: Optional[str] = None
     lifecycle_state: str = LearningLifecycle.OBSERVED
+    caused_by: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────

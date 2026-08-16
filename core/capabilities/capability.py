@@ -117,11 +117,26 @@ class CapabilityContract:
     Registry indexes Adapters separately (registry.py), keeping "what
     this capability is" strictly separate from "who currently fulfills
     it", per the K2.3 prompt's own Capability/Adapter split.
+
+    is_general_purpose (K4.2-H1 D2, ADR-K4.2-H-02): declares this
+    capability a fallback candidate for capability discovery
+    (core/cognitive/planner.py discover_capabilities()) regardless of
+    lexical match strength against a CapabilityDiscoveryRequest --
+    e.g. LLM_COMPLETION can plausibly attempt almost any text-shaped
+    subgoal even when its own description shares no tokens with the
+    subgoal's description. This is a discovery-time ranking signal
+    only (specific matches always dominate general-purpose ones -- see
+    discover_capabilities()'s specificity-dominance ordering); it does
+    not change registration, adapter resolution, or execution. No
+    Planner-side hard-coded capability_type routing is introduced --
+    the registry remains the single dynamic source of what is
+    "general-purpose" (D2: "No hard-coded routing").
     """
     capability_type: str
     description: str
     required_resources: List[str] = field(default_factory=list)
     version: str = "1.0.0"
+    is_general_purpose: bool = False
 
 
 @runtime_checkable

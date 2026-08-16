@@ -53,6 +53,7 @@ from core.governance.governance_kernel import (
     GovernanceResult,
     GovernanceVerdict,
 )
+from core.observability.tracer import get_trace_id
 from core.provider_mesh import generate_with_fallback, resolve_provider
 
 
@@ -219,10 +220,18 @@ class PlannerResult:
     produced by Planner completion (Packet 03 / K4.2.5) and does not
     exist yet. This will be narrowed to Optional[ExecutionPlan] once
     that packet is implemented.
+
+    operation_id (K4.2-H1 D8, ADR-K4.2-H-08): the operation_id plan()
+    generated for this invocation, surfaced back to the caller
+    (Orchestrator) so it can reference the same identifier in its own
+    diagnostic events (e.g. cognitive.planner_impasse_terminal) without
+    Orchestrator needing to pre-generate and inject one -- D8: "plan()
+    ... generate[s] one," not the caller.
     """
     status: str = PlannerStatus.READY_FOR_COMPILATION
     execution_plan: Optional[Any] = None
     impasse_detail: Optional[ImpasseRecord] = None
+    operation_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -400,6 +409,7 @@ async def _extract_constraints(
     goal: Goal,
     *,
     event_stream: Optional[EventStream] = None,
+    operation_id: Optional[str] = None,
 ) -> List[Constraint]:
     """Extract constraints from a Goal.
 
@@ -421,6 +431,10 @@ async def _extract_constraints(
         goal: The Goal to extract constraints from.
         event_stream: EventStream for event emission. Uses singleton
             if not provided.
+        operation_id: D8 (ADR-K4.2-H-08) — the parent plan() call's
+            operation_id, passed through unchanged. This function does
+            not generate its own; it is a stage within one plan()
+            operation (stage_tag="constraint_extraction").
 
     Returns:
         List of extracted Constraint objects.
@@ -444,6 +458,9 @@ async def _extract_constraints(
         "cognitive.constraints_extracted",
         source="Planner",
         payload={
+            "trace_id": get_trace_id(),
+            "operation_id": operation_id,
+            "stage_tag": "constraint_extraction",
             "goal_id": goal.resource_id,
             "constraint_count": len(constraints),
             "hard_count": sum(1 for c in constraints
@@ -597,6 +614,67 @@ def build_capability_discovery_request(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# CapabilityMatch / CapabilityDiscoveryResult — K4.2-H1 D4 (ADR-K4.2-H-04)
+# ─────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class CapabilityMatch:
+    """One candidate from capability discovery.
+
+    Architecture: K4.2-H1 D4 -- discover_capabilities() returns a
+    structured, ranked result instead of a bare List[CapabilityContract],
+    so the Planner can consume scores, evidence, and ranking rather than
+    an unordered-looking list that silently discards how/why each
+    candidate was matched.
+
+    evidence is diagnostic/explanatory metadata -- NOT a second source
+    of truth. relevance_score (and the specificity-dominance ordering
+    discover_capabilities() applies before returning) remain the
+    canonical ranking signal; nothing downstream should re-derive a
+    ranking decision from evidence's contents. Only evidence keys that
+    actually have a real signal behind them in v1.0 are populated
+    (lexical_score, specificity_tier, general_fallback) -- domain_match/
+    schema_match/embedding_score/language_match are NOT fabricated here;
+    a future signal can add a new evidence key without changing this
+    dataclass's contract (H1-G11).
+    """
+    capability_type: str
+    contract: CapabilityContract
+    relevance_score: float
+    subgoal_ref: str
+    is_general_purpose: bool = False
+    evidence: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CapabilityDiscoveryResult:
+    """Ranked discovery output for one CapabilityDiscoveryRequest.
+
+    Architecture: K4.2-H1 D4 -- the canonical, structured production
+    path discover_capabilities() returns. matches is already ordered by
+    specificity dominance (strong specific > weak specific >
+    general-purpose fallback) before this is constructed -- consumers
+    should not need to re-sort.
+    """
+    matches: List[CapabilityMatch]
+    subgoal_ref: str
+
+    @property
+    def contracts(self) -> List[CapabilityContract]:
+        """Legacy-shape compatibility projection: the bare
+        List[CapabilityContract] discover_capabilities() used to return,
+        in the same (now ranked) order. Provided so any future caller
+        that only needs contracts, not scores/evidence, is not forced
+        to unpack CapabilityMatch itself."""
+        return [m.contract for m in self.matches]
+
+    @property
+    def top_match(self) -> Optional[CapabilityMatch]:
+        """Highest-ranked candidate, or None if no candidate matched."""
+        return self.matches[0] if self.matches else None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Capability matching and discovery — K4.2 §12 line 176, §11
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -636,13 +714,32 @@ def _capability_match_score(request: CapabilityDiscoveryRequest,
     return len(overlap) / len(union)
 
 
+def _classify_specificity_tier(score: float, is_general_purpose: bool) -> str:
+    """Diagnostic-only label for CapabilityMatch.evidence["specificity_tier"].
+
+    K4.2-H1 D2/D4: evidence is "diagnostic/explanatory metadata -- NOT a
+    second source of truth." This label does not affect inclusion or
+    ranking -- both are governed entirely by discover_capabilities()'s
+    own min_score/is_general_purpose check and specificity-dominance
+    sort, not by this function. The 0.5 cutoff between "strong" and
+    "weak" specific is a display convenience (Jaccard overlap >= 0.5 is
+    already a substantial majority-token match), not an architectural
+    threshold -- D2 explicitly warns against hard-coding one of those
+    for anything that actually gates behavior; this one doesn't.
+    """
+    if is_general_purpose and score <= 0.0:
+        return "general_fallback"
+    return "strong_specific" if score >= 0.5 else "weak_specific"
+
+
 async def discover_capabilities(
     request: CapabilityDiscoveryRequest,
     registry: CapabilityRegistry,
     *,
     event_stream: Optional[EventStream] = None,
     min_score: float = 0.0,
-) -> List[CapabilityContract]:
+    operation_id: Optional[str] = None,
+) -> CapabilityDiscoveryResult:
     """Discovers candidate capabilities for a CapabilityDiscoveryRequest.
 
     Architecture: this packet's own task spec -- "discovering candidate
@@ -665,12 +762,37 @@ async def discover_capabilities(
     get_capability_registry() accessor exists anywhere in this codebase
     -- inventing one here would contradict that stated design.
 
-    Returns existing CapabilityContract objects (core/capabilities/
-    capability.py) rather than a new "CapabilityCandidate" type: a
-    CapabilityContract already is a published schema (capability_type,
-    description, required_resources, version) -- nothing read in the
-    architecture asks for a different shape, and inventing a parallel
-    type would duplicate one that already exists.
+    K4.2-H1 D4 (ADR-K4.2-H-04): returns a CapabilityDiscoveryResult --
+    ranked CapabilityMatch entries carrying scores and evidence -- in
+    place of the bare List[CapabilityContract] this returned before H1.
+    All callers are internal to this module (_decompose(), below);
+    confirmed by repository-wide search, no external consumer exists.
+    CapabilityDiscoveryResult.contracts projects back to the old
+    List[CapabilityContract] shape for any future caller that only
+    needs contracts, not scores.
+
+    K4.2-H1 D2 (ADR-K4.2-H-02, fixes K42-002): a capability whose
+    CapabilityContract.is_general_purpose is True is included as a
+    fallback candidate REGARDLESS of min_score -- that is the entire
+    point of marking it general-purpose (K4.2-H1 D2: "Specificity
+    dominance. No hard-coded routing"). Every other capability is still
+    filtered by min_score exactly as before H1. Ranking then applies
+    specificity dominance below: any non-general-purpose match (however
+    weak, as long as it cleared min_score) outranks every
+    general-purpose-only match. This is the fix for K42-002: with only
+    LLM_COMPLETION (is_general_purpose=True) registered, a realistic
+    task phrasing scoring 0.0 against its description used to be
+    filtered out entirely by _decompose()'s min_score=0.01, producing
+    zero candidates and a spurious impasse on every realistic query;
+    LLM_COMPLETION is now included as the (here, sole, hence top-ranked)
+    fallback candidate. [Implementation note: the spec's own illustrative
+    discovery-flow snippet gated ALL candidates -- general-purpose
+    included -- behind `if score >= min_score`, which would have left
+    K42-002 unfixed for exactly the scenario it exists to fix; this
+    function implements D2's stated intent (fallback bypasses the
+    lexical gate) rather than that snippet literally, per the
+    specification's own "implementation guidance, not rigid patch
+    instructions" framing.]
 
     Candidates with zero registered adapters (CapabilityRegistry's own
     "declared but unfulfilled" category, per its validate() method) are
@@ -683,37 +805,78 @@ async def discover_capabilities(
     (selection is explicitly deferred to a future Cognitive Runtime
     packet, per the Evolution Directive's discovery/selection split),
     never touches memory or governance.
+
+    operation_id (D8, ADR-K4.2-H-08): the parent plan() call's
+    operation_id, passed through unchanged -- discover_capabilities()
+    does NOT generate its own operation_id (D8: it "shares the parent
+    operation_id with a stage_tag discriminator"; it is called in a loop
+    inside _decompose(), not as an independent top-level operation).
+    None is accepted (e.g. direct/test callers outside a plan()
+    invocation) and simply passed through as None.
     """
     event_stream = event_stream or get_event_stream()
 
-    scored: List[tuple] = []
+    scored: List[CapabilityMatch] = []
     for capability_type in registry.list_capabilities():
         contract = registry.get_contract(capability_type)
         if contract is None:
             continue
         if not registry.get_adapters(capability_type):
             continue
-        score = _capability_match_score(request, contract)
-        if score >= min_score:
-            scored.append((score, contract))
 
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    result = [contract for _, contract in scored]
+        score = _capability_match_score(request, contract)
+        is_general = contract.is_general_purpose
+
+        # D2: min_score gates ordinary (non-general-purpose) candidates
+        # exactly as before H1. A general-purpose capability bypasses
+        # this gate -- it is a fallback BY CONSTRUCTION, not filtered
+        # out for the same reason a specific-but-irrelevant capability
+        # would be. See the docstring note above for why this differs
+        # from the spec's own illustrative snippet.
+        if score < min_score and not is_general:
+            continue
+
+        scored.append(CapabilityMatch(
+            capability_type=contract.capability_type,
+            contract=contract,
+            relevance_score=score,
+            subgoal_ref=request.subgoal_ref,
+            is_general_purpose=is_general,
+            evidence={
+                "lexical_score": round(score, 4),
+                "specificity_tier": _classify_specificity_tier(score, is_general),
+                "general_fallback": is_general,
+            },
+        ))
+
+    # D2: specificity dominance -- every non-general-purpose match ranks
+    # above every general-purpose-only match; within each group, higher
+    # relevance_score ranks first. Reads only CapabilityContract.
+    # is_general_purpose and CapabilityMatch.relevance_score -- no
+    # hard-coded capability_type routing (D2), no Planner-side special
+    # case; the registry remains the single dynamic source of what is
+    # general-purpose.
+    scored.sort(key=lambda m: (m.is_general_purpose, -m.relevance_score))
 
     await event_stream.append(
         "cognitive.capabilities_discovered",
         source="CapabilityDiscovery",
         payload={
+            "trace_id": get_trace_id(),
+            "operation_id": operation_id,
+            "stage_tag": f"capability_discovery:{request.subgoal_ref}",
             "subgoal_ref": request.subgoal_ref,
-            "candidate_count": len(result),
+            "candidate_count": len(scored),
             "candidates": [
-                {"capability_type": c.capability_type, "score": round(s, 3)}
-                for s, c in scored
+                {"capability_type": m.capability_type,
+                 "score": round(m.relevance_score, 3),
+                 "is_general_purpose": m.is_general_purpose}
+                for m in scored
             ],
         },
     )
 
-    return result
+    return CapabilityDiscoveryResult(matches=scored, subgoal_ref=request.subgoal_ref)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -822,6 +985,11 @@ class ExecutionPlan:
     already established in core/capabilities/resource.py"), and K4.1 Part
     IV's base contract requires them even where a specific field-level
     schema (here, K4 §6's) doesn't re-list every inherited field.
+
+    caused_by (K4.2-H1 D9, ADR-K4.2-H-09): Optional[str] event_id. None
+    for a plan produced by the ordinary plan() path; populated when this
+    plan resulted from a recovery re-plan (Orchestrator's K4.2-branch
+    re-plan loop) triggered by a specific prior impasse event.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "Planner"
@@ -831,6 +999,7 @@ class ExecutionPlan:
     alternatives: List[str] = field(default_factory=list)
     justification: str = ""
     derived_from: List[str] = field(default_factory=list)
+    caused_by: Optional[str] = None
     lifecycle_state: str = ExecutionPlanLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -865,6 +1034,7 @@ async def _decompose(
     registry: CapabilityRegistry,
     *,
     event_stream: Optional[EventStream] = None,
+    operation_id: Optional[str] = None,
 ) -> List[tuple]:
     """Breaks a Goal into an ordered list of steps, each grounded in real
     discovered capability candidates.
@@ -891,7 +1061,12 @@ async def _decompose(
     Returns a list of (PlanStep, candidates) tuples -- not just the
     PlanSteps -- so callers (impasse detection, confidence estimation,
     alternative-plan generation) can inspect each step's full ranked
-    candidate list without re-querying the registry.
+    candidate list without re-querying the registry. candidates is now
+    (K4.2-H1 D4) a List[CapabilityMatch] -- the .matches unwrapped from
+    discover_capabilities()'s CapabilityDiscoveryResult -- not a bare
+    List[CapabilityContract]; CapabilityMatch carries capability_type as
+    a top-level field (mirroring CapabilityContract), so existing
+    .capability_type access in downstream consumers is unaffected.
     """
     description = (goal.structured_form or {}).get("description", "")
     prompt = _DECOMPOSITION_PROMPT_TEMPLATE.format(description=description)
@@ -920,22 +1095,31 @@ async def _decompose(
         )
         # min_score=0.01 (not discover_capabilities' own permissive
         # default of 0.0): a score of exactly 0.0 means zero token
-        # overlap between the step and the capability's description --
-        # no relevance signal at all, not a weak-but-real match. Without
-        # this, any registered capability with at least one adapter
-        # would count as a "candidate" for every step regardless of
-        # relevance (e.g. "book a flight" matching "generate text via a
-        # language model" purely because nothing else is registered),
-        # which would make impasse detection (below) fire only when the
-        # registry is completely empty -- not the "no *matching*
-        # capability" signal K4.2 §5/§14 actually describe. This is
-        # decomposition-side filtering, not a change to
-        # discover_capabilities itself (Packet 02's own conservative
-        # "rank, don't filter, by default" choice is unchanged and still
-        # correct for its own direct callers).
-        candidates = await discover_capabilities(
+        # overlap between the step and a NON-general-purpose capability's
+        # description -- no relevance signal at all, not a weak-but-real
+        # match. Without this, any registered non-general-purpose
+        # capability with at least one adapter would count as a
+        # "candidate" for every step regardless of relevance, which would
+        # make impasse detection (below) fire only when the registry is
+        # completely empty -- not the "no *matching* capability" signal
+        # K4.2 §5/§14 actually describe. This is decomposition-side
+        # filtering, not a change to discover_capabilities itself
+        # (Packet 02's own conservative "rank, don't filter, by default"
+        # choice is unchanged and still correct for its own direct
+        # callers). K4.2-H1 D2 (ADR-K4.2-H-02, fixes K42-002): a
+        # general-purpose capability (CapabilityContract.
+        # is_general_purpose=True, e.g. LLM_COMPLETION) is the one
+        # deliberate exception -- discover_capabilities() includes it
+        # regardless of this min_score, because "usable by any
+        # text-shaped subgoal even with zero lexical overlap" is what
+        # is_general_purpose means. That is what fixes the previously
+        # spurious impasse when LLM_COMPLETION is the only capability
+        # registered.
+        discovery_result = await discover_capabilities(
             request, registry, event_stream=event_stream, min_score=0.01,
+            operation_id=operation_id,
         )
+        candidates = discovery_result.matches
         step = PlanStep(
             step_id=f"step-{i}",
             description=step_description,
@@ -1001,6 +1185,14 @@ def _estimate_confidence(steps_with_candidates: List[tuple]) -> float:
     contributes 0.0 (in practice this is caught by impasse detection
     before confidence is ever estimated, but the formula stays correct
     if called on its own).
+
+    K4.2-H1 D4: candidates is now a List[CapabilityMatch] (see
+    _decompose()). candidates[0].relevance_score is read directly rather
+    than rebuilding a CapabilityDiscoveryRequest and re-calling
+    _capability_match_score() as before H1 -- mathematically identical
+    (relevance_score already IS that exact computation, made against
+    this same step.description, at discovery time in
+    discover_capabilities()), just without redundantly recomputing it.
     """
     if not steps_with_candidates:
         return 0.0
@@ -1009,10 +1201,7 @@ def _estimate_confidence(steps_with_candidates: List[tuple]) -> float:
         if not candidates:
             step_scores.append(0.0)
             continue
-        request = CapabilityDiscoveryRequest(
-            subgoal_ref=step.step_id, description=step.description,
-        )
-        step_scores.append(_capability_match_score(request, candidates[0]))
+        step_scores.append(candidates[0].relevance_score)
     return round(min(step_scores), 3)
 
 
@@ -1038,6 +1227,11 @@ def _alternative_plans(goal: Goal, steps_with_candidates: List[tuple],
     fewer than top_n, or none, when the primary plan's steps each have
     at most one candidate -- an honest short list rather than a
     fabricated one.
+
+    K4.2-H1 D4: candidates is now a List[CapabilityMatch]. No logic
+    change needed here -- CapabilityMatch.capability_type is a
+    top-level field (mirroring CapabilityContract), so
+    candidates[N].capability_type continues to work unchanged.
     """
     alternatives: List[str] = []
     base_steps = [step for step, _ in steps_with_candidates]
@@ -1111,6 +1305,11 @@ def _detect_impasse(steps_with_candidates: List[tuple]) -> Optional[ImpasseRecor
     this packet's scope, not yet followed by a skill-delegation retry --
     a documented gap, not silently treated as fully resolved impasse
     handling.
+
+    K4.2-H1 D4: candidates is now a List[CapabilityMatch]. No logic
+    change needed here -- `if not candidates` (empty check) and
+    `c.capability_type` both work unchanged, since CapabilityMatch
+    carries capability_type as a top-level field.
     """
     unresolved = [
         step.description for step, candidates in steps_with_candidates
@@ -1168,21 +1367,42 @@ async def plan(
     extension are built and tested standalone in this same packet (see
     core/governance/orchestration_governor.py) precisely so that future
     integration point exists without this function needing to change.
+
+    operation_id (K4.2-H1 D8, ADR-K4.2-H-08): generated fresh on every
+    call -- plan() is one of exactly two top-level cognitive-stage
+    entrypoints (with compile()) that own operation_id generation.
+    trace_id (via get_trace_id(), core/observability/tracer.py) is a
+    ContextVar that is already stable across an entire request/trace by
+    construction, so a re-plan loop that calls plan() repeatedly within
+    the same async context naturally gets the same trace_id and a fresh
+    operation_id each time, with no special-case code needed for that
+    distinction. discover_capabilities() does NOT get its own
+    operation_id -- it shares this one, distinguished by stage_tag
+    (D8: "discover_capabilities() shares the parent operation_id with a
+    stage_tag discriminator").
     """
     event_stream = event_stream or get_event_stream()
     goal = request.goal
+    operation_id = str(uuid.uuid4())
 
-    constraints = await _extract_constraints(goal, event_stream=event_stream)
+    constraints = await _extract_constraints(
+        goal, event_stream=event_stream, operation_id=operation_id,
+    )
 
     precheck_rejection = check_precheck_rejection(constraints)
     if precheck_rejection is not None:
-        return precheck_rejection
+        return dataclasses.replace(precheck_rejection, operation_id=operation_id)
 
-    steps_with_candidates = await _decompose(goal, registry, event_stream=event_stream)
+    steps_with_candidates = await _decompose(
+        goal, registry, event_stream=event_stream, operation_id=operation_id,
+    )
 
     impasse = _detect_impasse(steps_with_candidates)
     if impasse is not None:
-        return PlannerResult(status=PlannerStatus.IMPASSE, impasse_detail=impasse)
+        return PlannerResult(
+            status=PlannerStatus.IMPASSE, impasse_detail=impasse,
+            operation_id=operation_id,
+        )
 
     ordered = _sequence(steps_with_candidates, constraints)
     with_fallbacks = _fallback_paths(ordered)
@@ -1202,4 +1422,5 @@ async def plan(
     return PlannerResult(
         status=PlannerStatus.READY_FOR_COMPILATION,
         execution_plan=execution_plan,
+        operation_id=operation_id,
     )

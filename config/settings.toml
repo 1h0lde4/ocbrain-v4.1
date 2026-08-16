@@ -12,6 +12,7 @@ log_level = "INFO"
 
 [runtime]
 use_k42_frontend = false
+max_recovery_attempts = 3
 
 [privacy]
 save_history = true

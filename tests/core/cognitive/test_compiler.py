@@ -299,6 +299,32 @@ class TestCompileApproved:
         assert events.events[0]["payload"]["goal_id"] == plan.goal_id
 
     @pytest.mark.asyncio
+    async def test_operation_id_and_trace_id_in_compiled_event(self):
+        """K4.2-H1 D8 (ADR-K4.2-H-08)."""
+        plan = _make_plan(confidence=0.9)
+        events = MockEventStream()
+        await compile_plan(plan, event_stream=events)
+        payload = events.events[0]["payload"]
+        assert payload["operation_id"]
+        assert payload["trace_id"]
+
+    @pytest.mark.asyncio
+    async def test_each_compile_call_generates_a_fresh_operation_id(self):
+        """D8: 'compile() ... generate[s] one' -- fresh per top-level
+        call, same trace_id (get_trace_id()'s ContextVar is stable
+        across calls within one context)."""
+        plan = _make_plan(confidence=0.9)
+        first_events, second_events = MockEventStream(), MockEventStream()
+        await compile_plan(plan, event_stream=first_events)
+        await compile_plan(plan, event_stream=second_events)
+        first_op = first_events.events[0]["payload"]["operation_id"]
+        second_op = second_events.events[0]["payload"]["operation_id"]
+        first_trace = first_events.events[0]["payload"]["trace_id"]
+        second_trace = second_events.events[0]["payload"]["trace_id"]
+        assert first_op != second_op
+        assert first_trace == second_trace
+
+    @pytest.mark.asyncio
     async def test_confidence_exactly_at_threshold_compiles(self):
         policy = ClarificationPolicy()
         plan = _make_plan(confidence=policy.confidence_threshold)

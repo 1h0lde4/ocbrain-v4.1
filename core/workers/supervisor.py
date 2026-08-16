@@ -248,14 +248,41 @@ class SupervisorWorker(AbstractCognitiveWorker):
     async def _attempt_retry(
         self, context: WorkerContext, failed_result: Any,
     ) -> WorkerResult:
-        max_retries = int(context.parameters.get("max_supervisor_retries", 1))
-        attempt = int(context.parameters.get("supervisor_retry_attempt", 0))
+        """K4.2-H1 D5 (ADR-K4.2-H-05): when the caller has threaded a
+        shared OperationRecoveryBudget through
+        context.parameters["recovery_budget"] (Orchestrator's K4.2
+        branch does this — core/orchestrator.py), that budget is the
+        sole authority on whether this retry is permitted, and the
+        legacy max_supervisor_retries/supervisor_retry_attempt counters
+        below are not consulted at all. This is the second of v1.0's
+        exactly two autonomous recovery actions (with Planner re-plan,
+        core/orchestrator.py) sharing that one budget instance (Recovery
+        Invariant: "Planner and Supervisor consume the same budget
+        instance. Neither may create a hidden retry universe.").
 
-        if attempt >= max_retries:
-            return WorkerResult(
-                success=False,
-                output={"outcome": SupervisorOutcome.RETRY_EXHAUSTED, "attempts": attempt},
-            )
+        When no recovery_budget is supplied (e.g. existing tests, or any
+        future non-K4.2 caller), the pre-H1 legacy path below is
+        unchanged byte-for-byte — this preserves exact backward
+        compatibility for every existing caller and test.
+        """
+        attempt = int(context.parameters.get("supervisor_retry_attempt", 0))
+        budget = context.parameters.get("recovery_budget")
+
+        if budget is not None:
+            if not budget.consume():
+                return WorkerResult(
+                    success=False,
+                    output={"outcome": SupervisorOutcome.RETRY_EXHAUSTED,
+                            "budget_remaining": budget.remaining},
+                )
+        else:
+            max_retries = int(context.parameters.get("max_supervisor_retries", 1))
+            if attempt >= max_retries:
+                return WorkerResult(
+                    success=False,
+                    output={"outcome": SupervisorOutcome.RETRY_EXHAUSTED,
+                            "attempts": attempt},
+                )
 
         retry_worker_type = context.parameters.get("retry_worker_type")
         if self._execution_runtime is None or not retry_worker_type:

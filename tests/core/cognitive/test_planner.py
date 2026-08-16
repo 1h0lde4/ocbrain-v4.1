@@ -36,6 +36,8 @@ from core.capabilities.capability import BaseAdapter, CapabilityContract
 from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.planner import (
     CapabilityDiscoveryRequest,
+    CapabilityDiscoveryResult,
+    CapabilityMatch,
     ClarificationPolicy,
     Constraint,
     ConstraintKind,
@@ -239,19 +241,30 @@ class TestPlannerRequestDataclass:
 # ─────────────────────────────────────────────────────────────────────────
 
 class TestPlannerResultDataclass:
-    """Verify PlannerResult fields match K4.2 §12."""
+    """Verify PlannerResult fields match K4.2 §12 + K4.2-H1 D8."""
 
     def test_fields_match_architecture(self):
-        """K4.2 §12: status, execution_plan, impasse_detail. Exactly
-        these three — no additional fields (K4.2 §5/§12 both specify
-        this shape precisely; a 4th field previously slipped in here
-        and was removed as a verified spec deviation)."""
+        """K4.2 §12: status, execution_plan, impasse_detail — the
+        pre-H1 shape (a 4th field previously slipped in here and was
+        removed as a verified spec deviation, before H1 existed).
+
+        K4.2-H1 D8 (ADR-K4.2-H-08) authorizes exactly one further
+        field: operation_id, surfaced from plan()'s own generation of
+        it so the caller (Orchestrator) can reference the same
+        identifier in its own diagnostic events without pre-generating
+        and injecting one. This test still locks the shape to exactly
+        these four — it is not a license for further undocumented
+        fields to slip in the way the pre-H1 deviation did.
+        """
         r = PlannerResult()
         assert hasattr(r, "status")
         assert hasattr(r, "execution_plan")
         assert hasattr(r, "impasse_detail")
+        assert hasattr(r, "operation_id")
         field_names = {f.name for f in dataclasses.fields(PlannerResult)}
-        assert field_names == {"status", "execution_plan", "impasse_detail"}
+        assert field_names == {
+            "status", "execution_plan", "impasse_detail", "operation_id",
+        }
 
     def test_status_values(self):
         """K4.2 §12: status: 'ready_for_compilation'|'impasse'|
@@ -687,17 +700,25 @@ class TestArchitectureCompliance:
 
 def _make_registry(entries=None):
     """Builds a CapabilityRegistry for testing. entries is a list of
-    (capability_type, description, has_adapter) tuples; defaults to a
-    single llm_completion capability with an adapter, matching the live
-    composition root (main.py)."""
+    (capability_type, description, has_adapter) or (capability_type,
+    description, has_adapter, is_general_purpose) tuples; defaults to a
+    single llm_completion capability with an adapter, is_general_purpose
+    True, matching the live composition root (main.py) exactly,
+    including its K4.2-H1 D2 (ADR-K4.2-H-02) fallback flag."""
     registry = CapabilityRegistry()
     entries = entries or [
-        ("llm_completion", "Generate text from a prompt via a language model.", True),
+        ("llm_completion", "Generate text from a prompt via a language model.", True, True),
     ]
-    for capability_type, description, has_adapter in entries:
+    for entry in entries:
+        if len(entry) == 4:
+            capability_type, description, has_adapter, is_general_purpose = entry
+        else:
+            capability_type, description, has_adapter = entry
+            is_general_purpose = False
         registry.register_capability(CapabilityContract(
             capability_type=capability_type,
             description=description,
+            is_general_purpose=is_general_purpose,
         ))
         if has_adapter:
             adapter = BaseAdapter()
@@ -822,9 +843,9 @@ class TestDiscoverCapabilities:
             subgoal_ref="g1", description="generate text from a prompt using a model",
         )
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
-        assert len(candidates) == 1
-        assert candidates[0].capability_type == "llm_completion"
+        result = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert len(result.matches) == 1
+        assert result.matches[0].capability_type == "llm_completion"
 
     @pytest.mark.asyncio
     async def test_excludes_capability_with_no_adapter(self):
@@ -834,8 +855,8 @@ class TestDiscoverCapabilities:
         ])
         request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search the web for news")
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
-        assert all(c.capability_type != "web_search" for c in candidates)
+        result = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert all(c.capability_type != "web_search" for c in result.matches)
 
     @pytest.mark.asyncio
     async def test_ranks_best_match_first(self):
@@ -845,36 +866,49 @@ class TestDiscoverCapabilities:
         ])
         request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search the web for current news")
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
-        assert candidates[0].capability_type == "web_search"
+        result = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert result.matches[0].capability_type == "web_search"
 
     @pytest.mark.asyncio
     async def test_empty_registry_returns_empty_list(self):
         registry = CapabilityRegistry()
         request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="do anything")
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
-        assert candidates == []
+        result = await discover_capabilities(request, registry, event_stream=mock_stream)
+        assert result.matches == []
+        assert result.top_match is None
 
     @pytest.mark.asyncio
     async def test_no_relevant_match_still_returns_gracefully(self):
         registry = _make_registry()
         request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="book a flight to Tokyo")
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(request, registry, event_stream=mock_stream)
-        # No error, no exception -- an empty or low-scored list is a valid,
-        # deterministic outcome, not a failure state.
-        assert isinstance(candidates, list)
+        result = await discover_capabilities(request, registry, event_stream=mock_stream)
+        # No error, no exception -- a CapabilityDiscoveryResult (D4) whose
+        # matches list may be empty or low-scored is a valid, deterministic
+        # outcome, not a failure state.
+        assert isinstance(result, CapabilityDiscoveryResult)
+        assert isinstance(result.matches, list)
 
     @pytest.mark.asyncio
     async def test_min_score_filters_low_relevance(self):
-        registry = _make_registry()
+        """min_score genuinely excludes a low-relevance, NON-general-
+        purpose capability. Uses an explicit is_general_purpose=False
+        registry, not the default fixture -- the default's llm_completion
+        is_general_purpose=True (matching main.py) is now the one
+        deliberate exception to this exact filter (K4.2-H1 D2,
+        ADR-K4.2-H-02, K42-002 fix; see
+        TestGeneralPurposeFallback.test_general_purpose_bypasses_min_score
+        below for that case)."""
+        registry = _make_registry([
+            ("code_formatter", "Reformat source code to a style guide.", True, False),
+        ])
         request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="completely unrelated topic xyz")
         mock_stream = AsyncMock()
-        candidates = await discover_capabilities(
+        result = await discover_capabilities(
             request, registry, event_stream=mock_stream, min_score=0.5,
         )
-        assert candidates == []
+        assert result.matches == []
 
     @pytest.mark.asyncio
     async def test_event_emitted_once_with_expected_shape(self):
@@ -890,6 +924,20 @@ class TestDiscoverCapabilities:
         assert "candidates" in call.kwargs["payload"]
 
     @pytest.mark.asyncio
+    async def test_event_includes_trace_and_stage_tag(self):
+        """K4.2-H1 D8 (ADR-K4.2-H-08)."""
+        registry = _make_registry()
+        request = CapabilityDiscoveryRequest(subgoal_ref="goal-x:0", description="generate text from a prompt")
+        mock_stream = AsyncMock()
+        await discover_capabilities(
+            request, registry, event_stream=mock_stream, operation_id="op-123",
+        )
+        payload = mock_stream.append.call_args.kwargs["payload"]
+        assert payload["operation_id"] == "op-123"
+        assert payload["stage_tag"] == "capability_discovery:goal-x:0"
+        assert payload["trace_id"]  # non-empty; exact value is tracer-owned
+
+    @pytest.mark.asyncio
     async def test_deterministic_across_repeated_calls(self):
         registry = _make_registry([
             ("llm_completion", "Generate text from a prompt via a language model.", True),
@@ -899,7 +947,8 @@ class TestDiscoverCapabilities:
         mock_stream = AsyncMock()
         first = await discover_capabilities(request, registry, event_stream=mock_stream)
         second = await discover_capabilities(request, registry, event_stream=mock_stream)
-        assert [c.capability_type for c in first] == [c.capability_type for c in second]
+        assert ([c.capability_type for c in first.matches] ==
+                [c.capability_type for c in second.matches])
 
     @pytest.mark.asyncio
     async def test_never_calls_adapter_execute(self):
@@ -922,20 +971,126 @@ class TestDiscoverCapabilities:
         assert call_log == []
 
 
+class TestGeneralPurposeFallback:
+    """K4.2-H1 D2 (ADR-K4.2-H-02) -- fixes K42-002.
+
+    K42-002: Capability Discovery's Jaccard token-overlap scoring
+    returns 0.0 for all realistic task phrasings against the real
+    registered LLM_COMPLETION contract, and _decompose()'s min_score=0.01
+    filtered every such candidate out entirely -- an empty candidate list
+    for every realistic query with only LLM_COMPLETION registered,
+    producing a spurious impasse regardless of what the user asked for.
+    """
+
+    @pytest.mark.asyncio
+    async def test_general_purpose_bypasses_min_score(self):
+        """The exact K42-002 scenario: a general-purpose capability with
+        zero lexical overlap must still be returned as a fallback
+        candidate, even though its score is well under min_score."""
+        registry = _make_registry()  # default: llm_completion, is_general_purpose=True
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref="g1", description="book a flight to Tokyo next week",
+        )
+        result = await discover_capabilities(
+            request, registry, min_score=0.01,
+        )
+        assert result.top_match is not None, (
+            "K42-002 regression: general-purpose capability was filtered "
+            "out despite is_general_purpose=True"
+        )
+        assert result.top_match.capability_type == "llm_completion"
+        assert result.top_match.is_general_purpose is True
+        assert result.top_match.evidence["general_fallback"] is True
+        assert result.top_match.evidence["specificity_tier"] == "general_fallback"
+
+    @pytest.mark.asyncio
+    async def test_specificity_dominance_ranks_specific_above_general(self):
+        """Strong specific > weak specific > general-purpose fallback
+        (D2's own ordering, verbatim)."""
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True, True),
+            ("flight_booking", "Book a flight for a trip.", True, False),
+        ])
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref="g1", description="book a flight to Tokyo next week",
+        )
+        result = await discover_capabilities(request, registry, min_score=0.01)
+        assert [m.capability_type for m in result.matches][0] == "flight_booking", (
+            "specificity dominance broken: a real lexical match must "
+            "outrank a general-purpose-only fallback"
+        )
+        specific = next(m for m in result.matches if m.capability_type == "flight_booking")
+        general = next(m for m in result.matches if m.capability_type == "llm_completion")
+        assert specific.is_general_purpose is False
+        assert general.is_general_purpose is True
+
+    @pytest.mark.asyncio
+    async def test_non_general_purpose_still_filtered_by_min_score(self):
+        """The fallback exemption is specific to is_general_purpose=True
+        -- an ordinary capability with zero overlap is filtered exactly
+        as before H1."""
+        registry = _make_registry([
+            ("code_formatter", "Reformat source code to a style guide.", True, False),
+        ])
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref="g1", description="completely unrelated topic xyz",
+        )
+        result = await discover_capabilities(request, registry, min_score=0.01)
+        assert result.matches == []
+
+    @pytest.mark.asyncio
+    async def test_fallback_mechanism_is_not_hard_coded_to_one_name(self):
+        """D2: 'No hard-coded routing' -- proven behaviorally, not by
+        searching source text (a source-text/identifier check can only
+        ever prove the absence of one specific string; it cannot prove
+        the mechanism is genuinely generic). Registers a general-purpose
+        capability under a name that has never appeared anywhere in this
+        codebase and confirms the exact same fallback behavior applies
+        -- i.e. discover_capabilities() reads only
+        CapabilityContract.is_general_purpose, never a capability_type
+        string comparison."""
+        registry = _make_registry([
+            ("zzz_arbitrary_fallback_9f3a", "Some capability nobody has heard of.", True, True),
+        ])
+        request = CapabilityDiscoveryRequest(
+            subgoal_ref="g1", description="an entirely different, unrelated request",
+        )
+        result = await discover_capabilities(request, registry, min_score=0.01)
+        assert result.top_match is not None
+        assert result.top_match.capability_type == "zzz_arbitrary_fallback_9f3a"
+        assert result.top_match.is_general_purpose is True
+
+
 class TestCapabilityDiscoveryArchitectureCompliance:
     """Mirrors TestArchitectureCompliance's boundary checks, specifically
     for the capability-discovery additions."""
 
     def test_returns_ranked_list_not_a_single_winner(self):
-        """Discovery returns a list (behavioral evidence, not a text
-        search over the source -- a raw substring check here would repeat
-        the exact false-failure class found and fixed during the Packet 01
-        review, e.g. tripping on this file's own docstrings)."""
-        import inspect
-        signature = inspect.signature(discover_capabilities)
-        assert "List" in str(signature.return_annotation) or \
-            signature.return_annotation is list or \
-            "list" in str(signature.return_annotation).lower()
+        """Discovery returns a ranked collection (behavioral evidence,
+        not a text search over the source -- a raw substring check here
+        would repeat the exact false-failure class found and fixed
+        during the Packet 01 review, e.g. tripping on this file's own
+        docstrings).
+
+        K4.2-H1 D4 (ADR-K4.2-H-04): the return type is now
+        CapabilityDiscoveryResult, not a bare List -- but its whole
+        purpose is still to carry a ranked List[CapabilityMatch]
+        (.matches), never collapsing discovery down to a single winner.
+        Checked behaviorally (multiple real candidates actually come
+        back, in ranked order) rather than by inspecting the return
+        annotation string, which is a strictly better test of the same
+        property this test has always asserted.
+        """
+        import asyncio
+        registry = _make_registry([
+            ("llm_completion", "Generate text from a prompt via a language model.", True, True),
+            ("web_search", "Search the web for current news and information.", True, False),
+        ])
+        request = CapabilityDiscoveryRequest(subgoal_ref="g1", description="search the web for current news")
+        result = asyncio.run(discover_capabilities(request, registry))
+        assert isinstance(result, CapabilityDiscoveryResult)
+        assert isinstance(result.matches, list)
+        assert len(result.matches) >= 2, "discovery collapsed to a single winner"
 
     def test_no_capability_execution_identifiers(self):
         import core.cognitive.planner as mod
@@ -969,6 +1124,16 @@ class TestExecutionPlanDataclass:
         assert p.steps == []
         assert p.alternatives == []
         assert p.derived_from == []
+        assert p.caused_by is None
+
+    def test_caused_by_independent_of_derived_from(self):
+        """K4.2-H1 D9 (ADR-K4.2-H-09): a recovery-derived plan carries
+        both -- derived_from the prior artifact/resource lineage,
+        caused_by the triggering event -- neither substituting for the
+        other."""
+        p = ExecutionPlan(derived_from=["goal-1"], caused_by="impasse-event-3")
+        assert p.derived_from == ["goal-1"]
+        assert p.caused_by == "impasse-event-3"
 
     def test_resource_ids_are_unique(self):
         assert ExecutionPlan().resource_id != ExecutionPlan().resource_id
@@ -1052,7 +1217,17 @@ class TestDecompose:
 
     @pytest.mark.asyncio
     async def test_step_with_no_matching_capability_has_empty_candidates(self):
-        registry = _make_registry()  # only llm_completion
+        """K4.2-H1 D2 (ADR-K4.2-H-02): the default registry's
+        llm_completion is now is_general_purpose=True (matching
+        main.py), so it is deliberately NOT filtered out even at zero
+        relevance -- that is the K42-002 fix, exercised directly in
+        TestGeneralPurposeFallback. This test now uses an explicit
+        non-general-purpose capability to keep testing the invariant
+        that genuinely still holds: an ordinary capability with zero
+        overlap produces empty candidates."""
+        registry = _make_registry([
+            ("code_formatter", "Reformat source code to a style guide.", True, False),
+        ])
         goal = _make_goal(description="book a flight")
         with patch("core.cognitive.planner.generate_with_fallback",
                    new=AsyncMock(return_value="Book a flight to Tokyo.")):
@@ -1070,8 +1245,17 @@ class TestDecompose:
         (Packet 02's own discover_capabilities correctly ranks rather
         than filters by default) -- which would make impasse detection
         fire only on a completely empty registry, not on "nothing here
-        actually fits," as K4.2 §5/§14 describe."""
-        registry = _make_registry()  # only llm_completion, unrelated description
+        actually fits," as K4.2 §5/§14 describe.
+
+        K4.2-H1 D2 (ADR-K4.2-H-02): this floor now has one deliberate
+        exception -- a general-purpose capability (e.g. the default
+        registry's llm_completion, matching main.py) -- see
+        TestGeneralPurposeFallback for that case. This test uses an
+        explicit non-general-purpose capability to keep testing the
+        floor itself."""
+        registry = _make_registry([
+            ("code_formatter", "Reformat source code to a style guide.", True, False),
+        ])
         goal = _make_goal(description="reserve a table at a restaurant")
         with patch("core.cognitive.planner.generate_with_fallback",
                    new=AsyncMock(return_value="Reserve a table at a restaurant.")):
@@ -1117,21 +1301,39 @@ class TestEstimateConfidence:
     def test_confidence_is_bounded(self):
         step = PlanStep(step_id="s1", description="generate text from a prompt", capability_type="llm_completion")
         contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
-        confidence = _estimate_confidence([(step, [contract])])
+        score = _capability_match_score(
+            CapabilityDiscoveryRequest(subgoal_ref="x", description=step.description), contract,
+        )
+        match = CapabilityMatch(
+            capability_type="llm_completion", contract=contract,
+            relevance_score=score, subgoal_ref="s1",
+        )
+        confidence = _estimate_confidence([(step, [match])])
         assert 0.0 <= confidence <= 1.0
 
     def test_weakest_step_determines_overall_confidence(self):
         strong_step = PlanStep(step_id="s1", description="generate text from a prompt", capability_type="llm_completion")
         strong_contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
+        strong_score = _capability_match_score(
+            CapabilityDiscoveryRequest(subgoal_ref="x", description=strong_step.description), strong_contract,
+        )
+        strong_match = CapabilityMatch(
+            capability_type="llm_completion", contract=strong_contract,
+            relevance_score=strong_score, subgoal_ref="s1",
+        )
         weak_step = PlanStep(step_id="s2", description="completely unrelated topic", capability_type="llm_completion")
         weak_contract = CapabilityContract(capability_type="llm_completion", description="generate text from a prompt")
-        confidence = _estimate_confidence([
-            (strong_step, [strong_contract]), (weak_step, [weak_contract]),
-        ])
-        assert confidence <= _capability_match_score(
-            CapabilityDiscoveryRequest(subgoal_ref="x", description="generate text from a prompt"),
-            strong_contract,
+        weak_score = _capability_match_score(
+            CapabilityDiscoveryRequest(subgoal_ref="x", description=weak_step.description), weak_contract,
         )
+        weak_match = CapabilityMatch(
+            capability_type="llm_completion", contract=weak_contract,
+            relevance_score=weak_score, subgoal_ref="s2",
+        )
+        confidence = _estimate_confidence([
+            (strong_step, [strong_match]), (weak_step, [weak_match]),
+        ])
+        assert confidence <= strong_score
 
 
 # ── _alternative_plans ───────────────────────────────────────────────────
@@ -1223,6 +1425,58 @@ class TestPlan:
         assert result.status == PlannerStatus.READY_FOR_COMPILATION
         assert result.execution_plan is not None
         assert result.execution_plan.goal_id == goal.resource_id
+
+    @pytest.mark.asyncio
+    async def test_operation_id_surfaced_on_every_status(self):
+        """K4.2-H1 D8 (ADR-K4.2-H-08): operation_id is populated on
+        PlannerResult regardless of which of the three statuses is
+        reached -- READY_FOR_COMPILATION, IMPASSE, and REJECTED_PRECHECK
+        alike."""
+        registry = _make_registry()
+        goal = _make_goal(description="generate text from a prompt using a model")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Generate text from a prompt.")):
+            ready_result = await plan(request, registry, event_stream=AsyncMock())
+        assert ready_result.operation_id
+
+        empty_registry = CapabilityRegistry()
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Book a flight to Tokyo.")):
+            impasse_result = await plan(request, empty_registry, event_stream=AsyncMock())
+        assert impasse_result.operation_id
+
+        contradictory_goal = _make_goal(
+            description=(
+                "The report must use encryption for all stored data. "
+                "However, the legacy export step must not use "
+                "encryption, per the vendor contract."
+            ),
+        )
+        contradictory_request = PlannerRequest(
+            goal_id=contradictory_goal.resource_id, goal=contradictory_goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback", new=AsyncMock()):
+            precheck_result = await plan(
+                contradictory_request, registry, event_stream=AsyncMock())
+        assert precheck_result.status == PlannerStatus.REJECTED_PRECHECK
+        assert precheck_result.operation_id
+
+    @pytest.mark.asyncio
+    async def test_each_plan_call_generates_a_fresh_operation_id(self):
+        """D8: 'plan() ... generate[s] one' -- fresh per top-level call.
+        The re-plan-retains-trace-but-changes-operation_id acceptance
+        criterion is proven at the Orchestrator level (which owns the
+        re-plan loop) in tests/test_orchestrator_recovery.py; this
+        confirms the more basic building block plan() itself provides:
+        no two calls ever share an operation_id."""
+        registry = _make_registry()
+        goal = _make_goal(description="generate text from a prompt using a model")
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Generate text from a prompt.")):
+            first = await plan(request, registry, event_stream=AsyncMock())
+            second = await plan(request, registry, event_stream=AsyncMock())
+        assert first.operation_id != second.operation_id
 
     @pytest.mark.asyncio
     async def test_impasse_when_no_capability_matches(self):

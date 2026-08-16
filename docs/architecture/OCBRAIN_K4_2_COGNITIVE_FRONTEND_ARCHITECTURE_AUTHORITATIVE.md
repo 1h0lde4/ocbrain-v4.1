@@ -185,6 +185,8 @@ PlannerResult:
 
 **[RECONCILE-PENDING — see §0.]** Reconstructed from K4 §7/§13, the already-adopted Instinct→Skill/SkillOpt pipeline, and K4.2-R §4.10 — not from a full read of K4.1-L.
 
+**K4.2-H1 status (2026-08-16, ADR-K4.2-H-06): still pending, not resolved.** `ContentDomain` (`core/cognitive/learning.py`) remains the closed three-value set below for H1 implementation purposes — H1 did not open it, and did not perform the K4.1-L reconciliation this marker calls for. Per this repository's own document-precedence hierarchy, `OCBRAIN_K4_1_L_FINAL_LEARNING_ARCHITECTURE.md` outranks this document, and K4.1-L's `LearningCandidate` model is explicitly open-domain — so this closed set is a tracked deferral, not a decision made in this document's favor. See `KNOWN_ISSUES.md` for the tracked item. Opening this set requires a dedicated future ADR that actually performs the K4.1-L reconciliation pass §0 calls for; nothing in H1 should be read as having done that pass or as license to treat this contradiction as settled.
+
 Eight requested signal sources, each mapped to a concrete mechanism, all funneling into the single Evolution Pipeline (§8):
 
 | Source | Mechanism | Trust |

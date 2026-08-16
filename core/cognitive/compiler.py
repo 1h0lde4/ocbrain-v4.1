@@ -50,6 +50,7 @@ Explicitly NOT in scope (later packets / future work):
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +63,7 @@ from core.governance.governance_kernel import (
     GovernanceVerdict,
     get_governance_kernel,
 )
+from core.observability.tracer import get_trace_id
 from core.workflow.definition import (
     RetryPolicy,
     WorkflowDefinition,
@@ -311,10 +313,18 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
     oversight — K4.2 §1 fixes the three public entrypoint names, and
     `compile` is not renameable. The builtin is not used anywhere in
     this module.
+
+    operation_id (K4.2-H1 D8, ADR-K4.2-H-08): generated fresh on every
+    call — compile() is the second of exactly two top-level
+    cognitive-stage entrypoints (with plan()) that own operation_id
+    generation. trace_id (get_trace_id(), core/observability/tracer.py)
+    is the ambient request-scoped identifier, unchanged by this call.
     """
     event_stream = event_stream or get_event_stream()
     governance = governance or get_governance_kernel()
     clarification_policy = clarification_policy or ClarificationPolicy()
+    operation_id = str(uuid.uuid4())
+    trace_id = get_trace_id()
 
     structural_errors = _validate_plan_structure(plan)
     if structural_errors:
@@ -346,6 +356,8 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
             event_type="cognitive.plan_rejected",
             source=_COMPILER_ID,
             payload={
+                "trace_id": trace_id,
+                "operation_id": operation_id,
                 "execution_plan_id": plan.resource_id,
                 "goal_id": plan.goal_id,
                 "verdict": gov_result.verdict.value,
@@ -380,6 +392,8 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
         event_type="cognitive.plan_compiled",
         source=_COMPILER_ID,
         payload={
+            "trace_id": trace_id,
+            "operation_id": operation_id,
             "execution_plan_id": plan.resource_id,
             "workflow_id": workflow_definition.workflow_id,
             "goal_id": plan.goal_id,

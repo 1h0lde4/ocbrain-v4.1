@@ -72,7 +72,8 @@ class Orchestrator:
                  execution_runtime: Optional["ExecutionRuntime"] = None,
                  workflow_runtime: Optional["WorkflowRuntime"] = None,
                  capability_registry: Optional["CapabilityRegistry"] = None,
-                 use_k42_frontend: bool = False):
+                 use_k42_frontend: bool = False,
+                 max_recovery_attempts: int = 3):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
@@ -87,6 +88,17 @@ class Orchestrator:
             and handle()'s own new branch for the exact behavior; when
             False, handle() is byte-for-byte identical to before this
             parameter existed.
+        max_recovery_attempts: K4.2-H1 D5 (ADR-K4.2-H-05) — the bound
+            for the single OperationRecoveryBudget this Orchestrator
+            creates per K4.2-branch handle() invocation. Read from
+            config/settings.toml's [runtime] max_recovery_attempts by
+            main.py's composition root and passed in here, mirroring
+            exactly how use_k42_frontend itself is already read and
+            passed (Orchestrator does not reach into a config object
+            directly — no self._config exists on this class). Only
+            meaningful when use_k42_frontend is True; unused on the
+            legacy K2.2/classify-dispatch-merge paths, which have no
+              autonomous recovery mechanism of their own (unchanged).
 
         When workflow_runtime is provided, handle() delegates through:
             WorkflowRuntime → PlannerWorker → ExecutionRuntime
@@ -103,6 +115,7 @@ class Orchestrator:
         self._workflow_runtime = workflow_runtime
         self._capability_registry = capability_registry
         self._use_k42_frontend = use_k42_frontend
+        self._max_recovery_attempts = max_recovery_attempts
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
@@ -266,6 +279,8 @@ class Orchestrator:
                     from core.cognitive.planner import (
                         PlannerRequest, PlannerStatus, plan as plan_fn,
                     )
+                    from core.cognitive.recovery import OperationRecoveryBudget
+                    from core.observability.tracer import get_trace_id
                     from core.workers.evaluator import EvaluationRecord
 
                     goals = await interpret_request(
@@ -273,11 +288,73 @@ class Orchestrator:
                     goal = goals[0]
 
                     planner_request = PlannerRequest(goal_id=goal.resource_id, goal=goal)
+
+                    # ── D5 (ADR-K4.2-H-05) — Unified Recovery Budget ────────
+                    # One budget per handle() K4.2-branch invocation, created
+                    # here and nowhere else (Recovery Invariant: "No
+                    # component may create an independent recovery budget
+                    # outside this contract"). Threaded into both recovery
+                    # actions v1.0 defines: the Planner re-plan loop directly
+                    # below, and SupervisorWorker's worker retry via
+                    # context.parameters["recovery_budget"] further down —
+                    # the SAME instance, not two budgets with the same
+                    # starting count (see H1-G5's integration test).
+                    budget = OperationRecoveryBudget(
+                        max_total_recovery_attempts=self._max_recovery_attempts)
+
+                    # ── D5/D7 — Planner re-plan loop ────────────────────────
+                    # Only PlannerStatus.IMPASSE is retried. REJECTED_PRECHECK
+                    # (contradictory hard constraints) is deliberately NOT
+                    # retried and does NOT consume budget: check_precheck_
+                    # rejection()/_extract_constraints() (core/cognitive/
+                    # planner.py) are both fully deterministic — no LLM call,
+                    # no randomness — so re-invoking plan() with the same
+                    # PlannerRequest is provably guaranteed to reproduce the
+                    # exact same REJECTED_PRECHECK result every time
+                    # (confirmed by direct reading, not assumed). Retrying it
+                    # would only waste the shared budget on an outcome that
+                    # can never change, starving the one recovery action
+                    # (impasse re-plan) that can actually benefit from
+                    # _decompose()'s non-deterministic LLM-based
+                    # decomposition producing a different result. This
+                    # deliberately narrows the spec's own illustrative
+                    # while-loop sketch (which did not distinguish the two
+                    # rejection/impasse statuses) to match D5's actual
+                    # intent: recovery for genuine impasses only. Bounded by
+                    # construction — budget.consume() returns False once
+                    # exhausted, so this loop runs at most
+                    # 1 + max_total_recovery_attempts plan() invocations.
                     planner_result = await plan_fn(
                         planner_request, self._capability_registry,
                         event_stream=self._event_stream)
 
+                    while planner_result.status == PlannerStatus.IMPASSE:
+                        if not budget.consume():
+                            await self._emit_event(
+                                "cognitive.planner_impasse_terminal", {
+                                    "trace_id": get_trace_id(),
+                                    "operation_id": planner_result.operation_id,
+                                    "interaction_id": interaction_id,
+                                    "goal_id": goal.resource_id,
+                                    "impasse_detail": str(
+                                        planner_result.impasse_detail),
+                                    "recovery_budget_state": {
+                                        "max_total_recovery_attempts":
+                                            budget.max_total_recovery_attempts,
+                                        "internal_recovery_used":
+                                            budget.internal_recovery_used,
+                                        "remaining": budget.remaining,
+                                    },
+                                })
+                            return ("Sorry, I could not form a plan for this "
+                                    f"request: {planner_result.status}")
+                        planner_result = await plan_fn(
+                            planner_request, self._capability_registry,
+                            event_stream=self._event_stream)
+
                     if planner_result.status != PlannerStatus.READY_FOR_COMPILATION:
+                        # REJECTED_PRECHECK — see the loop comment above for
+                        # why this is not retried.
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": str(planner_result.impasse_detail),
@@ -294,13 +371,29 @@ class Orchestrator:
                     if compilation_result.status != CompilationStatus.COMPILED:
                         # K4 §16 invariant 9: never retried here or anywhere
                         # -- SupervisorWorker only surfaces this outcome.
+                        # recovery_budget is threaded through regardless
+                        # (D5): SupervisorWorker's own _surface_compilation_
+                        # outcome() path for a REJECTED/ESCALATED
+                        # CompilationResult never reads it — compilation
+                        # rejection is not a v1.0 autonomous-recovery action
+                        # (D5: "Autonomous re-compilation is NOT a v1.0
+                        # recovery action") — but Supervisor's *other* path,
+                        # worker retry (_attempt_retry(), reached only via a
+                        # separate failed_worker_result parameter this call
+                        # site does not set), is where it is actually
+                        # consumed. Passing the same instance unconditionally
+                        # here is simpler and safer than only threading it on
+                        # some invocations, and costs nothing since it is
+                        # inert on this path.
                         if self._execution_runtime is not None:
                             await self._execution_runtime.invoke(
                                 "SupervisorWorker",
                                 query=query,
                                 workflow_id=execution_plan.resource_id,
                                 metadata={"parameters": {
-                                    "compilation_result": compilation_result}},
+                                    "compilation_result": compilation_result,
+                                    "recovery_budget": budget,
+                                }},
                             )
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,

@@ -127,6 +127,7 @@ class TestCognitiveDecisionDataclass:
         assert d.verdict == CognitiveVerdict.REJECT
         assert d.reason == ""
         assert isinstance(d.evaluated_at, float)
+        assert d.caused_by is None
 
     def test_fields_settable(self):
         d = CognitiveDecision(
@@ -138,6 +139,11 @@ class TestCognitiveDecisionDataclass:
         assert d.action_type == "intent_ontology_promote"
         assert d.verdict == CognitiveVerdict.ESCALATE
 
+    def test_caused_by_settable(self):
+        """K4.2-H1 D9 (ADR-K4.2-H-09)."""
+        d = CognitiveDecision(caused_by="event-42")
+        assert d.caused_by == "event-42"
+
 
 class TestLearningRecordDataclass:
     def test_defaults(self):
@@ -148,6 +154,7 @@ class TestLearningRecordDataclass:
         assert isinstance(r.gate_result, CognitiveDecision)
         assert r.resulting_entry_ref is None
         assert r.lifecycle_state == LearningLifecycle.OBSERVED
+        assert r.caused_by is None
 
     def test_independent_default_factories(self):
         # Two independently-constructed records must not share the same
@@ -156,6 +163,30 @@ class TestLearningRecordDataclass:
         r2 = LearningRecord()
         assert r1.trigger_signals is not r2.trigger_signals
         assert r1.gate_result is not r2.gate_result
+
+    def test_caused_by_settable(self):
+        """K4.2-H1 D9 (ADR-K4.2-H-09)."""
+        r = LearningRecord(caused_by="event-7")
+        assert r.caused_by == "event-7"
+
+
+class TestContentDomainD6:
+    """K4.2-H1 D6 (ADR-K4.2-H-06): the current v1.0 contract is frozen
+    for K4.2.6+ purposes -- exactly SKILL/INTENT_ONTOLOGY/USER_MODEL, no
+    arbitrary additions -- while the K4.1-L reconciliation question
+    stays explicitly deferred (KNOWN_ISSUES.md), not silently resolved
+    by this remaining a closed set."""
+
+    def test_domain_values_unchanged(self):
+        assert ContentDomain.SKILL == "skill"
+        assert ContentDomain.INTENT_ONTOLOGY == "intent_ontology"
+        assert ContentDomain.USER_MODEL == "user_model"
+        assert ContentDomain.ALL == ("skill", "intent_ontology", "user_model")
+
+    def test_still_exactly_three_domains(self):
+        """Locks the set size -- H1 must not silently add a 4th value
+        as a shortcut resolution of the pending K4.1-L reconciliation."""
+        assert len(ContentDomain.ALL) == 3
 
 
 # ─────────────────────────────────────────────────────────────────────────

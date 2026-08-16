@@ -104,6 +104,75 @@ class TestCognitiveArtifact:
         hypothesis = IntentHypothesis(label="test", score=0.5)
         assert not isinstance(hypothesis, CognitiveArtifact)
 
+    def test_cognitive_artifact_protocol_requires_caused_by(self):
+        """K4.2-H1 D9 (ADR-K4.2-H-09): caused_by is now part of the
+        CognitiveArtifact structural contract, alongside resource_id/
+        produced_by/derived_from/lifecycle_state."""
+        import dataclasses as _dc
+        from typing import get_type_hints
+        hints = get_type_hints(CognitiveArtifact)
+        assert "caused_by" in hints
+
+
+class TestCausalProvenance:
+    """K4.2-H1 D9 (ADR-K4.2-H-09): derived_from (artifact/resource
+    lineage) and caused_by (event/failure causal lineage) are
+    semantically independent fields -- neither is inferred from or
+    overwrites the other, and either may be populated while the other
+    stays empty/None."""
+
+    def test_caused_by_defaults_to_none_on_intent(self):
+        assert Intent().caused_by is None
+
+    def test_caused_by_defaults_to_none_on_goal(self):
+        assert Goal().caused_by is None
+
+    def test_derived_from_and_caused_by_are_independent_on_intent(self):
+        intent = Intent(derived_from=["artifact-1"], caused_by="event-99")
+        assert intent.derived_from == ["artifact-1"]
+        assert intent.caused_by == "event-99"
+        assert "event-99" not in intent.derived_from
+        assert "artifact-1" != intent.caused_by
+
+    def test_derived_from_and_caused_by_are_independent_on_goal(self):
+        """A recovery-derived Goal: derived_from carries the prior
+        artifact it was formed from, caused_by carries the triggering
+        failure event -- both populated, neither substituting for the
+        other."""
+        goal = Goal(derived_from=["intent-1"], caused_by="impasse-event-7")
+        assert goal.derived_from == ["intent-1"]
+        assert goal.caused_by == "impasse-event-7"
+
+    def test_caused_by_none_is_valid_for_ordinary_non_recovery_artifacts(self):
+        """The overwhelming majority path: an ordinary Goal formed
+        through interpret_request() -> form_goals(), with no recovery
+        involved, has derived_from populated but caused_by None."""
+        goal = Goal(derived_from=["intent-1"])
+        assert goal.derived_from == ["intent-1"]
+        assert goal.caused_by is None
+
+
+class TestRawRequestFrozen:
+    """K4.2-H1 D1 (ADR-K4.2-H-01): RawRequest is the immutable base
+    layer of Layered Semantic Authority."""
+
+    def test_raw_request_is_frozen(self):
+        import dataclasses as _dc
+        assert RawRequest.__dataclass_params__.frozen is True
+
+    def test_mutation_raises(self):
+        import dataclasses as _dc
+        r = RawRequest(text="original")
+        with pytest.raises(_dc.FrozenInstanceError):
+            r.text = "mutated"
+        assert r.text == "original"
+
+    def test_normalize_request_still_constructs_one_cleanly(self):
+        """frozen=True must not break the one canonical builder."""
+        result = normalize_request("  Hello   world  ")
+        assert isinstance(result, RawRequest)
+        assert result.text == "Hello world"
+
 
 # ── Intent dataclass (K4.2.1) ────────────────────────────────────────────────
 
@@ -340,7 +409,18 @@ class TestSplitCompoundGoals:
 class TestValidateStructuredForm:
     def test_no_ontology_degrades_gracefully(self):
         """K4.2 §4: 'degrades to a looser structure with lower confidence
-        when no match exists.'"""
+        when no match exists.'
+
+        K4.2-H1 D1 (ADR-K4.2-H-01, K42-001 fix): description must be the
+        actual request content (Intent.raw_request), never the selected
+        hypothesis's label -- "novel:test" here is a classifier label,
+        not something the user said. Before the fix this assertion
+        checked description == "novel:test", which was asserting the bug
+        (Layered Semantic Authority violation: a label from a layer Goal
+        formation is supposed to supersede leaking into the very field
+        meant to preserve the user's actual request) as if it were
+        correct behavior.
+        """
         intent = Intent(
             raw_request="test request",
             selected=IntentHypothesis(label="novel:test", score=0.8),
@@ -349,7 +429,7 @@ class TestValidateStructuredForm:
         form, penalty, validated = _validate_structured_form(intent)
         assert not validated
         assert penalty > 0.0
-        assert form["description"] == "novel:test"
+        assert form["description"] == "test request"
         assert form["raw_request"] == "test request"
 
     def test_matching_ontology_validates(self):
@@ -419,6 +499,18 @@ class TestFormGoals:
         intent = self._make_intent("Audit the memory system.")
         goals = form_goals(intent)
         assert len(goals) == 1
+
+    def test_description_is_actual_request_not_hypothesis_label(self):
+        """K4.2-H1 D1 (ADR-K4.2-H-01, K42-001 fix), exercised end-to-end
+        through form_goals() rather than _validate_structured_form()
+        directly (see TestValidateStructuredForm for that unit-level
+        test). _make_intent's own default label ("novel:test") is
+        exactly the pre-H1 bug's shape -- description must never equal
+        it."""
+        intent = self._make_intent("Audit the memory system.", label="novel:test")
+        goals = form_goals(intent)
+        assert goals[0].structured_form["description"] == "Audit the memory system."
+        assert goals[0].structured_form["description"] != "novel:test"
 
     def test_goal_inherits_confidence(self):
         """K4.2 §9: Goal.confidence inherited from Intent.confidence."""
