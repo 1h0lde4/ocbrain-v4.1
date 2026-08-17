@@ -1,6 +1,6 @@
 # OCBrain — Known Issues & Technical Debt Register
 
-**Last synchronized:** Aug 16, 2026 (K4.2-H1 packet: added DEBT-011 tracking the ContentDomain/K4.1-L deferral explicitly per D6/ADR-K4.2-H-06; prior sync Aug 12, 2026 added DEBT-010, moved EvaluatorWorker/ReflectionWorker/SupervisorWorker out of Future Cognitive Workers since Packets 07/08 built them in July, resolved A6/A7 for real, resolved the K4.2 interaction-persistence gap; prior sync July 24, 2026 clarified Cognitive Front-End vs. future-worker scope; prior sync July 22, 2026 DEBT-009 resolution; prior full sync July 18, 2026)
+**Last synchronized:** Aug 17, 2026 (K4.2-H1 FROZEN — independent 16-gate freeze review reconfirmed DEBT-011 remains correctly open/deferred, not silently resolved; see `docs/Bugs Hunt & fix reports/K4_2_H1_FINAL_FREEZE_REVIEW.md` §12; prior sync Aug 16, 2026 K4.2-H1 packet: added DEBT-011 tracking the ContentDomain/K4.1-L deferral explicitly per D6/ADR-K4.2-H-06; prior sync Aug 12, 2026 added DEBT-010, moved EvaluatorWorker/ReflectionWorker/SupervisorWorker out of Future Cognitive Workers since Packets 07/08 built them in July, resolved A6/A7 for real, resolved the K4.2 interaction-persistence gap; prior sync July 24, 2026 clarified Cognitive Front-End vs. future-worker scope; prior sync July 22, 2026 DEBT-009 resolution; prior full sync July 18, 2026)
 **Authority:** This is the canonical register of known technical debt, deferred items, and future work.
 
 ---

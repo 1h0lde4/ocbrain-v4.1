@@ -133,6 +133,10 @@ Reports in approximate chronological order:
 | Architecture Consolidation | `docs/reports/ARCHITECTURE_CONSOLIDATION_AND_K3_READINESS_REPORT.md` | K3 readiness |
 | Final K3 Readiness Audit | `docs/reports/FINAL_K3_READINESS_AUDIT.md` | Independent K3 readiness assessment |
 | Final Architecture Audit | `docs/reports/KERNEL_V1_0_FINAL_ARCHITECTURE_AUDIT_REVISION.md` | Architecture validation |
+| K4.2-H1 Independent Verification | `docs/Bugs Hunt & fix reports/K4_2_H1_INDEPENDENT_VERIFICATION_MEMO.md` | Independent re-verification of the K4.2-H1 commit (K42-001/002, test baseline, D3 scope) |
+| K4.2-H1 Final Freeze Review | `docs/Bugs Hunt & fix reports/K4_2_H1_FINAL_FREEZE_REVIEW.md` | 16-gate freeze audit; H1 frozen Aug 17, 2026; H2 readiness analysis |
+
+*(Note: this table has not been kept current since ~July 2026 — several K3/K4/K4.1/K4.1-L/K4.2 reports, including `K4_2_H1_COMPLETION_REPORT.md`, are missing between the row above and these two. Not backfilled here as it's outside this edit's scope; flagging for a dedicated catch-up pass.)*
 
 ---
 
