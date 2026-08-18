@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "purpose": "K4.2-H2 parallel-implementation ownership manifest. Four Claude sessions run concurrently with zero contact with each other (per Moncif's direction, Aug 2026). Every file any packet may touch is listed explicitly here. A file not listed for a packet is forbidden to that packet, full stop -- there is no implicit 'probably fine' category. scripts/check_packet_ownership.py enforces this mechanically against a branch's diff from main; it does not rely on a session reading and remembering this file correctly.",
+  "design_principle": "None of the four parallel packets may touch a file another packet could plausibly also want to touch. Concretely: CURRENT_STATE.md, IMPLEMENTATION_ROADMAP.md, KNOWN_ISSUES.md, ADR_INDEX.md, PROJECT_INDEX.md, and tests/conftest.py are OFF LIMITS to all four packets without exception -- consolidating them is the sequential integration packet's job (K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md section 13), which runs only after all four branches land. Within its own exclusive scope, a packet may create new files and/or edit files no other packet's manifest entry lists.",
+  "shared_files_deferred_to_integration": [
+    "CURRENT_STATE.md",
+    "IMPLEMENTATION_ROADMAP.md",
+    "KNOWN_ISSUES.md",
+    "docs/architecture/decisions/ADR_INDEX.md",
+    "PROJECT_INDEX.md",
+    "tests/conftest.py"
+  ],
+  "packets": {
+    "D3": {
+      "branch": "h2/d3-capability-discrimination",
+      "title": "Capability Discrimination Acceptance Suite",
+      "brief": "docs/architecture/h2_packets/D3_CAPABILITY_DISCRIMINATION.md",
+      "status_stub": "docs/architecture/h2_status/D3_STATUS.md",
+      "allowed_files": [
+        "tests/test_capability_discrimination.py",
+        "docs/architecture/h2_status/D3_STATUS.md",
+        "docs/Bugs Hunt & fix reports/K4_2_H2_D3_COMPLETION_REPORT.md",
+        "docs/architecture/decisions/ADR_K4_2_H_03_CAPABILITY_DISCRIMINATION.md"
+      ],
+      "allowed_files_conditional": [
+        {
+          "path": "core/cognitive/planner.py",
+          "condition": "ONLY if Case D (registration-order independence) genuinely fails and needs more than a trivial deterministic tie-break. Write the ADR (ADR_K4_2_H_03) justifying the change FIRST. See the brief's 'Open question' section before touching this file at all."
+        }
+      ]
+    },
+    "D7": {
+      "branch": "h2/d7-terminal-impasse-closeout",
+      "title": "Terminal Impasse Diagnostic Closeout",
+      "brief": "docs/architecture/h2_packets/D7_TERMINAL_IMPASSE_CLOSEOUT.md",
+      "status_stub": "docs/architecture/h2_status/D7_STATUS.md",
+      "allowed_files": [
+        "docs/architecture/h2_status/D7_STATUS.md",
+        "docs/architecture/decisions/ADR_K4_2_H_07_TERMINAL_IMPASSE_CLOSEOUT.md"
+      ],
+      "allowed_files_conditional": [],
+      "note": "core/orchestrator.py is explicitly forbidden. This packet verifies H1 already satisfies H2-G3; do not add per-attempt (non-terminal) event emission here -- that is new scope, not this packet's."
+    },
+    "D11": {
+      "branch": "h2/d11-language-support",
+      "title": "Request Language Detection",
+      "brief": "docs/architecture/h2_packets/D11_LANGUAGE_SUPPORT.md",
+      "status_stub": "docs/architecture/h2_status/D11_STATUS.md",
+      "allowed_files": [
+        "core/cognitive/intent.py",
+        "tests/core/cognitive/test_intent.py",
+        "docs/architecture/h2_status/D11_STATUS.md",
+        "docs/Bugs Hunt & fix reports/K4_2_H2_D11_COMPLETION_REPORT.md",
+        "docs/architecture/decisions/ADR_K4_2_H_11_LANGUAGE_SUPPORT.md"
+      ],
+      "allowed_files_conditional": [],
+      "note": "core/cognitive/planner.py is explicitly forbidden -- do not wire detected_language into discover_capabilities() scoring. That is a CapabilityMatch evidence-shape change requiring its own ADR and explicit approval, not an incidental part of this packet."
+    },
+    "D12": {
+      "branch": "h2/d12-tracking-hardening",
+      "title": "Implementation Tracking Hardening (parallel-safe scope only)",
+      "brief": "docs/architecture/h2_packets/D12_TRACKING_HARDENING.md",
+      "status_stub": "docs/architecture/h2_status/D12_STATUS.md",
+      "allowed_files": [
+        "docs/architecture/h2_status/D12_STATUS.md",
+        "docs/architecture/decisions/ADR_K4_2_H_10_DRIFT_TOOLING_RECORD.md",
+        "docs/architecture/decisions/ADR_K4_2_H_12_TRACKING_HARDENING.md",
+        "IMPLEMENTATION_TRACKER.md"
+      ],
+      "allowed_files_conditional": [],
+      "note": "This is a deliberately NARROWED version of the D12 packet described in K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md section 12. That version assumed D12 could record D3/D7/D10/D11's completion status -- which a zero-contact parallel session cannot honestly do, since it has no way to know whether the others have finished. The full tracking sync (CURRENT_STATE.md / IMPLEMENTATION_ROADMAP.md / ADR_INDEX.md / KNOWN_ISSUES.md) is deferred to the sequential integration packet, which runs after all four branches actually exist and can be inspected together. This branch's job is only: decide IMPLEMENTATION_TRACKER.md's fate (create it, scoped, or formally decline in its own status stub -- either is acceptable, silence is not), and draft the H-10/H-12 ADRs on their own merits."
+    }
+  }
+}

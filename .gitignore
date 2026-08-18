@@ -33,6 +33,8 @@ data/chunks/
 data/gaps/
 data/exports/
 data/context.sqlite
+data/context.sqlite-shm
+data/context.sqlite-wal
 data/brain_state.json
 
 # Per-module trained artifacts
