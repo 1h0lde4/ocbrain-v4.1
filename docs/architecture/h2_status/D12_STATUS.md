@@ -1,7 +1,10 @@
 # D12 Status
 
 **State:** COMPLETE
-**Branch:** h2/d12-tracking-hardening @ fabd6b0
+**Branch:** h2/d12-tracking-hardening @ 88c533c (self-referential: this value was
+corrected once after the amend that added it shifted the hash; a status file cannot
+perfectly record its own final commit hash without a second commit changing it again —
+`git log -1 --oneline` on this branch is the exact source of truth if this drifts further)
 **Ownership check:** PASS (`python3 scripts/check_packet_ownership.py --packet D12`, run against this commit — all 3 changed files OK, 0 violations)
 **IMPLEMENTATION_TRACKER.md decision:** Neither "created" nor "declined" in the brief's
 literal sense — see ADR-K4.2-H-12 for full reasoning. Summary: Phase 0 reality check
