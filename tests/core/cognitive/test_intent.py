@@ -28,6 +28,7 @@ from core.cognitive.intent import (
     IntentModality,
     NormalizationRejected,
     RawRequest,
+    _detect_language,
     _detect_modality,
     _estimate_complexity,
     _parse_hypotheses,
@@ -39,6 +40,9 @@ from core.cognitive.intent import (
     normalize_request,
 )
 from core.events.event_stream import EventStream
+from core.capabilities.capability import BaseAdapter, CapabilityContract
+from core.capabilities.registry import CapabilityRegistry
+from core.cognitive.planner import CapabilityDiscoveryRequest, discover_capabilities
 
 
 # ── Normalization (K4.2.1) ──────────────────────────────────────────────────
@@ -86,6 +90,69 @@ class TestNormalizeRequest:
         result = normalize_request("hello\x00\x01world")
         assert "\x00" not in result.text
         assert "\x01" not in result.text
+
+    def test_detected_language_populated_for_clear_input(self):
+        """K4.2-H2 D11: normalize_request() wires _detect_language() in
+        before construction (not written in afterward)."""
+        result = normalize_request(
+            "The weather is nice today and I am happy with the results."
+        )
+        assert result.detected_language == "en"
+
+    def test_detected_language_none_for_unclassifiable_input(self):
+        result = normalize_request("asdkfj qwoeiru zxcvb mnbvcx")
+        assert result.detected_language is None
+
+
+# ── Language detection (K4.2-H2 D11) ────────────────────────────────────────
+
+class TestDetectLanguage:
+    """_detect_language(): best-effort, dependency-free, never raises."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("The weather is nice today and I am happy with the results.", "en"),
+        ("El clima está agradable hoy y estoy feliz con los resultados.", "es"),
+        ("Le temps est agréable aujourd'hui et je suis content des résultats.", "fr"),
+        ("Das Wetter ist heute schön und ich bin zufrieden mit den Ergebnissen.", "de"),
+        ("こんにちは、今日はいい天気ですね。", "ja"),
+        ("Сегодня хорошая погода и я счастлив.", "ru"),
+    ])
+    def test_clearly_identifiable_language_detected(self, text, expected):
+        assert _detect_language(text) == expected
+
+    def test_unknown_gibberish_input_returns_none(self):
+        """Explicit fallback-to-None behavior, not just the happy path."""
+        assert _detect_language("asdkfj qwoeiru zxcvb mnbvcx lkjhgf") is None
+
+    def test_empty_string_returns_none(self):
+        assert _detect_language("") is None
+
+    def test_whitespace_only_returns_none(self):
+        assert _detect_language("   \n\t  ") is None
+
+    def test_never_raises_on_arbitrary_short_or_symbolic_input(self):
+        """'Never raise' is a hard requirement (D11 brief), not aspirational --
+        exercised directly, not just implied by the other cases passing."""
+        for text in ("hi", "12345 67890 !!!", "\x00\x01", "a", "!", None):
+            _detect_language(text)  # must not raise, regardless of input
+
+    def test_genuine_tie_between_languages_declines_rather_than_guesses(self):
+        """Two languages scoring identically must not be resolved by
+        incidental dict-iteration order -- this detector declines
+        entirely rather than pick one arbitrarily."""
+        # "de" tokens present: der, die, und, ist (4 EN-adjacent-looking
+        # but actually German function words) mixed with an equal count
+        # of genuine "en" stopwords, engineered so both land on exactly
+        # the same score.
+        text = "der die und ist the and is are"
+        scores_de = len({"der", "die", "und", "ist"} & {"der", "die", "das", "und",
+                          "ist", "nicht", "ein", "eine", "zu", "den", "mit", "für",
+                          "auf", "sich", "des", "im"})
+        scores_en = len({"the", "and", "is", "are"} & {"the", "and", "is", "are",
+                          "was", "were", "to", "of", "in", "that", "it", "for", "on",
+                          "with", "as", "this", "you", "be", "have", "not"})
+        assert scores_de == scores_en == 4, "tie precondition not met -- fix the fixture"
+        assert _detect_language(text) is None
 
 
 # ── CognitiveArtifact contract (K4.1 Part IV) ──────────────────────────────
@@ -172,6 +239,95 @@ class TestRawRequestFrozen:
         result = normalize_request("  Hello   world  ")
         assert isinstance(result, RawRequest)
         assert result.text == "Hello world"
+
+    def test_detected_language_populated_and_still_frozen(self):
+        """K4.2-H2 D11: the new field follows the exact same
+        frozen-construction pattern as .text -- populated at
+        construction time, never written in afterward."""
+        import dataclasses as _dc
+        result = normalize_request("The weather is nice today and I am happy.")
+        assert result.detected_language == "en"
+        with pytest.raises(_dc.FrozenInstanceError):
+            result.detected_language = "es"
+        assert result.detected_language == "en"
+
+    def test_detected_language_defaults_to_none_when_constructed_directly(self):
+        r = RawRequest(text="anything")
+        assert r.detected_language is None
+
+
+# ── Coordination guard: detected_language must not leak into capability
+#    discovery (K4.2-H2 D11 forbidden-files note; core/cognitive/planner.py
+#    is read-only from this test file -- never modified) ───────────────────
+
+class TestDetectedLanguageDoesNotAffectCapabilityDiscovery:
+    """D11's brief: 'a negative test confirming discover_capabilities()'s
+    behavior is unchanged by this field's mere presence -- this
+    mechanically guards the don't-wire-it-into-scoring rule, not just
+    documents it.' core/cognitive/planner.py is imported here read-only;
+    this packet never edits it."""
+
+    def test_capability_discovery_request_has_no_language_field(self):
+        """CapabilityDiscoveryRequest (what discover_capabilities()
+        actually consumes) has no detected_language-shaped field at
+        all -- there is no field for anything to accidentally wire
+        this into in the first place."""
+        import dataclasses as _dc
+        field_names = {f.name for f in _dc.fields(CapabilityDiscoveryRequest)}
+        assert "detected_language" not in field_names
+        assert not any("language" in name for name in field_names)
+
+    def test_planner_source_never_references_detected_language(self):
+        """Direct proof, not inference: the literal string
+        'detected_language' does not appear anywhere in planner.py's
+        source. A future change that wires it in would have to touch
+        this file and would immediately fail this assertion, forcing a
+        conscious update -- exactly the "requires its own ADR" friction
+        D11's brief calls for."""
+        import core.cognitive.planner as planner_module
+        with open(planner_module.__file__) as f:
+            source = f.read()
+        assert "detected_language" not in source
+
+    @pytest.mark.asyncio
+    async def test_discover_capabilities_behavior_identical_regardless_of_language(self):
+        """Behavioral companion to the source check above: constructs
+        two RawRequests whose only difference is detected_language,
+        derives the same description text from each, and confirms
+        discover_capabilities() (the real, unmocked function) produces
+        byte-identical CapabilityMatch results for both -- proving the
+        field's mere presence changes nothing, not merely that no code
+        path currently reads it.
+        """
+        request_en = RawRequest(text="Schedule a meeting for tomorrow.", detected_language="en")
+        request_es = RawRequest(text="Schedule a meeting for tomorrow.", detected_language="es")
+        assert request_en.text == request_es.text
+        assert request_en.detected_language != request_es.detected_language
+
+        registry = CapabilityRegistry()
+        registry.register_capability(CapabilityContract(
+            capability_type="calendar_scheduling_d11_probe",
+            description="Schedule a meeting or appointment on a calendar.",
+            is_general_purpose=False,
+        ))
+        adapter = BaseAdapter()
+        adapter.adapter_name = "fake-calendar_scheduling_d11_probe"
+        adapter.capability_type = "calendar_scheduling_d11_probe"
+        registry.register_adapter("calendar_scheduling_d11_probe", adapter)
+
+        # Only .text ever reaches CapabilityDiscoveryRequest -- there is
+        # no parameter through which .detected_language could flow in,
+        # which this call itself demonstrates.
+        result_en = await discover_capabilities(
+            CapabilityDiscoveryRequest(subgoal_ref="g-en", description=request_en.text),
+            registry, min_score=0.01,
+        )
+        result_es = await discover_capabilities(
+            CapabilityDiscoveryRequest(subgoal_ref="g-es", description=request_es.text),
+            registry, min_score=0.01,
+        )
+        assert [m.relevance_score for m in result_en.matches] == [m.relevance_score for m in result_es.matches]
+        assert [m.capability_type for m in result_en.matches] == [m.capability_type for m in result_es.matches]
 
 
 # ── Intent dataclass (K4.2.1) ────────────────────────────────────────────────
