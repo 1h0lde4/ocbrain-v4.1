@@ -3,8 +3,9 @@
 **Status:** Research / Architecture Study — NOT an implementation specification. No production code was modified to produce this document.
 **Date:** August 21, 2026
 **Scope:** Feeds the Kernel v1.0 Freeze & Contract Audit. Governed by the directive `OCBrain — Cognitive Reliability & Durable Execution Architecture Study`.
-**Repository state studied:** `1h0lde4/ocbrain-v4.1`, HEAD `21f7868` ("Merge PR #10 from revert-8-h2/d3-capability-discrimination"), branch `main`.
+**Repository state studied:** `1h0lde4/ocbrain-v4.1`, HEAD `21f7868` ("Merge PR #10 from revert-8-h2/d3-capability-discrimination"), branch `main`. Section S was added in a second pass, repository state `ac74c4e` ("ADR-K4.2-H-13: exempt general-purpose-only plans from ClarificationPolicy") — that commit does not touch anything Section S examines; noted for the record, not because it changes any finding.
 **Precedence:** Subordinate to `OCBRAIN_KERNEL_CONSTITUTION.md` (Laws, Invariants, Non-Goals, Admission Test) and `PROJECT_INSTRUCTIONS.md`. Where this study's conceptual vocabulary (borrowed from the study directive) appears to strain against a Constitutional Non-Goal, that tension is surfaced explicitly rather than resolved silently — see Section E.
+**Revision:** v2 — adds Section S (Live System Evolution & Active Mission Compatibility) at Moncif's request, with cascading updates to the Executive Summary, Sections P/Q/R, Critical Questions, Design Principles, the Threat Model, the Final Classification table, and Section 44. v1's findings are unchanged; nothing was retracted.
 
 ---
 
@@ -23,9 +24,9 @@ Neither fact changes this study's conclusions; both are noted per the "no silent
 
 This study used a minimum-context pass, not a full-repository read:
 
-- **L0 (read in full):** `OCBRAIN_KERNEL_CONSTITUTION.md`, `CURRENT_STATE.md`, `IMPLEMENTATION_ROADMAP.md`, `KNOWN_ISSUES.md`, `core/events/event_stream.py`, `core/workflow/runtime.py`, `core/cognitive/recovery.py`, `core/runtime/state.py`, `core/runtime/resilience.py`, `core/governance/governance_kernel.py`, `tests/test_orchestrator_recovery.py`.
-- **L1 (grepped / partially read):** `OCBRAIN_FUTURE_ARCHITECTURE.md` (durable-execution and saga/compensation sections), `core/capabilities/adapter_runtime.py`, `core/orchestrator.py` (identity fields only), `main.py` (process model), `data/context.sqlite` (schema only), the `tests/break_*.py` / `chaos_monkey.py` fault-injection scripts (existence, size, pytest-collection status).
-- **L2 (not read):** `core/cognitive/planner.py`, `core/cognitive/compiler.py`, `core/memory/unified_memory.py` internals beyond backend file inventory, `OCBRAIN_K4_2_*` specification documents beyond what's cited in code comments, the six other governors' full bodies beyond `RecursionGovernor`/`BudgetGovernor`/`EvolutionGovernor`.
+- **L0 (read in full):** `OCBRAIN_KERNEL_CONSTITUTION.md`, `CURRENT_STATE.md`, `IMPLEMENTATION_ROADMAP.md`, `KNOWN_ISSUES.md`, `core/events/event_stream.py`, `core/workflow/runtime.py`, `core/cognitive/recovery.py`, `core/runtime/state.py`, `core/runtime/resilience.py`, `core/governance/governance_kernel.py`, `tests/test_orchestrator_recovery.py`, `core/migrator.py`, `core/brain_version.py`, `interface/updater.py` *(added for Section S)*.
+- **L1 (grepped / partially read):** `OCBRAIN_FUTURE_ARCHITECTURE.md` (durable-execution and saga/compensation sections), `core/capabilities/adapter_runtime.py`, `core/orchestrator.py` (identity fields, and `use_k42_frontend` docstring for Section S), `main.py` (process model), `data/context.sqlite` (schema only), the `tests/break_*.py` / `chaos_monkey.py` fault-injection scripts (existence, size, pytest-collection status), `core/model_router.py` (promotion/regression/rollback region only — *added for Section S*), `core/capabilities/adapters/model_router_adapter.py` (docstring only — *added for Section S*), `core/config.py` (watcher mechanism only — *added for Section S*), `interface/api.py` (streaming-response usage only — *added for Section S*).
+- **L2 (not read):** `core/cognitive/planner.py`, `core/cognitive/compiler.py`, `core/memory/unified_memory.py` internals beyond backend file inventory, `OCBRAIN_K4_2_*` specification documents beyond what's cited in code comments, the six other governors' full bodies beyond `RecursionGovernor`/`BudgetGovernor`/`EvolutionGovernor`, `core/model_router.py` and `core/config.py` beyond the regions cited above.
 
 Findings below are marked **[FACT]** (directly confirmed by reading code/docs in this session), **[INFER]** (a reasonable conclusion from what was read, not independently re-verified), or **[REC]** (this study's recommendation, not a claim about current state). Where L2 material would be needed to fully confirm something, that is stated rather than guessed.
 
@@ -38,6 +39,8 @@ Findings below are marked **[FACT]** (directly confirmed by reading code/docs in
 This is not a new discovery — `KNOWN_ISSUES.md` DEBT-003 already names it ("long-running workflows cannot survive process restart") — but this study traces its full blast radius: identity, concurrency, side-effect safety, and provenance all inherit the same gap, because they all currently assume a single, continuously-running process.
 
 The good news, and the reason this study is optimistic about the path forward: OCBrain already has the *primitive* this reliability model needs. `EventStream` (`core/events/event_stream.py`) is a genuine, working, WAL-backed, checkpoint-capable, replayable event log — `EventStream.create_checkpoint()` / `get_checkpoint()` already exist and work; they are simply never called by anything today. `OperationRecoveryBudget` demonstrates, in miniature and under excellent test coverage, exactly the shared-instance, bounded-termination discipline a future Work Unit recovery model needs at scale. `StateStore` demonstrates a correctly-scoped (post-BUG-03) durable-state pattern with an honest, bounded data-loss window on hard crash. The architecture doesn't need a new reliability paradigm; per the project's own `OCBRAIN_FUTURE_ARCHITECTURE.md` (Pattern 2, ★10/10 cross-repository prevalence), it needs the existing EventStream WAL wired into `WorkflowRuntime` as durable checkpoints — precisely the v4.4.8 "Durable Workflow Runtime" step that document already prescribes, before anything resembling a distributed or multi-node story is worth discussing.
+
+**Section S extends this study to a dimension the original pass didn't examine: what happens to an active mission when OCBrain itself changes underneath it.** The finding there is sharper than anywhere else in this document, because it's the one backed by a single, exact line of code: `interface/updater.py`'s self-update mechanism restarts the process via `os.execv()`, which bypasses graceful shutdown entirely — making a *deliberate, self-triggered* update architecturally indistinguishable from a crash, and reachable today with zero governance evaluation. The same section also found the project's best existing reliability pattern outside the event backbone: `core/model_router.py`'s live, automatic, regression-triggered model rollback, and `use_k42_frontend`'s proven mixed-version discipline — evidence OCBrain already knows how to evolve safely, just not yet for the Kernel/Runtime surface this study is chartered to examine.
 
 No finding in this study requires reopening a frozen H1 contract (`RawRequest`, `CapabilityMatch`/`CapabilityDiscoveryResult`, `OperationRecoveryBudget`'s `consume()`/`remaining`/`exhausted`, `derived_from`/`caused_by`, `trace_id`/`operation_id`/`stage_tag`, the three-entrypoint signatures, or the `cognitive.planner_impasse_terminal` event shape). Section 44 (Stop-Condition Check) walks through why. This study is a **Section 44 "no stop"** outcome — Kernel v1.0 can proceed toward freeze once the Critical Pre-Freeze items in Section P are addressed as explicit contracts (not full implementations).
 
@@ -657,6 +660,136 @@ flowchart TD
 
 ---
 
+## S. Live System Evolution & Active Mission Compatibility
+
+*Added at Moncif's request as a required extension to this study, covering a dimension Sections A–R establish the need for (long-horizon missions, per the directive's own "10 minutes / 10 days / 10 months" framing) but never directly examine: what happens to a mission in progress when the system underneath it changes. Same evidence discipline as the rest of this document — this section changed the study's conclusion in one respect, noted in S.6.*
+
+```text
+Kernel update
+Capability update
+Model update
+Runtime update
+Memory update
+UI/Web update
+Security-policy update
+        ↓
+   Active Mission
+        ↓
+  Must remain valid
+```
+
+### S.1 What exists today, per update surface
+
+**[FACT]** Three genuinely live, working update mechanisms exist in this codebase, at three very different levels of sophistication — this section's biggest surprise is how uneven they are with each other, not that they're absent.
+
+| Update surface | Mechanism | Location | Requires restart? | Rollback? |
+|---|---|---|---|---|
+| Kernel / application code | `git pull` → `pip install -e .` → `restart()` | `interface/updater.py` | **Yes, always** | Yes — single-slot, manual, git-commit-based |
+| Capability | *(no mechanism distinct from a code update — Adapters are code)* | — | Yes | No |
+| Model | `bootstrap → shadow → native` maturity lifecycle | `core/model_router.py` | **No** — promotion/rollback apply live | **Yes — automatic, regression-triggered** |
+| Runtime (config) | File-watcher hot-reload | `core/config.py` | **No** | No (reverting the file is the only "rollback") |
+| Memory (schema) | Additive, sequential, `schema_version`-gated migrations | `core/migrator.py` | Yes — runs once, at startup only | No (see S.3.4) |
+| UI / Web | SSE streaming (`text/event-stream`); no WebSocket found | `interface/api.py` | Connections drop on any backend restart | N/A |
+| Security-policy | `GovernanceKernel` + 7 governors | `core/governance/governance_kernel.py` | — | **No versioning of any kind found** (confirmed by direct search) |
+
+**[FACT]** The model-update path is, by a wide margin, the most sophisticated update-safety mechanism anywhere in this codebase, and this study recommends it explicitly as the template for the others: shadow-stage modules run **concurrently** against the current production model (`asyncio.gather(ext_task, own_task)`, with careful cancellation cleanup — `except BaseException: cancel both, gather with return_exceptions=True, re-raise`), compared by semantic similarity over a minimum sample (`SHADOW_PROMOTE_MIN_QUERIES = 500`) before promotion (`SHADOW_PROMOTE_THRESHOLD = 0.85`); once promoted, a rolling regression window (`REGRESSION_WINDOW = 100`, `REGRESSION_THRESHOLD = 0.70`) automatically demotes a module back to `shadow` — `_maybe_rollback()` — with a durable `module.rollback` lifecycle event. This is a real, live, evidence-driven canary-and-auto-rollback pattern, already proven in production.
+
+**[FACT]** `core/capabilities/adapters/model_router_adapter.py`'s docstring is itself a directly relevant precedent for *how this project handles evolving one part of the system without breaking what depends on it*: it documents, explicitly, why a K2.3 refactor deliberately preserved this promotion/rollback logic unmodified behind a compatibility wrapper rather than risk it, citing the project rule that compatibility wrappers must be documented rather than silently introduced. The right instincts for this whole section already exist somewhere in this codebase — they're just not yet applied to the Kernel/Runtime/code-update surface specifically.
+
+**[FACT]** `core/orchestrator.py`'s `use_k42_frontend` flag (established in the original study's Section A.2/A.4) makes an explicit, load-bearing guarantee directly relevant here, quoted from its own docstring: *"when False, `handle()` is byte-for-byte identical to before this parameter existed."* This is exactly the discipline **mixed-version execution** needs, already practiced once.
+
+### S.2 The central finding
+
+**[FACT]** `interface/updater.py`'s `restart()` is one line: `os.execv(sys.executable, [sys.executable] + sys.argv)` — an in-place replacement of the running process image. This does **not** send the process a signal; it bypasses `main.py`'s `SIGTERM` handler entirely, which is the only path through which `StateStore`'s final queue flush and `EventStream`'s WAL checkpoint-truncate (both documented in the original study's Section A.1) actually run.
+
+**From the perspective of every in-flight subsystem, a self-triggered update-and-restart is architecturally indistinguishable from `kill -9`.** `InstallResult(success=True, ...)` is returned the moment the `git`/`pip` shell commands exit zero — before restart, before any check that the new version actually starts correctly, and with nothing recorded anywhere (S.3.7) that would let OCBrain's own instrumentation later distinguish "this restart was deliberate maintenance" from "this restart was a crash."
+
+**[REC]** Today this is bounded by DEBT-003: since no Work Graph state survives *any* restart yet, an update-triggered restart is not uniquely dangerous — everything else already loses in-flight state on any restart, for the same underlying reason. **The real risk is sequencing.** If DEBT-003 is fixed (Section C.2) without this path being fixed in the same effort, the result is a system that can survive a genuine crash but treats its own deliberate, self-initiated update identically to one — which is worse than making no durability claim at all, because an operator would reasonably expect a self-triggered update to be *safer* than an unplanned crash, and it provably would not be. **This study recommends S.3.8 (active-mission protection on the update path) be scoped into the same pre-freeze contract as C.2, not treated as a separate, later concern.**
+
+### S.3 The ten named concerns
+
+**S.3.1 — Version pinning.** **[FACT]** `core/brain_version.py` already makes a deliberate, well-reasoned split: `app_version` (code, from `version.txt`) is tracked independently from `brain_version`/`schema_version` (trained weights, KB, context) — its own docstring states *"brain version persists across app upgrades."* This is a genuinely sound existing pattern. **[FACT]** The gap is downstream of it: nothing durable today records *which* `app_version`/`schema_version` a given piece of work was created or executed under — no event, no `WorkflowNodeState`, nothing. **[REC]** Once Section C.2's Work Unit event schema exists, add `app_version`/`schema_version` to its payload at append time — cheap, since `current_version()` is already a plain callable.
+
+**S.3.2 — Contract compatibility.** **[FACT]** Nothing checks, on resume, whether a persisted shape matches what the currently-running code expects. Moot today (DEBT-003 means nothing persists to check), **urgent the moment C.2 ships**. **[REC]** Extend the same discipline H1 already applies to frozen *live-call* contracts (`RawRequest`, `CapabilityMatch`, etc.) to *persisted* contracts: every serialized event/checkpoint payload gets an explicit schema-version tag, checked on deserialize against a small, explicit compatibility table (compatible / needs-migration / incompatible-escalate) — the same shape as `run_migrations()`'s existing `schema_version` gate, generalized from "one SQLite schema" to "every persisted contract shape."
+
+**S.3.3 — Checkpoint-boundary updates.** **[REC]** The natural safe point to apply a disruptive update is exactly a Work Unit checkpoint boundary (Diagram 4's `RECOVERY_REQUIRED`/`SUSPENDED` states are, by construction, known-clean points). A future `UPDATE_REQUESTED` signal should tell the (future, checkpoint-aware) `WorkflowRuntime` to stop admitting new Work Units at their next checkpoint while letting already-in-flight, side-effecting steps finish — this is a direct generalization of `AdaptiveSemaphore`'s existing, tested, race-safe capacity-drain mechanism (original study, A.4) from "shrink concurrency" to "drain toward update," not a new mechanism.
+
+**S.3.4 — Safe migration.** **[FACT]** `core/migrator.py` is a genuine positive precedent: sequential, `schema_version`-gated, explicitly additive-only ("Trained data is NEVER deleted during migration"), fail-loud on error. **[FACT, gap]** It is not transactional — a migration function that fails partway through leaves whatever side effects its earlier steps already made (e.g., directories created) with no automatic rollback; recovery today works only because the specific migrations that exist happen to be idempotent by construction (`mkdir(exist_ok=True)`, `INSERT OR IGNORE`), not because the framework guarantees it. **[REC]** Make idempotency an explicit, documented contract every future migration function must satisfy, rather than a currently-accidental property.
+
+**S.3.5 — Rollback.** **[FACT]** Real rollback exists at two tiers, with very different rigor: `interface/updater.py` (code) is manual-trigger, single-slot — `ROLLBACK_FILE` holds exactly one prior commit SHA, unconditionally overwritten on the next `install()`, so only one step back is ever possible; `core/model_router.py`'s `_maybe_rollback()` (model) is automatic, evidence-driven, and already proven. **[REC]** `_maybe_rollback`'s pattern — a rolling evidence window against a documented threshold, triggering an automatic, logged demotion — is the template a future Kernel/Runtime rollback decision should follow, not `updater.py`'s current purely-manual model.
+
+**S.3.6 — Mixed-version execution.** **[FACT]** The strongest existing precedent in the whole codebase: `use_k42_frontend`'s explicit "byte-for-byte identical when off" guarantee, and shadow-mode's concurrent dual-execution-with-comparison. **[REC]** Future Kernel/Runtime changes should be introduced the same way — behind an explicit flag, an explicit unchanged-when-off guarantee, proven side-by-side before the flag flips — rather than as a new pattern.
+
+**S.3.7 — Update provenance.** **[FACT, gap]** `install()`/`rollback()`/`restart()` do not append anything to `EventStream` — this entire subsystem operates completely outside the observability model documented in the original study's Section K. `ROLLBACK_FILE` is a bare commit SHA with no timestamp, operator identity, or reason attached. **[REC]** Each call durably appends an event (`system.update_started` / `system.update_installed` / `system.rollback` / `system.restart`) through the same `EventStream.append()` path everything else uses — cheap, reuses existing infrastructure, and immediately makes update history queryable through `replay()`/`query()` for free.
+
+**S.3.8 — Active-mission protection.** **[FACT, gap — confirmed by a full read of `interface/updater.py`]** No active-mission awareness of any kind exists in the update path today. **[REC]** Before `restart()`'s `os.execv()`: query whatever the future durability layer (C.2) considers non-terminal Work Graphs, and either warn/block by default when any exist, or — once C.2 exists — rely on checkpoint+replay recovery to make the restart survivable regardless. These are complementary, not exclusive: the warn/block behavior is a cheap stopgap available even before C.2 ships; checkpoint+replay is the durable fix.
+
+**S.3.9 — Autonomous-update governance.** **[FACT]** `PROJECT_INSTRUCTIONS.md` §13 already states a specific, real policy here (simulate → evaluate → benchmark → safety validate → human approve → deploy → monitor → rollback-capable; no autonomous deploy, no governance bypass, no direct production mutation). **[FACT, gap]** `interface/updater.py` does not import or call `GovernanceKernel` anywhere — `install()`/`POST /update` is reachable without any governance evaluation at all. **This is the same class of gap as the original study's `RecursionGovernor` finding (A.3): a policy that is correctly stated but not structurally wired to the code path it's supposed to govern.** **[REC]** Route `install()`/`rollback()` through `GovernanceKernel.evaluate_action()` as a new `GovernanceAction` type, so the fail-closed-on-exception discipline already proven in `GovernanceKernel` (a real strength, per the original study's A.3) automatically covers this path too.
+
+**S.3.10 — Update-triggered verification.** **[FACT]** Exists, narrowly, for models: `_maybe_rollback`'s rolling-window check is a genuine continuous, update-triggered verification mechanism. **[FACT, gap]** Does not exist for code: `install()`'s "success" means the shell commands exited zero, not that the new version actually starts up or passes any check. **[REC]** A post-restart health check, gating whether the update is considered final — on failure, auto-invoke `rollback()`, closing the loop the model-update path already closes for itself.
+
+### Diagram 16 — Update surfaces vs. an active Mission: today vs. proposed
+
+```mermaid
+flowchart TD
+    subgraph TODAY["Today"]
+        U1[Any update: git pull / pip install] --> R1["restart(): os.execv()"]
+        R1 -.bypasses.-> SIG[SIGTERM handler\nStateStore.stop, WAL checkpoint]
+        R1 -.no check for.-> MISSION1[Active missions]
+        R1 --> GONE["In-flight state: gone\n(same as DEBT-003 today,\nbut for a DELIBERATE action)"]
+    end
+    subgraph PROPOSED["Proposed"]
+        U2[Update requested] --> GOV[GovernanceKernel.evaluate_action\nnew GovernanceAction type]
+        GOV --> DRAIN["Signal WorkflowRuntime:\nstop admitting new Work Units,\nfinish in-flight side effects"]
+        DRAIN --> CKPT[Checkpoint all active Work Graphs\nSection C.2]
+        CKPT --> EVT["append system.update_started\n/ installed / restart events"]
+        EVT --> R2[restart]
+        R2 --> HEALTH{Post-restart\nhealth check}
+        HEALTH -- pass --> RESUME[Resume missions via C.2 recovery]
+        HEALTH -- fail --> AUTOROLLBACK["rollback()\n(mirrors model_router's\n_maybe_rollback pattern)"]
+    end
+```
+
+### Diagram 17 — Mixed-version execution, the pattern already proven twice
+
+```mermaid
+sequenceDiagram
+    participant Old as Old version / native model
+    participant New as New version / shadow candidate
+    participant Compare as Comparison
+    participant Flag as Flag / promotion decision
+
+    par concurrent execution
+        Old->>Compare: result
+        New->>Compare: result
+    end
+    Compare->>Compare: semantic similarity ≥ threshold,\nover minimum sample size
+    Compare->>Flag: promote?
+    Flag-->>Old: byte-for-byte unchanged\nuntil promotion (use_k42_frontend precedent)
+    Flag-->>New: becomes default only after\nsustained evidence
+    Note over Old,New: Same pattern recommended for future\nKernel/Runtime changes, not just models
+```
+
+### S.4 What Section S changes about the rest of this document
+
+- **New Threat Model scenario** (26): system update/restart while missions are active — added to the Threat Model section below in the same 6-field format as the other 25.
+- **New Design Principle row**: "Live Evolvability" — added to the Design Principles table.
+- **Four new Critical Questions** (23–26) — added to the Critical Questions section.
+- **New Critical Pre-Freeze / Post-Freeze items** — folded into Sections P and Q below, and into the Final Classification table as items 29–36.
+- **Section 44 re-checked** against the two new frozen-adjacent surfaces this section touches (`GovernanceAction` type space, `EventStream` event vocabulary) — see the updated Section 44.
+
+### S.5 The invariant, tested against what was found
+
+*"OCBrain must be able to evolve while active missions continue safely; an update must not silently invalidate, corrupt, or duplicate work already in progress."*
+
+- **Must not silently invalidate:** Not violated today only because nothing survives a restart to invalidate (DEBT-003). Becomes a live, unaddressed risk the moment C.2 ships without S.3.2/S.3.3 alongside it.
+- **Must not corrupt:** No direct evidence of corruption risk today, for the same reason. `core/migrator.py`'s non-transactional partial-failure behavior (S.3.4) is the closest adjacent risk found — currently safe only because existing migrations happen to be idempotent, not because anything guarantees it.
+- **Must not duplicate:** Not violated today because no side-effecting Adapter exists yet (original study, Section I) and no Work Unit state survives to be duplicated. Becomes a live risk exactly when both C.2 (durable Work Units) and a first side-effecting Adapter exist — the idempotency-key contract from Section I is a prerequisite for this invariant surviving an update-triggered restart, not just a crash.
+
+**S.6 — How this changes the study's conclusion.** The original Executive Summary and Reliability Readiness Assessment concluded Kernel v1.0 is ready to proceed toward freeze once the (then seven) Critical Pre-Freeze items are addressed. That conclusion still holds, but the list of what "addressed" means grows: **S.3.8 (active-mission protection on the update path) and S.3.9 (routing updates through Governance) are now Critical Pre-Freeze in their own right, alongside C.2 — not because either is hard, but because building durable execution (C.2) while leaving the update path able to bypass it entirely (S.2's central finding) would ship a contradiction, not a fix.**
+
+---
+
 ## P. Critical Pre-Freeze Requirements
 
 Full rationale for each is in the sections cited; this is the pointer list, not a duplicate of the argument. **These are contracts to specify, not features to build, before Kernel v1.0 freezes:**
@@ -668,6 +801,8 @@ Full rationale for each is in the sections cited; this is the pointer list, not 
 5. One documented `PRAGMA synchronous` decision, applied consistently across every SQLite-backed durability primitive (Section F.3).
 6. A decision on `RecursionGovernor`/`BudgetGovernor`: wire real accumulation, or explicitly document why leaving them dormant (inert-but-safe, per their fail-closed design) is acceptable for now (Section A.3, new finding on `RecursionGovernor`).
 7. A decision on whether every `evaluate_action()` call site durably logs its verdict — closing the A.3 provenance uncertainty against Kernel Invariant 3.
+8. Active-mission protection on the update path (Section S.3.8) — a warn/block check before `restart()`'s `os.execv()` for any non-terminal Work Graph. Scoped alongside item 1, not after it — see S.6 for why.
+9. Route `interface/updater.py`'s `install()`/`rollback()` through `GovernanceKernel.evaluate_action()` as a new `GovernanceAction` type (Section S.3.9) — today this path is reachable with zero governance evaluation.
 
 ## Q. Post-Freeze Work
 
@@ -681,10 +816,15 @@ Full rationale for each is in the sections cited; this is the pointer list, not 
 8. Formal Work Unit state machine (Diagram 4) as an ADR, with legal-transition rules and ownership per state.
 9. Temporal-validity heuristic (checkpoint-age threshold triggering REPLAN) — Section L.
 10. Converge `CircuitBreaker` usage between `modules/base.py` and `AdapterRuntime` into one resilience contract (Section A.4).
+11. Update provenance: `system.update_started`/`update_installed`/`rollback`/`restart` as durable `EventStream` events (Section S.3.7).
+12. Persisted-contract schema versioning, generalizing `migrator.py`'s `schema_version` gate from one SQLite schema to every serialized event/checkpoint payload (Section S.3.2).
+13. Explicit idempotency contract for migration functions (Section S.3.4) — currently an accidental property, not a guarantee.
+14. Post-restart health check for code updates, gating success and auto-invoking `rollback()` on failure — mirrors `model_router.py`'s already-proven `_maybe_rollback` pattern (Section S.3.10).
+15. Fix `interface/updater.py`'s `GITHUB_REPO = "1h0lde4/OCBrain"` constant — it does not match this repository's actual name (`1h0lde4/ocbrain-v4.1`), so `check()`'s GitHub Releases lookup and the `download_url` it surfaces are pointed at the wrong repository (the `git fetch`/`git rev-parse` fallback in `_check_via_commits()` uses the local clone's configured remote and is unaffected).
 
 ## R. Deferred Research
 
-1. Distributed / multi-node recovery (Section O) — explicitly out of scope per the directive.
+1. Distributed / multi-node recovery (Section O) — explicitly out of scope per the directive. Fleet-wide/multi-instance update coordination (rolling updates across more than one OCBrain instance) is a subset of this and deferred with it.
 2. `SchedulerService` and dynamic priority/deadline changes (Section M) — correctly deferred already; no new evidence surfaced to revisit that decision.
 3. Persistent service recovery (Section N) — no consumer exists yet to design against.
 4. Full multidimensional Assurance Assessment and "Think Harder" policy (Section J) — real seeds exist (`OperationRecoveryBudget`, structured plan statuses); the full model is future work.
@@ -716,9 +856,13 @@ Cross-referenced rather than re-argued; full reasoning is in the section cited.
 17. **How do Persistent Cognitive Services recover?** No such abstraction was found among what was read (not exhaustively searched); `EventStream.replay()` already provides the mechanism a future one would need (Section N).
 18. **How does distributed recovery work later?** Not designed here, per the directive. One concrete ceiling was confirmed: `AUTOINCREMENT`-based sequencing is single-file/single-writer (Section O); `OCBRAIN_FUTURE_ARCHITECTURE.md`'s own v4.5.5 direction already anticipates this.
 19. **How do we distinguish legitimate world changes from execution inconsistency?** Not found this pass — this is precisely the Section L staleness-detection gap.
-20. **What MUST be implemented before Kernel v1.0?** See Section P — stated as contracts to specify, not features to fully build.
-21. **What should explicitly remain post-freeze?** See Section Q.
-22. **Which contracts must be frozen before parallel implementation?** The identifier reconciliation (E.3) and the Work Unit event schema (C.2) — getting either wrong is expensive to retrofit once data exists under it, which is exactly why H1 froze `trace_id`/`operation_id`/`stage_tag` in the first place.
+20. **How does an update to the Kernel, a Capability, a Model, the Runtime, Memory, the UI/Web layer, or Security policy affect an active Mission?** Depends entirely on which surface: model updates are the one case OCBrain already handles well, live, with automatic evidence-driven rollback (`model_router.py`); config updates hot-reload live with a known race (DEBT-010); everything else — Kernel/code, Memory schema, Security-policy — requires a restart, and that restart (`os.execv()`) currently gives an active Mission no more protection than a crash (Section S.2).
+21. **Can OCBrain apply a Kernel/Runtime update without corrupting or losing in-flight work?** Not today, and not really a meaningful question yet, because nothing survives a restart regardless of cause (DEBT-003) — the update path isn't uniquely unsafe, it's uniformly unsafe along with everything else. It becomes a meaningful, urgent question the moment Section C.2 ships, which is why S.3.8/S.3.9 are scoped alongside C.2 rather than after it.
+22. **Does OCBrain already know how to do a safe rollout somewhere?** Yes — twice. `model_router.py`'s shadow-mode canary-and-auto-rollback, and `use_k42_frontend`'s "byte-for-byte identical when off" flag pattern (Section S.1, Diagram 17). Neither is applied yet to Kernel/Runtime updates specifically; both are ready to be generalized.
+23. **Is there a version concept for security policy?** No — confirmed by direct search of `governance_kernel.py`. No governor, no policy set, and no individual evaluation carries a version identifier today (Section S.1's table).
+24. **What MUST be implemented before Kernel v1.0?** See Section P — stated as contracts to specify, not features to fully build.
+25. **What should explicitly remain post-freeze?** See Section Q.
+26. **Which contracts must be frozen before parallel implementation?** The identifier reconciliation (E.3) and the Work Unit event schema (C.2) — getting either wrong is expensive to retrofit once data exists under it, which is exactly why H1 froze `trace_id`/`operation_id`/`stage_tag` in the first place.
 
 ---
 
@@ -737,6 +881,7 @@ Cross-referenced rather than re-argued; full reasoning is in the section cited.
 | Explainable Recovery | **No** | — | No recovery mechanism exists yet to explain |
 | Reproducibility | Partial | `EventStream.replay()`; Kernel Law 4 requires it explicitly | Per-node event gap + real-time (non-seeded) retry backoff limit it today |
 | Graceful Degradation | Partial | `CircuitBreaker`, `AdapterRuntime` fallback both real (A.4) | Scoped to individual Adapter calls; nothing at Work Graph/Mission granularity |
+| Live Evolvability (update must not silently invalidate/corrupt/duplicate active work) | Partial, unevenly | Genuinely strong for models (`model_router.py`'s canary + auto-rollback); genuinely strong pattern for mixed-version code paths (`use_k42_frontend`) | Code/Kernel-level updates bypass all of it — `os.execv()` restart is crash-equivalent for every in-flight subsystem (Section S.2) |
 
 ---
 
@@ -836,6 +981,15 @@ All 25 scenarios from the directive are addressed below, grouped where they shar
 - **Verification/Governance:** Route through `GovernanceKernel` explicitly for all five of these — none should have a code path that bypasses it, per Law 1.
 - **Audit Trail:** The detection event itself (what looked wrong, and why) is at least as important to log durably as the eventual resolution.
 
+### 26 — System update/restart while missions are active (added by Section S)
+
+- **Grounding:** Directly confirmed, not hypothetical: `interface/updater.py`'s `restart()` (`os.execv()`) bypasses the graceful-shutdown path entirely (Section S.2). This is the one threat scenario in this study backed by reading the exact line of code that causes it.
+- **Detection:** None today — `install()`/`restart()` never check for active missions (S.3.8). Proposed: query non-terminal Work Graphs before restarting.
+- **Containment:** Proposed: stop admitting new Work Units at their next checkpoint; let in-flight side-effecting steps finish (S.3.3), reusing `AdaptiveSemaphore`'s existing drain mechanism (A.4).
+- **Recovery:** Once Section C.2 exists, an update-triggered restart is recoverable exactly like a crash — checkpoint, replay, classify each interrupted Work Unit (Diagram 3). Until then, this scenario is bounded only by DEBT-003 already making every restart lossy for the same underlying reason.
+- **Verification/Governance:** `install()`/`rollback()` currently run with zero governance evaluation (S.3.9) — proposed fix: a new `GovernanceAction` type, evaluated like everything else, inheriting `GovernanceKernel`'s fail-closed discipline.
+- **Audit Trail:** None today (S.3.7) — proposed: `system.update_started`/`update_installed`/`rollback`/`restart` as durable `EventStream` events, so a future investigation can tell an update-triggered restart apart from a crash, which today it cannot.
+
 ---
 
 ## Final Classification of All Recommendations
@@ -870,6 +1024,16 @@ All 25 scenarios from the directive are addressed below, grouped where they shar
 | 26 | Full Temporal-server integration now | **NOT REQUIRED** | C.2 |
 | 27 | A literal "Session" class matching the directive's raw vocabulary, without the Scope reframing | **NOT REQUIRED** | E.1 |
 | 28 | Revisiting the `SchedulerService` deferral decision | **NOT REQUIRED** | M |
+| 29 | Active-mission protection before `restart()` — query non-terminal Work Graphs, warn/block by default | **CRITICAL PRE-FREEZE** | S.3.8, P.8 |
+| 30 | Route `interface/updater.py`'s `install()`/`rollback()` through `GovernanceKernel.evaluate_action()` | **CRITICAL PRE-FREEZE** | S.3.9, P.9 |
+| 31 | Update provenance — durable `EventStream` events for update/rollback/restart | IMPORTANT POST-FREEZE | S.3.7, Q.11 |
+| 32 | Persisted-contract schema versioning, generalizing `migrator.py`'s `schema_version` gate | IMPORTANT POST-FREEZE | S.3.2, Q.12 |
+| 33 | Explicit idempotency contract for migration functions | IMPORTANT POST-FREEZE | S.3.4, Q.13 |
+| 34 | Post-restart health check + auto-rollback for code updates, mirroring `model_router.py`'s `_maybe_rollback` | IMPORTANT POST-FREEZE | S.3.10, Q.14 |
+| 35 | Fix `GITHUB_REPO` constant mismatch in `interface/updater.py` (`"1h0lde4/OCBrain"` vs. actual `1h0lde4/ocbrain-v4.1`) | IMPORTANT POST-FREEZE | S.1, Q.15 |
+| 36 | Fleet-wide / multi-instance rolling update coordination | FUTURE RESEARCH | S.4, R.1 |
+
+*(Rows 29–36 added by Section S; numbering is additive/append-only rather than interleaved by classification, to avoid renumbering rows 1–28 from the original pass.)*
 
 ---
 
@@ -886,24 +1050,26 @@ The directive requires an explicit stop if this study finds that current archite
 | `trace_id`/`operation_id`/`stage_tag` semantics | No — the identity reconciliation recommendation (E.3) is about *connecting* this family to the workflow-execution family, not changing what's frozen |
 | Three-entrypoint signatures | No — not implicated |
 | `cognitive.planner_impasse_terminal` event shape | No — not implicated |
+| *(Section S addition)* Governor evaluation order / `GovernanceAction` shape | No — a new update-related `GovernanceAction` type (S.3.9) is a new value in an already-extensible space, not a change to the seven-governor sequence, the short-circuit rule, or the fail-closed-on-exception behavior documented in A.3 |
+| *(Section S addition)* `EventStream` event-type vocabulary | No — `system.update_started`/etc. (S.3.7) are new `event_type` strings; `EventStream`'s schema was never closed to new types (`system.checkpoint` already demonstrates this) |
 
-**No stop is triggered.** Every gap this study found is either additive to what's frozen (idempotency keys, per-node events, a new Scope resource, a new Work Unit event schema) or a decision that needs to be made explicit rather than a contradiction that needs to be resolved by changing something already shipped. The one item that most needs Moncif's direct attention before proceeding — the Scope-vs-Constitution-Non-Goal framing (E.1) — is a terminology and scope-of-ownership question, not evidence that a frozen contract is unsafe.
+**No stop is triggered, including after Section S.** Every gap this study found — in the original pass and in Section S — is either additive to what's frozen (idempotency keys, per-node events, a new Scope resource, a new Work Unit event schema, a new `GovernanceAction` type, new event-type strings) or a decision that needs to be made explicit rather than a contradiction resolved by changing something already shipped. The one item that most needs Moncif's direct attention before proceeding — the Scope-vs-Constitution-Non-Goal framing (E.1) — is a terminology and scope-of-ownership question, not evidence that a frozen contract is unsafe.
 
 ---
 
 ## Reliability Readiness Assessment
 
-1. **Current reliability maturity:** Solid at the primitive level, absent at the composition level. `EventStream` is a genuinely well-built, working, tested-at-the-margins WAL and checkpoint mechanism. `OperationRecoveryBudget` and its test suite are excellent examples of bounded, governed recovery discipline. `GovernanceKernel`'s fail-closed exception handling is a real architectural strength. None of these are yet connected to the thing that actually needs to survive a restart: `WorkflowRuntime`'s in-flight Work Graph state, which today lives entirely in a local Python dictionary.
+1. **Current reliability maturity:** Solid at the primitive level, absent at the composition level, and — per Section S — uneven across update surfaces specifically. `EventStream` is a genuinely well-built, working, tested-at-the-margins WAL and checkpoint mechanism. `OperationRecoveryBudget` and its test suite are excellent examples of bounded, governed recovery discipline. `GovernanceKernel`'s fail-closed exception handling is a real architectural strength. `model_router.py`'s canary-and-auto-rollback and `use_k42_frontend`'s mixed-version discipline show the project already knows how to evolve safely — for models and feature flags specifically. None of these are yet connected to the thing that actually needs to survive a restart, whether the restart is a crash or a deliberate update: `WorkflowRuntime`'s in-flight Work Graph state, which today lives entirely in a local Python dictionary.
 
-2. **Critical gaps:** No durable Work Unit/Work Graph state (DEBT-003) is the central one; everything else in this study — concurrency isolation, side-effect safety, provenance, temporal validity — inherits from it or compounds it. Two previously-untracked findings surfaced during this pass: a `RecursionGovernor` accumulation gap structurally identical to the already-known DEBT-007, and a global, unscoped `sqlite3.connect` monkeypatch with no current functional impact but real latent-coupling risk.
+2. **Critical gaps:** No durable Work Unit/Work Graph state (DEBT-003) is the central one; everything else in this study — concurrency isolation, side-effect safety, provenance, temporal validity, and now live evolution — inherits from it or compounds it. Section S's sharpest finding stands next to it as a near-peer: the update-and-restart path (`interface/updater.py`'s `os.execv()`) bypasses graceful shutdown entirely, making a *deliberate* update indistinguishable from a crash, and reaches production with zero governance evaluation. Three previously-untracked findings surfaced across this study: a `RecursionGovernor` accumulation gap structurally identical to the already-known DEBT-007; a global, unscoped `sqlite3.connect` monkeypatch with no current functional impact but real latent-coupling risk; and the `GITHUB_REPO` constant mismatch in `updater.py`.
 
-3. **Required pre-freeze foundations:** Seven items (Section P), all *contracts to specify*, not full implementations — identity reconciliation, a Work Unit event schema, an idempotency-key contract, an explicit Scope decision, a `PRAGMA synchronous` decision, and explicit dispositions for the two dormant governors and for governance-decision durability. None of these require touching a frozen H1 contract (Section 44).
+3. **Required pre-freeze foundations:** Nine items (Section P) — seven from the original pass, plus two from Section S (active-mission protection before restart; routing updates through Governance) — all *contracts to specify*, not full implementations. None require touching a frozen H1 contract (Section 44, re-checked after Section S).
 
-4. **Major post-freeze work:** Eighteen items (Section Q), led by actually wiring checkpoint/resume into `WorkflowRuntime` — the single highest-leverage piece of implementation work this study identified, because the primitive it depends on already exists and works.
+4. **Major post-freeze work:** Fifteen items (Section Q) — ten from the original pass, plus five from Section S (update provenance, persisted-contract versioning, an explicit migration-idempotency contract, post-restart health verification, and the `GITHUB_REPO` fix) — led by actually wiring checkpoint/resume into `WorkflowRuntime`, still the single highest-leverage piece of implementation work this study identified, because the primitive it depends on already exists and works.
 
-5. **Unresolved research questions:** Whether `operation_id` already reaches `WorkflowRuntime.execute()` (needs an L2 read of `planner.py`/`compiler.py`); whether `UnifiedMemory` has any concurrent-write conflict handling; whether any consumer currently does startup catch-up replay against `EventStream`; how "Scope" should be worded so it satisfies Section H's isolation needs without drifting into the Constitution's "conversation" Non-Goal — this last one is a decision for Moncif, not a research question this study can close on its own.
+5. **Unresolved research questions:** Whether `operation_id` already reaches `WorkflowRuntime.execute()` (needs an L2 read of `planner.py`/`compiler.py`); whether `UnifiedMemory` has any concurrent-write conflict handling; whether any consumer currently does startup catch-up replay against `EventStream`; how "Scope" should be worded so it satisfies Section H's isolation needs without drifting into the Constitution's "conversation" Non-Goal — this last one is a decision for Moncif, not a research question this study can close on its own; and, from Section S, whether `interface/updater.py`'s update-check/install path should eventually move behind the same Adapter/Capability abstraction the rest of external interaction goes through, rather than remaining a standalone module — not investigated this pass.
 
-6. **Is the architecture ready to proceed toward Kernel v1.0 freeze once the critical items are addressed?** **Yes.** This study found no contradiction that requires reopening a completed milestone, and the path forward is unusually cheap relative to most reliability retrofits: the durability substrate (`EventStream`) already exists, works, and is exactly the mechanism the project's own `OCBRAIN_FUTURE_ARCHITECTURE.md` research independently recommends. What's missing is specification and wiring, not invention.
+6. **Is the architecture ready to proceed toward Kernel v1.0 freeze once the critical items are addressed?** **Yes, with one sequencing condition Section S adds:** durable execution (C.2) and update-path safety (S.3.8/S.3.9) should ship together, not sequentially — see S.6. Short of that, this study found no contradiction that requires reopening a completed milestone, and the path forward is unusually cheap relative to most reliability retrofits: the durability substrate (`EventStream`) already exists and works, the update-safety patterns already exist and work for models and feature flags, and both are exactly what the project's own `OCBRAIN_FUTURE_ARCHITECTURE.md` research and existing conventions independently point toward. What's missing is generalization and wiring, not invention.
 
 ---
 

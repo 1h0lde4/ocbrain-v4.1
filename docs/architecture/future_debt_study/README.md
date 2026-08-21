@@ -13,4 +13,4 @@ Per `PROJECT_INSTRUCTIONS.md` §1.1 and `OCBRAIN_KERNEL_CONSTITUTION.md`: these 
 
 ## Contents
 
-- `OCBRAIN_RELIABILITY_DURABLE_EXECUTION_ARCHITECTURE_STUDY.md` — durable execution, crash recovery, and Work Unit reliability. Feeds the Kernel v1.0 Freeze & Contract Audit. Conclusion: no frozen H1 contract needs to change; 7 items classified Critical Pre-Freeze (contracts to specify, not build).
+- `OCBRAIN_RELIABILITY_DURABLE_EXECUTION_ARCHITECTURE_STUDY.md` — durable execution, crash recovery, Work Unit reliability, and (Section S, added in a second pass) live system evolution / active-mission compatibility across Kernel, Capability, Model, Runtime, Memory, UI/Web, and Security-policy updates. Feeds the Kernel v1.0 Freeze & Contract Audit. Conclusion: no frozen H1 contract needs to change; 9 items classified Critical Pre-Freeze (contracts to specify, not build) — durable Work Unit state and update-path safety are scoped together, not sequentially, per Section S.6.
