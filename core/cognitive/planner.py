@@ -990,12 +990,26 @@ class ExecutionPlan:
     for a plan produced by the ordinary plan() path; populated when this
     plan resulted from a recovery re-plan (Orchestrator's K4.2-branch
     re-plan loop) triggered by a specific prior impasse event.
+
+    general_purpose_only (ADR-K4.2-H-13): not part of K4 §6's original
+    field list -- added 2026-08-20 after live debugging showed
+    ClarificationPolicy's confidence gate (K4.2 §14) escalating
+    indiscriminately on low confidence, including the case where the low
+    score comes entirely from the general-purpose fallback (K4.2-H1 D2)
+    having no specific alternative to be compared against, not from
+    genuine ambiguity among real candidates. True iff
+    _is_general_purpose_only(steps_with_candidates) at plan() time (see
+    that function in this module). Read by compile()
+    (core/cognitive/compiler.py) and consumed by OrchestrationGovernor
+    (core/governance/orchestration_governor.py) to exempt such plans from
+    escalation regardless of their raw confidence value.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "Planner"
     goal_id: str = ""
     steps: List[PlanStep] = field(default_factory=list)
     confidence: float = 0.0
+    general_purpose_only: bool = False
     alternatives: List[str] = field(default_factory=list)
     justification: str = ""
     derived_from: List[str] = field(default_factory=list)
@@ -1205,6 +1219,45 @@ def _estimate_confidence(steps_with_candidates: List[tuple]) -> float:
     return round(min(step_scores), 3)
 
 
+def _is_general_purpose_only(steps_with_candidates: List[tuple]) -> bool:
+    """True iff every step's top-ranked candidate is the general-purpose
+    fallback -- i.e. no step in this plan found even one non-general-
+    purpose candidate that cleared discover_capabilities()'s min_score
+    gate.
+
+    ADR-K4.2-H-13: a companion signal to _estimate_confidence(), computed
+    independently rather than derived from it -- that function answers
+    "how low was the weakest step's score", this one answers "was there
+    ever a *specific* alternative anywhere in the plan to be uncertain
+    between at all". Because discover_capabilities()'s specificity-
+    dominance ordering (K4.2-H1 D2, ADR-K4.2-H-02) already guarantees any
+    cleared non-general-purpose candidate outranks every general-purpose
+    one for its step, checking candidates[0].is_general_purpose is
+    sufficient -- a better-ranked specific candidate silently losing to a
+    general-purpose one is not a case that ordering can produce.
+
+    A step with zero candidates is NOT counted as general-purpose-only
+    (returns False for the whole plan): that is a materially different,
+    more concerning situation than "found only the fallback" -- in
+    practice it is caught by impasse detection before this is ever
+    called (see _estimate_confidence's identical note), but this
+    function stays conservative if ever invoked on its own.
+
+    An empty plan (no steps at all) also returns False, matching
+    _estimate_confidence's own explicit handling of the same input:
+    consistent, not coincidental -- both treat "nothing to reason about"
+    as the more cautious of their two possible defaults (False/0.0)
+    rather than a vacuous True that would silently exempt something from
+    downstream governance.
+    """
+    if not steps_with_candidates:
+        return False
+    for _step, candidates in steps_with_candidates:
+        if not candidates or not candidates[0].is_general_purpose:
+            return False
+    return True
+
+
 def _alternative_plans(goal: Goal, steps_with_candidates: List[tuple],
                         *, top_n: int = 2) -> List[str]:
     """Generates up to top_n alternative ExecutionPlans, returning
@@ -1407,6 +1460,7 @@ async def plan(
     ordered = _sequence(steps_with_candidates, constraints)
     with_fallbacks = _fallback_paths(ordered)
     confidence = _estimate_confidence(steps_with_candidates)
+    general_purpose_only = _is_general_purpose_only(steps_with_candidates)
     alternatives = _alternative_plans(goal, steps_with_candidates)
     justification = _justify(with_fallbacks, constraints)
 
@@ -1414,6 +1468,7 @@ async def plan(
         goal_id=goal.resource_id,
         steps=with_fallbacks,
         confidence=confidence,
+        general_purpose_only=general_purpose_only,
         alternatives=alternatives,
         justification=justification,
         derived_from=[goal.resource_id],

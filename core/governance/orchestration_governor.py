@@ -47,6 +47,23 @@ types, not the reverse — see core/cognitive/planner.py's own imports of
 GovernanceAction/GovernanceResult/GovernanceVerdict for the direction
 that already holds everywhere else in this codebase).
 
+Scope addition (ADR-K4.2-H-13, 2026-08-20): a third, narrower question
+within the confidence check above -- when the plan's only candidate
+anywhere was the general-purpose fallback (`general_purpose_only=True`
+in metadata), escalation is skipped entirely regardless of the raw
+confidence number. This was identified via live debugging, not
+pre-planned during H1: with only one capability (LLM_COMPLETION)
+actually registered as of K2.3, its relevance_score against realistic
+requests is driven by lexical overlap with its own description, which
+is frequently ~0.0 for perfectly reasonable requests including trivial
+ones (confirmed for both "hi and hello" and the exact "book a flight to
+Tokyo next week" example ADR-K4.2-H-02/K42-002 already uses as its own
+fixed-and-verified case) -- and ClarificationPolicy's 0.5 threshold
+escalated on that score unconditionally, with no path back to a
+successful compilation, on every affected request. Clarification only
+has something to offer when there is a genuine choice between
+candidates to disambiguate; a lone fallback candidate is not that.
+
 The escalation bound (K4.2 §14: "reusing RecursionGovernor's existing
 bounded-loop principle rather than inventing a second one") is
 implemented as a small counter-vs-ceiling comparison within this same
@@ -158,9 +175,33 @@ class OrchestrationGovernor(Governor):
                 specific ambiguity has already been escalated.
             max_escalations (int, default 2): ClarificationPolicy's bound
                 on repeated escalation for the same ambiguity.
+            general_purpose_only (bool, default False; ADR-K4.2-H-13):
+                when True, exempts this action from escalation/rejection
+                entirely, regardless of confidence -- see the check
+                below for why.
         """
         confidence = action.metadata.get("confidence")
         if confidence is None:
+            return None
+
+        if action.metadata.get("general_purpose_only", False):
+            # ADR-K4.2-H-13 (2026-08-20): every step's only candidate was
+            # the general-purpose fallback (K4.2-H1 D2) -- there is no
+            # specific-capability alternative anywhere in this plan to be
+            # uncertain between, so ClarificationPolicy has nothing to
+            # usefully escalate here regardless of the raw confidence
+            # value. A third permissive-on-absence-style exemption,
+            # structurally identical in spirit to the "confidence is
+            # None" one just above: both mean "this governor has no
+            # meaningful clarification decision to make for this
+            # action" -- just for a different reason.
+            logger.info(
+                "[OrchestrationGovernor] general_purpose_only=True "
+                "(confidence=%.2f, worker_id=%s) — exempt from "
+                "ClarificationPolicy; no specific-capability alternative "
+                "exists to clarify between.",
+                confidence, action.worker_id,
+            )
             return None
 
         threshold = action.metadata.get(

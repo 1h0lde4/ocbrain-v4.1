@@ -293,7 +293,13 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
            while clarification_attempt < max_escalations, and rejects
            once the bound is reached — the same bounded-retry mechanics
            already reviewed and tested for Planner's own worker_type
-           check, applied here to the plan as a whole.
+           check, applied here to the plan as a whole. Also passes
+           "general_purpose_only" (ADR-K4.2-H-13, added 2026-08-20): when
+           every step's only candidate was the general-purpose fallback,
+           there is no specific alternative anywhere in the plan for
+           clarification to actually resolve, and OrchestrationGovernor
+           exempts the action from escalation on that basis regardless of
+           how low plan.confidence is.
         3. Compilation (K4 §6) — only reached on GovernanceVerdict.APPROVE.
            Maps steps to nodes/edges (_compile_workflow), defensively
            re-validates the result via WorkflowDefinition's own
@@ -343,6 +349,7 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
         metadata={
             "goal_id": plan.goal_id,
             "confidence": plan.confidence,
+            "general_purpose_only": plan.general_purpose_only,
             "step_count": len(plan.steps),
             "confidence_threshold": clarification_policy.confidence_threshold,
             "clarification_attempt": clarification_attempt,

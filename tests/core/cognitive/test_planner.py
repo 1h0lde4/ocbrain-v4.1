@@ -60,6 +60,7 @@ from core.cognitive.planner import (
     _estimate_confidence,
     _extract_explicit_constraints,
     _fallback_paths,
+    _is_general_purpose_only,
     _justify,
     _parse_decomposition,
     _sequence,
@@ -1334,6 +1335,81 @@ class TestEstimateConfidence:
             (strong_step, [strong_match]), (weak_step, [weak_match]),
         ])
         assert confidence <= strong_score
+
+
+# ── _is_general_purpose_only (ADR-K4.2-H-13) ─────────────────────────────
+
+class TestIsGeneralPurposeOnly:
+    def test_empty_steps_is_false(self):
+        assert _is_general_purpose_only([]) is False
+
+    def test_step_with_no_candidates_is_false(self):
+        """A materially different, more concerning case than 'found only
+        the fallback' -- must not be silently exempted alongside it."""
+        step = PlanStep(step_id="s1", description="x", capability_type="")
+        assert _is_general_purpose_only([(step, [])]) is False
+
+    def test_single_general_purpose_candidate_is_true(self):
+        step = PlanStep(step_id="s1", description="hi and hello", capability_type="")
+        contract = CapabilityContract(
+            capability_type="llm_completion",
+            description="Generate text from a prompt via a language model.",
+        )
+        match = CapabilityMatch(
+            capability_type="llm_completion", contract=contract,
+            relevance_score=0.0, subgoal_ref="s1", is_general_purpose=True,
+        )
+        assert _is_general_purpose_only([(step, [match])]) is True
+
+    def test_single_specific_candidate_is_false(self):
+        step = PlanStep(step_id="s1", description="search the web", capability_type="")
+        contract = CapabilityContract(capability_type="web_search", description="search the web")
+        match = CapabilityMatch(
+            capability_type="web_search", contract=contract,
+            relevance_score=0.9, subgoal_ref="s1", is_general_purpose=False,
+        )
+        assert _is_general_purpose_only([(step, [match])]) is False
+
+    def test_mixed_plan_with_one_specific_step_is_false(self):
+        """Specificity-dominance ordering (D2/ADR-H-02) guarantees a
+        cleared specific candidate always outranks a general-purpose one
+        for its own step -- so as soon as *any* step in the plan has a
+        specific top candidate, the whole plan is no longer
+        general-purpose-only, even if another step is."""
+        gp_step = PlanStep(step_id="s1", description="hi", capability_type="")
+        gp_contract = CapabilityContract(capability_type="llm_completion", description="Generate text from a prompt via a language model.")
+        gp_match = CapabilityMatch(
+            capability_type="llm_completion", contract=gp_contract,
+            relevance_score=0.0, subgoal_ref="s1", is_general_purpose=True,
+        )
+        specific_step = PlanStep(step_id="s2", description="search the web", capability_type="")
+        specific_contract = CapabilityContract(capability_type="web_search", description="search the web")
+        specific_match = CapabilityMatch(
+            capability_type="web_search", contract=specific_contract,
+            relevance_score=0.9, subgoal_ref="s2", is_general_purpose=False,
+        )
+        assert _is_general_purpose_only([
+            (gp_step, [gp_match]), (specific_step, [specific_match]),
+        ]) is False
+
+    def test_top_candidate_only_is_examined(self):
+        """Only candidates[0] (the ranked top match) is checked -- a
+        weaker general-purpose candidate sitting behind an already-
+        cleared specific one at index 0 does not flip the result, since
+        specificity-dominance ordering already placed the specific match
+        first."""
+        step = PlanStep(step_id="s1", description="search the web", capability_type="")
+        specific_contract = CapabilityContract(capability_type="web_search", description="search the web")
+        specific_match = CapabilityMatch(
+            capability_type="web_search", contract=specific_contract,
+            relevance_score=0.4, subgoal_ref="s1", is_general_purpose=False,
+        )
+        gp_contract = CapabilityContract(capability_type="llm_completion", description="Generate text from a prompt via a language model.")
+        gp_match = CapabilityMatch(
+            capability_type="llm_completion", contract=gp_contract,
+            relevance_score=0.0, subgoal_ref="s1", is_general_purpose=True,
+        )
+        assert _is_general_purpose_only([(step, [specific_match, gp_match])]) is False
 
 
 # ── _alternative_plans ───────────────────────────────────────────────────

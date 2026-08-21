@@ -210,6 +210,70 @@ class TestOrchestrationGovernorClarificationPolicy:
         result = gov.evaluate(GovernanceAction(metadata={"confidence": 0.1}))
         assert result.verdict == GovernanceVerdict.ESCALATE
 
+    def test_general_purpose_only_exempts_low_confidence(self):
+        """ADR-K4.2-H-13: this is the actual bug's regression case at the
+        governance layer -- confidence 0.0 (the score real "hi and
+        hello"-style requests get against LLM_COMPLETION's description,
+        see tests/test_runtime_integration.py's end-to-end version of
+        this) would escalate under the pre-fix behavior; with
+        general_purpose_only=True it must approve instead."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.0, "confidence_threshold": 0.5,
+            "clarification_attempt": 0, "max_escalations": 2,
+            "general_purpose_only": True,
+        }))
+        assert result.verdict == GovernanceVerdict.APPROVE
+
+    def test_general_purpose_only_exempts_even_at_escalation_bound(self):
+        """The exemption is unconditional on confidence/attempt -- it
+        must not merely delay the REJECT-as-stalled outcome, it must
+        prevent both ESCALATE and REJECT entirely."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.0, "confidence_threshold": 0.5,
+            "clarification_attempt": 2, "max_escalations": 2,
+            "general_purpose_only": True,
+        }))
+        assert result.verdict == GovernanceVerdict.APPROVE
+
+    def test_general_purpose_only_false_still_escalates(self):
+        """Regression guard the other direction: explicitly False (not
+        just absent) must not accidentally exempt anything -- confirms
+        the fix is scoped to the True case, not to the key's mere
+        presence in metadata."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.3, "confidence_threshold": 0.5,
+            "clarification_attempt": 0, "max_escalations": 2,
+            "general_purpose_only": False,
+        }))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+
+    def test_general_purpose_only_absent_defaults_to_not_exempt(self):
+        """Pre-fix callers that don't yet supply this key at all must see
+        completely unchanged behavior -- default-False, not default-
+        exempt."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.3, "confidence_threshold": 0.5,
+            "clarification_attempt": 0, "max_escalations": 2,
+        }))
+        assert result.verdict == GovernanceVerdict.ESCALATE
+
+    def test_general_purpose_only_does_not_exempt_when_confidence_already_fine(self):
+        """Sanity check on the exemption's placement in the method: a
+        high-confidence general_purpose_only plan approves for the
+        ordinary reason (confidence >= threshold), not by silently
+        short-circuiting past a real ambiguity check that would have
+        mattered here."""
+        gov = OrchestrationGovernor()
+        result = gov.evaluate(GovernanceAction(metadata={
+            "confidence": 0.9, "confidence_threshold": 0.5,
+            "general_purpose_only": True,
+        }))
+        assert result.verdict == GovernanceVerdict.APPROVE
+
     def test_worker_type_check_unaffected_by_clarification_addition(self):
         """Regression: the pre-existing K2.4 worker_type behavior is
         completely unchanged by this addition."""

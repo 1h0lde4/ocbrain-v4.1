@@ -90,6 +90,15 @@ def _build_runtime_stack(tmp_path, *, use_k42_frontend: bool,
     capability_registry.register_capability(CapabilityContract(
         capability_type=CapabilityType.LLM_COMPLETION,
         description="Generate text from a prompt via a language model.",
+        # Matches main.py's real registration exactly (including its own
+        # comment there: "the one line that makes [D2's] fix real rather
+        # than theoretical") -- previously missing here, which meant no
+        # test in this file exercised the actual general-purpose bypass
+        # discover_capabilities() implements; every existing test either
+        # scored a perfect lexical match (exact-string mock) or bypassed
+        # discovery/confidence entirely via direct mocking, so the gap
+        # was never observed. See ADR-K4.2-H-13.
+        is_general_purpose=True,
     ))
     resource_manager = ResourceManager()
     adapter_runtime = AdapterRuntime(capability_registry, resource_manager)
@@ -271,12 +280,36 @@ class TestFeatureFlagOnFullPath:
 class TestCompilationOutcomes:
     @pytest.mark.asyncio
     async def test_escalated_compilation_invokes_supervisor_and_returns_gracefully(self, tmp_path):
+        """Updated for ADR-K4.2-H-13. Previously forced low confidence via
+        patch(_estimate_confidence, return_value=0.1) layered on top of
+        _mock_llm_calls()'s perfect-lexical-match decomposition mock.
+        Now that the fixture correctly sets
+        LLM_COMPLETION.is_general_purpose=True (matching main.py's real
+        registration -- see _build_runtime_stack), that combination is
+        general_purpose_only=True for real, independent of the forced
+        confidence value, and is correctly exempted under the new rule
+        rather than escalating -- so the old setup no longer reaches
+        ESCALATED at all. Fixed by registering a second, real,
+        specific-but-weak capability instead: confidence stays low
+        because the lexical match is genuinely weak, but
+        general_purpose_only is False because a real alternative exists
+        to be uncertain against -- exactly the scenario this governor's
+        escalation path exists for. No _estimate_confidence mock needed
+        anymore; the low score is now real, not forced."""
         orchestrator, event_stream, memory, _, adapter = _build_runtime_stack(
             tmp_path, use_k42_frontend=True)
-        p1, p2, p3 = _mock_llm_calls()
+        orchestrator._capability_registry.register_capability(CapabilityContract(
+            capability_type=CapabilityType.WEB_SEARCH,
+            description="Generate a written report of search results",
+        ))
+        orchestrator._capability_registry.register_adapter(
+            CapabilityType.WEB_SEARCH, FakeSuccessAdapter())
         try:
-            with p1 as mock_engine_cls, p2, p3, \
-                 patch("core.cognitive.planner._estimate_confidence", return_value=0.1):
+            with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
+                 patch("core.cognitive.intent.generate_with_fallback",
+                       new=AsyncMock(return_value="novel:answer_query | 0.9")), \
+                 patch("core.cognitive.planner.generate_with_fallback",
+                       new=AsyncMock(return_value="Summarize the quarterly report")):
                 mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
                 answer = await orchestrator.handle("Summarize the quarterly report.")
         finally:
@@ -288,6 +321,13 @@ class TestCompilationOutcomes:
 
         events = await event_stream.query(limit=200)
         event_types = [e.event_type for e in events]
+        # Confirms this is genuine escalation, not an artifact of a
+        # forced mock: a real specific candidate won ranking, so
+        # general_purpose_only correctly came out False.
+        discovered = [e for e in events if e.event_type == "cognitive.capabilities_discovered"]
+        top_candidate = discovered[0].payload["candidates"][0]
+        assert top_candidate["is_general_purpose"] is False
+        assert top_candidate["score"] < 0.5
         assert "cognitive.plan_rejected" in event_types
         assert "cognitive.supervision_escalated" in event_types
         # Invariant 9: no execution/workflow events at all for a plan
@@ -326,6 +366,116 @@ class TestCompilationOutcomes:
         events = await event_stream.query(limit=200)
         event_types = [e.event_type for e in events]
         assert "cognitive.plan_rejected" in event_types
+        assert "workflow.started" not in event_types
+
+    @pytest.mark.asyncio
+    async def test_general_purpose_only_naturally_low_confidence_still_compiles(self, tmp_path):
+        """ADR-K4.2-H-13 regression test -- reproduces the actual
+        reported bug end-to-end. With only LLM_COMPLETION registered
+        (the real, current production configuration -- see
+        core/capabilities/capability.py's own note that it is the only
+        capability with a registered CapabilityContract as of K2.3), a
+        trivial conversational request whose decomposed step description
+        does not lexically resemble LLM_COMPLETION's own description
+        ("Generate text from a prompt via a language model.") used to
+        escalate every single time it was tried, because
+        _estimate_confidence's real score -- not a mocked one, unlike
+        test_escalated_compilation_invokes_supervisor_and_returns_
+        gracefully above, which forces confidence via
+        patch(..._estimate_confidence, return_value=0.1) -- is driven
+        entirely by that lexical mismatch and comes out at 0.0 for
+        essentially any real request.
+
+        Deliberately does NOT use _mock_llm_calls(): that helper's
+        planner-decomposition mock returns LLM_COMPLETION's own
+        description verbatim as the "decomposed step", which trivially
+        guarantees a perfect lexical match (score 1.0) and is exactly
+        why this bug went unnoticed by every existing test in this file
+        -- none of them ever exercised the real scorer against a step
+        description that looks like an actual user request rather than
+        a copy of the capability's own description. This test uses a
+        decomposition output that reads like a real step description
+        instead, and lets the real Jaccard scorer run unmocked."""
+        orchestrator, event_stream, memory, _, adapter = _build_runtime_stack(
+            tmp_path, use_k42_frontend=True)
+        try:
+            with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
+                 patch("core.cognitive.intent.generate_with_fallback",
+                       new=AsyncMock(return_value="novel:answer_query | 0.9")), \
+                 patch("core.cognitive.planner.generate_with_fallback",
+                       new=AsyncMock(return_value="Reply warmly to the user's greeting")):
+                mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                answer = await orchestrator.handle("hi and hello")
+        finally:
+            await orchestrator.close()
+
+        events = await event_stream.query(limit=200)
+        event_types = [e.event_type for e in events]
+
+        # The mechanism, not just the outcome -- confirm the real score
+        # really was low and really came from the general-purpose
+        # candidate, so this test cannot be passing for the wrong reason
+        # (e.g. a coincidentally-high score).
+        discovered = [e for e in events if e.event_type == "cognitive.capabilities_discovered"]
+        assert discovered, "capability discovery never ran"
+        top_candidate = discovered[0].payload["candidates"][0]
+        assert top_candidate["score"] < 0.5
+        assert top_candidate["is_general_purpose"] is True
+
+        # The actual regression: despite that low score, it compiled and
+        # executed anyway, reaching the real adapter -- not the
+        # escalation message the live system used to return for this.
+        assert "cognitive.plan_compiled" in event_types
+        assert "cognitive.plan_rejected" not in event_types
+        assert "workflow.completed" in event_types
+        assert adapter.call_count == 1
+        assert isinstance(answer, str)
+        assert "stub answer to" in answer
+
+    @pytest.mark.asyncio
+    async def test_low_confidence_with_a_real_specific_candidate_still_escalates(self, tmp_path):
+        """Scoping guard for ADR-K4.2-H-13, the other direction: when a
+        genuine (if weak) specific-capability candidate exists alongside
+        the fallback, general_purpose_only must come out False and
+        ClarificationPolicy must still escalate exactly as before --
+        confirming the fix is precisely scoped to "no alternative exists
+        at all", not a general weakening of the confidence gate. Uses a
+        second real (not mocked) CapabilityContract + adapter, registered
+        the same way LLM_COMPLETION is in _build_runtime_stack."""
+        orchestrator, event_stream, memory, _, adapter = _build_runtime_stack(
+            tmp_path, use_k42_frontend=True)
+        orchestrator._capability_registry.register_capability(CapabilityContract(
+            capability_type=CapabilityType.WEB_SEARCH,
+            description="Search the web for current information",
+        ))
+        orchestrator._capability_registry.register_adapter(
+            CapabilityType.WEB_SEARCH, FakeSuccessAdapter())
+
+        try:
+            with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
+                 patch("core.cognitive.intent.generate_with_fallback",
+                       new=AsyncMock(return_value="novel:answer_query | 0.9")), \
+                 patch("core.cognitive.planner.generate_with_fallback",
+                       new=AsyncMock(return_value="Search the web for today's news")):
+                mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                answer = await orchestrator.handle("what's the news today")
+        finally:
+            await orchestrator.close()
+
+        events = await event_stream.query(limit=200)
+        event_types = [e.event_type for e in events]
+
+        discovered = [e for e in events if e.event_type == "cognitive.capabilities_discovered"]
+        top_candidate = discovered[0].payload["candidates"][0]
+        # The real, weak-but-specific WEB_SEARCH candidate won ranking
+        # over the general-purpose fallback (specificity-dominance, D2) --
+        # so this plan is NOT general-purpose-only, and must not be
+        # exempted.
+        assert top_candidate["is_general_purpose"] is False
+        assert top_candidate["score"] < 0.5  # still low enough to escalate
+
+        assert "cognitive.plan_rejected" in event_types
+        assert "cognitive.supervision_escalated" in event_types
         assert "workflow.started" not in event_types
 
 
