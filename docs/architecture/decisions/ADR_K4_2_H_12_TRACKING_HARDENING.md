@@ -1,7 +1,26 @@
 # ADR-K4.2-H-12: Tracking & Documentation Hardening — `IMPLEMENTATION_TRACKER.md` Disposition
 
-**Status:** DRAFT (the disposition below is a decision; the scope-extension question
-inside it is explicitly deferred — see §2)
+**Status:** ACCEPTED (promoted from DRAFT at K4.2-H2 integration, Aug 22, 2026 — the
+scope-extension question this ADR's §2 point 2 explicitly deferred is resolved below,
+at the authority level this ADR itself named as correct for it)
+
+## 5. Integration resolution of the deferred scope question (§2, point 2)
+
+`IMPLEMENTATION_TRACKER.md` is **not** extended to cover the H2 sub-packet family.
+H2 tracking remains exactly where it already was working correctly throughout
+D3/D7/D11/D12: `docs/architecture/h2_status/*.md` (per-packet status), `docs/architecture/
+h2_packet_ownership.json` (machine-checked scope), and now `ADR_INDEX.md`/`CURRENT_STATE.md`/
+`IMPLEMENTATION_ROADMAP.md` (this integration pass). Reasoning: `IMPLEMENTATION_TRACKER.md`
+documents a specific, already-concluded campaign (Packets 01-09, "Cognitive Front-End",
+ending July 30, 2026) in a per-packet narrative format that does not match H2's
+D-numbered/ADR-lettered convention; retrofitting H2 into it would mix two different
+tracking granularities in one file rather than harden tracking, and — as this ADR's own
+§2 point 2 already identified — would have been exactly the kind of cross-packet
+attestation a zero-contact parallel session correctly declined to make unilaterally.
+Instead, a single short closing note was added to `IMPLEMENTATION_TRACKER.md` itself,
+pointing forward to where H2 tracking actually lives, so the file remains genuinely
+useful as a "where do I look" entry point without duplicating content it would then have
+to keep in sync by hand.
 **Date:** August 19, 2026
 **Author:** K4.2-H2-D12 packet (Tracking & Documentation Hardening)
 **Scope:** `docs/architecture/IMPLEMENTATION_TRACKER.md`; H2 parallel-packet tracking model

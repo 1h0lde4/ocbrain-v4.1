@@ -1,6 +1,6 @@
 # ADR-K4.2-H-10: Architecture-Drift Verification Tooling (D10 Baseline Record)
 
-**Status:** DRAFT
+**Status:** ACCEPTED (promoted from DRAFT at K4.2-H2 integration, Aug 22, 2026 — this ADR only records already-built, already-working tooling rather than proposing a new change; `scripts/check_drift.py` ran 9/9 PASS repeatedly throughout integration, both before and after merging all four H2 packets plus the out-of-band ADR-K4.2-H-13 fix)
 **Date:** August 19, 2026
 **Author:** K4.2-H2-D12 packet (Tracking & Documentation Hardening)
 **Scope:** `scripts/check_drift.py`; `docs/architecture/D10_PRE_H2_DRIFT_BASELINE.json`

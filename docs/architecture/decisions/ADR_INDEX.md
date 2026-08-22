@@ -1,7 +1,7 @@
 # OCBrain — Architecture Decision Records Index
 
 **Purpose:** Central index of all Architecture Decision Records (ADRs) for the OCBrain kernel.
-**Last synchronized:** Aug 16, 2026 (added ADR-K4.2-H-01 through ADR-K4.2-H-09, minus H-03/H-07 which are H2 scope)
+**Last synchronized:** Aug 22, 2026 (K4.2-H2 integration: ADR-K4.2-H-03 and H-07 filled in — both were H2-scope placeholders as of the last sync; ADR-K4.2-H-10, H-11, H-12 added (all three written by the H2 parallel packets, promoted from DRAFT where the deferred question each one flagged is now resolved — see their own "Consequences"/"Decision" sections); ADR-K4.2-H-13 added (a live-debugging fix, not one of the four H2 parallel packets — see that ADR's own Author field); prior sync Aug 16, 2026 added ADR-K4.2-H-01 through ADR-K4.2-H-09, minus H-03/H-07 which are H2 scope)
 
 ---
 
@@ -40,23 +40,27 @@ Both conventions are valid. Embedded ADRs are part of the frozen spec; standalon
 | ADR-K3.5-01 | Event Architecture — EventStream vs EventBus | Accepted | `ADR_K3_5_01_EVENT_ARCHITECTURE.md` |
 | ADR-K4.2-H-01 | Layered Semantic Authority (K42-001 fix) | Accepted | `ADR_K4_2_H_01_LAYERED_SEMANTIC_AUTHORITY.md` |
 | ADR-K4.2-H-02 | General-Purpose Capability Fallback (K42-002 fix) | Accepted | `ADR_K4_2_H_02_GENERAL_PURPOSE_FALLBACK.md` |
-| ADR-K4.2-H-03 | Capability discrimination acceptance suite | **H2 — not yet written** | — |
+| ADR-K4.2-H-03 | Capability Discrimination — Registration-Order Tie-Break | Accepted | `ADR_K4_2_H_03_CAPABILITY_DISCRIMINATION.md` |
 | ADR-K4.2-H-04 | Canonical CapabilityDiscoveryResult | Accepted | `ADR_K4_2_H_04_CAPABILITY_DISCOVERY_RESULT.md` |
 | ADR-K4.2-H-05 | Unified Operation Recovery Budget | Accepted | `ADR_K4_2_H_05_UNIFIED_RECOVERY_BUDGET.md` |
 | ADR-K4.2-H-06 | Learning Domain Contract — frozen for H1, K4.1-L reconciliation deferred | Accepted (as a deferral) | `ADR_K4_2_H_06_LEARNING_DOMAIN_DEFERRED.md` |
-| ADR-K4.2-H-07 | Terminal Planner impasse operational diagnostics | **H2 — not yet written** | — |
+| ADR-K4.2-H-07 | Terminal Planner Impasse Diagnostic Closeout | Accepted (verification closeout — no code change) | `ADR_K4_2_H_07_TERMINAL_IMPASSE_CLOSEOUT.md` |
 | ADR-K4.2-H-08 | Trace and Operation Identifier Semantics | Accepted | `ADR_K4_2_H_08_TRACE_AND_OPERATION_SEMANTICS.md` |
 | ADR-K4.2-H-09 | Causal Provenance — derived_from vs. caused_by | Accepted | `ADR_K4_2_H_09_CAUSAL_PROVENANCE.md` |
+| ADR-K4.2-H-10 | Architecture-Drift Verification Tooling (D10 Baseline Record) | Accepted | `ADR_K4_2_H_10_DRIFT_TOOLING_RECORD.md` |
+| ADR-K4.2-H-11 | Request Language Detection | Accepted | `ADR_K4_2_H_11_LANGUAGE_SUPPORT.md` |
+| ADR-K4.2-H-12 | Tracking & Documentation Hardening — `IMPLEMENTATION_TRACKER.md` Disposition | Accepted (scope-extension question resolved at integration — see the ADR's §2 point 2 and `IMPLEMENTATION_TRACKER.md`'s own closing note) | `ADR_K4_2_H_12_TRACKING_HARDENING.md` |
+| ADR-K4.2-H-13 | General-Purpose-Only Plans Exempt from ClarificationPolicy | Accepted | `ADR_K4_2_H_13_GENERAL_PURPOSE_CLARIFICATION_EXEMPTION.md` |
+
+*H-13 note: not one of H2's four parallel packets (D3/D7/D11/D12) — a live-debugging fix for a pre-existing, pre-H2 bug (ClarificationPolicy's unconditional 0.5 threshold escalating essentially any request, since the sole registered capability is general-purpose and its own description rarely overlaps lexically with a real request). See the ADR's own Context section.*
 
 ---
 
 ## Recommended Future ADRs
 
-- ADR-K4.2-H-03 — Capability discrimination acceptance suite (H2)
-- ADR-K4.2-H-07 — Terminal Planner impasse operational diagnostics beyond H1's minimal dependency (H2)
-- ADR-K4.2-H-10 — Architecture-drift verification tooling (H2)
-- ADR-K4.2-H-11 — Language-aware/preserving support (H2)
 - A future ADR performing the actual K4.1-L reconciliation pass ADR-K4.2-H-06 explicitly defers (see `KNOWN_ISSUES.md` DEBT-011) — required before K4.2.6+ (Shared ValidationGate and Learning Wiring).
+- A future ADR for wiring `RawRequest.detected_language` (ADR-K4.2-H-11) into capability-matching, if that's ever wanted — explicitly out of scope for H-11 itself, per its own Context section and `docs/architecture/h2_packet_ownership.json`'s D11 coordination note.
+- D10's full CI wiring (`tests/test_architecture_drift.py`, mentioned in ADR-K4.2-H-10's Context as a separate, later packet) — the baseline capability itself is done and accepted; CI integration is not.
 
 ---
 

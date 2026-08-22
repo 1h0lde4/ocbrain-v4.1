@@ -1,7 +1,7 @@
 # OCBrain — Project Index
 
 **Purpose:** Map of the repository for new contributors and AI sessions.
-**Last synchronized:** July 2026
+**Last synchronized:** Aug 22, 2026 (K4.2-H2 integration pass — added the H2-related rows below; the acknowledged July-2026-era gap in the Report Chronology table further down is a separate, larger backfill explicitly flagged as out of scope for that prior edit and still not attempted here)
 
 ---
 
@@ -97,10 +97,15 @@ ocbrain-v4.1-main/
 │   │   ├── KERNEL_ARCHITECTURE_v1.0.md
 │   │   ├── ARCHITECTURE_CHANGELOG.md
 │   │   ├── PROJECT_INSTRUCTIONS.md
-│   │   └── decisions/               # Architecture Decision Records
-│   │       ├── ADR_INDEX.md
-│   │       ├── ADR_K2_3_01_GOVERNANCE_OWNERSHIP.md
-│   │       └── ADR_K2_EXT_01_EXTENSION_OVER_MODIFICATION.md
+│   │   ├── decisions/               # Architecture Decision Records
+│   │   │   ├── ADR_INDEX.md
+│   │   │   ├── ADR_K2_3_01_GOVERNANCE_OWNERSHIP.md
+│   │   │   ├── ADR_K2_EXT_01_EXTENSION_OVER_MODIFICATION.md
+│   │   │   └── ADR_K4_2_H_*.md       #   K4.2-H1/H2 decisions (H-01 through H-13)
+│   │   ├── h2_packets/               # K4.2-H2 packet briefs (D3/D7/D11/D12) + README
+│   │   ├── h2_status/                # Per-packet status stubs (D3/D7/D11/D12)
+│   │   ├── h2_packet_ownership.json  # Machine-checked file-ownership manifest
+│   │   └── IMPLEMENTATION_TRACKER.md # Packets 01-09 per-packet log (K4.2 "Cognitive Front-End"; not extended to H2, see its own closing note)
 │   │
 │   └── reports/                     # Session and audit reports
 │       ├── FINAL_K3_READINESS_AUDIT.md
@@ -135,6 +140,9 @@ Reports in approximate chronological order:
 | Final Architecture Audit | `docs/reports/KERNEL_V1_0_FINAL_ARCHITECTURE_AUDIT_REVISION.md` | Architecture validation |
 | K4.2-H1 Independent Verification | `docs/Bugs Hunt & fix reports/K4_2_H1_INDEPENDENT_VERIFICATION_MEMO.md` | Independent re-verification of the K4.2-H1 commit (K42-001/002, test baseline, D3 scope) |
 | K4.2-H1 Final Freeze Review | `docs/Bugs Hunt & fix reports/K4_2_H1_FINAL_FREEZE_REVIEW.md` | 16-gate freeze audit; H1 frozen Aug 17, 2026; H2 readiness analysis |
+| K4.2-H2 Readiness & Implementation Plan | `docs/Bugs Hunt & fix reports/K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md` | D10 baseline capability + full four-packet (D3/D7/D11/D12) parallel-session plan |
+| K4.2-H2-D3 Completion Report | `docs/Bugs Hunt & fix reports/K4_2_H2_D3_COMPLETION_REPORT.md` | Capability Discrimination Acceptance Suite; the registration-order tie-break fix |
+| K4.2-H2-D11 Completion Report | `docs/Bugs Hunt & fix reports/K4_2_H2_D11_COMPLETION_REPORT.md` | Request Language Detection |
 
 *(Note: this table has not been kept current since ~July 2026 — several K3/K4/K4.1/K4.1-L/K4.2 reports, including `K4_2_H1_COMPLETION_REPORT.md`, are missing between the row above and these two. Not backfilled here as it's outside this edit's scope; flagging for a dedicated catch-up pass.)*
 
