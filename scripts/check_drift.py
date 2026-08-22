@@ -1,20 +1,68 @@
 """
-scripts/check_drift.py — K4.2 D10 Architecture Drift Verification (DRIFT-01..09).
+scripts/check_drift.py — K4.2 D10 Architecture Drift Verification (DRIFT-01..15).
 
-Source of truth for these nine checks: `docs/architecture/implementation_plan -
+Source of truth for DRIFT-01..09: `docs/architecture/implementation_plan -
 K42 v1-0 FINAL PRE-FREEZE ARCHITECTURE SPECIFICATION frozen.md`, section
 "Final Drift Verification Contract (Corrected)" and its "DRIFT-08 Canonical
 Ownership Declarations" / "DRIFT-07 Exception" subsections. Read that section
-before changing any check below — this file is a direct implementation of it,
-not an independent design.
+before changing any of those nine checks below — they are a direct
+implementation of it, not an independent design.
 
-Status: this is the MINIMUM D10 baseline capability authorized ahead of full
-H2 implementation (K4.2-H2 readiness plan, `docs/Bugs Hunt & fix reports/
-K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md`, section 3 / D10 packet). It
-exists so a "before H2" snapshot can be captured now and diffed against an
-"after H2" snapshot once D3/D7/D11 land. It is deliberately NOT wired into
-CI or the default pytest run yet, and does not attempt drift rules beyond
-the nine the frozen spec defines — both are the D10 packet's own job.
+Source of truth for DRIFT-10..15: `docs/architecture/h2_packets/
+D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md` (the full D10 enforcement-area list,
+D10-A through D10-J). Not every D10-lettered area gets a new numbered check
+below — D10-D (Capability/Adapter boundary) is already DRIFT-02, and D10-F
+(diagnostic emission) is already DRIFT-07; both are confirmed, not
+reimplemented. D10-H (deep semantic equivalence of frozen contracts) is
+explicitly out of scope for a static checker — construction-confinement
+(DRIFT-04/08/10/14) is what a tool like this can honestly claim, and that
+limitation is documented rather than papered over with a fragile heuristic.
+D10-I (packet ownership) is CI-integration, not a new drift rule — see
+.github/workflows/ci.yml, which calls scripts/check_packet_ownership.py
+directly rather than reimplementing its logic here.
+
+  DRIFT-10  Governance boundary, broadened: Intent Interpretation and
+            Planner must not call GovernanceKernel.evaluate_action()
+            directly (DRIFT-05's existing check, unmodified, still covers
+            SupervisorWorker only — this is a new, separate check, not a
+            rewrite of it).
+  DRIFT-11  Frozen entrypoints: interpret_request()/plan()/compile() are
+            importable as *callables* only from core/orchestrator.py in
+            production code (the one confirmed caller — repository-wide
+            search performed before writing this check, not assumed).
+  DRIFT-12  Recovery authority: no class outside core/cognitive/recovery.py
+            (other than OperationRecoveryBudget itself) may define all
+            three of consume()/remaining/exhausted — that exact trio is
+            OperationRecoveryBudget's real public surface, confirmed by
+            reading core/cognitive/recovery.py directly. Verified this
+            does not collide with RetryPolicy (core/workflow/definition.py),
+            a legitimate, differently-shaped config dataclass with no such
+            methods.
+  DRIFT-13  Architecture markers: the RECONCILE-PENDING marker in
+            OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md
+            must not silently disappear without KNOWN_ISSUES.md's DEBT-011
+            being recorded as resolved.
+  DRIFT-14  Multi-site canonical construction: PlannerRequest (confirmed by
+            direct search to be a real class with two genuine production
+            construction sites, core/cognitive/planner.py and
+            core/orchestrator.py — not the single-owner shape DRIFT-08
+            assumes) may not be constructed anywhere else.
+  DRIFT-15  Forbidden diagnostic transport: core/event_bus.py's EventBus is
+            a genuinely separate, pre-existing, non-overlapping pub/sub
+            mechanism (module.*/learning.*/kb.*/brain.* events; confirmed
+            by reading its full event catalogue and every call site, zero
+            cognitive.* usage found) — this check exists to keep it that
+            way, not because it is currently violated. Any bus.emit(...)
+            call passing a cognitive.*-prefixed string is a violation.
+
+Status: DRIFT-01..09 were the MINIMUM D10 baseline capability authorized
+ahead of full H2 implementation (K4.2-H2 readiness plan, `docs/Bugs Hunt &
+fix reports/K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md`, section 3 / D10
+packet); DRIFT-10..15 are the full D10 enforcement layer, added once D3/D7/
+D11/D12 were all integrated onto main and could be verified against
+directly rather than assumed. This file is now wired into CI (see
+.github/workflows/ci.yml) and IS the default architecture-verification
+gate for pushes/PRs — no longer "not wired into CI yet."
 
 Run with:
     python3 scripts/check_drift.py                    # JSON to stdout
@@ -24,19 +72,22 @@ Run with:
 Exit code: 0 if every check is PASS (a documented architectural exception
 counts as PASS — see DRIFT-07 below); 1 if any check reports a VIOLATION.
 
-Known limitations of this minimum baseline (not solved here on purpose):
+Known limitations (not solved here on purpose):
   - DRIFT-06 (no hard-coded capability-type strings) and DRIFT-09 (no
-    unauthorized shared-contract producer) are the two checks the frozen
-    spec itself only describes loosely ("literal string analysis",
-    "producer source analysis"). Both are implemented below as documented,
-    conservative heuristics. A VIOLATION from either is a prompt for a
-    human read, not proof of an actual architecture break — tighten them
-    as part of the full D10 packet if they prove too noisy or too loose.
+    unauthorized shared-contract producer) are the two DRIFT-01..09 checks
+    the frozen spec itself only describes loosely ("literal string
+    analysis", "producer source analysis"). Both are implemented below as
+    documented, conservative heuristics. A VIOLATION from either is a
+    prompt for a human read, not proof of an actual architecture break.
   - All checks are AST-name-based static analysis, not a type checker:
     a call routed through an aliased import or an intermediate variable
     of the same runtime type but a different static name will not be
     caught. This is the deliberate, inspectable trade-off LAW 4
     (Determinism Over Magic) implies over a heavier, less legible tool.
+  - DRIFT-10..15 are new, narrowly-scoped structural rules, not proof of
+    semantic correctness — see each check's own docstring for exactly
+    what it does and doesn't catch, and D10-H's note above for why deep
+    semantic equivalence is deliberately not attempted.
 """
 
 from __future__ import annotations
@@ -238,6 +289,14 @@ CANONICAL_OWNERS: dict[str, str] = {
     "CapabilityDiscoveryResult": "core/cognitive/planner.py",
     "CompilationResult": "core/cognitive/compiler.py",
     "OperationRecoveryBudget": "core/orchestrator.py",
+    # D10-A (K4.2-H2 D10): CapabilityDiscoveryRequest has two production
+    # construction sites (build_capability_discovery_request()'s own
+    # definition, and a per-step construction inside _decompose()) --
+    # both confirmed to be inside core/cognitive/planner.py itself, so
+    # this fits the existing single-owner-file shape exactly and simply
+    # extends this dict, rather than needing PlannerRequest's separate
+    # multi-site treatment below (see MULTI_SITE_CANONICAL_OWNERS).
+    "CapabilityDiscoveryRequest": "core/cognitive/planner.py",
 }
 
 
@@ -271,10 +330,15 @@ def check_drift_08() -> CheckResult:
         all_violations.extend(_ownership_violations_for(contract, owner))
     status = "VIOLATION" if all_violations else "PASS"
     notes = (
-        "Interpreted as: none of the six canonical contract dataclasses (" + ", ".join(CANONICAL_OWNERS)
+        f"Interpreted as: none of the {len(CANONICAL_OWNERS)} canonical contract dataclasses ("
+        + ", ".join(CANONICAL_OWNERS)
         + ") may be directly constructed in production code (tests/*.py exempt) outside their "
         "declared owner file. Test doubles and compatibility adapters are exempt via the tests/ "
-        "exclusion, per the spec's explicit note."
+        "exclusion, per the spec's explicit note. (K4.2-H2 D10: grown from 6 to "
+        f"{len(CANONICAL_OWNERS)} entries — see CANONICAL_OWNERS' own inline comment for what "
+        "was added and why; the count here is computed, not hand-copied, specifically so it "
+        "cannot go stale again the way the original 'six' description would have the moment "
+        "this dict grew.)"
     )
     return CheckResult(
         "DRIFT-08",
@@ -505,6 +569,324 @@ CHECKS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# DRIFT-10 — Governance boundary broadened: Intent Interpretation and
+# Planner must not call GovernanceKernel.evaluate_action() directly.
+# (K4.2-H2 D10-C. DRIFT-05 above is unmodified and still independently
+# covers SupervisorWorker — this is additive, not a replacement.)
+# ---------------------------------------------------------------------------
+
+
+GOVERNANCE_BOUNDARY_FILES: tuple[str, ...] = (
+    "core/cognitive/intent.py",
+    "core/cognitive/planner.py",
+)
+
+
+def check_drift_10() -> CheckResult:
+    violations: list[Violation] = []
+    for rel in GOVERNANCE_BOUNDARY_FILES:
+        path = REPO_ROOT / rel
+        tree = _parse(path) if path.exists() else None
+        if tree is not None:
+            violations.extend(_evaluate_action_violations(tree, rel))
+    status = "VIOLATION" if violations else "PASS"
+    return CheckResult(
+        "DRIFT-10",
+        "Intent Interpretation and Planner must not call "
+        "GovernanceKernel.evaluate_action() directly (Governance sits at the "
+        "compilation boundary only — extends DRIFT-05's same check, which "
+        "independently still covers SupervisorWorker, to these two files)",
+        status,
+        violations,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-11 — Frozen entrypoints: interpret_request()/plan()/compile() are
+# importable as callables only from their one confirmed production caller.
+# (K4.2-H2 D10-B. Generalizes DRIFT-03's exact pattern, which only ever
+# checked supervisor.py against plan/compile, to all three entrypoints and
+# to production code generally.)
+# ---------------------------------------------------------------------------
+
+# entrypoint function name -> (defining module, sole authorized-caller file).
+# Established by direct repository search before writing this check: every
+# production import of these three names *as callables* (not as the data
+# types ExecutionPlan/CompilationResult/CompilationStatus/Goal, which are
+# legitimately imported much more widely) goes through core/orchestrator.py.
+FROZEN_ENTRYPOINTS: dict[str, tuple[str, str]] = {
+    "interpret_request": ("core.cognitive.intent", "core/orchestrator.py"),
+    "plan": ("core.cognitive.planner", "core/orchestrator.py"),
+    "compile": ("core.cognitive.compiler", "core/orchestrator.py"),
+}
+
+
+def _frozen_entrypoint_violations(name: str, module: str, authorized_rel: str) -> list[Violation]:
+    violations: list[Violation] = []
+    authorized_path = REPO_ROOT / authorized_rel
+    for path in _iter_core_py_files(exclude_tests=True):
+        if path == authorized_path:
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for imported_name, lineno in _imported_names_from(tree, module):
+            if imported_name == name:
+                violations.append(
+                    Violation(
+                        _rel(path), lineno,
+                        f"imports {name}() from {module} — only {authorized_rel} is an "
+                        f"authorized caller of this cognitive entrypoint",
+                    )
+                )
+    return violations
+
+
+def check_drift_11() -> CheckResult:
+    violations: list[Violation] = []
+    for name, (module, authorized_rel) in FROZEN_ENTRYPOINTS.items():
+        violations.extend(_frozen_entrypoint_violations(name, module, authorized_rel))
+    status = "VIOLATION" if violations else "PASS"
+    return CheckResult(
+        "DRIFT-11",
+        "interpret_request()/plan()/compile() importable as callables only "
+        "from core/orchestrator.py in production code (importing the data "
+        "types they return — Goal/ExecutionPlan/CompilationResult/"
+        "CompilationStatus — is unrestricted; this checks the callables only)",
+        status,
+        violations,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-12 — Recovery authority: no shadow OperationRecoveryBudget.
+# (K4.2-H2 D10-E.)
+# ---------------------------------------------------------------------------
+
+# OperationRecoveryBudget's real public surface (core/cognitive/recovery.py):
+# two properties and one method. Confirmed by direct reading, not assumed.
+RECOVERY_BUDGET_OWNER = "core/cognitive/recovery.py"
+RECOVERY_BUDGET_SURFACE = {"consume", "remaining", "exhausted"}
+
+
+def _recovery_authority_violations(tree: ast.Module, rel: str) -> list[Violation]:
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if node.name == "OperationRecoveryBudget":
+            continue
+        member_names = {
+            item.name for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        if RECOVERY_BUDGET_SURFACE <= member_names:
+            violations.append(
+                Violation(
+                    rel, node.lineno,
+                    f"class '{node.name}' defines all of consume()/remaining/exhausted — "
+                    f"the exact OperationRecoveryBudget surface — outside its declared owner "
+                    f"{RECOVERY_BUDGET_OWNER}. This is either a second recovery authority or a "
+                    f"legitimate wrapper/adapter that should delegate to the real "
+                    f"OperationRecoveryBudget rather than re-implementing its shape.",
+                )
+            )
+    return violations
+
+
+def check_drift_12() -> CheckResult:
+    violations: list[Violation] = []
+    owner_path = REPO_ROOT / RECOVERY_BUDGET_OWNER
+    for path in _iter_core_py_files(exclude_tests=True):
+        if path == owner_path:
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        violations.extend(_recovery_authority_violations(tree, _rel(path)))
+    status = "VIOLATION" if violations else "PASS"
+    return CheckResult(
+        "DRIFT-12",
+        "No class outside core/cognitive/recovery.py (other than "
+        "OperationRecoveryBudget itself) may define all three of "
+        "consume()/remaining/exhausted — that exact trio is a strong, narrow "
+        "signal of a shadow recovery authority. Does not flag RetryPolicy "
+        "(core/workflow/definition.py) or any other config-only dataclass, "
+        "since neither defines this method/property trio.",
+        status,
+        violations,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-13 — Architecture markers must not silently disappear.
+# (K4.2-H2 D10-J.)
+# ---------------------------------------------------------------------------
+
+ARCHITECTURE_MARKER = "RECONCILE-PENDING"
+ARCHITECTURE_MARKER_FILE = "docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md"
+ARCHITECTURE_MARKER_RESOLUTION_FILE = "KNOWN_ISSUES.md"
+ARCHITECTURE_MARKER_RESOLUTION_TOKEN = "DEBT-011"
+
+
+def check_drift_13() -> CheckResult:
+    marker_path = REPO_ROOT / ARCHITECTURE_MARKER_FILE
+    marker_present = marker_path.exists() and ARCHITECTURE_MARKER in marker_path.read_text(encoding="utf-8")
+    if marker_present:
+        return CheckResult(
+            "DRIFT-13",
+            f"'{ARCHITECTURE_MARKER}' marker in {ARCHITECTURE_MARKER_FILE} must not silently "
+            f"disappear without a recorded resolution",
+            "PASS",
+            [],
+            notes=f"Marker still present in {ARCHITECTURE_MARKER_FILE} — open, as expected.",
+        )
+    resolution_path = REPO_ROOT / ARCHITECTURE_MARKER_RESOLUTION_FILE
+    resolution_text = resolution_path.read_text(encoding="utf-8") if resolution_path.exists() else ""
+    # A resolved DEBT entry in this codebase's own established convention is
+    # struck through, e.g. "~~DEBT-011 — ...~~ **Resolved (date):**" — look
+    # for the token appearing at all near strikethrough/Resolved language,
+    # rather than requiring one exact phrasing.
+    resolved = ARCHITECTURE_MARKER_RESOLUTION_TOKEN in resolution_text and (
+        f"~~{ARCHITECTURE_MARKER_RESOLUTION_TOKEN}" in resolution_text
+        or "Resolved" in resolution_text
+    )
+    if resolved:
+        return CheckResult(
+            "DRIFT-13",
+            f"'{ARCHITECTURE_MARKER}' marker in {ARCHITECTURE_MARKER_FILE} must not silently "
+            f"disappear without a recorded resolution",
+            "PASS",
+            [],
+            notes=(
+                f"Marker absent from {ARCHITECTURE_MARKER_FILE}, but "
+                f"{ARCHITECTURE_MARKER_RESOLUTION_FILE} records {ARCHITECTURE_MARKER_RESOLUTION_TOKEN} "
+                f"as resolved — treated as a deliberate, documented resolution, not a silent deletion."
+            ),
+        )
+    return CheckResult(
+        "DRIFT-13",
+        f"'{ARCHITECTURE_MARKER}' marker in {ARCHITECTURE_MARKER_FILE} must not silently "
+        f"disappear without a recorded resolution",
+        "VIOLATION",
+        [Violation(
+            ARCHITECTURE_MARKER_FILE, 0,
+            f"marker is absent and {ARCHITECTURE_MARKER_RESOLUTION_FILE} does not record "
+            f"{ARCHITECTURE_MARKER_RESOLUTION_TOKEN} as resolved — looks like a silent deletion",
+        )],
+    )
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-14 — Multi-site canonical construction: PlannerRequest.
+# (K4.2-H2 D10-A. PlannerRequest has two genuine production construction
+# sites in different files — core/cognitive/planner.py's own internal
+# builder, and core/orchestrator.py preparing its call into plan() — so it
+# does not fit CANONICAL_OWNERS' single-owner-file shape. Confirmed by
+# direct repository search before writing this check, not assumed.)
+# ---------------------------------------------------------------------------
+
+MULTI_SITE_CANONICAL_OWNERS: dict[str, set[str]] = {
+    "PlannerRequest": {"core/cognitive/planner.py", "core/orchestrator.py"},
+}
+
+
+def _ownership_violations_for_multi(contract: str, owner_rels: set[str]) -> list[Violation]:
+    violations: list[Violation] = []
+    owner_paths = {REPO_ROOT / o for o in owner_rels}
+    for path in _iter_core_py_files(exclude_tests=True):
+        if path in owner_paths:
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for lineno in _call_sites_for_name(tree, contract):
+            violations.append(
+                Violation(
+                    _rel(path), lineno,
+                    f"constructs {contract}(...) outside its declared owner files "
+                    f"({', '.join(sorted(owner_rels))})",
+                )
+            )
+    return violations
+
+
+def check_drift_14() -> CheckResult:
+    all_violations: list[Violation] = []
+    for contract, owners in MULTI_SITE_CANONICAL_OWNERS.items():
+        all_violations.extend(_ownership_violations_for_multi(contract, owners))
+    status = "VIOLATION" if all_violations else "PASS"
+    return CheckResult(
+        "DRIFT-14",
+        "PlannerRequest constructed only in core/cognitive/planner.py or "
+        "core/orchestrator.py (its two genuine production sites — an "
+        "internal builder and the entrypoint's caller preparing its own "
+        "call; complementary to DRIFT-08's single-owner-file checks, for "
+        "the one canonical contract that doesn't fit that shape)",
+        status,
+        all_violations,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-15 — Forbidden diagnostic transport: cognitive.* events must never
+# be routed through core/event_bus.py's EventBus.
+# (K4.2-H2 D10-G. EventBus is a genuinely separate, legitimate mechanism
+# for module/learning/kb/brain lifecycle events — confirmed by reading its
+# full event catalogue and every call site before writing this check; this
+# exists to keep it that way, not because it is currently violated.)
+# ---------------------------------------------------------------------------
+
+
+def _forbidden_transport_violations(tree: ast.Module, rel: str) -> list[Violation]:
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        if not (isinstance(node.func, ast.Attribute) and node.func.attr == "emit"):
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith("cognitive."):
+            violations.append(
+                Violation(rel, node.lineno, f"emits '{first.value}' via a .emit(...) call — "
+                                             f"EventStream's own emission path uses .append(...)/"
+                                             f"_emit_event(...), not .emit(...); this looks like "
+                                             f"EventBus, the wrong transport for a cognitive.* event")
+            )
+    return violations
+
+
+def check_drift_15() -> CheckResult:
+    violations: list[Violation] = []
+    for path in _iter_py_files(REPO_ROOT / "core", recursive=True):
+        if "tests" in path.relative_to(REPO_ROOT).parts:
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        violations.extend(_forbidden_transport_violations(tree, _rel(path)))
+    status = "VIOLATION" if violations else "PASS"
+    return CheckResult(
+        "DRIFT-15",
+        "No cognitive.* event is ever passed to a .emit(...) call (EventBus's "
+        "method — the legitimate cognitive.* transport, EventStream, is "
+        "reached via .append(...)/_emit_event(...) only)",
+        status,
+        violations,
+    )
+
+
+CHECKS += [
+    check_drift_10,
+    check_drift_11,
+    check_drift_12,
+    check_drift_13,
+    check_drift_14,
+    check_drift_15,
+]
+
+
 def run_all() -> list[CheckResult]:
     return [check() for check in CHECKS]
 
@@ -519,10 +901,11 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "schema_version": "1.0",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "purpose": "K4.2-H2 D10 pre-H2 architecture drift baseline",
+        "purpose": "K4.2-H2 D10 full architecture drift enforcement (post-H2-integration)",
         "source_spec": (
-            "docs/architecture/implementation_plan - K42 v1-0 FINAL PRE-FREEZE ARCHITECTURE "
-            "SPECIFICATION frozen.md, section 9 (Final Drift Verification Contract)"
+            "DRIFT-01..09: docs/architecture/implementation_plan - K42 v1-0 FINAL PRE-FREEZE "
+            "ARCHITECTURE SPECIFICATION frozen.md, section 9 (Final Drift Verification Contract). "
+            "DRIFT-10..15: docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md."
         ),
         "checks": [r.to_dict() for r in results],
         "summary": {
