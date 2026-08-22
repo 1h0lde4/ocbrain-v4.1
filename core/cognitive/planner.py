@@ -813,6 +813,20 @@ async def discover_capabilities(
     inside _decompose(), not as an independent top-level operation).
     None is accepted (e.g. direct/test callers outside a plan()
     invocation) and simply passed through as None.
+
+    K4.2-H2 D3 (ADR-K4.2-H-03): ranking is order-independent even when
+    two candidates' relevance_score is float-identical within the same
+    is_general_purpose group -- the sort key's third component
+    (capability_type, alphabetical) exists purely to break that exact-tie
+    case deterministically, since Python's stable sort would otherwise
+    silently fall back to registry.list_capabilities() order (i.e.
+    registration order) whenever scores tie. Currently dormant in
+    production (main.py registers only one capability), confirmed live
+    by the D3 acceptance suite's registration-order-independence tests
+    (tests/test_capability_discrimination.py). Does not change
+    relevance_score's computation, CapabilityMatch's fields, or this
+    function's public signature -- ranking among genuinely different
+    scores is unaffected.
     """
     event_stream = event_stream or get_event_stream()
 
@@ -856,7 +870,19 @@ async def discover_capabilities(
     # hard-coded capability_type routing (D2), no Planner-side special
     # case; the registry remains the single dynamic source of what is
     # general-purpose.
-    scored.sort(key=lambda m: (m.is_general_purpose, -m.relevance_score))
+    #
+    # K4.2-H2 D3 (ADR-K4.2-H-03): a third, purely-deterministic key
+    # (capability_type, alphabetical) breaks exact relevance_score ties
+    # within the same is_general_purpose group. Without it, Python's
+    # stable sort silently falls back to `scored`'s insertion order --
+    # i.e. registry.list_capabilities() order, i.e. registration order --
+    # whenever two candidates score identically, which the D3 acceptance
+    # suite's registration-order-independence tests confirmed empirically
+    # (tests/test_capability_discrimination.py,
+    # TestRegistrationOrderIndependence). This key only ever activates
+    # on an exact tie; every non-tied ranking (including every ranking
+    # this codebase's tests exercised before D3) is unaffected.
+    scored.sort(key=lambda m: (m.is_general_purpose, -m.relevance_score, m.capability_type))
 
     await event_stream.append(
         "cognitive.capabilities_discovered",

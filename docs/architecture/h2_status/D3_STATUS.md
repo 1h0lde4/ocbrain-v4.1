@@ -1,7 +1,14 @@
 # D3 Status
 
-**State:** NOT STARTED
-
-This is a placeholder. The Claude session assigned to this packet overwrites
-this file per its own brief's "How to report done" template
-(`docs/architecture/h2_packets/D3*.md`).
+**State:** COMPLETE
+**Branch:** h2/d3-capability-discrimination @ 8423d829b5564f2bf999e497fdaba954a71173b7
+**Ownership check:** PASS (`python3 scripts/check_packet_ownership.py --packet D3` against this commit's diff from `main`)
+**Tests added:** 9, all passing (`tests/test_capability_discrimination.py` — see completion report for the per-case breakdown; one test, the exact-score-tie case, failed against the unmodified implementation before the ADR-K4.2-H-03 fix, then passed after it)
+**Regression check:** 1183 passed / 34 failed vs. documented baseline of 1174 passed / 34 failed (1174 + 9 new D3 tests). The 34-failure set is byte-for-byte identical to the unmodified branch's own 34 failures, confirmed by running the full suite both before and after this packet's change (via `git stash`) and diffing the two failure lists -- zero new failures, zero fixed failures outside this packet's own scope.
+**Drift check:** 9/9 PASS, both before and after the change (`scripts/check_drift.py --quiet`)
+**Open question resolution:** Case D required a `planner.py` change. The realistic (non-tied) ordering test passed unmodified; a deliberately-engineered exact-score-tie test failed against the unmodified implementation (registration order determined the winner), confirming a genuine, if currently dormant, gap. Per the packet's decision tree this was a trivial, clearly-deterministic tie-break (no `CapabilityMatch` field, scoring formula, public signature, or architecture change), so it was corrected directly rather than escalated further.
+**ADR created:** yes (`ADR_K4_2_H_03_CAPABILITY_DISCRIMINATION.md`)
+**Notes for the integration packet:**
+- The only production change is a one-line addition to `discover_capabilities()`'s ranking sort key (`core/cognitive/planner.py`), adding `capability_type` (alphabetical) as a third, tie-breaking sort component. It activates only on an exact `(is_general_purpose, relevance_score)` tie; every non-tied ranking is provably unaffected (full pre-existing suite passes identically before/after).
+- Running the full test suite (`pytest tests/ -q`) has a side effect, unrelated to this packet, of rewriting `config/models.toml` and `config/sources.toml`'s line endings (CRLF -> LF, no content change) -- some test's fixture handling writes those files directly rather than to `tmp_path`. This was detected and reverted both times it occurred during this session (`git checkout -- config/models.toml config/sources.toml`) and is not included in this packet's commits. Worth a `KNOWN_ISSUES.md` entry at the integration step (this packet does not own that file).
+- `tests/test_break_concurrency.py`, `tests/test_break_empty_db.py`, `tests/test_break_security.py`, `tests/test_system_ctrl.py` fail to even *collect* on a bare fresh clone (`ModuleNotFoundError: No module named 'chromadb'`) until `pip install -r requirements.txt` is run -- expected for a fresh sandbox with no prior environment setup, not a code defect; noted here only so a future from-scratch session doesn't re-diagnose it.
