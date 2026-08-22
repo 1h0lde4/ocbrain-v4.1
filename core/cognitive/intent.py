@@ -246,8 +246,20 @@ class RawRequest:
     today, so immutability has no migration cost; H2 adds
     detected_language following the same frozen-construction pattern
     (language detected before construction, not written in afterward).
+
+    detected_language (K4.2-H2 D11, ADR-K4.2-H-11): best-effort,
+    additive metadata from _detect_language(text), set once inside
+    normalize_request() before construction -- never None-then-mutated,
+    since that would violate frozen=True. None means "undetectable or
+    unknown," a legitimate, expected value, not an error state. Read
+    nowhere else in this codebase as of D11 -- specifically, NOT
+    consumed by discover_capabilities() (core/cognitive/planner.py),
+    which scores on Goal-derived text only; wiring this field into
+    capability-matching is an explicitly separate, not-yet-authorized
+    change (see TestDetectedLanguageDoesNotAffectCapabilityDiscovery).
     """
     text: str
+    detected_language: Optional[str] = None
 
 
 class NormalizationRejected(Exception):
@@ -278,6 +290,101 @@ _INJECTION_PATTERNS = (
     re.compile(r"you are now (in )?(dan|developer mode|jailbreak)", re.I),
     re.compile(r"reveal (your |the )?system prompt", re.I),
 )
+
+# K4.2-H2 D11: Unicode-script ranges for languages with a distinctive
+# non-Latin script. Checked in this order deliberately -- Hiragana/
+# Katakana before the CJK Unified Ideographs range, since Japanese text
+# mixing Kanji with Kana would otherwise be misread via the Kanji range
+# alone (Chinese text has no Kana at all, so Kana presence is an
+# unambiguous signal on its own).
+_LANGUAGE_SCRIPT_RANGES: tuple = (
+    ("ja", (("\u3040", "\u309f"), ("\u30a0", "\u30ff"))),  # Hiragana, Katakana
+    ("ko", (("\uac00", "\ud7a3"),)),                        # Hangul syllables
+    ("zh", (("\u4e00", "\u9fff"),)),                        # CJK Unified Ideographs
+    ("ru", (("\u0400", "\u04ff"),)),                        # Cyrillic
+    ("ar", (("\u0600", "\u06ff"),)),                        # Arabic
+    ("he", (("\u0590", "\u05ff"),)),                        # Hebrew
+    ("el", (("\u0370", "\u03ff"),)),                        # Greek
+    ("hi", (("\u0900", "\u097f"),)),                        # Devanagari
+)
+
+# Latin-script languages: distinguished by common-function-word overlap
+# rather than script (Latin script alone can't tell English from
+# Spanish). Deliberately small, hand-picked, high-frequency closed-class
+# words per language -- not a corpus-derived frequency table -- kept in
+# scope with normalize_request()'s own "lightweight, narrowly-scoped"
+# precedent rather than building a general-purpose classifier.
+_LANGUAGE_STOPWORDS: dict = {
+    "en": frozenset({"the", "and", "is", "are", "was", "were", "to", "of", "in",
+                     "that", "it", "for", "on", "with", "as", "this", "you", "be",
+                     "have", "not"}),
+    "es": frozenset({"el", "la", "de", "que", "y", "en", "los", "las", "un", "una",
+                      "es", "por", "con", "para", "su", "al", "se", "no"}),
+    "fr": frozenset({"le", "la", "de", "et", "les", "des", "un", "une", "est", "que",
+                      "pour", "dans", "avec", "au", "ce", "il", "ne", "pas"}),
+    "de": frozenset({"der", "die", "das", "und", "ist", "nicht", "ein", "eine", "zu",
+                      "den", "mit", "für", "auf", "sich", "des", "im"}),
+    "pt": frozenset({"o", "a", "de", "que", "e", "do", "da", "em", "um", "uma",
+                      "para", "com", "não", "os", "as", "se"}),
+    "it": frozenset({"il", "la", "di", "che", "e", "un", "una", "per", "con", "non",
+                      "sono", "gli", "del", "della", "si"}),
+}
+
+_LATIN_TOKEN_RE = re.compile(r"[a-zA-ZÀ-ÿ]+")
+_MIN_STOPWORD_HITS = 2
+_MIN_TOKENS_FOR_DETECTION = 3
+
+
+def _detect_language(text: Optional[str]) -> Optional[str]:
+    """Best-effort, dependency-free language identification.
+
+    K4.2-H2 D11 (ADR-K4.2-H-11): no external language-ID library is
+    available in this environment, and requirements.txt sits outside
+    this packet's allowed_files (adding a new pip dependency was not
+    something this packet could authorize for itself) -- so, consistent
+    with normalize_request()'s own established philosophy (deliberately
+    narrow and lightweight rather than a general-purpose classifier),
+    this is a small, dependency-free, entirely local heuristic: Unicode
+    script ranges for languages with a distinctive non-Latin script,
+    then common-function-word overlap for Latin-script text. Zero
+    network I/O, zero new third-party dependencies.
+
+    Never raises. Returns None -- a legitimate, expected result, not a
+    failure mode -- for: empty/whitespace-only text; text too short to
+    meaningfully classify; and text that doesn't clear this detector's
+    deliberately conservative confidence threshold for any known
+    language (including a genuine tie between two languages, which this
+    detector declines to break arbitrarily rather than resolve by
+    incidental dict-iteration order).
+    """
+    if not text or not text.strip():
+        return None
+
+    for language, ranges in _LANGUAGE_SCRIPT_RANGES:
+        for ch in text:
+            if any(lo <= ch <= hi for lo, hi in ranges):
+                return language
+
+    tokens = _LATIN_TOKEN_RE.findall(text.lower())
+    if len(tokens) < _MIN_TOKENS_FOR_DETECTION:
+        return None
+
+    token_set = set(tokens)
+    scores = {
+        language: len(token_set & stopwords)
+        for language, stopwords in _LANGUAGE_STOPWORDS.items()
+    }
+    best_language = max(scores, key=scores.get)
+    best_score = scores[best_language]
+    if best_score < _MIN_STOPWORD_HITS:
+        return None
+    runner_up_score = max(
+        (score for language, score in scores.items() if language != best_language),
+        default=0,
+    )
+    if best_score == runner_up_score:
+        return None
+    return best_language
 
 
 def normalize_request(raw_text: Optional[str]) -> RawRequest:
@@ -338,7 +445,12 @@ def normalize_request(raw_text: Optional[str]) -> RawRequest:
     # hard-code future assumptions, does not consume future
     # responsibilities).
 
-    return RawRequest(text=text)
+    # K4.2-H2 D11 (ADR-K4.2-H-11): detected before construction, never
+    # written in afterward -- RawRequest.frozen=True (H1 D1) is respected,
+    # not worked around. Best-effort; None means undetectable/unknown,
+    # by design, not an error.
+    language = _detect_language(text)
+    return RawRequest(text=text, detected_language=language)
 
 
 # ─────────────────────────────────────────────────────────────────────────
