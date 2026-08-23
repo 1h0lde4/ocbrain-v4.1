@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-08-22T22:07:48.238057+00:00",
+  "generated_at": "2026-08-23T17:06:26.490581+00:00",
   "purpose": "K4.2-H2 D10 full architecture drift enforcement (post-H2-integration)",
   "source_spec": "DRIFT-01..09: docs/architecture/implementation_plan - K42 v1-0 FINAL PRE-FREEZE ARCHITECTURE SPECIFICATION frozen.md, section 9 (Final Drift Verification Contract). DRIFT-10..15: docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md.",
   "checks": [
