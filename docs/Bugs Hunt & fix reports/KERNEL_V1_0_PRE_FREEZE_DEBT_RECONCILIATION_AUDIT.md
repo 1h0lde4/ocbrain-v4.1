@@ -341,3 +341,13 @@ Repository-wide sweep this session (legacy/deprecated/shim/TODO/FIXME markers ac
 ---
 
 *End of audit. Per the governing directive: reconcile, verify, close, classify — not research further. No production code was modified in this session; the audit's own single directly-relevant discovery (the disconnected `operation_id`/`trace_id` vs. `WorkflowNode` identifier families, Section 3.2) was a verification read, not a change.*
+
+---
+
+## Addendum (August 23, 2026) — D10 (drift-enforcement) verification
+
+Flagged post-hoc: a fifth H2-track packet, `K4.2-H2-D10` ("full architecture drift enforcement," `DRIFT-10..15`, branch `h2/d10-drift-enforcement`), was in progress on its own branch throughout this audit and the preceding CMS session, authored by a separate parallel session, and was **not merged into `main`** at the time either document was written — nor is it merged as of this addendum. This is distinct from the pre-H2 `DRIFT-01..09` baseline (`scripts/check_drift.py`, landed Aug 18, `f070a7c`), which *was* on `main` throughout and which this audit did not separately exercise or cite.
+
+**Checked directly rather than assumed:** D10's own six new checks (governance-boundary scope, frozen entrypoints, recovery authority, architecture-marker disappearance, multi-site canonical construction, forbidden diagnostic transport) address structural invariants unrelated to either of this audit's two blockers. Running D10's full `DRIFT-01..15` checker against current `main` (HEAD `2d77b94`, correctly, from its proper location after an initial attempt from a copied-out path gave a false-positive `DRIFT-13` violation via broken `__file__`-relative path resolution — caught and corrected before relying on it) returns **15/15 PASS, zero violations**, matching D10's own reported result against the same fully-integrated base. **No change to this audit's verdict, blocking set, or any finding.**
+
+One forward-looking note, not a blocker: once D10 merges, the test count this audit cites (1214 passed / 34 failed) becomes 1230/34 (D10 adds 16 passing tests, same 34 pre-existing failures) — a heads-up for whoever next reads this document against a newer `main`, not a correction to what was accurate at audit time.
