@@ -57,10 +57,20 @@ committed JSON artifact reflects a script that was actually executed, not hand-w
 
 ## 3. Consequences
 
-- Full CI wiring (automatic invocation in the standard pytest run, e.g. a
+- **Update (Aug 22, 2026, K4.2-H2-D10 packet, merged into main):** the item below is
+  resolved — full CI wiring now exists as `.github/workflows/ci.yml`, gating on
+  `pytest` (against a documented known-environmental-failures reference list, not raw
+  exit code) plus this same `check_drift.py` (now DRIFT-01..15). Not
+  `tests/test_architecture_drift.py` as anticipated below — the actual implementation
+  extended the existing `tests/test_check_drift.py` instead, which already had the
+  right AST-fixture conventions to build on. See
+  `docs/Bugs Hunt & fix reports/K4_2_H2_D10_COMPLETION_REPORT.md` for the full record,
+  including independent adversarial validation in
+  `K4_2_H2_FINAL_INDEPENDENT_AUDIT.md` §10.
+- ~~Full CI wiring (automatic invocation in the standard pytest run, e.g. a
   `tests/test_architecture_drift.py`) remains explicitly out of scope for this baseline
   capability — that is the separate "D10 full" packet, sequenced after D3/D7/D11/D12
-  land, per `h2_packets/README.md`.
+  land, per `h2_packets/README.md`.~~
 - DRIFT-06 and DRIFT-09's heuristic nature is a recorded, deliberate trade-off: a future
   VIOLATION from either needs a human read before being treated as a real architecture
   break. This ADR exists partly so a future session does not "tighten" these into false
