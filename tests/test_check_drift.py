@@ -198,9 +198,240 @@ def test_unauthorized_producer_violations_ignores_unrelated_return_type():
 # ---------------------------------------------------------------------------
 
 
-def test_run_all_returns_all_nine_checks_in_order():
+# ---------------------------------------------------------------------------
+# DRIFT-10 — Governance boundary broadened (Intent + Planner)
+# ---------------------------------------------------------------------------
+
+
+def test_check_drift_10_catches_violation_in_either_governed_file(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core" / "cognitive"
+    fake_core.mkdir(parents=True)
+    (fake_core / "intent.py").write_text("gov.evaluate_action(action)\n")
+    (fake_core / "planner.py").write_text("# clean\n")
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        check_drift, "GOVERNANCE_BOUNDARY_FILES",
+        ("core/cognitive/intent.py", "core/cognitive/planner.py"),
+    )
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert len(result.violations) == 1
+    assert result.violations[0].file == "core/cognitive/intent.py"
+
+
+def test_check_drift_10_passes_when_neither_file_calls_evaluate_action(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core" / "cognitive"
+    fake_core.mkdir(parents=True)
+    (fake_core / "intent.py").write_text("# no governance calls here\n")
+    (fake_core / "planner.py").write_text('"""mentions evaluate_action() only in a docstring."""\n')
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        check_drift, "GOVERNANCE_BOUNDARY_FILES",
+        ("core/cognitive/intent.py", "core/cognitive/planner.py"),
+    )
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-11 — Frozen entrypoints (interpret_request/plan/compile)
+# ---------------------------------------------------------------------------
+
+
+def test_frozen_entrypoint_violations_catches_unauthorized_importer(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core" / "workers"
+    fake_core.mkdir(parents=True)
+    (fake_core / "rogue.py").write_text("from core.cognitive.planner import plan\n")
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_drift, "CORE", tmp_path / "core")
+
+    violations = check_drift._frozen_entrypoint_violations("plan", "core.cognitive.planner", "core/orchestrator.py")
+    assert len(violations) == 1
+    assert violations[0].file == "core/workers/rogue.py"
+
+
+def test_frozen_entrypoint_violations_allows_the_authorized_caller(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core"
+    fake_core.mkdir(parents=True)
+    (fake_core / "orchestrator.py").write_text("from core.cognitive.planner import plan\n")
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_drift, "CORE", fake_core)
+
+    violations = check_drift._frozen_entrypoint_violations("plan", "core.cognitive.planner", "core/orchestrator.py")
+    assert violations == []
+
+
+def test_frozen_entrypoint_violations_ignores_unrelated_imports_from_same_module():
+    # Importing the *data types* (not the callable) from the same module
+    # must never be flagged -- this is what makes DRIFT-11 not blanket-
+    # forbid every import from core.cognitive.planner.
+    tree = _tree("from core.cognitive.planner import ExecutionPlan\n")
+    names = check_drift._imported_names_from(tree, "core.cognitive.planner")
+    assert not any(name == "plan" for name, _ in names)
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-12 — Recovery authority (shadow OperationRecoveryBudget)
+# ---------------------------------------------------------------------------
+
+
+def test_recovery_authority_violations_catches_full_shadow_surface():
+    tree = _tree(
+        "class SneakyBudget:\n"
+        "    def consume(self): ...\n"
+        "    @property\n"
+        "    def remaining(self): ...\n"
+        "    @property\n"
+        "    def exhausted(self): ...\n"
+    )
+    violations = check_drift._recovery_authority_violations(tree, "core/workers/rogue.py")
+    assert len(violations) == 1
+    assert "SneakyBudget" in violations[0].detail
+
+
+def test_recovery_authority_violations_ignores_partial_surface():
+    # Only 2 of the 3 members -- not a confident enough signal to flag.
+    tree = _tree(
+        "class RetryPolicy:\n"
+        "    def consume(self): ...\n"
+        "    @property\n"
+        "    def remaining(self): ...\n"
+    )
+    assert check_drift._recovery_authority_violations(tree, "core/workflow/definition.py") == []
+
+
+def test_recovery_authority_violations_exempts_operation_recovery_budget_by_name():
+    tree = _tree(
+        "class OperationRecoveryBudget:\n"
+        "    def consume(self): ...\n"
+        "    @property\n"
+        "    def remaining(self): ...\n"
+        "    @property\n"
+        "    def exhausted(self): ...\n"
+    )
+    # Even called from a file other than its declared owner, the class
+    # named OperationRecoveryBudget itself is never the shadow -- DRIFT-08
+    # already covers *construction* elsewhere; this check is about a
+    # *different-named* class re-implementing the same shape.
+    assert check_drift._recovery_authority_violations(tree, "core/some_other_module.py") == []
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-13 — Architecture markers (RECONCILE-PENDING)
+# ---------------------------------------------------------------------------
+
+
+def _write_marker_fixture(tmp_path, *, marker_present: bool, known_issues_text: str = ""):
+    arch_dir = tmp_path / "docs" / "architecture"
+    arch_dir.mkdir(parents=True)
+    content = "# Architecture\n" + ("[RECONCILE-PENDING] still open\n" if marker_present else "# resolved\n")
+    (arch_dir / "OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md").write_text(content)
+    (tmp_path / "KNOWN_ISSUES.md").write_text(known_issues_text)
+
+
+def test_check_drift_13_passes_when_marker_still_present(tmp_path, monkeypatch):
+    _write_marker_fixture(tmp_path, marker_present=True)
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_13()
+    assert result.status == "PASS"
+
+
+def test_check_drift_13_passes_when_marker_removed_with_recorded_resolution(tmp_path, monkeypatch):
+    _write_marker_fixture(
+        tmp_path, marker_present=False,
+        known_issues_text="~~DEBT-011 — reconciled~~ **Resolved (date):** done.\n",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_13()
+    assert result.status == "PASS"
+
+
+def test_check_drift_13_fails_when_marker_silently_removed(tmp_path, monkeypatch):
+    """The dangerous case this check exists for: the marker is just gone,
+    with no corresponding record of a deliberate resolution."""
+    _write_marker_fixture(tmp_path, marker_present=False, known_issues_text="unrelated content\n")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_13()
+    assert result.status == "VIOLATION"
+    assert len(result.violations) == 1
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-14 — Multi-site canonical construction (PlannerRequest)
+# ---------------------------------------------------------------------------
+
+
+def test_ownership_violations_for_multi_allows_both_declared_sites(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core"
+    (fake_core / "cognitive").mkdir(parents=True)
+    (fake_core / "cognitive" / "planner.py").write_text("PlannerRequest(goal_id='x')\n")
+    (fake_core / "orchestrator.py").write_text("PlannerRequest(goal_id='y')\n")
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_drift, "CORE", fake_core)
+
+    violations = check_drift._ownership_violations_for_multi(
+        "PlannerRequest", {"core/cognitive/planner.py", "core/orchestrator.py"}
+    )
+    assert violations == []
+
+
+def test_ownership_violations_for_multi_catches_a_third_site(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core"
+    (fake_core / "cognitive").mkdir(parents=True)
+    (fake_core / "cognitive" / "planner.py").write_text("PlannerRequest(goal_id='x')\n")
+    (fake_core / "orchestrator.py").write_text("PlannerRequest(goal_id='y')\n")
+    (fake_core / "cognitive" / "rogue.py").write_text("PlannerRequest(goal_id='z')\n")
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_drift, "CORE", fake_core)
+
+    violations = check_drift._ownership_violations_for_multi(
+        "PlannerRequest", {"core/cognitive/planner.py", "core/orchestrator.py"}
+    )
+    assert len(violations) == 1
+    assert violations[0].file == "core/cognitive/rogue.py"
+
+
+# ---------------------------------------------------------------------------
+# DRIFT-15 — Forbidden diagnostic transport (EventBus vs. EventStream)
+# ---------------------------------------------------------------------------
+
+
+def test_forbidden_transport_violations_catches_cognitive_event_via_emit():
+    tree = _tree('bus.emit("cognitive.something_happened", {})\n')
+    violations = check_drift._forbidden_transport_violations(tree, "core/some_module.py")
+    assert len(violations) == 1
+
+
+def test_forbidden_transport_violations_ignores_legitimate_eventbus_usage():
+    # A non-cognitive.*-prefixed .emit(...) call is exactly what EventBus is
+    # for (module.*/learning.*/kb.*/brain.* events) -- must not be flagged.
+    tree = _tree('bus.emit("module.promoted", {})\n')
+    assert check_drift._forbidden_transport_violations(tree, "core/model_router.py") == []
+
+
+def test_forbidden_transport_violations_ignores_correct_transport_method():
+    # The real EventStream path (.append(...)/._emit_event(...)) is a
+    # different method name entirely -- not this check's concern (DRIFT-07
+    # already covers where those calls may legitimately originate from).
+    tree = _tree('self._emit_event("cognitive.something_happened", {})\n')
+    assert check_drift._forbidden_transport_violations(tree, "core/orchestrator.py") == []
+
+
+# ---------------------------------------------------------------------------
+# Integration: run_all() against the real repository (updated for DRIFT-15)
+# ---------------------------------------------------------------------------
+
+
+def test_run_all_returns_all_fifteen_checks_in_order():
     results = check_drift.run_all()
-    assert [r.check_id for r in results] == [f"DRIFT-0{i}" for i in range(1, 10)]
+    expected_ids = [f"DRIFT-0{i}" for i in range(1, 10)] + [f"DRIFT-{i}" for i in range(10, 16)]
+    assert [r.check_id for r in results] == expected_ids
     assert all(r.status in ("PASS", "VIOLATION") for r in results)
 
 
@@ -212,9 +443,14 @@ def test_run_all_against_real_repo_mechanically_certain_checks_pass():
     # deliberately not hard-asserted here; 07 currently passes too but is
     # left to the JSON baseline report rather than a hard assertion,
     # since a future legitimate D7 change could plausibly need a second
-    # declared exception added to DRIFT_07_EXCEPTIONS.
+    # declared exception added to DRIFT_07_EXCEPTIONS. DRIFT-10..15 (K4.2-H2
+    # D10) are equally precise/mechanical (no documented heuristic caveat)
+    # and are hard-asserted here for the same reason 01-05 are.
     results = {r.check_id: r for r in check_drift.run_all()}
-    for check_id in ("DRIFT-01", "DRIFT-02", "DRIFT-03", "DRIFT-04", "DRIFT-05"):
+    for check_id in (
+        "DRIFT-01", "DRIFT-02", "DRIFT-03", "DRIFT-04", "DRIFT-05",
+        "DRIFT-10", "DRIFT-11", "DRIFT-12", "DRIFT-13", "DRIFT-14", "DRIFT-15",
+    ):
         assert results[check_id].status == "PASS", (
             f"{check_id} unexpectedly failing against the current repo: "
             f"{results[check_id].violations}"

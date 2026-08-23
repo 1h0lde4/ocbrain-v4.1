@@ -69,6 +69,25 @@
       ],
       "allowed_files_conditional": [],
       "note": "This is a deliberately NARROWED version of the D12 packet described in K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md section 12. That version assumed D12 could record D3/D7/D10/D11's completion status -- which a zero-contact parallel session cannot honestly do, since it has no way to know whether the others have finished. The full tracking sync (CURRENT_STATE.md / IMPLEMENTATION_ROADMAP.md / ADR_INDEX.md / KNOWN_ISSUES.md) is deferred to the sequential integration packet, which runs after all four branches actually exist and can be inspected together. This branch's job is only: decide IMPLEMENTATION_TRACKER.md's fate (create it, scoped, or formally decline in its own status stub -- either is acceptable, silence is not), and draft the H-10/H-12 ADRs on their own merits."
+    },
+    "D10": {
+      "branch": "h2/d10-drift-enforcement",
+      "title": "Full Architecture Drift & CI Enforcement",
+      "brief": "docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md",
+      "status_stub": "docs/architecture/h2_status/D10_STATUS.md",
+      "allowed_files": [
+        "scripts/check_drift.py",
+        "tests/test_check_drift.py",
+        "docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md",
+        "docs/architecture/h2_status/D10_STATUS.md",
+        "docs/Bugs Hunt & fix reports/K4_2_H2_D10_COMPLETION_REPORT.md",
+        "docs/architecture/D10_POST_H2_DRIFT_REPORT.json",
+        "docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt",
+        ".github/workflows/ci.yml",
+        "docs/architecture/h2_packet_ownership.json"
+      ],
+      "allowed_files_conditional": [],
+      "note": "Post-integration packet, not part of the original four-way parallel batch (D3/D7/D11/D12 are already merged onto main by the time this packet starts). docs/architecture/D10_PRE_H2_DRIFT_BASELINE.json is a deliberate historical snapshot and is explicitly NOT in this packet's allowed_files -- read, never overwritten; a new, separately-named file records the post-H2 state instead. This packet's own entry in this manifest is self-added for consistency with every other packet having one, not pre-scaffolded -- matching this packet's own D10-I requirement to model the ownership discipline it enforces, not just check it."
     }
   }
 }
