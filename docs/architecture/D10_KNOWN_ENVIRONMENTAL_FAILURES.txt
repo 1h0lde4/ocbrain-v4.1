@@ -1,0 +1,53 @@
+# K4.2-H2 D10 -- known environmental test failures (Hugging Face Hub
+# connectivity class). One pytest node ID per line (lines starting with
+# # are comments). CI's "no new failures" gate (.github/workflows/ci.yml)
+# treats any FAILED test NOT in this list as a genuine regression;
+# anything IN this list that starts passing is fine (not flagged) --
+# only new, unlisted failures fail the build.
+#
+# This exact 34-item set was independently, repeatedly reconfirmed
+# byte-for-byte identical across five separate checks in one session
+# (D3, D7, D11, the H2 integration, and this D10 packet itself), each
+# time via a stash-based before/after diff against the real repository,
+# not assumed from a prior report. Root cause: these tests need
+# huggingface.co reachability that this sandboxed environment (and,
+# presumably, a typical CI runner without a configured HF mirror) does
+# not have.
+#
+# If a new environmental failure class appears (e.g. a different
+# external dependency becomes unreachable), add it here explicitly,
+# with a comment explaining why, rather than loosening the gate itself.
+tests/test_break_concurrency.py::test_cache_concurrency
+tests/test_break_empty_db.py::test_empty_retrieve
+tests/test_k2_2_runtime_migration.py::TestLegacyPathUnchangedWhenNoWorkflowRuntime::test_legacy_path_still_works
+tests/test_k2_2_runtime_migration.py::TestLegacyPathUnchangedWhenNoWorkflowRuntime::test_legacy_path_used_when_workflow_runtime_explicitly_none
+tests/test_k2_2_runtime_migration.py::TestOrchestratorRoutesThroughWorkflowRuntime::test_answer_comes_from_planner_worker
+tests/test_k2_2_runtime_migration.py::TestOrchestratorRoutesThroughWorkflowRuntime::test_context_save_happens_exactly_once
+tests/test_k2_2_runtime_migration.py::TestOrchestratorRoutesThroughWorkflowRuntime::test_memory_write_happens_exactly_once
+tests/test_k2_2_runtime_migration.py::TestOrchestratorRoutesThroughWorkflowRuntime::test_workflow_failure_returns_error_not_crash
+tests/test_k2_2_runtime_migration.py::TestPathParity::test_both_paths_return_same_answer_for_same_router_response
+tests/test_orchestrator_memory_migration.py::TestOrchestratorHandleWritesToUnifiedMemory::test_memory_write_failure_does_not_break_response
+tests/test_orchestrator_memory_migration.py::TestOrchestratorHandleWritesToUnifiedMemory::test_write_called_exactly_once_per_handle
+tests/test_orchestrator_memory_migration.py::TestRuntimeMemoryOwnership::test_real_unified_memory_receives_and_persists_interaction
+tests/test_phase2.py::test_orchestrate_returns_string
+tests/test_phase2.py::test_semantic_classifier_returns_valid_format
+tests/test_phase2.py::test_semantic_classifier_top_k
+tests/test_planner_capability_migration.py::TestBackwardCompatibilityModelRouterOnly::test_model_router_only_still_works
+tests/test_planner_capability_migration.py::TestCompositionRootShape::test_full_chain_planner_to_model_router_adapter
+tests/test_planner_capability_migration.py::TestPlannerWorkerCapabilityDispatch::test_adapter_runtime_preferred_over_model_router_when_both_given
+tests/test_planner_capability_migration.py::TestPlannerWorkerCapabilityDispatch::test_capability_failure_folded_into_merged_error_like_legacy
+tests/test_planner_capability_migration.py::TestPlannerWorkerCapabilityDispatch::test_no_adapter_runtime_and_no_model_router_is_contained_not_raised
+tests/test_planner_capability_migration.py::TestPlannerWorkerCapabilityDispatch::test_uses_adapter_runtime_when_supplied
+tests/test_planner_worker.py::TestPlannerWorkerDirect::test_memory_write_failure_does_not_break_response
+tests/test_planner_worker.py::TestPlannerWorkerDirect::test_module_dispatch_exception_contained
+tests/test_planner_worker.py::TestPlannerWorkerDirect::test_success_path_persists_to_memory
+tests/test_planner_worker.py::TestPlannerWorkerDirect::test_success_path_returns_merged_answer
+tests/test_planner_worker.py::TestPlannerWorkerDirect::test_success_path_saves_to_context
+tests/test_planner_worker.py::TestPlannerWorkerGovernanceContract::test_execute_evaluates_governance_before_run
+tests/test_planner_worker.py::TestPlannerWorkerViaExecutionRuntime::test_constructor_kwargs_wiring
+tests/test_session4b_memory_hardening.py::TestGoal3MetadataEnrichment::test_orchestrator_handle_populates_real_metadata_end_to_end
+tests/test_session4c_architecture.py::TestIssue1SummaryFieldSemantics::test_orchestrator_does_not_write_query_into_summary
+tests/test_session4c_architecture.py::TestIssue1SummaryFieldSemantics::test_query_is_fully_preserved_in_metadata
+tests/test_system_ctrl.py::test_empty_action_rejected
+tests/test_system_ctrl.py::test_execute_write_file
+tests/test_system_ctrl.py::test_unknown_action_rejected

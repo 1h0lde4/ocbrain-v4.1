@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, 'h2/**', 'integration/**' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  drift-and-ownership:
+    # Fast, fully deterministic gates first: no network, no flaky external
+    # dependency, no ambiguity about what "pass" means. Runs before the
+    # (slower, environment-sensitive) test job so an architecture violation
+    # or an out-of-scope file change is reported immediately rather than
+    # buried after several minutes of dependency installation and test
+    # collection.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # check_packet_ownership.py diffs against main's merge-base
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Architecture drift check (DRIFT-01..15)
+        run: |
+          python3 scripts/check_drift.py --out /tmp/drift-report.json
+          echo "Full report: /tmp/drift-report.json (also uploaded as an artifact below)"
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: /tmp/drift-report.json
+
+      - name: Packet ownership check (only on a recognized packet branch)
+        run: |
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          PACKET=$(python3 -c "
+          import json
+          m = json.load(open('docs/architecture/h2_packet_ownership.json'))
+          branch = '$BRANCH'
+          match = [pid for pid, e in m['packets'].items() if e['branch'] == branch]
+          print(match[0] if match else '')
+          ")
+          if [ -z "$PACKET" ]; then
+            echo "Branch '$BRANCH' is not one of this manifest's declared packet branches -- "
+            echo "ownership check is scoped to packet branches (docs/architecture/h2_packet_ownership.json), "
+            echo "skipping cleanly rather than failing on an inapplicable check."
+          else
+            echo "Branch '$BRANCH' -> packet $PACKET"
+            python3 scripts/check_packet_ownership.py --packet "$PACKET"
+          fi
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test suite
+        # Deliberately not gated on pytest's own exit code: this repository
+        # has a documented, stable set of environment-only failures (HF Hub
+        # connectivity -- docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt)
+        # that a CI runner without a configured HF mirror will also hit. Gating
+        # on raw exit code would make this job permanently red and thus
+        # useless as a signal (K4.2-H2 D10's own "the checker must be
+        # actionable, not opaque" requirement). The actual gate is the next
+        # step: any failure NOT already in that known list fails the build.
+        run: |
+          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest-output.txt || true
+
+      - name: Upload full test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-output
+          path: /tmp/pytest-output.txt
+
+      - name: Gate on new (unlisted) failures only
+        run: |
+          grep '^FAILED ' /tmp/pytest-output.txt | sed 's/^FAILED //; s/ - .*//' | sort -u > /tmp/actual-failures.txt || true
+          grep -v '^#' docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt | grep -v '^$' | sort -u > /tmp/known-failures.txt
+          NEW_FAILURES=$(comm -23 /tmp/actual-failures.txt /tmp/known-failures.txt)
+          echo "Known environmental failures still failing (expected, not gated):"
+          comm -12 /tmp/actual-failures.txt /tmp/known-failures.txt || true
+          if [ -n "$NEW_FAILURES" ]; then
+            echo ""
+            echo "=========================================================="
+            echo "NEW test failure(s) not in the known-environmental list:"
+            echo "$NEW_FAILURES"
+            echo "=========================================================="
+            echo "If this is genuinely a new environmental class (not a real"
+            echo "regression), add it explicitly to"
+            echo "docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt with a"
+            echo "comment explaining why -- do not just widen this gate silently."
+            exit 1
+          fi
+          echo "No new failures beyond the known environmental set."

@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-22T22:07:48.238057+00:00",
+  "purpose": "K4.2-H2 D10 full architecture drift enforcement (post-H2-integration)",
+  "source_spec": "DRIFT-01..09: docs/architecture/implementation_plan - K42 v1-0 FINAL PRE-FREEZE ARCHITECTURE SPECIFICATION frozen.md, section 9 (Final Drift Verification Contract). DRIFT-10..15: docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md.",
+  "checks": [
+    {
+      "check_id": "DRIFT-01",
+      "rule": "core/cognitive/*.py must not import core.workflow.runtime",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-02",
+      "rule": "core/cognitive/*.py must not import core.capabilities.adapter_runtime",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-03",
+      "rule": "supervisor.py must not import plan() or compile() functions (importing CompilationResult/CompilationStatus is legitimate \u2014 a consumer, not a caller)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-04",
+      "rule": "RawRequest construction only in core/cognitive/intent.py",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-05",
+      "rule": "SupervisorWorker must not call GovernanceKernel.evaluate_action() directly (docstring mentions are not violations \u2014 AST does not parse docstrings as calls)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-06",
+      "rule": "No hard-coded capability type strings in Planner routing",
+      "status": "PASS",
+      "violations": [],
+      "notes": "Heuristic (spec says only 'literal string analysis'): flags `<expr>.<...type...> == \"literal\"` comparisons in planner.py. A VIOLATION is worth a human read, not an automatic failure."
+    },
+    {
+      "check_id": "DRIFT-07",
+      "rule": "cognitive.* events emitted only from core/cognitive/ or core/workers/ (exception: cognitive.planner_impasse_terminal from core/orchestrator.py, declared owner per D7)",
+      "status": "PASS",
+      "violations": [],
+      "notes": "Declared architectural exception applied per D7 (frozen implementation plan \u00a79 'DRIFT-07 Exception'): core/orchestrator.py:333 emits 'cognitive.planner_impasse_terminal'"
+    },
+    {
+      "check_id": "DRIFT-08",
+      "rule": "[CORRECTED] Canonical builders not bypassed by production code outside declared owner",
+      "status": "PASS",
+      "violations": [],
+      "notes": "Interpreted as: none of the 7 canonical contract dataclasses (RawRequest, Goal, ExecutionPlan, CapabilityDiscoveryResult, CompilationResult, OperationRecoveryBudget, CapabilityDiscoveryRequest) may be directly constructed in production code (tests/*.py exempt) outside their declared owner file. Test doubles and compatibility adapters are exempt via the tests/ exclusion, per the spec's explicit note. (K4.2-H2 D10: grown from 6 to 7 entries \u2014 see CANONICAL_OWNERS' own inline comment for what was added and why; the count here is computed, not hand-copied, specifically so it cannot go stale again the way the original 'six' description would have the moment this dict grew.)"
+    },
+    {
+      "check_id": "DRIFT-09",
+      "rule": "No unauthorized shared-contract producer outside declared owners",
+      "status": "PASS",
+      "violations": [],
+      "notes": "Heuristic, narrower in confidence than DRIFT-08 \u2014 see this check's function docstring in scripts/check_drift.py for exactly what it does and doesn't catch."
+    },
+    {
+      "check_id": "DRIFT-10",
+      "rule": "Intent Interpretation and Planner must not call GovernanceKernel.evaluate_action() directly (Governance sits at the compilation boundary only \u2014 extends DRIFT-05's same check, which independently still covers SupervisorWorker, to these two files)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-11",
+      "rule": "interpret_request()/plan()/compile() importable as callables only from core/orchestrator.py in production code (importing the data types they return \u2014 Goal/ExecutionPlan/CompilationResult/CompilationStatus \u2014 is unrestricted; this checks the callables only)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-12",
+      "rule": "No class outside core/cognitive/recovery.py (other than OperationRecoveryBudget itself) may define all three of consume()/remaining/exhausted \u2014 that exact trio is a strong, narrow signal of a shadow recovery authority. Does not flag RetryPolicy (core/workflow/definition.py) or any other config-only dataclass, since neither defines this method/property trio.",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-13",
+      "rule": "'RECONCILE-PENDING' marker in docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md must not silently disappear without a recorded resolution",
+      "status": "PASS",
+      "violations": [],
+      "notes": "Marker still present in docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md \u2014 open, as expected."
+    },
+    {
+      "check_id": "DRIFT-14",
+      "rule": "PlannerRequest constructed only in core/cognitive/planner.py or core/orchestrator.py (its two genuine production sites \u2014 an internal builder and the entrypoint's caller preparing its own call; complementary to DRIFT-08's single-owner-file checks, for the one canonical contract that doesn't fit that shape)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    },
+    {
+      "check_id": "DRIFT-15",
+      "rule": "No cognitive.* event is ever passed to a .emit(...) call (EventBus's method \u2014 the legitimate cognitive.* transport, EventStream, is reached via .append(...)/_emit_event(...) only)",
+      "status": "PASS",
+      "violations": [],
+      "notes": ""
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "pass": 15,
+    "violation": 0
+  }
+}
