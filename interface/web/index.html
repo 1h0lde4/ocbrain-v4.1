@@ -251,7 +251,7 @@ const API = '';
 async function pollStatus() {
   try {
     const r = await fetch(`${API}/status`);
-    const d = await r.json();
+    const d = await readJsonResponse(r);
     const dot  = document.getElementById('status-dot');
     const txt  = document.getElementById('status-text');
     if (d.status === 'ok') {
@@ -309,7 +309,7 @@ async function refreshInspection() {
   try {
     const r = await fetch(`${API}/executions/${encodeURIComponent(activeExecutionId)}`);
     if (!r.ok) return;
-    executionSnapshot = await r.json();
+    executionSnapshot = await readJsonResponse(r);
     renderInspection();
   } catch {}
 }
@@ -371,6 +371,18 @@ function escapeHtml(value) { return value.replace(/[&<>"']/g, c => ({'&':'&amp;'
 function toggleInspection() { document.getElementById('inspection').classList.toggle('open'); }
 function closeInspection() { document.getElementById('inspection').classList.remove('open'); }
 
+async function readJsonResponse(response) {
+  const body = await response.text();
+  if (!body.trim()) {
+    throw new Error(`OCBrain returned an empty response (HTTP ${response.status}).`);
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`OCBrain returned invalid JSON (HTTP ${response.status}).`);
+  }
+}
+
 function addMessage(text, role, meta) {
   const box = document.getElementById('messages');
   const div = document.createElement('div');
@@ -426,7 +438,7 @@ async function sendQuery() {
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ query, execution_id: executionId }),
     });
-    const d = await r.json();
+    const d = await readJsonResponse(r);
     hideTyping();
     const meta = d.modules_used?.length ? `via: ${d.modules_used.join(', ')}` : '';
     addMessage(d.answer || 'No response.', 'bot', meta);
@@ -446,7 +458,7 @@ async function sendQuery() {
 async function loadModules() {
   try {
     const r = await fetch(`${API}/modules`);
-    const modules = await r.json();
+    const modules = await readJsonResponse(r);
     const grid = document.getElementById('module-grid');
     grid.innerHTML = '';
     for (const [name, info] of Object.entries(modules)) {
@@ -481,7 +493,7 @@ async function trainModule(name) {
   if (!confirm(`Trigger training for '${name}'?`)) return;
   try {
     const r = await fetch(`${API}/train/${name}`, {method:'POST', headers: {'X-OCBrain-Local': '1'}});
-    const d = await r.json();
+    const d = await readJsonResponse(r);
     alert(d.result);
   } catch (e) { alert(e.message); }
 }
@@ -498,7 +510,7 @@ const SETTINGS_DEFS = [
 async function loadSettings() {
   try {
     const r = await fetch(`${API}/config`);
-    const cfg = await r.json();
+    const cfg = await readJsonResponse(r);
     const list = document.getElementById('settings-list');
     list.innerHTML = '';
     for (const s of SETTINGS_DEFS) {
@@ -552,7 +564,7 @@ async function createModule() {
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ name, desc, model, keywords, sources }),
     });
-    if (!r.ok) { const e = await r.json(); throw new Error(e.detail); }
+    if (!r.ok) { const e = await readJsonResponse(r); throw new Error(e.detail); }
     closeModal();
     showView('modules', document.querySelectorAll('.nav-btn')[1]);
   } catch (e) { alert(`Error: ${e.message}`); }
