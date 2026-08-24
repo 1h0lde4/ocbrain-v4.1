@@ -62,6 +62,37 @@
               padding: 0 18px; font-size: 14px; cursor: pointer; font-weight: 500; transition: opacity 0.15s; }
   .send-btn:hover { opacity: 0.85; }
   .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .thinking-control { display:none; border:1px solid var(--border); background:var(--surface);
+                      color:var(--text); border-radius:var(--radius); padding:7px 10px;
+                      font-size:12px; cursor:pointer; }
+  .thinking-control.active { display:inline-flex; align-items:center; gap:7px; }
+  .thinking-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); }
+  .inspection { display:none; position:absolute; right:20px; top:62px; width:360px;
+                max-height:calc(100vh - 150px); overflow:auto; z-index:5; background:var(--surface);
+                border:1px solid var(--border); border-radius:var(--radius); padding:14px;
+                box-shadow:0 14px 35px rgba(0,0,0,.35); }
+  .inspection.open { display:block; }
+  .inspection-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .inspection-title { font-size:13px; font-weight:600; }
+  .inspection-close { border:0; background:none; color:var(--sub); cursor:pointer; font-size:16px; }
+  .task-tree { display:flex; flex-direction:column; gap:4px; }
+  .task-item { display:flex; gap:8px; align-items:flex-start; border:0; background:none;
+               color:var(--text); text-align:left; width:100%; padding:8px 6px; cursor:pointer;
+               border-radius:4px; font-size:12px; }
+  .task-item:hover, .task-item.selected { background:var(--border); }
+  .task-item[data-depth="1"] { padding-left:22px; }
+  .task-summary { color:var(--sub); font-size:11px; display:block; margin-top:3px; }
+  .task-status { width:16px; flex:0 0 16px; color:var(--sub); }
+  .status-running { color:var(--accent); }
+  .status-failed, .status-stalled { color:var(--amber); }
+  .detail { border-top:1px solid var(--border); margin-top:10px; padding-top:12px; }
+  .detail h4 { font-size:13px; margin-bottom:9px; }
+  .detail-row { display:flex; justify-content:space-between; gap:12px; padding:4px 0; font-size:11px; }
+  .detail-row span:first-child { color:var(--sub); }
+  @media (max-width:700px) { .sidebar { width:58px; padding:12px 8px; }
+    .logo { font-size:0; }.logo::after { content:'⚙'; font-size:18px; }
+    .nav-btn { font-size:0; justify-content:center; padding:10px 4px; }.status-text { display:none; }
+    .inspection { left:12px; right:12px; top:58px; width:auto; } }
 
   /* Modules view */
   #view-modules, #view-settings { display: none; padding: 24px; overflow-y: auto; }
@@ -140,8 +171,19 @@
   <div id="view-chat">
     <div class="chat-header">
       <h2>Chat</h2>
-      <div id="active-modules" style="font-size:11px; color:var(--sub);"></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="thinking-control" id="thinking-control" onclick="toggleInspection()">
+          <span class="thinking-dot"></span><span id="thinking-label">Thinking...</span>
+        </button>
+        <div id="active-modules" style="font-size:11px; color:var(--sub);"></div>
+      </div>
     </div>
+    <section class="inspection" id="inspection" aria-live="polite">
+      <div class="inspection-head"><div class="inspection-title">Execution</div>
+        <button class="inspection-close" aria-label="Close" onclick="closeInspection()">×</button></div>
+      <div class="task-tree" id="task-tree"></div>
+      <div class="detail" id="task-detail"></div>
+    </section>
     <div class="messages scrollbar-thin" id="messages"></div>
     <div class="input-row">
       <textarea id="query-input" placeholder="Ask anything..." rows="1"
@@ -234,6 +276,101 @@ function showView(name, btn) {
 }
 
 // ── Chat ──────────────────────────────────────────────────────
+let activeExecutionId = null;
+let executionSnapshot = null;
+let executionEvents = null;
+let selectedNodeId = null;
+
+function statusGlyph(status) {
+  return {pending:'○', running:'⟳', completed:'✓', failed:'✕', stalled:'⚠',
+    recovering:'↻', waiting:'⌛', blocked:'⚠', cancelled:'⊘'}[status] || '○';
+}
+
+function startInspection(executionId) {
+  stopInspection();
+  activeExecutionId = executionId;
+  selectedNodeId = executionId;
+  document.getElementById('thinking-control').classList.add('active');
+  document.getElementById('thinking-label').textContent = 'Thinking...';
+  executionEvents = new EventSource(`${API}/executions/${encodeURIComponent(executionId)}/events`);
+  executionEvents.onmessage = async () => {
+    await refreshInspection();
+  };
+  refreshInspection();
+}
+
+function stopInspection() {
+  if (executionEvents) executionEvents.close();
+  executionEvents = null;
+}
+
+async function refreshInspection() {
+  if (!activeExecutionId) return;
+  try {
+    const r = await fetch(`${API}/executions/${encodeURIComponent(activeExecutionId)}`);
+    if (!r.ok) return;
+    executionSnapshot = await r.json();
+    renderInspection();
+  } catch {}
+}
+
+function renderInspection() {
+  if (!executionSnapshot) return;
+  const nodes = new Map(executionSnapshot.nodes.map(n => [n.id, n]));
+  const tree = document.getElementById('task-tree');
+  tree.innerHTML = '';
+  function addNode(nodeId, depth) {
+    const node = nodes.get(nodeId);
+    if (!node) return;
+    const button = document.createElement('button');
+    button.className = `task-item ${selectedNodeId === node.id ? 'selected' : ''}`;
+    button.dataset.depth = Math.min(depth, 1);
+    button.onclick = () => { selectedNodeId = node.id; renderInspection(); };
+    const status = document.createElement('span');
+    status.className = `task-status status-${node.status}`;
+    status.textContent = statusGlyph(node.status);
+    const content = document.createElement('span');
+    content.textContent = node.title || node.operation_type;
+    if (node.summary) { const summary = document.createElement('span'); summary.className='task-summary'; summary.textContent=node.summary; content.appendChild(summary); }
+    button.append(status, content); tree.appendChild(button);
+    node.children.forEach(child => addNode(child, depth + 1));
+  }
+  addNode(executionSnapshot.root_id, 0);
+  const selected = nodes.get(selectedNodeId) || nodes.get(executionSnapshot.root_id);
+  if (selected) {
+    selectedNodeId = selected.id;
+    const detail = document.getElementById('task-detail');
+    detail.innerHTML = `<h4>${escapeHtml(selected.title || selected.operation_type)}</h4>`;
+    const rows = [['Status', selected.status], ['Action', selected.current_action || ''],
+      ['Progress', formatProgress(selected)], ['Elapsed', formatElapsed(selected)],
+      ['Last progress', formatLastProgress(selected)], ['Failure', selected.failure_message || ''],
+      ['Recovery', selected.recovery_action || '']];
+    rows.filter(row => row[1]).forEach(row => {
+      const div = document.createElement('div'); div.className='detail-row';
+      div.innerHTML = `<span>${escapeHtml(row[0])}</span><strong>${escapeHtml(String(row[1]))}</strong>`;
+      detail.appendChild(div);
+    });
+    if (['completed','failed','cancelled'].includes(selected.status)) {
+      document.getElementById('thinking-label').textContent = selected.status === 'completed' ? 'Complete' : 'Execution ended';
+      stopInspection();
+    }
+  }
+}
+
+function formatProgress(node) {
+  if (node.progress_units && Object.keys(node.progress_units).length) {
+    const u = node.progress_units;
+    if (u.completed != null && u.total != null) return `${u.completed} / ${u.total}`;
+    if (u.tokens != null) return `${u.tokens} tokens`;
+  }
+  return node.progress == null ? '' : `${Math.round(node.progress * 100)}%`;
+}
+function formatElapsed(node) { return node.started_at ? `${Math.round((Date.now()/1000 - node.started_at))}s` : ''; }
+function formatLastProgress(node) { return node.last_progress_at ? `${Math.max(0, Math.round(Date.now()/1000 - node.last_progress_at))}s ago` : ''; }
+function escapeHtml(value) { return value.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toggleInspection() { document.getElementById('inspection').classList.toggle('open'); }
+function closeInspection() { document.getElementById('inspection').classList.remove('open'); }
+
 function addMessage(text, role, meta) {
   const box = document.getElementById('messages');
   const div = document.createElement('div');
@@ -280,17 +417,20 @@ async function sendQuery() {
 
   document.getElementById('send-btn').disabled = true;
   showTyping();
+  const executionId = crypto.randomUUID();
+  startInspection(executionId);
 
   try {
     const r = await fetch(`${API}/query`, {
       method: 'POST',
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, execution_id: executionId }),
     });
     const d = await r.json();
     hideTyping();
     const meta = d.modules_used?.length ? `via: ${d.modules_used.join(', ')}` : '';
     addMessage(d.answer || 'No response.', 'bot', meta);
+    await refreshInspection();
   } catch (e) {
     hideTyping();
     // Show a useful error — HTTP errors have empty .message, so include status

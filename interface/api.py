@@ -4,6 +4,7 @@ interface/api.py — V2.1: true token streaming via SSE + async file I/O.
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional, AsyncGenerator, Any
 
@@ -96,6 +97,7 @@ class QueryRequest(BaseModel):
     query: str
     module: Optional[str] = None
     stream: bool = False
+    execution_id: Optional[str] = None
 
 class QueryResponse(BaseModel):
     success: bool
@@ -149,8 +151,13 @@ async def query(req: QueryRequest):
 
     try:
         if req.stream:
+            from core.runtime.execution_graph import execution_registry
+            from core.events.event_stream import get_event_stream
+            execution_id = req.execution_id or str(uuid.uuid4())
+            execution_registry.create(execution_id, title="OCBrain execution")
+            execution_registry.attach_event_stream(get_event_stream())
             return StreamingResponse(
-                _stream_response(_orchestrator, req.query),
+                _stream_response(_orchestrator, req.query, execution_id),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control":     "no-cache",
@@ -158,7 +165,8 @@ async def query(req: QueryRequest):
                 },
             )
 
-        answer = await _orchestrator.handle(req.query)
+        execution_id = req.execution_id or str(uuid.uuid4())
+        answer = await _orchestrator.handle(req.query, execution_id=execution_id)
         
         # Standardized Response Contract
         return QueryResponse(
@@ -168,7 +176,8 @@ async def query(req: QueryRequest):
             meta={
                 "version": "3.01",
                 "orchestrator": "v3",
-                "phase": 4
+                "phase": 4,
+                "execution_id": execution_id,
             }
         )
 
@@ -186,6 +195,43 @@ async def query(req: QueryRequest):
             meta={"traceback": traceback.format_exc() if config.get("global.debug") else None}
         )
 
+
+@app.get("/executions/{execution_id}")
+async def get_execution(execution_id: str):
+    """Return the user-safe snapshot of one live or recent execution."""
+    from core.runtime.execution_graph import execution_registry
+    from core.runtime.projection import project_graph
+    from core.events.event_stream import get_event_stream
+
+    graph = execution_registry.get(execution_id)
+    if graph is None:
+        graph = execution_registry.create(execution_id, title="OCBrain execution")
+        execution_registry.attach_event_stream(get_event_stream())
+    return project_graph(await graph.snapshot())
+
+
+@app.get("/executions/{execution_id}/events")
+async def execution_events(execution_id: str):
+    """Stream compact user-safe execution events from EventStream."""
+    from core.runtime.execution_graph import execution_registry
+
+    if execution_registry.get(execution_id) is None:
+        execution_registry.create(execution_id, title="OCBrain execution")
+        from core.events.event_stream import get_event_stream
+        execution_registry.attach_event_stream(get_event_stream())
+
+    async def stream():
+        async for event in execution_registry.events(execution_id):
+            yield f"data: {json.dumps(event, default=str)}\n\n"
+            if event.get("event_type") in {
+                "execution.completed", "execution.failed", "execution.cancelled",
+            }:
+                break
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 @app.get("/health")
 async def get_health():
     from core.meta.self_model import SELF_MODEL
@@ -229,7 +275,7 @@ async def generate_evolution_plan():
 
 
 async def _stream_response(
-    orchestrator: Orchestrator, query: str
+    orchestrator: Orchestrator, query: str, execution_id: str = ""
 ) -> AsyncGenerator[str, None]:
     """
     True token streaming: feeds Ollama stream tokens directly to the SSE client.
@@ -238,6 +284,20 @@ async def _stream_response(
     """
     from core.model_router import model_router
     from core import classifier, decomposer, parser
+    from core.events.event_stream import get_event_stream
+    from core.runtime.execution_graph import execution_registry, ExecutionStatus
+    from core.runtime.progress import ProgressMonitor
+
+    graph = execution_registry.get(execution_id)
+    monitor = None
+    node_id = ""
+    if graph is not None:
+        node = await graph.add_node(title="Generate response", operation_type="capability")
+        node_id = node.node_id
+        monitor = ProgressMonitor(graph)
+        await monitor.record_status(node_id, ExecutionStatus.RUNNING,
+                                    summary="Generating response",
+                                    current_action="Receiving model output")
 
     # Parse + classify (fast — typically < 10ms)
     parsed = parser.parse(query)
@@ -250,13 +310,37 @@ async def _stream_response(
         module_name = task.module
         collected   = []
 
-        async for token in model_router.stream_route(
-            module_name, task.subtask, orchestrator.context
-        ):
-            collected.append(token)
-            yield f"data: {json.dumps({'token': token})}\n\n"
+        try:
+            async for token in model_router.stream_route(
+                module_name, task.subtask, orchestrator.context
+            ):
+                collected.append(token)
+                if monitor is not None and len(collected) % 32 == 0:
+                    await monitor.report_progress(
+                        node_id, summary="Model output is advancing",
+                        current_action="Receiving model output",
+                        progress_units={"chunks": len(collected)},
+                    )
+                yield f"data: {json.dumps({'token': token})}\n\n"
 
-        yield "data: [DONE]\n\n"
+            if monitor is not None:
+                await monitor.record_completion(node_id, summary="Response generated")
+                await get_event_stream().append(
+                    event_type="execution.completed", source="StreamingAPI",
+                    payload={"execution_id": execution_id, "node_id": node_id,
+                             "status": "completed"},
+                )
+            yield "data: [DONE]\n\n"
+        except Exception as error:
+            if monitor is not None:
+                await monitor.record_failure(node_id, str(error),
+                                             failure_type=type(error).__name__)
+                await get_event_stream().append(
+                    event_type="execution.failed", source="StreamingAPI",
+                    payload={"execution_id": execution_id, "node_id": node_id,
+                             "status": "failed"},
+                )
+            raise
 
         # Save full collected answer to context (non-blocking)
         asyncio.create_task(
@@ -266,6 +350,13 @@ async def _stream_response(
     else:
         # Multi-module: collect all, then stream the merged result in chunks
         answer = await orchestrator.handle(query)
+        if monitor is not None:
+            await monitor.record_completion(node_id, summary="Response generated")
+            await get_event_stream().append(
+                event_type="execution.completed", source="StreamingAPI",
+                payload={"execution_id": execution_id, "node_id": node_id,
+                         "status": "completed"},
+            )
         chunk_size = 40
         for i in range(0, len(answer), chunk_size):
             yield f"data: {json.dumps({'token': answer[i:i+chunk_size]})}\n\n"

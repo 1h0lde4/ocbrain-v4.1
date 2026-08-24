@@ -27,6 +27,11 @@ from core.events.event_stream import EventStream, get_event_stream
 from core.runtime.execution_context import ExecutionContext
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.runtime.cancellation import CancellationToken
+from core.runtime.execution_budget import ExecutionBudget
+from core.runtime.execution_graph import ExecutionStatus
+from core.runtime.execution_graph import execution_registry
+from core.runtime.progress import ProgressMonitor
+from core.runtime.watchdog import ExecutionWatchdog
 from core.runtime.working_memory import WorkingMemory
 from core.workers.base import WorkerResult
 from core.workflow.definition import (
@@ -150,11 +155,39 @@ class WorkflowRuntime:
         self._total_executions += 1
         instance_id = str(uuid.uuid4())
         cancel_token = cancellation_token or CancellationToken()
+        execution_id = (metadata or {}).get("execution_id") or instance_id
+        graph = execution_registry.create(
+            execution_id, title=(metadata or {}).get("execution_title") or definition.name
+        )
+        execution_registry.attach_event_stream(self._event_stream)
+        monitor = ProgressMonitor(graph, self._event_stream)
+        budget = (metadata or {}).get("execution_budget")
+        if not isinstance(budget, ExecutionBudget):
+            word_count = len(query.split())
+            budget = ExecutionBudget(
+                progress_deadline_seconds=45.0,
+                hard_deadline_seconds=600.0 if word_count >= 500 else 300.0,
+            )
+        watchdog = ExecutionWatchdog(graph, budget, cancel_token, monitor)
+        budget.start()
+        await monitor.record_status(
+            graph.root.node_id, ExecutionStatus.RUNNING,
+            summary="Execution started", current_action="Preparing execution",
+        )
+        for workflow_node in definition.nodes:
+            await graph.add_node(
+                node_id=workflow_node.node_id,
+                parent_id=graph.root.node_id,
+                operation_type="worker",
+                title=workflow_node.config.get("title", workflow_node.worker_type),
+            )
+        watchdog.start()
 
         # ── Step 1: Validate ─────────────────────────────────────────────
         errors = definition.validate()
         if errors:
             self._total_failures += 1
+            await watchdog.stop()
             return WorkflowResult(
                 success=False,
                 workflow_id=definition.workflow_id,
@@ -180,7 +213,10 @@ class WorkflowRuntime:
         })
 
         # ── Step 4: Execute DAG from entry_node ──────────────────────────
-        run_metadata = {**(metadata or {}), "instance_id": instance_id}
+        run_metadata = {
+            **(metadata or {}), "instance_id": instance_id,
+            "execution_id": execution_id,
+        }
         try:
             last_result = await self._execute_from(
                 definition=definition,
@@ -198,6 +234,7 @@ class WorkflowRuntime:
             # But if it does, we contain it here.
             logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
             self._total_failures += 1
+            await watchdog.stop()
             return WorkflowResult(
                 success=False,
                 workflow_id=definition.workflow_id,
@@ -231,6 +268,23 @@ class WorkflowRuntime:
         if not success:
             self._total_failures += 1
 
+        await monitor.record_status(
+            graph.root.node_id,
+            ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
+            summary="Execution completed" if success else "Execution failed",
+            current_action="",
+        )
+        await self._emit_event(
+            "execution.completed" if success else "execution.failed",
+            {
+                "execution_id": execution_id,
+                "node_id": graph.root.node_id,
+                "status": "completed" if success else "failed",
+                "summary": "Execution completed" if success else "Execution failed",
+            },
+        )
+        await watchdog.stop()
+
         result = WorkflowResult(
             success=success,
             workflow_id=definition.workflow_id,
@@ -239,7 +293,9 @@ class WorkflowRuntime:
             output=last_result.output if last_result else None,
             error=last_result.error if last_result and not last_result.success else "",
             duration_ms=duration_ms,
-            metadata={"query": query, "session_id": session_id},
+            metadata={"query": query, "session_id": session_id,
+                      "execution_id": execution_id,
+                      "budget": budget},
         )
 
         # ── Step 6: Emit workflow.completed ──────────────────────────────
@@ -284,6 +340,15 @@ class WorkflowRuntime:
         # ── Execute this node with retry ─────────────────────────────────
         state.status = NodeStatus.RUNNING
         state.started_at = time.time()
+        execution_id = metadata.get("execution_id", instance_id)
+        graph = execution_registry.get(execution_id)
+        if graph is not None:
+            monitor = ProgressMonitor(graph, self._event_stream)
+            await monitor.record_status(
+                node_id, ExecutionStatus.RUNNING,
+                summary=f"Running {node.worker_type}",
+                current_action=f"Executing {node.worker_type}",
+            )
 
         result = await self._execute_node_with_retry(
             node=node,
@@ -301,8 +366,14 @@ class WorkflowRuntime:
 
         if result.success:
             state.status = NodeStatus.COMPLETED
+            if graph is not None:
+                await monitor.record_completion(
+                    node_id, summary=f"{node.worker_type} completed"
+                )
         else:
             state.status = NodeStatus.FAILED
+            if graph is not None:
+                await monitor.record_failure(node_id, result.error or "Execution failed")
             # Route to error branch if defined
             if node.error_branch:
                 logger.info("WorkflowRuntime: node '%s' failed, routing to "
