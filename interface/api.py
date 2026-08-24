@@ -340,7 +340,8 @@ async def _stream_response(
                     payload={"execution_id": execution_id, "node_id": node_id,
                              "status": "failed"},
                 )
-            raise
+            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield "data: [DONE]\n\n"
 
         # Save full collected answer to context (non-blocking)
         asyncio.create_task(
@@ -349,7 +350,15 @@ async def _stream_response(
 
     else:
         # Multi-module: collect all, then stream the merged result in chunks
-        answer = await orchestrator.handle(query)
+        try:
+            answer = await orchestrator.handle(query, execution_id=execution_id)
+        except Exception as error:
+            if monitor is not None:
+                await monitor.record_failure(node_id, str(error),
+                                             failure_type=type(error).__name__)
+            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         if monitor is not None:
             await monitor.record_completion(node_id, summary="Response generated")
             await get_event_stream().append(
