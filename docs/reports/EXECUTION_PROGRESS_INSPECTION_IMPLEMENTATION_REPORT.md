@@ -76,6 +76,11 @@ The existing chat UI now includes:
 
 The final answer remains separate from the inspection panel. The UI never infers completion from elapsed time.
 
+The chat now uses the existing streaming `/query` path by default. This avoids
+waiting for a long-running generation to produce one final JSON body, which
+could otherwise be terminated by an upstream HTTP 504. Tokens are rendered as
+they arrive, while empty or malformed response bodies are reported explicitly.
+
 ## G. Security Boundary
 
 `core/runtime/projection.py` explicitly allowlists user-visible fields. Internal execution details, private metadata, prompts, hidden reasoning, credentials, and stack traces are excluded. Failure messages are truncated and sensitive-looking values containing API keys, passwords, authorization headers, or token assignments are replaced with a generic diagnostic.

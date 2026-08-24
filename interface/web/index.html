@@ -383,6 +383,44 @@ async function readJsonResponse(response) {
   }
 }
 
+async function consumeQueryStream(response, message) {
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OCBrain request failed (HTTP ${response.status})${body ? `: ${body.slice(0, 160)}` : '.'}`);
+  }
+  if (!response.body) throw new Error('OCBrain returned no response stream.');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let answer = '';
+  let finished = false;
+  while (!finished) {
+    const chunk = await reader.read();
+    buffer += decoder.decode(chunk.value || new Uint8Array(), {stream: !chunk.done});
+    const events = buffer.split('\n\n');
+    buffer = events.pop() || '';
+    for (const event of events) {
+      const data = event.split('\n').find(line => line.startsWith('data: '));
+      if (!data) continue;
+      const payload = data.slice(6);
+      if (payload === '[DONE]') { finished = true; break; }
+      let item;
+      try { item = JSON.parse(payload); }
+      catch { continue; }
+      if (item.error) throw new Error(item.error);
+      if (item.token) {
+        answer += item.token;
+        message.textContent = answer;
+        document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+      }
+    }
+    if (chunk.done) break;
+  }
+  if (!answer) message.textContent = 'No response.';
+  return answer;
+}
+
 function addMessage(text, role, meta) {
   const box = document.getElementById('messages');
   const div = document.createElement('div');
@@ -436,12 +474,11 @@ async function sendQuery() {
     const r = await fetch(`${API}/query`, {
       method: 'POST',
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
-      body: JSON.stringify({ query, execution_id: executionId }),
+      body: JSON.stringify({ query, stream: true, execution_id: executionId }),
     });
-    const d = await readJsonResponse(r);
     hideTyping();
-    const meta = d.modules_used?.length ? `via: ${d.modules_used.join(', ')}` : '';
-    addMessage(d.answer || 'No response.', 'bot', meta);
+    const message = addMessage('', 'bot');
+    await consumeQueryStream(r, message);
     await refreshInspection();
   } catch (e) {
     hideTyping();
