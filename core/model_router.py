@@ -11,9 +11,10 @@ import asyncio
 import inspect
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Tuple
 
 import httpx
 
@@ -21,6 +22,11 @@ from .config import config
 from .learning.similarity import get_model
 from .privacy import privacy
 from .provider_mesh import OllamaProvider, generate_with_fallback, resolve_provider
+from .runtime.cancellation import CancellationToken
+from .runtime.execution_budget import ExecutionPolicy, record_observed_throughput
+from .runtime.execution_outcome import ExecutionOutcome, FailureType
+from .runtime.execution_watchdog import CancelReason, ExecutionWatchdog
+from .runtime.progress_monitor import ProgressMonitor
 from .runtime.state import state_store
 
 log = logging.getLogger(__name__)
@@ -30,6 +36,13 @@ SHADOW_PROMOTE_MIN_QUERIES = 500
 REGRESSION_THRESHOLD = 0.70
 REGRESSION_WINDOW = 100
 
+# v1 long-form heuristic (K4.4): looks for an explicit word-count request
+# ("write a 1000 word story") in the subtask text. Deliberately simple and
+# deliberately conservative -- see _estimate_long_form docstring for why
+# this is disclosed as a v1 placeholder, not a complexity estimator.
+_WORD_COUNT_PATTERN = re.compile(r"(\d{2,5})\s*[-]?\s*words?\b", re.IGNORECASE)
+_LONG_FORM_TOKEN_THRESHOLD = 400
+
 
 @dataclass
 class RouteResult:
@@ -38,6 +51,7 @@ class RouteResult:
     shadow_answer: Optional[str] = None
     similarity: Optional[float] = None
     latency_ms: int = 0
+    execution_detail: Optional[ExecutionOutcome] = None
 
 
 async def _maybe_await(value):
@@ -45,6 +59,41 @@ async def _maybe_await(value):
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _estimate_long_form(subtask: str) -> Tuple[bool, Optional[int]]:
+    """v1 heuristic only.
+
+    Looks for an explicit word-count request in the subtask text (e.g.
+    "1000 words"). This deliberately does NOT attempt to estimate
+    complexity from context size, reasoning depth, or tool usage -- those
+    are real signals (see the architecture brief's §21 discussion) left as
+    a documented extension point, not implemented here.
+
+    A request with no explicit count defaults to long_form=False -- the
+    conservative, regression-safe choice. This heuristic only opts a
+    request INTO the new monitored-streaming path on a clear signal; it
+    never removes an ordinary short request from the existing, unchanged
+    fast path. See "Remaining debt" in the implementation report for what
+    a more general complexity estimator would need.
+    """
+    match = _WORD_COUNT_PATTERN.search(subtask or "")
+    if not match:
+        return False, None
+    words = int(match.group(1))
+    estimated_tokens = int(words * 1.35)  # rough words -> tokens ratio
+    return estimated_tokens >= _LONG_FORM_TOKEN_THRESHOLD, estimated_tokens
+
+
+def _resolve_cancellation_token(context) -> CancellationToken:
+    """ExecutionContext carries a cancellation_token; the legacy
+    WorkerContext does not (see core/workers/base.py). Fall back to a
+    fresh, local token so the watchdog still functions for callers on the
+    legacy context -- it just won't be externally cancellable through that
+    caller's own token in that case, which is a strict improvement over
+    today (no watchdog at all on this path) rather than a regression."""
+    token = getattr(context, "cancellation_token", None)
+    return token if isinstance(token, CancellationToken) else CancellationToken()
 
 
 def _cosine_sim_text(a: str, b: str) -> float:
@@ -76,6 +125,44 @@ class ModelRouter:
         state = config.get_module_state(module_name)
         stage = state.get("stage", "bootstrap")
         t0 = time.monotonic()
+
+        long_form, estimated_tokens = _estimate_long_form(subtask)
+        if long_form and stage in ("bootstrap", "native"):
+            # Monitored-streaming path (K4.4): reuses the existing
+            # streaming infrastructure (_stream_external / _stream_own /
+            # _ollama_stream, all unmodified) under ExecutionBudget +
+            # ProgressMonitor + ExecutionWatchdog supervision, instead of
+            # generate_with_fallback's flat-60s-timeout path. This is the
+            # actual fix for the "1000-word story -> No response" bug.
+            #
+            # Restricted to bootstrap/native: running both an external AND
+            # an own-model monitored stream concurrently in "shadow" stage,
+            # each under its own watchdog, is real additional complexity
+            # deferred to a follow-up (see implementation report) --
+            # shadow-stage long-form traffic safely falls through to the
+            # existing behavior below instead of hitting this branch.
+            if stage == "native":
+                stream_fn = self._stream_own
+                model_label = state.get("own_model_tag") or state.get("bootstrap_model", "mistral")
+                source = "own_model"
+            else:
+                stream_fn = self._stream_external
+                model_label = state.get("bootstrap_model", "mistral")
+                source = "external"
+
+            answer, outcome = await self._call_monitored_streaming(
+                stream_fn, module_name, subtask, context,
+                model_label=model_label, estimated_output_tokens=estimated_tokens,
+            )
+            await _maybe_await(self._record_training_pair(module_name, subtask, answer))
+            count = self._increment_query_count(module_name)
+            self._maybe_promote(module_name, count=count)
+            return RouteResult(
+                answer=answer,
+                source=source,
+                latency_ms=int((time.monotonic() - t0) * 1000),
+                execution_detail=outcome,
+            )
 
         if stage == "bootstrap":
             answer = await self._call_external(module_name, subtask, context)
@@ -238,6 +325,120 @@ class ModelRouter:
         model = state.get("own_model_tag") or state.get("bootstrap_model", "mistral")
         provider = OllamaProvider(model=model)
         return await generate_with_fallback([provider], self._build_prompt(subtask, context))
+
+    async def _call_monitored_streaming(
+        self,
+        stream_fn,
+        module_name: str,
+        subtask: str,
+        context,
+        *,
+        model_label: str,
+        estimated_output_tokens: Optional[int],
+    ) -> Tuple[str, ExecutionOutcome]:
+        """Drains an existing streaming generator (_stream_external /
+        _stream_own, themselves unmodified) under ExecutionBudget +
+        ProgressMonitor + ExecutionWatchdog supervision.
+
+        On healthy completion, returns the full generated text -- same
+        shape as generate_with_fallback's return, from the caller's point
+        of view. On a watchdog-triggered cancellation (stall or hard
+        deadline), returns whatever partial output had been generated
+        rather than discarding it, paired with a structured
+        ExecutionOutcome the caller (route()) attaches to RouteResult, so a
+        partial answer is always distinguishable from a complete one --
+        never silently passed off as a full response.
+        """
+        budget = ExecutionPolicy.for_generation(
+            provider=module_name,
+            model=model_label,
+            estimated_output_tokens=estimated_output_tokens,
+            long_form=True,
+        )
+        monitor = ProgressMonitor()
+        monitor.start()
+        token = _resolve_cancellation_token(context)
+        watchdog = ExecutionWatchdog(budget, monitor, token)
+
+        chunks: list[str] = []
+        provider_failure = False
+
+        async def _consume() -> None:
+            nonlocal provider_failure
+            try:
+                async for piece in stream_fn(module_name, subtask, context):
+                    chunks.append(piece)
+                    if piece.strip():
+                        monitor.report_progress(units=len(piece))
+                    else:
+                        monitor.report_activity()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.error("[model_router] monitored streaming failed (%s): %s", model_label, exc)
+                provider_failure = True
+
+        watchdog_task = asyncio.create_task(watchdog.run())
+        consumer_task = asyncio.create_task(_consume())
+
+        # A cooperative "check token.is_cancelled between chunks" is not
+        # enough: a genuinely stalled provider may never yield another
+        # chunk at all, leaving the consumer permanently blocked awaiting
+        # one. Race the two tasks instead, and forcibly cancel the
+        # consumer if the watchdog decides to act first -- this is what
+        # actually interrupts a hung stream (propagates asyncio.CancelledError
+        # into _ollama_stream's httpx read, which re-raises it rather than
+        # swallowing it).
+        done, _pending = await asyncio.wait(
+            {watchdog_task, consumer_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+
+        if consumer_task in done:
+            watchdog.stop()
+            await watchdog_task
+        else:
+            consumer_task.cancel()
+            try:
+                await consumer_task
+            except asyncio.CancelledError:
+                pass
+
+        full_answer = "".join(chunks)
+        has_output = bool(full_answer.strip())
+
+        if provider_failure:
+            failure_type = FailureType.PROVIDER_FAILURE
+        elif token.is_cancelled:
+            failure_type = (
+                FailureType.STALLED if token.reason == CancelReason.STALL.value
+                else FailureType.HARD_DEADLINE
+            )
+        elif not has_output:
+            failure_type = FailureType.EMPTY_RESPONSE
+        else:
+            failure_type = FailureType.SUCCESS
+
+        snap = monitor.snapshot()
+        if failure_type == FailureType.SUCCESS:
+            monitor.complete()
+            if snap.throughput_per_sec:
+                record_observed_throughput(module_name, model_label, snap.throughput_per_sec)
+        elif has_output:
+            monitor.cancel()
+        else:
+            monitor.fail()
+
+        outcome = ExecutionOutcome(
+            failure_type=failure_type,
+            provider=module_name,
+            model=model_label,
+            last_progress_at=snap.last_progress_at,
+            partial_output=full_answer if (failure_type != FailureType.SUCCESS and has_output) else None,
+            watchdog_verdict=watchdog.last_verdict.value,
+            recovery_action="bounded_extension" if watchdog.last_verdict.value == "extended" else "",
+            retryable=failure_type in (FailureType.STALLED, FailureType.PROVIDER_FAILURE, FailureType.EMPTY_RESPONSE),
+        )
+        return full_answer, outcome
 
     async def _spot_check(
         self, module_name: str, subtask: str, own_answer: str
