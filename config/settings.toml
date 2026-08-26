@@ -11,8 +11,18 @@ voice_enabled = false
 log_level = "INFO"
 
 [runtime]
-use_k42_frontend = true
+use_k42_frontend = false
 max_recovery_attempts = 3
+
+# Execution-budget defaults (K4.4). Distinct from max_recovery_attempts
+# above, which governs ADR-K4.2-H-05's OperationRecoveryBudget (autonomous
+# recovery attempts across a whole operation) -- these govern the time
+# envelope of a single execution attempt. See core/runtime/execution_budget.py.
+default_short_request_ceiling_s = 60.0
+default_startup_budget_s = 10.0
+default_progress_budget_s = 45.0
+default_hard_ceiling_s = 300.0
+max_budget_extension_s = 240.0
 
 [privacy]
 save_history = true
