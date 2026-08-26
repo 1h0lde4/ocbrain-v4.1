@@ -11,7 +11,7 @@ voice_enabled = false
 log_level = "INFO"
 
 [runtime]
-use_k42_frontend = false
+use_k42_frontend = true
 max_recovery_attempts = 3
 
 [privacy]
