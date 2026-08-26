@@ -188,7 +188,12 @@ async def generate_with_fallback(providers: List[Provider], prompt: str) -> str:
         start_time = time.perf_counter()
 
         try:
-            # safe_llm_call enforces the global semaphore + 30s timeout
+            # safe_llm_call enforces the global semaphore + a budget-derived
+            # timeout (defaults to 60s when no ExecutionBudget is passed --
+            # see core/runtime/execution_budget.py). This call intentionally
+            # doesn't pass one: generate_with_fallback serves short/atomic
+            # requests. Long-form generation is routed around this function
+            # entirely by ModelRouter -- see core/model_router.py.
             result = await safe_llm_call(cached_generate, provider, prompt)
             
             # Phase 2: Block empty responses
