@@ -22,7 +22,6 @@ class ExecutionWatchdog:
         self._task: Optional[asyncio.Task] = None
 
     def start(self) -> None:
-        self.budget.start()
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
@@ -36,18 +35,24 @@ class ExecutionWatchdog:
         self._task = None
 
     async def inspect(self, now: Optional[float] = None) -> str:
-        """Inspect the active nodes once; useful for tests and manual polling."""
-        current = now if now is not None else time.monotonic()
-        if self.budget.expired(current):
+        """Inspect the active nodes once; useful for tests and manual polling.
+
+        `now` overrides the progress-staleness check below (wall-clock node
+        timestamps). It no longer overrides the hard-deadline check: the real
+        ExecutionBudget (core/runtime/execution_budget.py, K4.4) measures
+        elapsed time from its own `created_at` via time.monotonic() and has
+        no fake-time injection hook.
+        """
+        if self.budget.is_hard_expired():
             self.cancellation_token.cancel("execution hard deadline expired")
             return "expired"
         snapshot = await self.graph.snapshot()
-        wall_now = time.time()
+        wall_now = time.time() if now is None else now
         active = [node for node in snapshot["nodes"]
                   if node["status"] == ExecutionStatus.RUNNING.value]
         for node in active:
             last = node.get("last_progress_at") or node.get("started_at") or wall_now
-            if wall_now - last >= self.budget.progress_deadline_seconds:
+            if wall_now - last >= self.budget.progress_deadline_s:
                 await self.monitor.record_status(
                     node["node_id"], ExecutionStatus.STALLED,
                     summary="No meaningful progress detected",

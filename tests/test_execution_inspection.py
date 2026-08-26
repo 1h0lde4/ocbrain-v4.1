@@ -77,9 +77,21 @@ async def test_watchdog_cancels_at_hard_deadline_and_never_exceeds_extension_cap
     monitor = ProgressMonitor(graph, stream)
     await monitor.record_status(node.node_id, ExecutionStatus.RUNNING)
     token = CancellationToken()
-    budget = ExecutionBudget(hard_deadline_seconds=1, max_extension_seconds=2)
-    budget.start(now=10)
-    assert budget.extend(5) == 2
+    # Real ExecutionBudget (core/runtime/execution_budget.py, K4.4) measures
+    # real elapsed wall-clock time from construction and has no fake-time
+    # injection hook, so this uses a short real deadline + real sleep instead
+    # of the injected `now=` the original (pre-K4.4) budget supported.
+    budget = ExecutionBudget(
+        startup_deadline_s=0.05, progress_deadline_s=0.05,
+        hard_ceiling_s=0.1, absolute_ceiling_s=0.2, max_extension_s=0.1,
+    )
     watchdog = ExecutionWatchdog(graph, budget, token, monitor)
-    assert await watchdog.inspect(now=13) == "expired"
+
+    # One extension is available and respects the cap...
+    assert budget.grant_extension(0.1) is True
+    # ...but the cap is never exceeded: nothing is left for a second request.
+    assert budget.grant_extension(0.1) is False
+
+    await asyncio.sleep(0.25)  # past the (extended) hard ceiling
+    assert await watchdog.inspect() == "expired"
     assert token.is_cancelled

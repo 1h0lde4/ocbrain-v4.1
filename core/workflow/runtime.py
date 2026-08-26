@@ -164,12 +164,15 @@ class WorkflowRuntime:
         budget = (metadata or {}).get("execution_budget")
         if not isinstance(budget, ExecutionBudget):
             word_count = len(query.split())
+            hard_ceiling = 600.0 if word_count >= 500 else 300.0
             budget = ExecutionBudget(
-                progress_deadline_seconds=45.0,
-                hard_deadline_seconds=600.0 if word_count >= 500 else 300.0,
+                startup_deadline_s=10.0,
+                progress_deadline_s=45.0,
+                hard_ceiling_s=hard_ceiling,
+                absolute_ceiling_s=hard_ceiling,
+                max_extension_s=240.0,
             )
         watchdog = ExecutionWatchdog(graph, budget, cancel_token, monitor)
-        budget.start()
         await monitor.record_status(
             graph.root.node_id, ExecutionStatus.RUNNING,
             summary="Execution started", current_action="Preparing execution",
