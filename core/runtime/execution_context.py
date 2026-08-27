@@ -15,9 +15,10 @@ Design:
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from core.runtime.cancellation import CancellationToken
+from core.runtime.execution_budget import ExecutionBudget
 from core.runtime.working_memory import WorkingMemory
 
 
@@ -40,6 +41,15 @@ class ExecutionContext:
         workflow_id: Set by WorkflowRuntime if in a workflow.
         parent_worker_id: Set if invoked by SupervisorWorker.
         metadata: Extensible context data.
+        execution_budget: Optional time/progress envelope for the current
+            execution attempt (K4.4, additive field). None for contexts
+            that don't opt into budget-aware execution -- callers should
+            treat that as "ExecutionPolicy.default_budget() semantics
+            apply implicitly." Populated by ModelRouter for monitored
+            long-form generation. Distinct from governance_state's
+            recovery/step counters and from ADR-K4.2-H-05's
+            OperationRecoveryBudget -- see
+            core/runtime/execution_budget.py module docstring.
     """
 
     request_id:         str                = field(default_factory=lambda: str(uuid.uuid4()))
@@ -52,6 +62,7 @@ class ExecutionContext:
     workflow_id:        str                = ""
     parent_worker_id:   str                = ""
     metadata:           Dict[str, Any]     = field(default_factory=dict)
+    execution_budget:   Optional[ExecutionBudget] = None
 
     # ── Convenience: bridge to legacy WorkerContext ─────────────────────
 

@@ -170,7 +170,8 @@ class Orchestrator:
                             event_type, e)
 
     @async_trace_function(name="orchestrator_v3")
-    async def handle(self, query: str, max_iterations: int = 5) -> str:
+    async def handle(self, query: str, max_iterations: int = 5, *,
+                     execution_id: str = "") -> str:
         """
         Main entry point for query processing.
         Uses semantic classification and parallel module dispatching.
@@ -408,7 +409,8 @@ class Orchestrator:
                         workflow_definition,
                         query=query,
                         session_id=interaction_id,
-                        metadata={"interaction_id": interaction_id},
+                        metadata={"interaction_id": interaction_id,
+                                  "execution_id": execution_id},
                     )
                     answer = wf_result.output or ""
 
@@ -546,7 +548,8 @@ class Orchestrator:
                         definition,
                         query=query,
                         session_id=interaction_id,
-                        metadata={"interaction_id": interaction_id},
+                        metadata={"interaction_id": interaction_id,
+                                  "execution_id": execution_id},
                     )
 
                     if not wf_result.success:

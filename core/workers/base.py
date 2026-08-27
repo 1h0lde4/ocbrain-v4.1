@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from core.runtime.execution_outcome import ExecutionOutcome
+
 from core.governance.governance_kernel import (
     GovernanceAction,
     GovernanceKernel,
@@ -103,15 +105,22 @@ class WorkerResult:
         events_emitted: Count of events emitted during execution.
         duration_ms: Wall-clock duration in milliseconds.
         metadata: Additional result context.
+        execution_detail: Optional structured failure/outcome classification
+            (K4.4, additive field). None for workers that don't populate
+            it -- existing callers reading .success/.error/.output are
+            unaffected. When present, replaces "generic exception message"
+            with a typed FailureType plus recovery/progress context; see
+            core/runtime/execution_outcome.py.
     """
 
-    success:        bool           = True
-    output:         Any            = None
-    error:          str            = ""
-    artifacts:      Dict[str, Any] = field(default_factory=dict)
-    events_emitted: int            = 0
-    duration_ms:    float          = 0.0
-    metadata:       Dict[str, Any] = field(default_factory=dict)
+    success:          bool           = True
+    output:           Any            = None
+    error:            str            = ""
+    artifacts:        Dict[str, Any] = field(default_factory=dict)
+    events_emitted:   int            = 0
+    duration_ms:      float          = 0.0
+    metadata:         Dict[str, Any] = field(default_factory=dict)
+    execution_detail: Optional[ExecutionOutcome] = None
 
 
 # ── Abstract Cognitive Worker ─────────────────────────────────────────────────
