@@ -421,9 +421,15 @@ class TestExtractConstraints:
 
     @pytest.mark.asyncio
     async def test_falls_back_to_raw_request(self):
-        """Falls back to raw_request when description is 'unknown'."""
+        """Falls back to raw_request when description is empty.
+
+        G6 (K4.2 completion): the old 'unknown' sentinel was a
+        pre-K42-001 artifact. After K42-001, description is always
+        the raw_request text, never 'unknown'. The fallback now
+        triggers on empty/falsy description, not the literal 'unknown'.
+        """
         goal = _make_goal(
-            description="unknown",
+            description="",
             raw_request="must validate input",
         )
         es = MockEventStream()

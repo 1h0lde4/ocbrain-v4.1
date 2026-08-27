@@ -182,7 +182,7 @@ class TestRecoveryBudgetBoundedTermination:
             f"expected exactly 3 plan() calls (1 initial + 2 retries), "
             f"got {plan_mock.await_count}"
         )
-        assert "could not form a plan" in result
+        assert "wasn't able to find a suitable approach" in result
 
     @pytest.mark.asyncio
     async def test_successful_replan_stops_the_loop_immediately(self):
@@ -218,7 +218,7 @@ class TestRecoveryBudgetBoundedTermination:
         assert plan_mock.await_count == 1, (
             "REJECTED_PRECHECK must not be retried -- it is deterministic"
         )
-        assert "could not form a plan" in result
+        assert "conflicting requirements" in result
 
 
 # ── D8: terminal impasse diagnostic event ──────────────────────────────
