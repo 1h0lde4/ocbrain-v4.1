@@ -276,19 +276,59 @@ class Orchestrator:
                 try:
                     from core.cognitive.compiler import CompilationStatus
                     from core.cognitive.compiler import compile as compile_plan
-                    from core.cognitive.intent import interpret_request
-                    from core.cognitive.planner import (
-                        PlannerRequest, PlannerStatus, plan as plan_fn,
+                    from core.cognitive.intent import (
+                        interpret_request, load_known_categories,
                     )
+                    from core.cognitive.planner import (
+                        PlannerHint, PlannerRequest, PlannerStatus,
+                        plan as plan_fn,
+                    )
+                    from core.cognitive.planner import HintSource
                     from core.cognitive.recovery import OperationRecoveryBudget
+                    from core.cognitive.user_model import (
+                        assemble_user_cognitive_model,
+                    )
                     from core.observability.tracer import get_trace_id
                     from core.workers.evaluator import EvaluationRecord
 
+                    # G3 (K4.2 completion): load promoted intent categories
+                    # from memory. Empty list on fresh system (expected).
+                    known_categories = await load_known_categories(
+                        memory=self.memory)
+
                     goals = await interpret_request(
-                        query, memory=self.memory, event_stream=self._event_stream)
+                        query, memory=self.memory,
+                        event_stream=self._event_stream,
+                        known_categories=known_categories or None)
                     goal = goals[0]
 
-                    planner_request = PlannerRequest(goal_id=goal.resource_id, goal=goal)
+                    # G4 (K4.2 completion): assemble user cognitive model
+                    # and generate advisory PlannerHints. These are bounded
+                    # hints, not overrides — explicit user constraints in
+                    # the current request always take precedence (K4.2 §5).
+                    user_hints: list = []
+                    try:
+                        projection = await assemble_user_cognitive_model(
+                            memory=self.memory)
+                        if projection.preferred_abstraction_level:
+                            user_hints.append(PlannerHint(
+                                kind=f"abstraction_level:{projection.preferred_abstraction_level}",
+                                weight=0.5,
+                                source=HintSource.USER_MODEL,
+                            ))
+                        if projection.communication_style:
+                            user_hints.append(PlannerHint(
+                                kind=f"communication_style:{projection.communication_style}",
+                                weight=0.4,
+                                source=HintSource.USER_MODEL,
+                            ))
+                    except Exception as ume:
+                        logger.debug("[Orchestrator] User model assembly "
+                                     "failed (non-blocking): %s", ume)
+
+                    planner_request = PlannerRequest(
+                        goal_id=goal.resource_id, goal=goal,
+                        hints=user_hints)
 
                     # ── D5 (ADR-K4.2-H-05) — Unified Recovery Budget ────────
                     # One budget per handle() K4.2-branch invocation, created
@@ -347,8 +387,11 @@ class Orchestrator:
                                         "remaining": budget.remaining,
                                     },
                                 })
-                            return ("Sorry, I could not form a plan for this "
-                                    f"request: {planner_result.status}")
+                            # Public-user safe: no internal status enum.
+                            return ("I'm sorry, I wasn't able to find a "
+                                    "suitable approach for this request. "
+                                    "Could you try rephrasing it or "
+                                    "breaking it into smaller steps?")
                         planner_result = await plan_fn(
                             planner_request, self._capability_registry,
                             event_stream=self._event_stream)
@@ -359,10 +402,12 @@ class Orchestrator:
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": str(planner_result.impasse_detail),
-                            "error_type": "PlannerImpasse",
+                            "error_type": "PlannerRejection",
                         })
-                        return ("Sorry, I could not form a plan for this "
-                                f"request: {planner_result.status}")
+                        # Public-user safe: no internal status enum.
+                        return ("I found conflicting requirements in your "
+                                "request that I can't resolve. Could you "
+                                "clarify what you'd like me to do?")
 
                     execution_plan = planner_result.execution_plan
                     compilation_result = await compile_plan(
@@ -401,8 +446,9 @@ class Orchestrator:
                             "error": compilation_result.status,
                             "error_type": "CompilationRejected",
                         })
-                        return ("Sorry, this request could not be compiled "
-                                f"into a runnable plan ({compilation_result.status}).")
+                        return ("I'm sorry, I wasn't able to prepare your "
+                                "request for execution. Please try "
+                                "rephrasing or simplifying your request.")
 
                     workflow_definition = compilation_result.workflow_definition
                     wf_result = await self._workflow_runtime.execute(
@@ -510,10 +556,18 @@ class Orchestrator:
                         "error": str(e),
                         "error_type": type(e).__name__,
                     })
-                    return (f"Sorry, I encountered an internal error: "
-                            f"{type(e).__name__}")
+                    return ("I'm sorry, something went wrong while "
+                            "processing your request. Please try again.")
 
-            # ── K2.2 — Production Runtime Migration ────────────────────────
+            # ── K2.2 — LEGACY: Production Runtime Migration ─────────────────
+            # Classification: COMPATIBILITY (K4.2 completion, G7)
+            # This path is retained ONLY for backward compatibility with
+            # tests that construct Orchestrator without use_k42_frontend=True
+            # or without a workflow_runtime. It is NOT the canonical path for
+            # normal public requests — K4.2 above is. Do not add new
+            # functionality here; new cognitive pipeline work belongs in the
+            # K4.2 branch above.
+            #
             # When a WorkflowRuntime was supplied at construction (main.py,
             # composition root), query handling delegates through:
             #     WorkflowRuntime -> ExecutionRuntime -> PlannerWorker

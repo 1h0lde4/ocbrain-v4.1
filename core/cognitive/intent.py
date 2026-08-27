@@ -215,6 +215,7 @@ class Intent:
     ontology_ref: Optional[str] = None
     derived_from: List[str] = field(default_factory=list)
     caused_by: Optional[str] = None  # D9 (ADR-K4.2-H-09): event_id or None.
+    detected_language: Optional[str] = None  # G2 (K4.2 completion): from RawRequest.
     lifecycle_state: str = IntentLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -738,10 +739,34 @@ def _validate_structured_form(
     # `else "unknown"` branch had no correct use. Fixed unconditionally
     # -- confirmed independently by two separate sessions working from
     # different repository snapshots, converging on this same fix.
+    # G1 (K4.2 completion): semantic_description carries the interpreted
+    # semantic signal for capability matching, distinct from raw_request
+    # (original user text, preserved exactly). description remains for
+    # backward compatibility, holding the same value as raw_request.
+    # When a meaningful hypothesis label exists (not "novel", which is
+    # the open-category fallback and carries no semantic information),
+    # semantic_description combines the classification with the request
+    # to provide richer matching context for capability discovery.
+    _hypothesis_label = (
+        intent.selected.label
+        if intent.selected and intent.selected.label != "novel"
+        else ""
+    )
+    _semantic_desc = (
+        f"{_hypothesis_label}: {intent.raw_request}"
+        if _hypothesis_label
+        else intent.raw_request
+    )
+    # G2 (K4.2 completion): propagate detected_language from Intent,
+    # which received it from RawRequest. One coherent source of truth
+    # for language metadata through the cognitive pipeline.
+    _detected_lang = getattr(intent, "detected_language", None)
     structured_form: Dict[str, Any] = {
         "description": intent.raw_request,
         "category": category,
         "raw_request": intent.raw_request,
+        "semantic_description": _semantic_desc,
+        "detected_language": _detected_lang,
     }
 
     # If an ontology schema exists for this category, validate against it.
@@ -843,6 +868,13 @@ def form_goals(
         if len(parts) > 1:
             structured_form = dict(structured_form)  # copy
             structured_form["description"] = part_text
+            # G1: compound sub-goal semantic_description preserves sub-part
+            # text with its semantic context, not the full compound request.
+            _cat = structured_form.get("category", "novel")
+            structured_form["semantic_description"] = (
+                f"{_cat}: {part_text}" if _cat and _cat != "novel"
+                else part_text
+            )
 
         # K4.2 §9: confidence inherited from Intent, adjusted by validation.
         goal_confidence = max(0.0, intent.confidence - confidence_penalty)
@@ -952,6 +984,7 @@ async def interpret_request(
         confidence=selected.score if selected else 0.0,
         dimensions=dimensions,
         lifecycle_state=IntentLifecycle.INTERPRETED,
+        detected_language=raw_request.detected_language,  # G2
     )
 
     await event_stream.append(
@@ -982,3 +1015,38 @@ async def interpret_request(
         )
 
     return goals
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Intent Ontology Read Path — K4.2 §2 (G3, K4.2 completion)
+# ─────────────────────────────────────────────────────────────────────────
+
+async def load_known_categories(
+    memory: Optional[UnifiedMemory] = None,
+) -> List[str]:
+    """Loads promoted Intent Ontology categories from UnifiedMemory.
+
+    Architecture: K4.2 §2 -- "Intent memory — a promoted L3 knowledge
+    base of previously-seen intent categories, used as known_categories
+    input to generate_hypotheses() so that repeat categories can be
+    recognized without a fresh LLM call."
+
+    Returns an empty list on a fresh system where nothing has been
+    promoted yet -- the expected, correct input to generate_hypotheses'
+    known_categories parameter. Errors are contained: an unavailable
+    memory system degrades to "fresh system" behavior, not a crash.
+
+    K4.2 scope: this is the read path only. The write path is
+    validation_gate() with ContentDomain.INTENT_ONTOLOGY in
+    core/cognitive/learning.py.
+    """
+    memory = memory or get_unified_memory()
+    try:
+        results = await memory.search(
+            "intent_ontology", max_results=100,
+            filters={"content_type": "intent_ontology"},
+        )
+        categories = list({r.content for r in results if r.content})
+        return categories
+    except Exception:
+        return []

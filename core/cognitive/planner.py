@@ -446,8 +446,11 @@ async def _extract_constraints(
     # 1. Extract explicit constraints from the goal description.
     description = goal.structured_form.get("description", "")
     raw_request = goal.structured_form.get("raw_request", "")
-    # Use the most specific text available.
-    text = description if description != "unknown" else raw_request
+    # Use the most specific text available for constraint extraction.
+    # G1 (K4.2 completion): prefer semantic_description for richer
+    # semantic context; fall back to description, then raw_request.
+    text = (goal.structured_form.get("semantic_description")
+            or description or raw_request)
     constraints.extend(_extract_explicit_constraints(text))
 
     # 2. Extract inferred constraints from the goal's structure.
@@ -607,7 +610,12 @@ def build_capability_discovery_request(
     """
     return CapabilityDiscoveryRequest(
         subgoal_ref=goal.resource_id,
-        description=(goal.structured_form or {}).get("description", ""),
+        # G1 (K4.2 completion): prefer semantic_description for richer
+        # capability matching; fall back to description for compatibility.
+        description=(goal.structured_form or {}).get(
+            "semantic_description",
+            (goal.structured_form or {}).get("description", ""),
+        ),
         applicable_constraints=list(constraints),
         context_view_ref=context_view_ref,
     )
@@ -1478,6 +1486,24 @@ async def plan(
 
     impasse = _detect_impasse(steps_with_candidates)
     if impasse is not None:
+        # G5 (K4.2 completion): emit cognitive.planner_impasse when
+        # impasse is detected. Distinct from the orchestrator's
+        # cognitive.planner_impasse_terminal (emitted only when the
+        # recovery budget is exhausted). This event fires on every
+        # impasse, including ones the re-plan loop will retry.
+        await event_stream.append(
+            "cognitive.planner_impasse",
+            source="Planner",
+            payload={
+                "trace_id": get_trace_id(),
+                "operation_id": operation_id,
+                "goal_id": goal.resource_id,
+                "reason": impasse.reason,
+                "unresolved_count": len(impasse.unresolved_subgoals),
+                "unresolved_subgoals": impasse.unresolved_subgoals,
+                "attempted_capabilities": impasse.attempted_capabilities,
+            },
+        )
         return PlannerResult(
             status=PlannerStatus.IMPASSE, impasse_detail=impasse,
             operation_id=operation_id,
