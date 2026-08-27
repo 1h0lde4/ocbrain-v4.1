@@ -107,4 +107,12 @@ Workers table). Moved out of the table below accordingly. `CoderWorker` and
 
 ---
 
+**Resolved (K4.2 completion, Aug 27, 2026):** ~~DEBT-013 — `RawRequest.detected_language` does not propagate past `normalize_request()`~~. G2 fix: `detected_language` now propagates through `Intent.detected_language` → `Goal.structured_form["detected_language"]`. The field is populated in `interpret_request()` from `RawRequest.detected_language` and included in `_validate_structured_form()`'s output. Downstream consumers can read it from `goal.structured_form["detected_language"]`.
+
+| ID | Area | Issue | Severity | Impact |
+|---|---|---|---|---|
+| DEBT-017 | Interface/Streaming | **Streaming API path bypasses K4.2 cognitive pipeline** — `interface/api.py`'s streaming endpoint calls `model_router.stream_route()` directly, bypassing `Orchestrator.handle()` and the entire K4.2 cognitive front-end (intent interpretation, capability discovery, planning, compilation). This is architecturally correct for the streaming use case today (streaming through a multi-step cognitive pipeline is a distinct architectural problem, not a K4.2 gap), but means the streaming interface does not benefit from K4.2's semantic understanding, constraint extraction, or capability routing. | Low | Streaming requests receive direct model routing without cognitive pipeline processing. Not a K4.2 defect — streaming architecture is a separate future work item. |
+
+---
+
 *This document distinguishes between debt (gaps), deferred items (intentional), and future work (not yet started). Update it as items are resolved or new issues are discovered.*
