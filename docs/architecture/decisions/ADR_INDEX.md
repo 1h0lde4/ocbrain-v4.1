@@ -63,4 +63,17 @@ Both conventions are valid. Embedded ADRs are part of the frozen spec; standalon
 
 ---
 
+## Agent Evaluation & Reliability Lab Track (ADR-LAB-*)
+
+Parallel/non-blocking track — evaluates OCBrain, does not modify K4.2, the Execution Reliability Track, or Cognitive-Phase-Future work. See `docs/reports/AGENT_EVALUATION_RELIABILITY_LAB_RESEARCH_AND_ARCHITECTURE_REPORT.md` for the full research and architecture writeup these ADRs come from. All four below are `PROPOSED`, pending human review before any Lab code is written.
+
+| ADR ID | Title | Status | File |
+|---|---|---|---|
+| ADR-LAB-01 | Evaluation Run Identity & Three-Layer Trust Separation | Proposed | `ADR_LAB_01_EVALUATION_RUN_IDENTITY_AND_TRUST_SEPARATION.md` |
+| ADR-LAB-02 | Runtime/Lab Package Boundary & Trace Adapter Source Priority | Proposed | `ADR_LAB_02_RUNTIME_LAB_BOUNDARY_AND_TRACE_ADAPTER.md` |
+| ADR-LAB-03 | Evaluator Layering, Evidence Model & Judge Calibration | Proposed | `ADR_LAB_03_EVALUATOR_LAYERING_EVIDENCE_AND_JUDGE_CALIBRATION.md` |
+| ADR-LAB-04 | Benchmark & Evaluator Versioning / Historical Immutability | Proposed | `ADR_LAB_04_BENCHMARK_AND_EVALUATOR_VERSIONING.md` |
+
+---
+
 *Update this index when new ADRs are created.*
