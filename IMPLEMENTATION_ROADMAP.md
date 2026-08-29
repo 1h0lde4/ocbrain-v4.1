@@ -111,6 +111,18 @@ Two sessions independently built overlapping `ExecutionBudget`/`ExecutionWatchdo
 
 **Researched and proposed, not implemented:** stable operation identity across retries, `ExecutionAttempt`, `ExecutionSnapshot`, extended failure classification, a `RecoveryDecision` policy layer, checkpoint persistence, idempotency semantics. Full research (Temporal, LangGraph, Restate, and recent academic work, honestly sourced) and the proposed architecture are in `docs/reports/WATCHDOG_EVOLUTION_RESEARCH_AND_ARCHITECTURE_REPORT.md`. Per this project's Architecture Freeze Principle, this should become its own ADR before implementation begins — tracked as `KNOWN_ISSUES.md` DEBT-015, explicitly deferred pending that review, not scheduled against any other phase's completion.
 
+**Update, same day (Aug 27→28, 2026):** a separate, unreviewed direct-to-`main` upload (outside the normal branch/PR workflow — see `KNOWN_ISSUES.md`'s Aug 28 sync note for full provenance) flipped `use_k42_frontend` to `true`. **The K4.2 Cognitive Front-End is now the default execution path**, not merely feature-flagged for testing; the K2.2 `PlannerWorker` path is retained as LEGACY/COMPATIBILITY only. That same upload added `Goal.semantic_description` (richer capability-discovery signal), closed DEBT-013 (language-detection propagation), and — for the first time — wired `assemble_user_cognitive_model()`'s output into `PlannerHint`s reaching the orchestrator. Independently re-verified this session: 51 new tests pass, and the full suite (1,331 passed / 34 failed, all 34 the pre-existing `huggingface.co`-unreachable environment class) shows zero regressions from the flip.
+
+---
+
+## K4.3 Research Phase — Complete, Not Implemented (Aug 28, 2026)
+
+`docs/studies/OCBRAIN_K4_3_CMOE_ARCHITECTURE_STUDY.md` (100-section architecture proposal) and its companion `docs/studies/OCBRAIN_K4_3_REALITY_GROUNDING_SUBSTUDY.md` reconcile this project's prior unpublished internal research (`docs/architecture/future_debt_study/OCBRAIN_CMOE_ADAPTIVE_COGNITIVE_SCALING_ARCHITECTURE_STUDY.md` and `OCBRAIN_RELIABILITY_DURABLE_EXECUTION_ARCHITECTURE_STUDY.md`, neither previously an ADR or a `docs/studies/` deliverable) against the current codebase, the Kernel Constitution, and fresh external research, and define what K4.3/C-MoE should be. **Research and architecture proposal only — no implementation, per this project's Architecture Freeze Principle; requires ADR ratification before Packet 0 begins.**
+
+Headline findings: (1) the current `WorkflowNode` → worker dispatch path (`core/workers/capability_executor.py`) only works because exactly one `capability_type` is registered anywhere in the system, and must be generalized before C-MoE can route between more than one expert — the single most concrete blocking risk found; (2) a primitive form of the plan-reality-feedback loop already exists in code (`ExecutionPlan.caused_by` + `cognitive.planner_impasse`, both already shipping) and should be generalized, not reinvented; (3) DEBT-003/015/016 (above) are reclassified as K4.3 "Packet 0" prerequisites, sequenced before any C-MoE-specific code; (4) Project/Discussion and a four-scope memory model (Global/Project/Discussion/Reusable-Evidence) are modeled as Application-layer concepts over the Kernel's existing Scope primitive, never new Kernel primitives, per the Constitution's explicit "no conversation as a primitive" non-goal; (5) a companion sub-study resolved whether C-MoE should ground Planner in "reality" before planning begins — verdict: adopt a thin, conditional, single-round, facts-only grounding call plus a feasibility pass reusing C-MoE's own eligibility logic, explicitly rejecting both an iterative dialogue and a new standing "Reality Layer" component.
+
+This replaces the one-line "Cognitive Runtime (C-MoE)" placeholder that previously stood in the Cognitive Phase list below — see the two studies for the full MVP/target/deferred scope and proposed packet sequence.
+
 ---
 
 ## Cognitive Phase — Future (Post-Kernel)
@@ -119,7 +131,7 @@ These items are beyond Kernel scope. They build ON the kernel, not AS the kernel
 
 - Self-Identity Model
 - Reflection Engine
-- Cognitive Runtime (C-MoE) — capability *selection*: resolving a `PlanStep.capability_type` (and the `WorkflowNode.worker_type` Plan Compilation carries forward unchanged) to a concrete registered `WorkerRegistry`/adapter entry
+- Cognitive Runtime (C-MoE) — architecture proposed, not implemented; see the "K4.3 Research Phase" section above and `docs/studies/OCBRAIN_K4_3_CMOE_ARCHITECTURE_STUDY.md` for the full design (routing, WorkGraph, outcome contract, Packet 0-6 sequence)
 - Skills Runtime
 - External Knowledge Pipeline
 - Multi-Agent Runtime (SupervisorWorker)
