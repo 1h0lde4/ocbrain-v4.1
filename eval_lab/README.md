@@ -11,7 +11,7 @@ Named here deliberately, ahead of any code, so a parallel session doesn't indepe
 
 ## What comes next (Slice 2, not started)
 
-Contracts: `BenchmarkDefinition`, `TaskDefinition`, `EvaluationCase`, `EvaluationRun`, `ExecutionReference`, `Trajectory`, `TrajectoryEvent`, `Checkpoint`, `EvaluatorDefinition`, `EvaluationResult`, `Evidence`, `FailureRecord`, `Experiment`. Not implemented until the four ADRs above have been reviewed.
+Contracts: `BenchmarkDefinition`, `TaskDefinition`, `EvaluationCase`, `EvaluationRun`, `ExecutionReference`, `Trajectory`, `TrajectoryEvent`, `Checkpoint`, `EvaluatorDefinition`, `EvaluationResult`, `Evidence`, `FailureRecord`, `Experiment`. Not implemented until the six ADRs above have been reviewed.
 
 ## Invariant this package must always satisfy
 

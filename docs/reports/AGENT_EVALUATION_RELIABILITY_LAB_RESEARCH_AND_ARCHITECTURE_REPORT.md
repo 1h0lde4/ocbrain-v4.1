@@ -18,7 +18,7 @@ Three findings from repository recon materially change the shape of the proposal
 2. **`EvaluatorWorker` and `ReflectionWorker` already exist** (`core/workers/evaluator.py`, `core/workers/reflection.py`, K4.2 Packet 07) and already produce `EvaluationRecord`s and reflection `KnowledgeEntry`s. This is an in-loop, single-task, self-assessment mechanism — a different concept from the Lab's job of external, evidence-backed verification across runs. The naming collision is real (both use "evaluat-") and is addressed directly in the architecture (§4.5) and in ADR-LAB-02.
 3. **There is no real existing evaluation infrastructure to build on or displace.** `evals/run_eval.py` is a 75-line placeholder against a mocked subject call and a 10-question trivia dataset — not a foundation, not a conflict. It should be treated as superseded once the Lab exists (not deleted in this slice; flagged in §8).
 
-The proposed architecture keeps the Lab as a new top-level package (`eval_lab/`, sibling to `core/`), consuming the runtime's existing event backbone through an adapter rather than a new parallel event system, and treating in-loop self-evaluation as one input signal among several rather than as ground truth. Four ADRs are proposed (all status `Proposed`, pending your review) covering identity/layering, the runtime boundary, evaluator/evidence/judge architecture, and versioning.
+The proposed architecture keeps the Lab as a new top-level package (`eval_lab/`, sibling to `core/`), consuming the runtime's existing event backbone through an adapter rather than a new parallel event system, and treating in-loop self-evaluation as one input signal among several rather than as ground truth. Six ADRs are proposed (all status `Proposed`, pending your review) covering identity/trust separation, the runtime boundary, evaluator/evidence/judge architecture, benchmark/evaluator versioning, experiment population and statistical discipline, and oracle/user-simulator trust.
 
 ---
 
@@ -359,7 +359,7 @@ All six are `Proposed`, not `Accepted` — per this project's own Architecture F
 
 ## 10. Explicitly Not Done In This Slice
 
-Consistent with the brief's own "what not to build now" list, and its slice ordering: no contracts, no trace-adapter code, no evaluators, no CLI, no persistence, no benchmark content, no fixtures. Slice 2 (contracts) is the natural next step once the four ADRs above have been reviewed — implementing them before that review would put code on top of architecture nobody outside this session has confirmed.
+Consistent with the brief's own "what not to build now" list, and its slice ordering: no contracts, no trace-adapter code, no evaluators, no CLI, no persistence, no benchmark content, no fixtures. Slice 2 (contracts) is the natural next step once the six ADRs above have been reviewed — implementing them before that review would put code on top of architecture nobody outside this session has confirmed.
 
 ---
 
