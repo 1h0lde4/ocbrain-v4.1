@@ -65,14 +65,16 @@ Both conventions are valid. Embedded ADRs are part of the frozen spec; standalon
 
 ## Agent Evaluation & Reliability Lab Track (ADR-LAB-*)
 
-Parallel/non-blocking track — evaluates OCBrain, does not modify K4.2, the Execution Reliability Track, or Cognitive-Phase-Future work. See `docs/reports/AGENT_EVALUATION_RELIABILITY_LAB_RESEARCH_AND_ARCHITECTURE_REPORT.md` for the full research and architecture writeup these ADRs come from. All four below are `PROPOSED`, pending human review before any Lab code is written.
+Parallel/non-blocking track — evaluates OCBrain, does not modify K4.2, the Execution Reliability Track, or Cognitive-Phase-Future work. See `docs/reports/AGENT_EVALUATION_RELIABILITY_LAB_RESEARCH_AND_ARCHITECTURE_REPORT.md` for the full research and architecture writeup these ADRs come from. All six below are `PROPOSED`, pending human review before any Lab code is written. ADR-LAB-01 through 04 were amended 2026-08-28 (measurement-completeness pass, additive only — each ADR's original Context/Decision is unchanged, each has a new dated "Amendment" section); ADR-LAB-05 and ADR-LAB-06 were added in that same pass.
 
 | ADR ID | Title | Status | File |
 |---|---|---|---|
-| ADR-LAB-01 | Evaluation Run Identity & Three-Layer Trust Separation | Proposed | `ADR_LAB_01_EVALUATION_RUN_IDENTITY_AND_TRUST_SEPARATION.md` |
-| ADR-LAB-02 | Runtime/Lab Package Boundary & Trace Adapter Source Priority | Proposed | `ADR_LAB_02_RUNTIME_LAB_BOUNDARY_AND_TRACE_ADAPTER.md` |
-| ADR-LAB-03 | Evaluator Layering, Evidence Model & Judge Calibration | Proposed | `ADR_LAB_03_EVALUATOR_LAYERING_EVIDENCE_AND_JUDGE_CALIBRATION.md` |
-| ADR-LAB-04 | Benchmark & Evaluator Versioning / Historical Immutability | Proposed | `ADR_LAB_04_BENCHMARK_AND_EVALUATOR_VERSIONING.md` |
+| ADR-LAB-01 | Evaluation Run Identity & Trust Separation *(amended: 3→6 layers + integrity)* | Proposed | `ADR_LAB_01_EVALUATION_RUN_IDENTITY_AND_TRUST_SEPARATION.md` |
+| ADR-LAB-02 | Runtime/Lab Package Boundary & Trace Adapter Source Priority *(amended: snapshot/branch shape)* | Proposed | `ADR_LAB_02_RUNTIME_LAB_BOUNDARY_AND_TRACE_ADAPTER.md` |
+| ADR-LAB-03 | Evaluator Layering, Evidence Model & Judge Calibration *(amended: lifecycle, classifier stats, abstention)* | Proposed | `ADR_LAB_03_EVALUATOR_LAYERING_EVIDENCE_AND_JUDGE_CALIBRATION.md` |
+| ADR-LAB-04 | Benchmark & Evaluator Versioning / Historical Immutability *(amended: coverage, difficulty, lineage)* | Proposed | `ADR_LAB_04_BENCHMARK_AND_EVALUATOR_VERSIONING.md` |
+| ADR-LAB-05 | Experiment Population, Sampling & Statistical Discipline | Proposed | `ADR_LAB_05_EXPERIMENT_POPULATION_SAMPLING_AND_STATISTICAL_DISCIPLINE.md` |
+| ADR-LAB-06 | Oracle & User-Simulator Trust Model | Proposed | `ADR_LAB_06_ORACLE_AND_USER_SIMULATOR_TRUST_MODEL.md` |
 
 ---
 

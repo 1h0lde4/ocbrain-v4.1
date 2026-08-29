@@ -28,7 +28,15 @@ The mission requires the Lab to consume runtime events without the runtime ever 
 - If DEBT-016 is resolved before the trace adapter ships, the dual-schema handling becomes dead code that should be removed at that time — flagged here so it isn't mistaken for permanent architecture.
 - A `core/` → `eval_lab/` import would be a review-blocking defect under this ADR, not a style preference.
 
-## 4. Alternatives considered
+## 4. Amendment (2026-08-28): Trajectory Snapshot/Branch Shape (Future Scope, Not Implemented)
+
+This amendment does not change the trace-adapter decision above. It records one shape constraint for Slice 2's `Trajectory` contract, so it doesn't need breaking changes later: current research on counterfactual agent evaluation (see the accompanying report, §7a.6 — "Causal Agent Replay," "prefix branching," "Hierarchical Experimentalist Agents") converges on the same primitive — an immutable snapshot of full state at a decision point, restorable into independent branches, with determinism as a precondition for the branches being genuinely comparable. The Lab does not build a branching engine in this slice or the next (per the mission's explicit instruction). The only thing this amendment asks Slice 2 to do is avoid a `Trajectory` shape that would make adding `TrajectorySnapshot`/`BranchPoint` later a breaking change — e.g., trajectory events should be identifiable by a stable reference that a future snapshot could point to, rather than only by array position. Concretely, this affects **field design, not scope**: no snapshot/branch code exists until some future slice actually asks for it.
+
+## 5. Alternatives considered (amendment)
+
+- **Design the `Trajectory` contract with no forward compatibility for branching, revisit if/when branching is actually built**: rejected as the default, specifically because the research above shows determinism-at-the-branch-point is a precondition that's much cheaper to design for now (stable event references) than to retrofit later (once historical trajectories already exist without them).
+
+## 6. Alternatives considered (original)
 
 - **`core/evaluation/`**: rejected for the naming-collision reason above, independent of any technical merit — this codebase has direct, recent evidence (DEBT-016) of what unreconciled same-name-different-concept code paths cost.
 - **Build a fourth unified event stream inside the Lab and backfill the runtime to emit into it**: rejected. This is exactly the "runtime → evaluation engine → runtime" circular dependency direction the mission explicitly forbids (§93 final draft), and it would make solving DEBT-004/005 the Lab's problem to solve on the runtime's behalf, which is out of this track's charter.

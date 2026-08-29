@@ -3,7 +3,7 @@
 **This directory is a reserved namespace, not yet an implementation.** No contracts, adapters, or evaluators exist here yet — this is Slice 1 output only (research + architecture + ADRs). See:
 
 - `docs/reports/AGENT_EVALUATION_RELIABILITY_LAB_RESEARCH_AND_ARCHITECTURE_REPORT.md` — full research sweep, repository ground truth, and proposed architecture.
-- `docs/architecture/decisions/ADR_LAB_01..04_*.md` — four proposed ADRs (identity/trust separation, runtime boundary/trace adapter, evaluator layering/judge calibration, benchmark/evaluator versioning). All `PROPOSED`, pending review.
+- `docs/architecture/decisions/ADR_LAB_01..06_*.md` — six proposed ADRs: identity/trust separation (now six layers + integrity), runtime boundary/trace adapter, evaluator layering/judge calibration, benchmark/evaluator versioning, experiment population/statistical discipline, and oracle/user-simulator trust. All `PROPOSED`, pending review.
 
 ## Why this exists as an empty package already
 
