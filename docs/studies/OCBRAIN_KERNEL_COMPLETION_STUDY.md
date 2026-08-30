@@ -1,5 +1,7 @@
 # OCBrain Kernel Completion Study
 
+> **Superseded Aug 29, 2026 by `OCBRAIN_KERNEL_COMPLETION_CANONICAL_PLAN.md`**, same day, later session. Every finding below was re-checked and none was overturned — the two blockers, the freeze verdict, and the guarantee/gap tables all carry forward unchanged. The canonical document adds a git-verified reconstruction of the original K4.1–K4.7 roadmap (`docs/architecture/OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` §19) and an honest accounting of what packet-driven development preserved, changed, or lost relative to it — material this document did not have. Read the canonical document first; this one remains as a dated snapshot and evidence trail, not a competing conclusion.
+
 ## Authoritative Repository Reconstruction, Research Synthesis, Gap Analysis, and Implementation Plan
 
 **Status:** Research and audit complete. **No code modified. No implementation performed. No milestone label invented.**

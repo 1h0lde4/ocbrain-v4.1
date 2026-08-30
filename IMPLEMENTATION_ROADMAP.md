@@ -115,7 +115,17 @@ Two sessions independently built overlapping `ExecutionBudget`/`ExecutionWatchdo
 
 ---
 
-## Kernel Completion Study — Complete, Not Implemented (Aug 29, 2026)
+## Canonical Kernel Completion Plan — Complete, Not Implemented (Aug 29, 2026)
+
+**Supersedes the "Kernel Completion Study" entry below** (same day, morning session) — `docs/studies/OCBRAIN_KERNEL_COMPLETION_CANONICAL_PLAN.md` is now the canonical document for this question; the morning study remains as a dated evidence trail, all its findings re-confirmed rather than overturned.
+
+**What's new:** a git-verified reconstruction of the original seven-milestone K4.1–K4.7 roadmap (`docs/architecture/OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` §19 — K4.1 Intent+Goal, K4.2 Planner/decomposition-only, **K4.3 Plan Compiler + Governance Gate**, **K4.4 Reflection/Evaluation read-only**, K4.5 Memory Integration, K4.6 Supervisor, K4.7 full-pipeline integration), traced against actual commit history packet-by-packet. Finding: no commit ever used any of these seven labels — packetization renamed everything to "K4.2.x" / "Packet 0N" — but five of seven milestones' *architectural substance* survived intact regardless (confirmed by direct code read: `planner.py` still never touches `compiler.py`; `compiler.py` still gates on `action_type="plan_compile"` exactly as the original `ADR-K4-04` intended, even though that ADR itself was never written). The one pair that didn't survive as originally sequenced — K4.4 shipping read-only before K4.5 added governed writes — turned out not to matter: `UnifiedMemory.write()` was already governed (K3.5) by the time Packet 07 built both concerns together, so the safety property the sequencing was meant to guarantee held anyway, just via different timing than planned.
+
+**Freeze verdict unchanged: NOT_FREEZE_READY**, same two blockers as this morning and as the Aug 22–23 audit before it (Scope/identity linkage, ADR-001 vs. `WorkerContext`), independently re-confirmed unchanged a third time. See the canonical document's §38 for the single recommended next step.
+
+---
+
+## Kernel Completion Study — Complete, Not Implemented (Aug 29, 2026, morning)
 
 **Correction to the previous day's entry, below this one and left intact rather than deleted, per this project's own "surface discrepancies explicitly" discipline:** the "K4.3 Research Phase" entry recorded on Aug 28 accepted a governing prompt's premise that "K4.3 = C-MoE" — a milestone name that does not exist in this document, `CURRENT_STATE.md`, or any other authoritative source. `docs/studies/OCBRAIN_KERNEL_COMPLETION_STUDY.md` reconstructs the actual Kernel v1.0 state instead of continuing to build on that premise, reconciling five prior fresh-clone freeze audits (Jul 14 – Aug 23) that this project had already produced but never consolidated into one answer.
 
