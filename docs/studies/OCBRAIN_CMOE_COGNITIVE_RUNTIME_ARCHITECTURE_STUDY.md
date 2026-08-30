@@ -1,5 +1,10 @@
-# OCBrain K4.3 — Cognitive Runtime / C-MoE
+# OCBrain C-MoE — Cognitive Runtime Architecture Study
 ## Final Architecture, Research, Reconciliation & Implementation-Plan Study
+
+> **Renamed and corrected Aug 29, 2026.** This document was originally titled around "K4.3 — Cognitive Runtime / C-MoE," accepting its governing prompt's premise that C-MoE is the milestone immediately following K4.2. A follow-up study, `OCBRAIN_KERNEL_COMPLETION_STUDY.md`, found this premise wrong: no canonical document defines a "K4.3" milestone, and every authoritative source (`IMPLEMENTATION_ROADMAP.md`, and this document's own primary source `OCBRAIN_CMOE_ADAPTIVE_COGNITIVE_SCALING_ARCHITECTURE_STUDY.md`) consistently places C-MoE **after Kernel v1.0 freeze**, not immediately after K4.2. Kernel v1.0 is not yet frozen — see the Kernel Completion Study for the two specific, still-open decisions blocking it.
+>
+> **What this means for the document below:** its technical architecture — the expert model, routing mechanics, WorkGraph, outcome contract, memory scope model, task-mutation handling, and the reality-grounding sub-study's conclusions — is not invalidated and remains this project's most detailed C-MoE design work. What is wrong is the framing that it is "K4.3," that it follows K4.2 directly, and any implementation sequencing that assumed the Kernel was already a settled foundation to build on. Read this document as **post-Kernel-freeze C-MoE architecture research**, not as a numbered next milestone. Its own MVP/Packet-0 sequencing (§93/§96) should be re-read through that lens: several of its "Packet 0" items (checkpoint/resume, the dispatch-bridge generalization) are, per the Kernel Completion Study, more precisely Kernel-completion work than C-MoE work — the two documents agree on *what* needs to happen, and now correctly agree on *when* relative to Kernel freeze too.
+
 
 **Status:** Research complete. Architecture proposed. **Not implemented. Do not begin K4.3 implementation from this document alone — it requires ADR ratification first, per its own recommendation in §96.**
 **Date:** August 28, 2026

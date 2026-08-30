@@ -1,4 +1,7 @@
-# OCBrain K4.3 — C-MoE Reality-Anchored Planning Sub-Study
+# OCBrain C-MoE — Reality-Anchored Planning Sub-Study
+
+> **Renamed Aug 29, 2026**, for the same reason and at the same time as its parent document, `OCBRAIN_CMOE_COGNITIVE_RUNTIME_ARCHITECTURE_STUDY.md` — see that file's own correction note. "K4.3" was never an authoritative milestone name; this remains valid post-Kernel-freeze C-MoE research.
+
 
 **Status:** Research complete. Feeds into `OCBRAIN_K4_3_CMOE_ARCHITECTURE_STUDY.md` (§4, §6 amended; incorporated into the MVP/target definitions there). Not implemented.
 **Date:** August 28, 2026
