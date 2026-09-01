@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from eval_lab.contracts.enums import EvidenceCapturePolicy, EvidenceOrigin, TrustClassification
+from enum import Enum
+
+from eval_lab.contracts.enums import ConfidenceLevel, EvidenceCapturePolicy, EvidenceOrigin, TrustClassification
 from eval_lab.contracts.identifiers import (
     AnnotationId,
     AnnotatorId,
@@ -243,20 +245,48 @@ class Annotator:
         }
 
 
+class AnnotationVerdict(str, Enum):
+    """Correction pass: originally a raw `str` on `Annotation.verdict`
+    with a manual membership check -- same typing-discipline gap as
+    EvaluatorRelationship.relationship_type (result.py). A closed,
+    architecturally-defined set of four values, not intentionally
+    extensible (unlike e.g. FailureRecord.category)."""
+
+    PASS = "pass"
+    FAIL = "fail"
+    PARTIAL = "partial"
+    INCONCLUSIVE = "inconclusive"
+
+
 @dataclass(frozen=True)
 class AnnotationConfidence:
     """Kept distinct from the annotation's verdict itself, same reasoning
     as judge confidence (evaluator.py) -- a low-confidence PASS is a
     different fact than a high-confidence PASS, even though both serialize
-    to the same status."""
+    to the same status.
 
-    level: str  # "high" | "medium" | "low" -- free string, not an enum:
-    # unlike EvaluatorResultStatus this is a qualitative human self-report,
-    # not a closed system vocabulary the contract layer reasons about.
+    Correction pass: `level` was originally documented as "free string,
+    not an enum: ... this is a qualitative human self-report, not a closed
+    system vocabulary the contract layer reasons about" -- kept
+    deliberately different from EvaluationResult.confidence's typing. That
+    distinction doesn't actually hold up under scrutiny: a human, a judge,
+    and a flakiness-diagnosis process are all reporting the same kind of
+    fact ("how sure am I"), and there's no principled reason humans alone
+    should be allowed values outside {high, medium, low}. Now shares
+    `ConfidenceLevel` (enums.py) with EvaluationResult.confidence and
+    FlakinessClassification.confidence."""
+
+    level: ConfidenceLevel
     note: str | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.level, ConfidenceLevel):
+            raise ContractValidationError(
+                "level_not_enum_member", f"level must be a ConfidenceLevel member, got {type(self.level).__name__}."
+            )
+
     def to_dict(self) -> dict[str, Any]:
-        return {"level": self.level, "note": self.note}
+        return {"level": self.level.value, "note": self.note}
 
 
 @dataclass(frozen=True)
@@ -271,17 +301,15 @@ class Annotation:
     annotation_id: AnnotationId
     annotator: Annotator
     task_description: str
-    verdict: str  # "pass" | "fail" | "partial" | "inconclusive" -- see note below
+    verdict: AnnotationVerdict
     confidence: AnnotationConfidence
     created_at: datetime
     rationale: str | None = None
 
     def __post_init__(self) -> None:
-        allowed = {"pass", "fail", "partial", "inconclusive"}
-        if self.verdict not in allowed:
+        if not isinstance(self.verdict, AnnotationVerdict):
             raise ContractValidationError(
-                "invalid_annotation_verdict",
-                f"verdict must be one of {sorted(allowed)}, got {self.verdict!r}.",
+                "verdict_not_enum_member", f"verdict must be an AnnotationVerdict member, got {type(self.verdict).__name__}."
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -289,7 +317,7 @@ class Annotation:
             "annotation_id": self.annotation_id,
             "annotator": nested(self.annotator),
             "task_description": self.task_description,
-            "verdict": self.verdict,
+            "verdict": self.verdict.value,
             "confidence": nested(self.confidence),
             "created_at": self.created_at.isoformat(),
             "rationale": self.rationale,

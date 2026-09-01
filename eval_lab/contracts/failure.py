@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from core.runtime.execution_outcome import FailureType  # see module docstring: verified safe, stdlib-only, zero coupling
@@ -33,6 +34,17 @@ from core.runtime.execution_outcome import FailureType  # see module docstring: 
 from eval_lab.contracts.enums import FaultDomain
 from eval_lab.contracts.identifiers import FailureRecordId
 from eval_lab.contracts.serialization import ContractValidationError
+
+
+class Severity(str, Enum):
+    """Correction pass: ErrorEnvelope.severity was a raw `str` with a
+    manual membership check -- same gap as EvaluatorRelationshipType and
+    AnnotationVerdict (result.py, evidence.py). A closed, small,
+    architecturally-defined set."""
+
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
 
 # Lab-owned failure categories for the fault domains FailureType has no
 # concept of (§44's coverage list, minus SUBJECT/INFRASTRUCTURE which defer
@@ -114,15 +126,15 @@ class ErrorEnvelope:
     error_code: str
     domain: FaultDomain
     message: str
-    severity: str = "error"  # "warning" | "error" | "critical"
+    severity: Severity = Severity.ERROR
     recoverable: bool = False
     source: str | None = None
     cause_reference: str | None = None
 
     def __post_init__(self) -> None:
-        if self.severity not in {"warning", "error", "critical"}:
+        if not isinstance(self.severity, Severity):
             raise ContractValidationError(
-                "invalid_severity", "severity must be one of 'warning', 'error', 'critical'."
+                "severity_not_enum_member", f"severity must be a Severity member, got {type(self.severity).__name__}."
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -130,7 +142,7 @@ class ErrorEnvelope:
             "error_code": self.error_code,
             "domain": self.domain.value,
             "message": self.message,
-            "severity": self.severity,
+            "severity": self.severity.value,
             "recoverable": self.recoverable,
             "source": self.source,
             "cause_reference": self.cause_reference,

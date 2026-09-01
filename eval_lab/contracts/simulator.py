@@ -18,7 +18,7 @@ from typing import Any
 
 from eval_lab.contracts.enums import LifecycleState, ORACLE_SIMULATOR_LIFECYCLE
 from eval_lab.contracts.identifiers import CURRENT_SCHEMA_VERSION, SchemaVersion, SimulatorId, SimulatorVersion
-from eval_lab.contracts.serialization import ContractValidationError
+from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,8 @@ class UserSimulatorDefinition:
                 "invalid_simulator_lifecycle_state",
                 f"{self.lifecycle_state} is not a valid simulator lifecycle state.",
             )
+        # Correction pass: see serialization.frozen_mapping's docstring.
+        object.__setattr__(self, "configuration", frozen_mapping(self.configuration))
 
     def to_dict(self) -> dict[str, Any]:
         return {

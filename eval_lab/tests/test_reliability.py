@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from eval_lab.contracts.enums import EvaluatorResultStatus
+from eval_lab.contracts.enums import ConfidenceLevel, EvaluatorResultStatus
 from eval_lab.contracts.reliability import FlakinessClassification, FlakinessSuspectedCause, ReliabilityObservation
 from eval_lab.contracts.serialization import ContractValidationError
 
@@ -35,10 +35,10 @@ def test_reliability_requires_at_least_one_run():
 
 def test_flakiness_requires_at_least_one_suspected_cause_including_unknown():
     with pytest.raises(ContractValidationError, match="flakiness_requires_suspected_cause"):
-        FlakinessClassification(task_id="t1", suspected_causes=frozenset(), confidence="low")
+        FlakinessClassification(task_id="t1", suspected_causes=frozenset(), confidence=ConfidenceLevel.LOW)
 
     # UNKNOWN is an explicitly legitimate answer, not a validation failure
-    fc = FlakinessClassification(task_id="t1", suspected_causes=frozenset({FlakinessSuspectedCause.UNKNOWN}), confidence="low")
+    fc = FlakinessClassification(task_id="t1", suspected_causes=frozenset({FlakinessSuspectedCause.UNKNOWN}), confidence=ConfidenceLevel.LOW)
     assert FlakinessSuspectedCause.UNKNOWN in fc.suspected_causes
 
 
@@ -48,6 +48,11 @@ def test_flakiness_does_not_default_to_agent_unreliability():
     representable and equally valid choices, not a fallback."""
     fc = FlakinessClassification(
         task_id="t1", suspected_causes=frozenset({FlakinessSuspectedCause.TOOL_NONDETERMINISM, FlakinessSuspectedCause.TIMING_SENSITIVITY}),
-        confidence="medium",
+        confidence=ConfidenceLevel.MEDIUM,
     )
     assert FlakinessSuspectedCause.AGENT_NONDETERMINISM not in fc.suspected_causes
+
+
+def test_flakiness_rejects_non_enum_confidence():
+    with pytest.raises(ContractValidationError, match="confidence_not_enum_member"):
+        FlakinessClassification(task_id="t1", suspected_causes=frozenset({FlakinessSuspectedCause.UNKNOWN}), confidence="low")

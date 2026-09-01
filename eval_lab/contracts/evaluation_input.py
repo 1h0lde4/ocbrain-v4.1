@@ -10,6 +10,35 @@ deterministic evaluator sees raw state; a human sees redacted evidence).
 Collapsing these would make it impossible to tell whether a disagreement
 between two evaluators is a real disagreement or just two different
 inputs.
+
+Correction pass clarification (this type embeds Evidence/ArtifactReference
+objects directly, unlike EvaluationRun which was corrected to reference
+EvaluationDefinition by id+version -- these are not the same situation,
+and the difference is deliberate, not an inconsistency):
+
+1. **Is this a reference or a materialization?** A materialization. This
+   type's entire purpose is to freeze *exactly what one evaluator was
+   shown*, which may be a redacted, curated, or summarized view that
+   doesn't correspond to any other canonically-stored object elsewhere.
+   Referencing "the" underlying Evidence by ID would be actively wrong
+   here: there may be no single canonical Evidence object this view
+   equals, only the curated snapshot itself. This is why the embedding
+   pattern rejected for EvaluationRun (duplicating a stable, independently
+   versioned catalog entry) is *correct* here (capturing a point-in-time
+   view that has no other canonical home).
+2. **How does provenance stay linked?** Each embedded `Evidence` carries
+   its own `.provenance` field (evidence.py), which can describe where it
+   came from even after redaction/curation -- provenance survives the
+   transformation; the object identity of some "original" Evidence does
+   not need to.
+3. **Is the snapshot immutable?** Yes -- frozen dataclass, tuple-typed
+   collections throughout.
+4. **Can a later change to underlying evidence alter a historical
+   snapshot?** No. Because the snapshot embeds its own copy at capture
+   time rather than holding a live reference, nothing that happens later
+   to whatever the evidence "came from" can retroactively change what
+   this EvaluationInputSnapshot recorded. This is the actual
+   reproducibility guarantee the type exists to provide.
 """
 
 from __future__ import annotations

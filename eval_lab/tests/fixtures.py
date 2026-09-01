@@ -19,6 +19,7 @@ from eval_lab.contracts.benchmark import (
     DifficultyMetadata,
 )
 from eval_lab.contracts.enums import (
+    ConfidenceLevel,
     EvaluationStatus,
     EvaluatorResultStatus,
     EvaluatorType,
@@ -154,7 +155,7 @@ def minimal_result(*, status: EvaluatorResultStatus = EvaluatorResultStatus.PASS
     ev = minimal_evidence() if status in (EvaluatorResultStatus.PASS, EvaluatorResultStatus.FAIL, EvaluatorResultStatus.PARTIAL) else None
     return EvaluationResult(
         evaluator_id="eval_det", evaluator_version=1, dimension="goal_satisfaction",
-        status=status, score=score, confidence="high", evidence=(ev,) if ev else (),
+        status=status, score=score, confidence=ConfidenceLevel.HIGH, evidence=(ev,) if ev else (),
     )
 
 

@@ -17,7 +17,6 @@ from typing import Any
 
 from eval_lab.contracts.enums import EvaluationStatus, FaultDomain, ReproducibilityLevel
 from eval_lab.contracts.evaluation_input import EvaluationInputSnapshot
-from eval_lab.contracts.evaluator import EvaluationDefinition
 from eval_lab.contracts.failure import FailureRecord
 from eval_lab.contracts.identifiers import (
     AgentId,
@@ -29,6 +28,8 @@ from eval_lab.contracts.identifiers import (
     EnvironmentInstanceId,
     EnvironmentVersion,
     EvaluationCaseId,
+    EvaluationDefinitionId,
+    EvaluationDefinitionVersion,
     EvaluationRunId,
     ExecutionInstanceId,
     ExperimentId,
@@ -108,10 +109,7 @@ class ExecutionReference:
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "reproducibility_level": self.reproducibility_level.value,
-            "future_runtime_operation_ref": {
-                "runtime_operation_id": self.future_runtime_operation_ref.runtime_operation_id,
-                "runtime_attempt_number": self.future_runtime_operation_ref.runtime_attempt_number,
-            },
+            "future_runtime_operation_ref": self.future_runtime_operation_ref.to_dict(),
         }
 
 
@@ -119,13 +117,24 @@ class ExecutionReference:
 class EvaluationRun:
     """The primary durable object (ADR-LAB-01 §2). References, does not
     embed, the full chain: benchmark/version, evaluation_case,
-    execution_reference, trajectory, evaluation_definition, oracle,
+    execution_reference, trajectory, evaluation_definition/version, oracle,
     simulator, evaluation_input, results, failures. Persistence itself is
     Slice 2-out-of-scope (§10: "Persistence itself is NOT implemented");
     this contract is designed so a future persistence layer can store one
     of these durably without needing any of its referenced objects loaded
     in memory (§26/§72: reference validity does not require the
     referenced object to be resolvable right now).
+
+    Correction pass note: this type originally embedded the full
+    `EvaluationDefinition` object (`evaluation_definition:
+    EvaluationDefinition | None`) rather than referencing it by identity --
+    inconsistent with every other definitional object on this same class
+    (benchmark, environment, oracle, simulator are all id+version pairs).
+    `EvaluationDefinition` already carries its own
+    `evaluation_definition_id`/`evaluation_definition_version` identity
+    (evaluator.py) specifically so it *can* be referenced this way; the
+    embedding was an oversight, not a documented exception, and is fixed
+    below to `evaluation_definition_id`/`evaluation_definition_version`.
 
     `results` is a tuple (not a dict keyed by evaluator) specifically so
     that §56's requirement -- oracle=PASS, judge=FAIL, human=PARTIAL, held
@@ -148,7 +157,8 @@ class EvaluationRun:
 
     experiment_id: ExperimentId | None = None
     trajectory_id: TrajectoryId | None = None
-    evaluation_definition: EvaluationDefinition | None = None
+    evaluation_definition_id: EvaluationDefinitionId | None = None
+    evaluation_definition_version: EvaluationDefinitionVersion | None = None
     oracle_id: OracleId | None = None
     oracle_version: OracleVersion | None = None
     simulator_id: SimulatorId | None = None
@@ -170,6 +180,16 @@ class EvaluationRun:
         # check the reference is present and non-empty.
         if not self.evaluation_case_id:
             raise ContractValidationError("run_requires_evaluation_case_id", "evaluation_case_id cannot be empty.")
+
+        # Same both-or-neither pairing discipline as oracle_id/oracle_version
+        # and simulator_id/simulator_version below -- added by the
+        # correction pass alongside converting this from an embedded object
+        # to a reference pair.
+        if (self.evaluation_definition_id is None) != (self.evaluation_definition_version is None):
+            raise ContractValidationError(
+                "incomplete_evaluation_definition_reference",
+                "evaluation_definition_id and evaluation_definition_version must both be set or both be None.",
+            )
 
         # §75: a run can be status=ERROR, fault_domain=EVALUATOR without
         # implying subject_failure=True -- enforced here as "a fault
@@ -231,7 +251,8 @@ class EvaluationRun:
             "created_at": self.created_at.isoformat(),
             "experiment_id": self.experiment_id,
             "trajectory_id": self.trajectory_id,
-            "evaluation_definition": nested(self.evaluation_definition),
+            "evaluation_definition_id": self.evaluation_definition_id,
+            "evaluation_definition_version": self.evaluation_definition_version,
             "oracle_id": self.oracle_id,
             "oracle_version": self.oracle_version,
             "simulator_id": self.simulator_id,

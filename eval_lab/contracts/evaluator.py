@@ -25,7 +25,7 @@ from eval_lab.contracts.identifiers import (
     RubricVersion,
     SchemaVersion,
 )
-from eval_lab.contracts.serialization import ContractValidationError, nested
+from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping, nested
 
 
 @dataclass(frozen=True)
@@ -209,6 +209,10 @@ class EvaluationDefinition:
     required_evidence_description: str = ""
     configuration: dict[str, Any] = field(default_factory=dict)
     schema_version: SchemaVersion = CURRENT_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        # Correction pass: see serialization.frozen_mapping's docstring.
+        object.__setattr__(self, "configuration", frozen_mapping(self.configuration))
 
     def to_dict(self) -> dict[str, Any]:
         return {

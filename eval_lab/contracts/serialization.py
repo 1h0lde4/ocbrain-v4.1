@@ -19,12 +19,37 @@ the JSON" and "explicitly None" stay distinguishable on the wire; floats
 are written as-is (no float values exist in Slice 2's contracts that
 require rounding/precision policy -- flagged in the final report as
 deferred rather than silently decided).
+
+Collection semantics (correction pass, §9): three shapes are used
+throughout this package, and the choice is not accidental --
+
+- `tuple[...]` for **ordered sequences** where the order is causally or
+  temporally meaningful and validated (e.g. `Trajectory.events`,
+  `BenchmarkDefinition.versions` -- both reject out-of-order construction).
+- `tuple[...]` *also* for collections that are conceptually unordered
+  but need deterministic serialization (e.g. `EvaluationResult.evidence`,
+  `EvaluationRun.results`/`failures`, `OracleValidation.probe_cases`).
+  Here the tuple's order is construction/insertion order, not a semantic
+  claim -- documented per-field rather than switched to `frozenset`,
+  because a `frozenset` would *lose* deterministic serialization (Python
+  does not guarantee stable iteration order for sets across runs), which
+  is the opposite of what canonicalization needs.
+- `frozenset[...]` for genuine **unordered sets** where order has no
+  meaning and no serialization-determinism need beyond sorting at
+  serialization time (e.g. `CoverageProfile`'s tag sets,
+  `EvaluationPopulation.included_cases`/`excluded_cases` -- these are
+  sorted in `to_dict()` specifically because, unlike the tuple case
+  above, there is no meaningful "construction order" to preserve instead).
+- `types.MappingProxyType` (via `frozen_mapping` below) for genuine
+  **keyed mappings** where lookup-by-key is the actual access pattern
+  (e.g. `EvaluationAggregate.per_dimension`, `configuration` fields).
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 
 class ContractValidationError(Exception):
@@ -33,6 +58,24 @@ class ContractValidationError(Exception):
     reason code (matching the `NormalizationRejected("empty_or_whitespace_only")`
     convention in core/cognitive/intent.py), not a prose message -- so
     calling code can branch on the reason without string-matching."""
+
+
+def frozen_mapping(d: Mapping[str, Any] | None) -> MappingProxyType:
+    """Wrap a mapping in an immutable read-only view.
+
+    Correction pass finding: several `@dataclass(frozen=True)` contracts
+    (EvaluationCase, OracleDefinition, UserSimulatorDefinition,
+    EvaluationDefinition, and EvaluationAggregate's `per_dimension`) held a
+    plain `dict` field. `frozen=True` prevents `obj.field = x` but does
+    nothing to stop `obj.field["k"] = v` -- a real shallow-immutability
+    gap on types that document themselves as immutable contract state.
+    `types.MappingProxyType` is the minimal stdlib fix: a read-only view
+    over a copy of the input, no third-party dependency, no generic
+    immutability framework. Call this from `__post_init__` via
+    `object.__setattr__(self, "field", frozen_mapping(self.field))`
+    (the standard, only-option pattern for normalizing a field on an
+    already-frozen dataclass instance)."""
+    return MappingProxyType(dict(d) if d is not None else {})
 
 
 def enum_value(e: Enum | None) -> Any:

@@ -131,12 +131,26 @@ class SchemaVersion:
     "unknown future version" special case here beyond major-mismatch
     detection -- a reader encountering a higher, unknown major version
     should raise `UnsupportedSchemaVersion` rather than guess.
+
+    Correction pass clarification: `is_compatible_with` reports a
+    *declared versioning policy* -- the same convention semantic
+    versioning uses, where a maintainer commits to keeping same-major
+    changes additive/non-breaking. It is not, and cannot be, an
+    empirically-verified guarantee that any two same-major-versioned
+    instances are actually interoperable in every respect; a version
+    number is a promise about how changes will be made, not a proof about
+    the artifacts themselves. Nothing in Slice 2 checks or enforces that
+    the promise was kept -- there is no migration engine and none is
+    implemented here (§69 of the correction pass: "do not build
+    migrations... ensure the contract/documentation does not overclaim").
     """
 
     major: int
     minor: int = 0
 
     def is_compatible_with(self, other: "SchemaVersion") -> bool:
+        """Declared-policy compatibility check (see class docstring) --
+        not an empirical interoperability test."""
         return self.major == other.major
 
     def __str__(self) -> str:  # canonical string form, used in serialized output
@@ -175,7 +189,18 @@ class FutureRuntimeOperationRef:
     `runtime_operation_id` / `runtime_attempt_number` are opaque strings/
     ints from whatever DEBT-015 eventually produces -- this module makes
     no assumption about their shape beyond "identifier" and "ordinal."
+
+    Correction pass (§11, boundary protection): this class defines no
+    methods beyond `to_dict` and the dataclass-generated ones -- no retry
+    logic, no identity resolution, nothing that could function as a
+    parallel implementation of DEBT-015. See
+    test_future_runtime_operation_ref_has_no_behavior_beyond_data_holding
+    in test_identifiers.py, which asserts this structurally rather than
+    just by convention.
     """
 
     runtime_operation_id: str | None = None
     runtime_attempt_number: int | None = None
+
+    def to_dict(self) -> dict[str, "int | str | None"]:
+        return {"runtime_operation_id": self.runtime_operation_id, "runtime_attempt_number": self.runtime_attempt_number}

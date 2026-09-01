@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
-from eval_lab.contracts.enums import EvaluatorResultStatus
+from eval_lab.contracts.enums import ConfidenceLevel, EvaluatorResultStatus
 from eval_lab.contracts.evidence import Evidence
 from eval_lab.contracts.identifiers import (
     EvaluationRunId,
@@ -31,7 +31,21 @@ from eval_lab.contracts.identifiers import (
     EvaluatorVersion,
     ExperimentId,
 )
-from eval_lab.contracts.serialization import ContractValidationError, nested_list
+from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping, nested_list
+from enum import Enum
+
+
+class EvaluatorRelationshipType(str, Enum):
+    """Per §57's own closed list. Correction pass: originally a raw `str`
+    with a manual `__post_init__` membership check -- weaker typing
+    discipline than the rest of the package's closed vocabularies, with
+    no extensibility justification (unlike e.g. OracleProbeCase.probe_type,
+    which is deliberately left free-form and documented as such)."""
+
+    SUPPORTING = "supporting"
+    DEPENDENT_ON = "dependent_on"
+    CONTRADICTORY = "contradictory"
+    SUPERSEDES = "supersedes"
 
 
 @dataclass(frozen=True)
@@ -44,20 +58,21 @@ class EvaluatorRelationship:
 
     related_evaluator_id: EvaluatorId
     related_evaluator_version: EvaluatorVersion
-    relationship_type: str
+    relationship_type: EvaluatorRelationshipType
 
     def __post_init__(self) -> None:
-        allowed = {"supporting", "dependent_on", "contradictory", "supersedes"}
-        if self.relationship_type not in allowed:
+        if not isinstance(self.relationship_type, EvaluatorRelationshipType):
             raise ContractValidationError(
-                "invalid_evaluator_relationship_type", f"relationship_type must be one of {sorted(allowed)}."
+                "relationship_type_not_enum_member",
+                f"relationship_type must be an EvaluatorRelationshipType member, "
+                f"got {type(self.relationship_type).__name__}.",
             )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "related_evaluator_id": self.related_evaluator_id,
             "related_evaluator_version": self.related_evaluator_version,
-            "relationship_type": self.relationship_type,
+            "relationship_type": self.relationship_type.value,
         }
 
 
@@ -82,15 +97,18 @@ class EvaluationResult:
     """None is legitimate for a non-numeric verdict (many deterministic
     checks are pass/fail with no meaningful score); 0.0 and None are not
     the same thing."""
-    confidence: str  # "high" | "medium" | "low" -- see Annotation's identical field for the same reasoning
+    confidence: ConfidenceLevel
     evidence: tuple[Evidence, ...]
     relationships: tuple[EvaluatorRelationship, ...] = ()
     produced_at: datetime = field(default_factory=lambda: datetime.now().astimezone())
     rationale: str | None = None
 
     def __post_init__(self) -> None:
-        if self.confidence not in {"high", "medium", "low"}:
-            raise ContractValidationError("invalid_confidence_level", "confidence must be 'high', 'medium', or 'low'.")
+        if not isinstance(self.confidence, ConfidenceLevel):
+            raise ContractValidationError(
+                "confidence_not_enum_member",
+                f"confidence must be a ConfidenceLevel member, got {type(self.confidence).__name__}.",
+            )
         if self.score is not None and not (0.0 <= self.score <= 1.0):
             raise ContractValidationError("score_out_of_range", f"score must be in [0.0, 1.0] or None, got {self.score}.")
         requires_evidence = self.status in (
@@ -109,7 +127,7 @@ class EvaluationResult:
             "dimension": self.dimension,
             "status": self.status.value,
             "score": self.score,
-            "confidence": self.confidence,
+            "confidence": self.confidence.value,
             "evidence": nested_list(list(self.evidence)),
             "relationships": [r.to_dict() for r in self.relationships],
             "produced_at": self.produced_at.isoformat(),
@@ -126,11 +144,21 @@ class EvaluationAggregate:
     contract does not compute an aggregate score itself -- per original
     brief §26/§30, "do not hard-code a single aggregate score unless there
     is a legitimate use case," and Slice 2 does not implement an
-    aggregation engine)."""
+    aggregation engine).
+
+    Correction pass: `per_dimension` was a plain mutable `dict` on a
+    frozen dataclass -- `frozen=True` blocks `agg.per_dimension = x` but
+    not `agg.per_dimension["x"] = y`. Now wrapped in a `MappingProxyType`
+    (serialization.frozen_mapping) at construction time; the type hint is
+    `Mapping` rather than `dict` to make the read-only contract visible to
+    callers/type-checkers, not just enforced at runtime."""
 
     evaluation_run_id: EvaluationRunId
-    per_dimension: dict[str, EvaluationResult]
+    per_dimension: Mapping[str, EvaluationResult]
     overall_status: EvaluatorResultStatus
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "per_dimension", frozen_mapping(self.per_dimension))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -145,11 +173,29 @@ class MetricObservation:
     """One multi-run metric value (e.g. "pass_rate over 20 runs of task
     T"), per §19/§51. Distinct from EvaluationAggregate (one run) and from
     ComparisonResult (two populations) -- this is "one number, computed
-    over one population, at one point in time.\""""
+    over one population, at one point in time."
+
+    Correction pass (population lineage, ADR-LAB-05): originally had no
+    reference back to which EvaluationPopulation it was computed over.
+    When nested inside ComparisonResult, `experiment_id` on the enclosing
+    object provided partial lineage -- but a standalone MetricObservation
+    (e.g. a future single-sided reliability report with no baseline to
+    compare against) had none at all, which is exactly the ambiguity
+    ADR-LAB-05 exists to prevent ("82% of selected cases passed" must
+    never be presentable without the population that produced it).
+    `population_id` is added directly here rather than duplicating
+    `experiment_id` too: a bare metric naturally references the population
+    it was measured over, while an experiment context (which implies a
+    comparison) is already available from ComparisonResult when relevant
+    and would be redundant to repeat on every MetricObservation."""
 
     metric_name: str
     value: float
     n: int
+    population_id: str | None = None
+    """None only when genuinely not computed over a tracked population
+    (e.g. a single ad hoc measurement) -- for anything meant to support a
+    capability claim, a real population_id should be set."""
     unit: str = ""
     """E.g. "probability", "count", "ms" -- per §67's numeric/unit
     semantics requirement; free string since the set of possible units is
@@ -160,7 +206,10 @@ class MetricObservation:
             raise ContractValidationError("negative_n", "n cannot be negative.")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"metric_name": self.metric_name, "value": self.value, "n": self.n, "unit": self.unit}
+        return {
+            "metric_name": self.metric_name, "value": self.value, "n": self.n,
+            "population_id": self.population_id, "unit": self.unit,
+        }
 
 
 @dataclass(frozen=True)

@@ -22,7 +22,7 @@ from typing import Any
 
 from eval_lab.contracts.enums import LifecycleState, ORACLE_SIMULATOR_LIFECYCLE
 from eval_lab.contracts.identifiers import CURRENT_SCHEMA_VERSION, OracleId, OracleVersion, SchemaVersion
-from eval_lab.contracts.serialization import ContractValidationError, nested
+from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping, nested
 
 
 @dataclass(frozen=True)
@@ -49,6 +49,8 @@ class OracleDefinition:
             raise ContractValidationError(
                 "invalid_oracle_lifecycle_state", f"{self.lifecycle_state} is not a valid oracle lifecycle state."
             )
+        # Correction pass: see serialization.frozen_mapping's docstring.
+        object.__setattr__(self, "configuration", frozen_mapping(self.configuration))
 
     def to_dict(self) -> dict[str, Any]:
         return {

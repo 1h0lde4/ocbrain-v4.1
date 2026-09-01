@@ -6,10 +6,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from eval_lab.contracts.enums import EvidenceCapturePolicy, EvidenceOrigin, TrustClassification
+from eval_lab.contracts.enums import ConfidenceLevel, EvidenceCapturePolicy, EvidenceOrigin, TrustClassification
 from eval_lab.contracts.evidence import (
     Annotation,
     AnnotationConfidence,
+    AnnotationVerdict,
     Annotator,
     AnnotatorAgreement,
     ArtifactReference,
@@ -75,13 +76,41 @@ def test_artifact_reference_does_not_embed_content():
     assert "content" not in d and "data" not in d, "ArtifactReference must reference, never embed, artifact content"
 
 
-def test_annotation_rejects_invalid_verdict():
+def test_annotation_verdict_is_a_closed_enum():
+    """Correction pass: verdict was a raw str with manual membership
+    checking; now AnnotationVerdict. Valid construction with the enum:"""
     annot = Annotator(annotator_id="a1", display_name="reviewer")
-    with pytest.raises(ContractValidationError, match="invalid_annotation_verdict"):
+    a = Annotation(
+        annotation_id="an1", annotator=annot, task_description="does it pass?",
+        verdict=AnnotationVerdict.PASS, confidence=AnnotationConfidence(level=ConfidenceLevel.HIGH), created_at=NOW,
+    )
+    assert a.verdict == AnnotationVerdict.PASS
+    assert a.to_dict()["verdict"] == "pass"
+
+
+def test_annotation_rejects_non_enum_verdict():
+    """A raw string (even a previously-"valid" one like "pass") is no
+    longer accepted -- the type discipline is now enforced by isinstance,
+    not by a membership set, per the correction pass's strengthening of
+    this invariant (a caller must use AnnotationVerdict.PASS, not the
+    bare string "pass")."""
+    annot = Annotator(annotator_id="a1", display_name="reviewer")
+    with pytest.raises(ContractValidationError, match="verdict_not_enum_member"):
         Annotation(
             annotation_id="an1", annotator=annot, task_description="does it pass?",
-            verdict="maybe", confidence=AnnotationConfidence(level="medium"), created_at=NOW,
+            verdict="pass", confidence=AnnotationConfidence(level=ConfidenceLevel.HIGH), created_at=NOW,
         )
+
+
+def test_annotation_confidence_level_is_a_closed_enum():
+    """Correction pass: AnnotationConfidence.level was deliberately left
+    as a free string with a documented (but, on review, unjustified)
+    exemption from the enum discipline applied elsewhere. Now shares
+    ConfidenceLevel with EvaluationResult.confidence."""
+    ac = AnnotationConfidence(level=ConfidenceLevel.MEDIUM)
+    assert ac.to_dict()["level"] == "medium"
+    with pytest.raises(ContractValidationError, match="level_not_enum_member"):
+        AnnotationConfidence(level="medium")
 
 
 def test_annotator_agreement_rate_bounds():

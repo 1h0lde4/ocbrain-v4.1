@@ -36,6 +36,17 @@ from eval_lab.contracts.identifiers import (
 from eval_lab.contracts.serialization import ContractValidationError, nested, nested_list
 
 
+class CheckpointStatus(str, Enum):
+    """Correction pass: originally a raw `str` on `Checkpoint.status` with
+    a manual membership check -- same gap as the other closed-vocabulary
+    fields fixed in this pass."""
+
+    PENDING = "pending"
+    MET = "met"
+    NOT_MET = "not_met"
+    NOT_EVALUATED = "not_evaluated"
+
+
 class TrajectoryEventType(str, Enum):
     """Known event categories per §34/§19. UNKNOWN is a legitimate value
     (not an error) -- see TrajectoryEvent.raw_type_name for why."""
@@ -263,16 +274,17 @@ class Checkpoint:
     state_predicate_description: str
     expected_progress: float
     required_evidence_description: str = ""
-    status: str = "pending"  # "pending" | "met" | "not_met" | "not_evaluated"
+    status: CheckpointStatus = CheckpointStatus.PENDING
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.expected_progress <= 1.0):
             raise ContractValidationError(
                 "expected_progress_out_of_range", f"expected_progress must be in [0.0, 1.0], got {self.expected_progress}."
             )
-        allowed_status = {"pending", "met", "not_met", "not_evaluated"}
-        if self.status not in allowed_status:
-            raise ContractValidationError("invalid_checkpoint_status", f"status must be one of {sorted(allowed_status)}.")
+        if not isinstance(self.status, CheckpointStatus):
+            raise ContractValidationError(
+                "status_not_enum_member", f"status must be a CheckpointStatus member, got {type(self.status).__name__}."
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -281,7 +293,7 @@ class Checkpoint:
             "state_predicate_description": self.state_predicate_description,
             "expected_progress": self.expected_progress,
             "required_evidence_description": self.required_evidence_description,
-            "status": self.status,
+            "status": self.status.value,
         }
 
 

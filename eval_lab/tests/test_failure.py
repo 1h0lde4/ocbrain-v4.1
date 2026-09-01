@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from eval_lab.contracts.enums import FaultDomain
-from eval_lab.contracts.failure import EVALUATION_FAILURE_CATEGORIES, ErrorEnvelope, FailureRecord, FailureType
+from eval_lab.contracts.failure import EVALUATION_FAILURE_CATEGORIES, ErrorEnvelope, FailureRecord, FailureType, Severity
 from eval_lab.contracts.serialization import ContractValidationError
 
 NOW = datetime(2026, 8, 30, tzinfo=timezone.utc)
@@ -54,12 +54,13 @@ def test_evaluation_failure_categories_defined_for_lab_specific_domains():
         assert len(EVALUATION_FAILURE_CATEGORIES[domain]) > 0
 
 
-def test_error_envelope_severity_validated():
-    with pytest.raises(ContractValidationError, match="invalid_severity"):
+def test_error_envelope_rejects_non_enum_severity():
+    with pytest.raises(ContractValidationError, match="severity_not_enum_member"):
         ErrorEnvelope(error_code="E1", domain=FaultDomain.DATA, message="x", severity="catastrophic")
 
 
 def test_error_envelope_valid_severities():
-    for sev in ("warning", "error", "critical"):
+    for sev in (Severity.WARNING, Severity.ERROR, Severity.CRITICAL):
         ee = ErrorEnvelope(error_code="E1", domain=FaultDomain.DATA, message="x", severity=sev)
         assert ee.severity == sev
+        assert ee.to_dict()["severity"] == sev.value

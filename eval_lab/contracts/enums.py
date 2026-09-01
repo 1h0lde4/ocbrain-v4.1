@@ -36,6 +36,27 @@ class EvaluationStatus(str, Enum):
     INCONCLUSIVE = "inconclusive"
 
 
+class ConfidenceLevel(str, Enum):
+    """Shared high/medium/low qualitative confidence vocabulary. Used by
+    EvaluationResult.confidence, FlakinessClassification.confidence, and
+    AnnotationConfidence.level (result.py, reliability.py, evidence.py).
+
+    Slice 2's correction pass found this had been typed as a raw `str`
+    with manual `__post_init__` membership checking in two places
+    (EvaluationResult, FlakinessClassification), and left as an
+    explicitly-justified free string in a third (AnnotationConfidence.level,
+    on the reasoning that a human self-report is a different kind of thing
+    than a system-computed confidence). That distinction doesn't actually
+    hold up: a human, a judge, and a flakiness-diagnosis process are all
+    answering the same question ("how sure is the reporting entity"), and
+    there's no reason one should be allowed values outside {high, medium,
+    low} while the others can't. All three now share this one enum."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class EvaluatorResultStatus(str, Enum):
     """Status of a single EvaluatorResult (finer-grained than
     EvaluationStatus, which is the run-level rollup). Includes

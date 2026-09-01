@@ -56,3 +56,29 @@ def test_future_runtime_operation_ref_defaults_to_empty():
     ref = ids.FutureRuntimeOperationRef()
     assert ref.runtime_operation_id is None
     assert ref.runtime_attempt_number is None
+
+
+def test_future_runtime_operation_ref_has_no_behavior_beyond_data_holding():
+    """§11 (correction pass, boundary protection): this type must not
+    become a parallel implementation of DEBT-015. Structurally verified,
+    not just claimed in a docstring: the only methods it defines are
+    dataclass-generated ones plus to_dict -- no retry logic, no identity
+    resolution, nothing that could function as runtime operation-identity
+    behavior."""
+    allowed_methods = {
+        "__init__", "__repr__", "__eq__", "__hash__", "__setattr__", "__delattr__",
+        "__class__", "__dict__", "__module__", "__doc__", "__annotations__",
+        "__dataclass_fields__", "__dataclass_params__", "__match_args__", "__weakref__",
+        "to_dict",
+    }
+    own_methods = {
+        name for name in vars(ids.FutureRuntimeOperationRef)
+        if callable(getattr(ids.FutureRuntimeOperationRef, name, None)) or name.startswith("__")
+    }
+    unexpected = own_methods - allowed_methods
+    assert not unexpected, (
+        f"FutureRuntimeOperationRef defines unexpected method(s) {unexpected} -- "
+        f"this type must remain a plain data holder, per ADR-LAB-01 §4's boundary "
+        f"with DEBT-015. Adding behavior here risks it becoming a parallel, "
+        f"competing implementation of runtime operation identity."
+    )

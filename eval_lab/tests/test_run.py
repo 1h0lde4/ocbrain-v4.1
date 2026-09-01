@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from eval_lab.contracts.enums import EvaluationStatus, EvaluatorResultStatus, EvidenceCapturePolicy, EvidenceOrigin, TrustClassification, FaultDomain
+from eval_lab.contracts.enums import ConfidenceLevel, EvaluationStatus, EvaluatorResultStatus, EvidenceCapturePolicy, EvidenceOrigin, TrustClassification, FaultDomain
 from eval_lab.contracts.evidence import Evidence, EvidenceFreshness
 from eval_lab.contracts.result import EvaluationResult
 from eval_lab.contracts.run import EvaluationRun, ExecutionReference
@@ -33,11 +33,11 @@ def test_multiple_evaluators_can_disagree_without_overwriting_each_other():
     """§56: 'oracle = PASS, judge = FAIL, human = PARTIAL simultaneously.'
     This is the single most direct test of that requirement."""
     oracle_result = EvaluationResult(evaluator_id="oracle_1", evaluator_version=1, dimension="correctness",
-                                      status=EvaluatorResultStatus.PASS, score=1.0, confidence="high", evidence=(_evidence(),))
+                                      status=EvaluatorResultStatus.PASS, score=1.0, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),))
     judge_result = EvaluationResult(evaluator_id="judge_1", evaluator_version=1, dimension="correctness",
-                                     status=EvaluatorResultStatus.FAIL, score=0.2, confidence="medium", evidence=(_evidence(),))
+                                     status=EvaluatorResultStatus.FAIL, score=0.2, confidence=ConfidenceLevel.MEDIUM, evidence=(_evidence(),))
     human_result = EvaluationResult(evaluator_id="human_1", evaluator_version=1, dimension="correctness",
-                                     status=EvaluatorResultStatus.PARTIAL, score=0.5, confidence="high", evidence=(_evidence(),))
+                                     status=EvaluatorResultStatus.PARTIAL, score=0.5, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),))
 
     run = fx.minimal_run(results=(oracle_result, judge_result, human_result))
 
@@ -101,7 +101,7 @@ def test_complete_oracle_reference_is_valid():
 def test_abstained_result_with_score_rejected_at_run_level():
     abstained_with_score = EvaluationResult(evaluator_id="e1", evaluator_version=1, dimension="d",
                                              status=EvaluatorResultStatus.INSUFFICIENT_EVIDENCE, score=0.5,
-                                             confidence="low", evidence=())
+                                             confidence=ConfidenceLevel.LOW, evidence=())
     with pytest.raises(ContractValidationError, match="abstained_result_has_score"):
         fx.minimal_run(results=(abstained_with_score,))
 
@@ -109,7 +109,7 @@ def test_abstained_result_with_score_rejected_at_run_level():
 def test_abstained_result_without_score_is_valid():
     abstained_clean = EvaluationResult(evaluator_id="e1", evaluator_version=1, dimension="d",
                                         status=EvaluatorResultStatus.INSUFFICIENT_EVIDENCE, score=None,
-                                        confidence="low", evidence=())
+                                        confidence=ConfidenceLevel.LOW, evidence=())
     run = fx.minimal_run(results=(abstained_clean,))
     assert run.results[0].score is None
 
@@ -132,3 +132,48 @@ def test_full_run_is_json_serializable():
     reloaded = json.loads(payload)
     assert reloaded["evaluation_run_id"] == "run_smoke"
     assert reloaded["status"] == "completed"
+
+
+def test_run_references_evaluation_definition_by_id_and_version_not_embedded():
+    """Correction pass (1): EvaluationRun previously embedded the full
+    EvaluationDefinition object, inconsistent with how benchmark,
+    environment, oracle, and simulator are all handled on this same type
+    (id+version reference pairs). Now fixed to match."""
+    run = fx.minimal_run(evaluation_definition_id="ed_1", evaluation_definition_version=3)
+    assert run.evaluation_definition_id == "ed_1"
+    assert run.evaluation_definition_version == 3
+    d = run.to_dict()
+    assert d["evaluation_definition_id"] == "ed_1"
+    assert d["evaluation_definition_version"] == 3
+    # the run must not carry an embedded object -- no "evaluation_definition"
+    # key (the old field name) should exist anywhere in the serialized output
+    assert "evaluation_definition" not in d
+
+
+def test_run_evaluation_definition_reference_survives_later_version_publication():
+    """A later version of the same EvaluationDefinition existing elsewhere
+    must not retroactively change what this historical run recorded it
+    used -- the run only ever held the id+version pair, never a live
+    reference to a mutable/evolving object, so there is nothing for a
+    later publication to retroactively alter."""
+    run_v1 = fx.minimal_run(evaluation_definition_id="ed_1", evaluation_definition_version=1)
+    # Simulate "a v2 of ed_1 now exists elsewhere" -- nothing about run_v1
+    # changes, because it never held anything but the identity pair.
+    run_v2 = fx.minimal_run(evaluation_run_id="run_smoke_2", evaluation_definition_id="ed_1", evaluation_definition_version=2)
+    assert run_v1.evaluation_definition_version == 1
+    assert run_v2.evaluation_definition_version == 2
+    assert run_v1.evaluation_definition_version != run_v2.evaluation_definition_version
+
+
+def test_incomplete_evaluation_definition_reference_rejected():
+    with pytest.raises(ContractValidationError, match="incomplete_evaluation_definition_reference"):
+        fx.minimal_run(evaluation_definition_id="ed_1", evaluation_definition_version=None)
+    with pytest.raises(ContractValidationError, match="incomplete_evaluation_definition_reference"):
+        fx.minimal_run(evaluation_definition_id=None, evaluation_definition_version=1)
+
+
+def test_run_without_evaluation_definition_reference_is_still_valid():
+    """The reference is optional -- Slice 2 does not require every run to
+    have one, only that if present, it's complete (both fields, not one)."""
+    run = fx.minimal_run()
+    assert run.evaluation_definition_id is None and run.evaluation_definition_version is None

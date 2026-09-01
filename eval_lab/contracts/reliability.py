@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from eval_lab.contracts.enums import EvaluatorResultStatus
+from eval_lab.contracts.enums import ConfidenceLevel, EvaluatorResultStatus
 from eval_lab.contracts.serialization import ContractValidationError
 
 
@@ -98,7 +98,7 @@ class FlakinessClassification:
 
     task_id: str
     suspected_causes: frozenset[FlakinessSuspectedCause]
-    confidence: str  # "high" | "medium" | "low"
+    confidence: ConfidenceLevel
     investigation_note: str | None = None
 
     def __post_init__(self) -> None:
@@ -108,13 +108,16 @@ class FlakinessClassification:
                 "suspected_causes cannot be empty -- use FlakinessSuspectedCause.UNKNOWN "
                 "if no specific cause has been identified.",
             )
-        if self.confidence not in {"high", "medium", "low"}:
-            raise ContractValidationError("invalid_confidence_level", "confidence must be 'high', 'medium', or 'low'.")
+        if not isinstance(self.confidence, ConfidenceLevel):
+            raise ContractValidationError(
+                "confidence_not_enum_member",
+                f"confidence must be a ConfidenceLevel member, got {type(self.confidence).__name__}.",
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
             "suspected_causes": sorted(c.value for c in self.suspected_causes),
-            "confidence": self.confidence,
+            "confidence": self.confidence.value,
             "investigation_note": self.investigation_note,
         }

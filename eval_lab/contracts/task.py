@@ -25,7 +25,7 @@ from eval_lab.contracts.identifiers import (
     TaskInstanceId,
     TaskVersion,
 )
-from eval_lab.contracts.serialization import ContractValidationError, nested, enum_value
+from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping, nested, enum_value
 
 
 @dataclass(frozen=True)
@@ -160,6 +160,9 @@ class EvaluationCase:
             raise ContractValidationError(
                 "invalid_case_lifecycle_state", f"{self.lifecycle_state} is not a valid case lifecycle state."
             )
+        # Correction pass: `configuration` was a plain mutable dict on a
+        # frozen dataclass -- see serialization.frozen_mapping's docstring.
+        object.__setattr__(self, "configuration", frozen_mapping(self.configuration))
 
     def to_dict(self) -> dict[str, Any]:
         return {
