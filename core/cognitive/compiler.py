@@ -253,6 +253,10 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
             "execution_plan_id": plan.resource_id,
             "goal_id": plan.goal_id,
         },
+        # Kernel Blocker A resolution (ADR-KERNEL-01): threaded through
+        # unchanged, not independently generated -- see WorkflowDefinition's
+        # own docstring and Goal.root_operation_id for the full chain.
+        root_operation_id=plan.root_operation_id,
     )
 
 
@@ -401,6 +405,7 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
         payload={
             "trace_id": trace_id,
             "operation_id": operation_id,
+            "root_operation_id": workflow_definition.root_operation_id,
             "execution_plan_id": plan.resource_id,
             "workflow_id": workflow_definition.workflow_id,
             "goal_id": plan.goal_id,

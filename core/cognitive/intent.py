@@ -673,6 +673,25 @@ class Goal:
     interpret_request() -> form_goals() path (the overwhelming majority);
     populated only when a Goal's formation was itself caused by a
     specific prior event (e.g. a recovery re-plan).
+
+    root_operation_id (Kernel Blocker A resolution, ADR-KERNEL-01):
+    a stable, opaque identifier for the logical operation this Goal
+    belongs to, generated once here and threaded forward unchanged into
+    ExecutionPlan.root_operation_id and WorkflowDefinition.root_operation_id
+    -- the identity that survives the cognition -> compilation -> execution
+    boundary the Kernel Completion reconciliation identified as missing.
+
+    This is deliberately NOT the same field as the `operation_id` local
+    variable inside plan()/compile() (ADR-K4.2-H-08): that one is a
+    per-cognitive-stage-invocation diagnostic correlation ID, intentionally
+    regenerated fresh on every call to plan() or compile() for event
+    correlation, and this change does not touch it, its tests, or its
+    documented semantics. root_operation_id answers a different question
+    ("which logical operation does this artifact ultimately belong to,
+    across every stage and every retry") from the one ADR-K4.2-H-08's
+    operation_id answers ("which single plan()/compile() invocation
+    produced this diagnostic event"). See ADR-KERNEL-01 for the full
+    reconciliation between the two.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "IntentInterpreter"
@@ -684,6 +703,7 @@ class Goal:
     derived_from: List[str] = field(default_factory=list)
     caused_by: Optional[str] = None
     lifecycle_state: str = GoalLifecycle.DRAFT
+    root_operation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)

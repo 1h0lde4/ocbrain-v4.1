@@ -90,6 +90,7 @@ from typing import Any, Dict, List, Optional
 from core.cognitive.planner import ExecutionPlan
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
+from core.runtime.execution_context import ExecutionContext
 from core.workers.evaluator import EvaluationRecord
 
 # Deterministic hypothesis thresholds. Implementation judgment (not
@@ -191,7 +192,7 @@ class ReflectionWorker(AbstractCognitiveWorker):
         super().__init__(**kwargs)
         self._memory: UnifiedMemory = memory or get_unified_memory()
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Reflect on one EvaluationRecord and, if warranted, write a
         candidate KnowledgeEntry.
 

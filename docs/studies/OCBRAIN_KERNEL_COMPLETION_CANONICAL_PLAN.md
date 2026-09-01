@@ -8,6 +8,10 @@
 
 # 1. Executive Verdict
 
+**[UPDATED Aug 29, 2026, later same day]** The two blockers this section originally described as open for a week with zero movement are now resolved — see `docs/architecture/decisions/ADR_KERNEL_01_ROOT_OPERATION_IDENTITY_AND_EXECUTION_CONTEXT_MIGRATION.md` and §35's revised Freeze Gate. **Is the Kernel complete today? Still no, but the specific two decisions that required Moncif's own judgment call are closed. Confidence: High.** What remains (§35) are bounded engineering tasks — checkpoint/resume, watchdog unification, a genuine concurrency audit — none of which carry an open architectural question the way the original two did.
+
+**Original assessment, preserved below for the historical record, not overwritten:**
+
 **Is the Kernel complete today? No. Confidence: High.** Unchanged from yesterday's finding, and this document did not find new evidence to revise it: two narrow, fully-diagnosed decisions block freeze (§15, §31, §35), both open for exactly one week with zero movement, re-confirmed unchanged a second time this session.
 
 **What this document adds to that verdict:** the historical reconstruction below (§3–5) found something the predecessor study didn't look for and therefore didn't find — a **real, git-documented original architecture** (`docs/architecture/OCBRAIN_K4_COGNITIVE_RUNTIME_ARCHITECTURE.md` §19, a seven-milestone roadmap, K4.1 through K4.7) whose **milestone labels were never used in a single commit**, yet whose **safety-relevant boundaries were, on inspection, substantially preserved** — the governance gate the original K4.3 wanted at plan compilation exists in code today, cited back to its origin section, even though no commit was ever named "K4.3." This is a better and more specific finding than either "nothing was lost" or "everything was lost": **the labels were lost; most of the engineering intent behind them was not.** Where it genuinely was not preserved, this document says so plainly (§5).
@@ -481,23 +485,23 @@ Every finding becomes: reproduction → root cause → fix → regression test �
 
 # 35. Freeze Gate
 
-**[DECISION, unchanged verdict from predecessor §22, restated with this document's fuller evidence chain]**
+**[UPDATED Aug 29, 2026, later same day — ADR-KERNEL-01]** Both named blockers were verified against current code (not assumed from this document's own prior text) and resolved. Full detail, evidence, and explicit scope boundaries: `docs/architecture/decisions/ADR_KERNEL_01_ROOT_OPERATION_IDENTITY_AND_EXECUTION_CONTEXT_MIGRATION.md`.
 
 | Criterion | Status |
 |---|---|
-| Architecture coherent (original K4 intent reconciled) | **PASS, newly confirmed this session** — §3–5's reconciliation found substance preserved even where labels were not |
-| Identity | **FAIL** — §9, §12, §24 |
-| Contract stability (no frozen-doc-vs-code contradiction) | **FAIL** — ADR-001/`WorkerContext` |
-| Durability | **FAIL** — checkpoint/resume absent |
-| No duplicated authority | **FAIL, twice** — Watchdog/ProgressMonitor, EventStream/KnowledgeEvent |
+| Architecture coherent (original K4 intent reconciled) | **PASS** |
+| Identity | **PASS, as of ADR-KERNEL-01** — `Goal.root_operation_id` threads through `ExecutionPlan` and `WorkflowDefinition` unchanged, verified by 6 tests exercising the real `plan()`/`compile()` path, not mocks. `WorkflowNodeState.attempt_id` gives retries a stable identity distinct from the `attempts` counter. Narrower than full I1–I12 compliance: the Orchestrator's re-plan loop does not yet propagate `root_operation_id` onto a recovery-triggered new `Goal` — named explicitly in ADR-KERNEL-01 as a follow-up, not silently left unaddressed. |
+| Contract stability (no frozen-doc-vs-code contradiction) | **PASS, as of ADR-KERNEL-01** — ADR-001's migration is actually complete: `ExecutionRuntime.invoke()` no longer converts to `WorkerContext`; all seven worker classes receive `ExecutionContext` directly, verified by an `isinstance` check against the real runtime path, not the type annotation alone. |
+| Durability | **FAIL, unchanged** — checkpoint/resume (DEBT-003) was explicitly out of this fix's scope (the governing task's own Section 10: "keep it as the next dependent Kernel task"). A bounded implementation task with no open decision remaining, not a blocker in the PFA sense (nothing here requires Moncif's judgment call, only engineering time). |
+| No duplicated authority | **FAIL, unchanged** — Watchdog/ProgressMonitor (DEBT-016) and EventStream/KnowledgeEvent (DEBT-004) duplication were not in scope for this fix. Also bounded implementation, not a decision-blocker. |
 | Governance | **PASS** |
 | Determinism/Explainability | **PASS** |
-| Testing | **PASS** |
-| Concurrency | **UNRESOLVED — not yet audited to the depth this gate requires** (§21) |
-| Cleanup | **FAIL** — expired `WorkerContext` shim sunset condition, unwritten ADRs |
+| Testing | **PASS** — 1,343 passed / 34 failed (12 new tests this session, all 34 failures the same pre-existing environment class, zero regressions) |
+| Concurrency | **UNRESOLVED, unchanged** — still not audited to the depth this gate requires; this document's own §21 already named this as its largest coverage gap and this session's work did not close it (out of the two-blocker scope this task defined) |
+| Cleanup | **PARTIALLY RESOLVED** — the `WorkerContext` shim's live-path usage is eliminated (the part that mattered architecturally); the class itself and 10 test-file references remain, pending their own migration, which ADR-KERNEL-01 names as a specific follow-up condition rather than an indefinite "eventually." `ADR-K4-01` through `ADR-K4-06` remain unwritten — correctly out of scope for this fix per its own governing task's explicit instruction not to expand scope. |
 | Reproducibility | **PASS** |
 
-**Verdict: NOT_FREEZE_READY.** Unchanged from yesterday's verdict in substance; this document adds one new column of confidence (§3-5's historical reconciliation) and one new named gap in the gate itself (concurrency, honestly marked UNRESOLVED rather than assumed PASS).
+**Revised verdict: NOT_FREEZE_READY, but for materially fewer and more bounded reasons than a week ago.** The two items that required Moncif's own decision — the only kind of blocker nothing but a human judgment call could close — are resolved. What remains (checkpoint/resume, watchdog unification, EventStream/KnowledgeEvent consolidation, a genuine concurrency audit) are bounded engineering tasks with no open architectural question attached to any of them.
 
 ---
 
@@ -514,6 +518,12 @@ Every finding becomes: reproduction → root cause → fix → regression test �
 ---
 
 # 38. Immediate Next Step
+
+**[UPDATED Aug 29, 2026, later same day]** The step this section originally specified — bringing the two decisions to Moncif — happened, and both were resolved by direct verification rather than requiring a judgment call after all (Blocker A needed a new field, not a decision between named options; Blocker B needed completing an already-half-built migration, not choosing between ADR-001's two options). See ADR-KERNEL-01.
+
+**New immediate next step:** of the remaining Freeze Gate failures (§35), checkpoint/resume (DEBT-003) is the one with the most other work depending on it (task mutation, C-MoE, durability all need it) and no open design question blocking it — WE's own proposed `Operation`/`ExecutionAttempt`/`ExecutionSnapshot` schema (DEBT-015) is already researched and ready to implement against the `root_operation_id`/`attempt_id` identity this session just added. This is a bounded implementation task, not a decision — it does not need to come back to Moncif before work can start, unlike the two blockers that just closed.
+
+**Original next step, preserved for the historical record:**
 
 **Exactly one, unchanged in substance from yesterday, now backed by two independent studies and a git-verified historical reconstruction rather than one:**
 

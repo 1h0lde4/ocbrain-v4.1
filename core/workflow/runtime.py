@@ -48,11 +48,23 @@ logger = logging.getLogger("ocbrain.workflow.runtime")
 
 @dataclass
 class WorkflowNodeState:
-    """Runtime state for a single workflow node."""
+    """Runtime state for a single workflow node.
+
+    attempt_id (Kernel Blocker B... resolution scope note: this is
+    Blocker A's I3/I6, not Blocker B): a stable, opaque identifier for the
+    current execution attempt, distinct from `attempts` (a bare retry
+    count). Per I3's contract ("opaque, persistent, location-independent
+    identifier with stable equality semantics"), a counter alone cannot
+    serve this role -- "attempt #2" before a process restart and "attempt
+    #2" after one are not distinguishable by count alone. Regenerated
+    fresh on each retry, alongside (not replacing) `attempts`, which
+    keeps its existing meaning and existing call sites unchanged.
+    """
     node_id: str = ""
     status: NodeStatus = NodeStatus.PENDING
     result: Optional[WorkerResult] = None
     attempts: int = 0
+    attempt_id: str = ""
     started_at: float = 0.0
     completed_at: float = 0.0
 
@@ -418,6 +430,7 @@ class WorkflowRuntime:
 
         for attempt in range(1 + policy.max_retries):
             state.attempts = attempt + 1
+            state.attempt_id = str(uuid.uuid4())
 
             if cancel_token.is_cancelled:
                 return WorkerResult(success=False, error="Cancelled during retry")
@@ -435,6 +448,7 @@ class WorkflowRuntime:
                     "node_id": node.node_id,
                     "node_config": node.config,
                     "attempt": attempt + 1,
+                    "attempt_id": state.attempt_id,
                     **metadata,
                 },
                 governance_state={"recursion_depth": 0},

@@ -1037,6 +1037,12 @@ class ExecutionPlan:
     (core/cognitive/compiler.py) and consumed by OrchestrationGovernor
     (core/governance/orchestration_governor.py) to exempt such plans from
     escalation regardless of their raw confidence value.
+
+    root_operation_id (Kernel Blocker A resolution, ADR-KERNEL-01):
+    threaded through unchanged from the producing Goal.root_operation_id
+    (never independently generated here -- ExecutionPlan does not own
+    this identity, it only carries it forward). See Goal's own docstring
+    for the full distinction from ADR-K4.2-H-08's per-call operation_id.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "Planner"
@@ -1048,6 +1054,7 @@ class ExecutionPlan:
     justification: str = ""
     derived_from: List[str] = field(default_factory=list)
     caused_by: Optional[str] = None
+    root_operation_id: Optional[str] = None
     lifecycle_state: str = ExecutionPlanLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1524,6 +1531,7 @@ async def plan(
         alternatives=alternatives,
         justification=justification,
         derived_from=[goal.resource_id],
+        root_operation_id=goal.root_operation_id,
     )
 
     return PlannerResult(

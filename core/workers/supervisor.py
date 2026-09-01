@@ -90,6 +90,7 @@ from typing import Any, Dict, Optional
 from core.cognitive.compiler import CompilationResult, CompilationStatus
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
+from core.runtime.execution_context import ExecutionContext
 
 
 class SupervisorOutcome:
@@ -162,7 +163,7 @@ class SupervisorWorker(AbstractCognitiveWorker):
         super().__init__(**kwargs)
         self._execution_runtime = execution_runtime
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Two independent input paths (see module docstring). Exactly
         one is exercised per call; a compilation_result requiring
         surfacing takes precedence and short-circuits — a plan that was
@@ -218,7 +219,7 @@ class SupervisorWorker(AbstractCognitiveWorker):
 
     async def _surface_compilation_outcome(
         self,
-        context: WorkerContext,
+        context: ExecutionContext,
         compilation_result: CompilationResult,
         outcome: str,
     ) -> WorkerResult:
@@ -246,7 +247,7 @@ class SupervisorWorker(AbstractCognitiveWorker):
                              artifacts={"compilation_result": compilation_result.to_dict()})
 
     async def _attempt_retry(
-        self, context: WorkerContext, failed_result: Any,
+        self, context: ExecutionContext, failed_result: Any,
     ) -> WorkerResult:
         """K4.2-H1 D5 (ADR-K4.2-H-05): when the caller has threaded a
         shared OperationRecoveryBudget through

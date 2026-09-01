@@ -29,6 +29,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
+from core.runtime.execution_context import ExecutionContext
 
 logger = logging.getLogger("ocbrain.workers.planner")
 
@@ -89,14 +90,14 @@ class PlannerWorker(AbstractCognitiveWorker):
         self._adapter_runtime = adapter_runtime
         self._memory = memory
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Execute the classify→dispatch→merge pipeline.
 
         This is the legacy Orchestrator.handle() logic, moved here to make
         it governable (template method) and event-sourced (lifecycle events).
 
         Args:
-            context: WorkerContext with query in context.query or
+            context: ExecutionContext with query in context.query or
                      context.metadata["query"].
 
         Returns:
@@ -235,7 +236,7 @@ class PlannerWorker(AbstractCognitiveWorker):
             )
 
     async def _dispatch_module(self, mod_name: str, query: str,
-                                context: WorkerContext) -> Any:
+                                context: ExecutionContext) -> Any:
         """Dispatch to a single module.
 
         K2.3 — Legacy Dispatch Migration:

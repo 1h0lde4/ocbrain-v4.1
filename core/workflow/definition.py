@@ -105,6 +105,21 @@ class WorkflowDefinition:
         edges: Directed edges defining execution order.
         entry_node: The first node to execute. Must exist in nodes.
         metadata: Additional workflow-level configuration.
+        root_operation_id: Kernel Blocker A resolution (ADR-KERNEL-01) --
+            the stable, cross-stage identity of the logical operation this
+            workflow was compiled from, threaded through unchanged from
+            ExecutionPlan.root_operation_id (itself threaded from the
+            originating Goal). None only for a WorkflowDefinition
+            constructed outside compile() (e.g. a hand-built test fixture
+            or the legacy K2.2 path, neither of which goes through the
+            cognitive pipeline this identity threads through). Not
+            duplicated onto individual WorkflowNodes: nodes are not
+            currently persisted, transported, or indexed independently of
+            their parent WorkflowDefinition (no checkpoint/resume exists
+            yet -- KNOWN_ISSUES.md DEBT-003), so per Kernel Blocker A's own
+            I7 guidance, a node-level reference is not yet justified by any
+            actual node-independent lifecycle. Revisit if/when DEBT-003
+            introduces independently-persisted node state.
     """
     workflow_id: str = ""
     name: str = ""
@@ -112,6 +127,7 @@ class WorkflowDefinition:
     edges: List[WorkflowEdge] = field(default_factory=list)
     entry_node: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    root_operation_id: Optional[str] = None
 
     def get_node(self, node_id: str) -> Optional[WorkflowNode]:
         """Look up a node by ID."""

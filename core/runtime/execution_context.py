@@ -91,6 +91,22 @@ class ExecutionContext:
         return self.metadata.get("query", "")
 
     @property
+    def parameters(self) -> Dict[str, Any]:
+        """Backward-compatible alias reading parameters from metadata.
+
+        WorkerContext had a top-level parameters field. ExecutionContext
+        stores it in metadata['parameters'] instead, the same convention
+        already used for query. Completes the bridge surface (Kernel
+        Blocker B resolution, ADR-KERNEL-01) that task_id/query/
+        recursion_depth already established, so workers can accept
+        ExecutionContext directly with no change to their own
+        context.parameters.get(...) call sites.
+
+        Compatibility shim — will be removed after K2.4.
+        """
+        return self.metadata.get("parameters", {})
+
+    @property
     def recursion_depth(self) -> int:
         """Backward-compatible alias reading recursion_depth from governance_state.
 
