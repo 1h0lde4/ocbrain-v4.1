@@ -164,7 +164,18 @@ being accepted. Containment ≠ prevention.
   found (`planner.py:317`, `workers/base.py:220`) both truncate to 120
   characters into `description=`/`rationale=` fields — a materially
   different, more contained pattern, not re-classified as equivalent.
-  Update this entry if new evidence appears.
+  **Revalidated** against a third persistence subsystem discovered during
+  the cache-isolation audit — `core/context.py::ContextMemory`, whose
+  `format_for_prompt()` does inject raw retrieved/conversational content
+  into a prompt. Fully traced; see
+  `docs/research/context-engineering/context-memory-path-audit.md`.
+  Confirmed structurally separate from this finding: K4.2 writes into
+  `ContextMemory` but never reads `format_for_prompt()` back, and that
+  read path is confined to the Legacy Compatibility Bridge, which is not
+  production-exercised. The "concentrated at one site" claim above
+  stands. `ContextMemory`'s own injection mechanism — unconditional,
+  unscoped, no attack precondition required — is a distinct, separate
+  finding requiring its own threat-model entry, not yet written.
 - **Tool execution impact:** NOT DEMONSTRATED. No live path from an
   injected hypothesis to tool invocation was traced or tested in this
   phase.
