@@ -30,6 +30,7 @@ from eval_lab.contracts.identifiers import (
     EvaluatorId,
     EvaluatorVersion,
     ExperimentId,
+    PopulationId,
 )
 from eval_lab.contracts.serialization import ContractValidationError, frozen_mapping, nested_list
 from enum import Enum
@@ -151,7 +152,14 @@ class EvaluationAggregate:
     not `agg.per_dimension["x"] = y`. Now wrapped in a `MappingProxyType`
     (serialization.frozen_mapping) at construction time; the type hint is
     `Mapping` rather than `dict` to make the read-only contract visible to
-    callers/type-checkers, not just enforced at runtime."""
+    callers/type-checkers, not just enforced at runtime.
+
+    Second correction pass: nothing previously checked that a
+    `per_dimension` lookup key actually matched the `dimension` field on
+    the `EvaluationResult` stored under it -- a caller could construct
+    `per_dimension={"goal_satisfaction": result_whose_dimension_is_actually_"groundedness"}`
+    and the mismatch would go undetected, silently breaking the lookup
+    table's own contract. Now validated in `__post_init__`."""
 
     evaluation_run_id: EvaluationRunId
     per_dimension: Mapping[str, EvaluationResult]
@@ -159,6 +167,15 @@ class EvaluationAggregate:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "per_dimension", frozen_mapping(self.per_dimension))
+        mismatched = {
+            key: result.dimension for key, result in self.per_dimension.items() if key != result.dimension
+        }
+        if mismatched:
+            raise ContractValidationError(
+                "per_dimension_key_mismatch",
+                f"per_dimension key(s) do not match the corresponding EvaluationResult.dimension: "
+                f"{mismatched} (key -> actual result.dimension).",
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -192,7 +209,7 @@ class MetricObservation:
     metric_name: str
     value: float
     n: int
-    population_id: str | None = None
+    population_id: PopulationId | None = None
     """None only when genuinely not computed over a tracked population
     (e.g. a single ad hoc measurement) -- for anything meant to support a
     capability claim, a real population_id should be set."""

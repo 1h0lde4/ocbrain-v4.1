@@ -180,3 +180,34 @@ def test_evaluation_aggregate_serializes_deterministically_after_immutability_fi
     d = agg.to_dict()
     assert isinstance(d["per_dimension"], dict)  # MappingProxyType converted back to plain dict for serialization
     json.dumps(d)  # must not raise
+
+
+def test_aggregate_rejects_mismatched_dimension_key():
+    """Second correction pass (2): a per_dimension lookup key must match
+    the EvaluationResult's own dimension field. Without this check,
+    per_dimension={"goal_satisfaction": result_actually_measuring_groundedness}
+    would silently pass -- exactly the kind of key/value integrity gap
+    this test proves is now closed."""
+    result_measuring_groundedness = EvaluationResult(
+        evaluator_id="e1", evaluator_version=1, dimension="groundedness",
+        status=EvaluatorResultStatus.PASS, score=1.0, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),),
+    )
+    with pytest.raises(ContractValidationError, match="per_dimension_key_mismatch"):
+        EvaluationAggregate(
+            evaluation_run_id="run1",
+            per_dimension={"goal_satisfaction": result_measuring_groundedness},  # key lies about what's stored
+            overall_status=EvaluatorResultStatus.PASS,
+        )
+
+
+def test_aggregate_accepts_correctly_matched_dimension_keys():
+    r1 = EvaluationResult(evaluator_id="e1", evaluator_version=1, dimension="goal_satisfaction",
+                           status=EvaluatorResultStatus.PASS, score=1.0, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),))
+    r2 = EvaluationResult(evaluator_id="e2", evaluator_version=1, dimension="groundedness",
+                           status=EvaluatorResultStatus.FAIL, score=0.2, confidence=ConfidenceLevel.MEDIUM, evidence=(_evidence(),))
+    agg = EvaluationAggregate(
+        evaluation_run_id="run1",
+        per_dimension={"goal_satisfaction": r1, "groundedness": r2},
+        overall_status=EvaluatorResultStatus.PARTIAL,
+    )
+    assert set(agg.per_dimension.keys()) == {"goal_satisfaction", "groundedness"}

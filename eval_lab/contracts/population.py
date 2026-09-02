@@ -6,6 +6,14 @@ selected cases passed" must never silently become "82% overall capability"
 -- because the population that produced the number is recorded as a first-
 class object, not left implicit in whichever run IDs happened to get
 queried later.
+
+Correction pass: a request to type `MetricObservation.population_id` as a
+dedicated `PopulationId` (result.py) surfaced that this module's own
+`EvaluationPopulation.population_id` and `Experiment.population_id` were
+still plain `str` -- the type that *owns* the population concept was
+untyped while a *reference* to it was about to become typed, which is
+backwards and would have left a fresh instance of the exact inconsistency
+class fixed elsewhere in this branch's history. Both fixed here too.
 """
 
 from __future__ import annotations
@@ -13,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from eval_lab.contracts.identifiers import EvaluationCaseId, ExperimentId
+from eval_lab.contracts.identifiers import EvaluationCaseId, ExperimentId, PopulationId
 from eval_lab.contracts.serialization import ContractValidationError
 
 
@@ -25,7 +33,7 @@ class EvaluationPopulation:
     together with `sampling_frame`, a reader can reconstruct "what could
     have been selected" vs. "what was," per §50 of this Slice."""
 
-    population_id: str
+    population_id: PopulationId
     sampling_frame_description: str
     """What the population was drawn from, e.g. "all VALIDATED cases in
     benchmark-v3" or "cases tagged 'planning' in the dev set.\""""
@@ -73,7 +81,7 @@ class Experiment:
 
     experiment_id: ExperimentId
     hypothesis: str
-    population_id: str
+    population_id: PopulationId
     comparison_family: str
     """Which other comparisons share this experiment's multiple-comparison
     budget -- per ADR-LAB-05 §2, this has to exist *before* any statistics

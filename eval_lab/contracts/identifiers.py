@@ -72,6 +72,7 @@ AnnotatorId = NewType("AnnotatorId", str)
 FailureRecordId = NewType("FailureRecordId", str)
 InterventionId = NewType("InterventionId", str)
 CounterfactualEvaluationId = NewType("CounterfactualEvaluationId", str)
+PopulationId = NewType("PopulationId", str)
 
 # ---------------------------------------------------------------------------
 # Version counters (monotonic per published artifact; ADR-LAB-04 §2:

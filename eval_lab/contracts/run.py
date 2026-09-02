@@ -158,6 +158,23 @@ class EvaluationRun:
     experiment_id: ExperimentId | None = None
     trajectory_id: TrajectoryId | None = None
     evaluation_definition_id: EvaluationDefinitionId | None = None
+    """Optional by design, not by oversight -- verified against ADR-LAB-01
+    and ADR-LAB-03 in a dedicated correction pass (neither requires this
+    to be present on every run; ADR-LAB-01 §2 lists it only among
+    identities that must be *kept distinct*, and ADR-LAB-03 doesn't govern
+    this type at all -- it governs EvaluatorDefinition, a different type).
+
+    Absence is correct exactly when: every `EvaluationResult` on this run
+    is fully specified by its own `evaluator_id`+`evaluator_version`
+    (EvaluatorDefinition already carries its own `measurement_target` and
+    `construct_validity`, per evaluator.py), and there is no need to treat
+    two or more evaluator implementations as alternative answers to the
+    *same* measurement question. A single deterministic evaluator checking
+    one thing needs no EvaluationDefinition; it becomes meaningful once
+    you want to say "a deterministic check and a judge both claim to
+    measure goal_satisfaction -- compare them," which is a cross-evaluator
+    organizing concern, not a requirement of any individual run existing.
+    """
     evaluation_definition_version: EvaluationDefinitionVersion | None = None
     oracle_id: OracleId | None = None
     oracle_version: OracleVersion | None = None

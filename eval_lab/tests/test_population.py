@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from eval_lab.contracts.identifiers import PopulationId
 from eval_lab.contracts.population import EvaluationPopulation, Experiment
+from eval_lab.contracts.result import MetricObservation
 from eval_lab.contracts.serialization import ContractValidationError
 
 
@@ -65,3 +67,18 @@ def test_experiment_with_no_declared_statistical_test_is_still_valid():
     exp = Experiment(experiment_id="exp1", hypothesis="h", population_id="pop1", comparison_family="fam1",
                       stopping_rule="none declared -- exploratory smoke run")
     assert exp.statistical_test is None
+
+
+def test_population_id_is_consistent_across_owner_and_reference_types():
+    """Correction pass (1): PopulationId is now used consistently by the
+    type that owns the concept (EvaluationPopulation), the type that
+    references it for design metadata (Experiment), and the type that
+    references it for a bare measurement (MetricObservation, result.py)
+    -- rather than the reference types being typed while the owning type
+    stayed a plain str."""
+    pop = EvaluationPopulation(population_id=PopulationId("pop_x"), sampling_frame_description="x",
+                                selection_method="x", selection_reason="x", included_cases=frozenset({"c1"}))
+    exp = Experiment(experiment_id="exp1", hypothesis="h", population_id=pop.population_id,
+                      comparison_family="fam1", stopping_rule="fixed N")
+    metric = MetricObservation(metric_name="pass_rate", value=0.9, n=10, population_id=pop.population_id)
+    assert pop.population_id == exp.population_id == metric.population_id == "pop_x"

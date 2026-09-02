@@ -173,7 +173,27 @@ def test_incomplete_evaluation_definition_reference_rejected():
 
 
 def test_run_without_evaluation_definition_reference_is_still_valid():
-    """The reference is optional -- Slice 2 does not require every run to
-    have one, only that if present, it's complete (both fields, not one)."""
+    """The reference is optional -- confirmed against ADR-LAB-01/ADR-LAB-03
+    in a dedicated correction pass, not assumed from the code's default.
+    Neither ADR requires presence; ADR-LAB-01 §2 lists this pair only
+    among identities that must be kept distinct, and ADR-LAB-03 governs a
+    different type entirely (EvaluatorDefinition, not EvaluationDefinition).
+    See ADR-LAB-01 §7 and the field's own docstring in run.py."""
     run = fx.minimal_run()
     assert run.evaluation_definition_id is None and run.evaluation_definition_version is None
+
+
+def test_multiple_evaluators_need_no_evaluation_definition_when_not_comparing():
+    """The documented condition for correct absence: a run whose results
+    are each fully specified by their own evaluator identity doesn't need
+    an EvaluationDefinition, even with more than one evaluator present --
+    it only becomes useful once two evaluators need to be treated as
+    alternative answers to the *same* measurement question, which this
+    case isn't (the two evaluators measure different dimensions)."""
+    oracle_result = EvaluationResult(evaluator_id="oracle_1", evaluator_version=1, dimension="correctness",
+                                      status=EvaluatorResultStatus.PASS, score=1.0, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),))
+    safety_result = EvaluationResult(evaluator_id="safety_check_1", evaluator_version=1, dimension="safety",
+                                      status=EvaluatorResultStatus.PASS, score=1.0, confidence=ConfidenceLevel.HIGH, evidence=(_evidence(),))
+    run = fx.minimal_run(results=(oracle_result, safety_result))
+    assert run.evaluation_definition_id is None
+    assert len(run.results) == 2
