@@ -232,6 +232,245 @@ elimination of all retrieved-content influence on output.
 
 ---
 
+## CTX-SCOPE-001 — ContextMemory Unscoped Recent-Conversation Injection
+
+**Status:** VERIFIED CURRENT GAP (source-level finding + empirical
+reproduction against the real class; production exposure depends on
+which callers reach it — see below)
+
+**Affected component:** `core/context.py::ContextMemory` —
+`save()` / `last_n()` / `format_for_prompt()`
+
+**Affected boundary:** Retrieval scope — no task/session/user/workflow
+dimension exists anywhere in this subsystem's API surface
+
+**Source:** Any caller of `ContextMemory.save()`. Confirmed production
+callers (per `context-memory-path-audit.md`): the K4.2 branch
+(`orchestrator.py:510`, write-only), the Legacy Compatibility Bridge
+(`orchestrator.py:726`, both read and write), and the legacy K2.2
+`PlannerWorker` (per an explanatory comment, not independently
+re-verified against `planner.py` in this phase).
+
+### Precondition
+
+None required — no adversarial input, no attack precondition. Any two
+organically distinct interactions saved via `ContextMemory.save()`
+trigger this.
+
+### Attack path (more precisely: mechanical failure path)
+
+```
+caller A saves a turn via ContextMemory.save(query, modules, answer)
+        ↓
+turns table: no scope column (id, timestamp, query, modules_used,
+   answer only)
+        ↓
+caller B — completely unrelated — calls format_for_prompt(n)
+        ↓
+last_n(n): SELECT ... FROM turns ORDER BY id DESC LIMIT n
+   -- most recent N interactions system-wide, unconditionally
+        ↓
+caller A's verbatim query/answer text appears in caller B's
+   "### RECENT CONVERSATION" prompt section
+```
+
+### Current controls
+
+None at the read path. A privacy gate exists on the *write* path
+(`ContextMemory.save()` checks `privacy.can_save_history()` before
+writing) but nothing scopes what gets read back once anything has been
+saved.
+
+### Evidence
+
+- `core/context.py` — full `Turn`/`ContextMemory` implementation;
+  `turns` schema has no scope column; `last_n()`'s only parameter is a
+  result-count limit.
+- `docs/research/context-engineering/context-memory-path-audit.md` —
+  full production call-graph trace.
+
+### Reproduction
+
+`tests/test_context_scope_security.py::
+test_recent_conversation_is_not_scoped_to_the_caller` — **FAILS**.
+Saves one turn, then calls `format_for_prompt()` as an unrelated caller
+would have to (no scope parameter exists to call it differently), and
+finds the first turn's content present verbatim.
+`test_last_n_has_no_scope_parameter_to_pass` — **PASSES** (documents
+the API-surface fact directly via signature inspection, so it fails
+loudly if the signature ever changes, prompting re-verification rather
+than a silent assumption of "fixed").
+
+This test does not dispute that recent-conversation continuity is a
+real, intended feature for a single ongoing session — see the existing
+`tests/test_context.py::test_context_save_and_retrieve` for that
+positive case. The gap is the absence of any way to say "only my own
+recent turns," not the feature's existence.
+
+### Blast radius
+
+Per the ContextMemory path audit: the *read* path
+(`format_for_prompt()`) is confined to the Legacy Compatibility Bridge,
+confirmed not production-exercised today (same status, same reason, as
+the earlier-verified double-retrieval non-issue). The *write* path is
+live in K4.2 today, meaning the data this mechanism would surface is
+already accumulating even though nothing currently reads it back
+unscoped. If the bridge is ever exercised — a config change, a
+regression in the `use_k42_frontend`/`workflow_runtime` wiring, or a
+future caller constructing `Orchestrator` without a `workflow_runtime`
+— this becomes immediately live with no additional trigger required.
+
+### Severity / confidence
+
+Mechanism: **VERIFIED**, high confidence — direct source reading plus a
+reproducible test against the real class. Production exposure today:
+**NOT DEMONSTRATED** (dormant read path). Unlike CTX-AUTH-001 or
+CTX-CACHE-001, this needs no adversarial input at all, only two
+unrelated organic interactions — if the dormant path is ever activated,
+severity should be treated as higher than CTX-AUTH-001's, not lower,
+precisely because it requires nothing to go wrong on the attacker's
+side.
+
+### Future mitigation (not selected here)
+
+- A scope parameter threaded through `save()`/`last_n()`/
+  `format_for_prompt()` and the underlying `turns` table.
+- Reconciling `ContextMemory` as a third persistence subsystem against
+  `UnifiedMemory` generally, rather than patching this one symptom in
+  isolation — see the path audit's architecture section.
+
+### Residual risk
+
+Even scoped correctly, raw verbatim turn injection with no provenance
+carries the same authority/data conflation risk as CTX-AUTH-001 if the
+bridge is ever activated — scoping alone does not address that
+separately-tracked gap.
+
+### Related Context Compiler requirements
+
+Same as CTX-AUTH-001's — this is the same underlying class of gap
+(structured/scoped materialization missing at a consumer boundary),
+found at a second, independent subsystem.
+
+---
+
+## CTX-CACHE-001 — Prompt Cache Key Collision via Lossy Pre-Hash Compression
+
+**Status:** VERIFIED CURRENT GAP (empirical reproduction against the
+real function; confirmed live in production's LLM-call path)
+
+**Affected component:** `core/prompt/cache.py::cached_generate`,
+called unconditionally from `core/provider_mesh.py::generate_with_fallback`
+("ALL calls go through the prompt cache before hitting the backend," per
+that function's own docstring) — the same entry point
+`core/cognitive/intent.py::generate_hypotheses()` and other K4.2 LLM
+calls use.
+
+**Affected boundary:** Cache-key correctness — the key is computed over
+a lossy view of its input, not the input itself
+
+**Affected data:** Any LLM response cached and later returned for an
+unrelated request
+
+### Precondition
+
+None required. No adversarial input. Two organically different prompts
+that both exceed 500 words and happen to share the same first-250/
+last-250 words are sufficient — a realistic shape for the Intent
+Hypothesis template specifically, since retrieved context sits in the
+middle, between a fixed header and a fixed footer.
+
+### Mechanism
+
+```
+prompt (>500 words, genuinely different from another prompt only in
+   its middle section)
+        ↓
+compress_context(prompt, max_words=500)
+   -- keeps first 250 words + " ... [COMPRESSED] ... " + last 250 words,
+      discards everything else
+        ↓
+sha256(compressed) used as the cache key
+        ↓
+two genuinely different prompts sharing head/tail hash identically
+        ↓
+second caller silently receives the first caller's cached response
+```
+
+### Current controls
+
+None on the read/collision side. On the write side: `cached_generate()`
+has no exception handling around `provider.generate()`, so a raised
+error correctly skips the cache write — errors are not cached. A
+secondary, smaller issue: an empty-string response *would* be cached
+before `generate_with_fallback()`'s own separate empty-response check
+rejects it (that check runs in the caller, after `cached_generate()`
+has already written the cache) — noted, not treated as part of this
+finding's core mechanism.
+
+### Evidence
+
+`core/prompt/cache.py` — full `cached_generate`/`compress_context`
+implementation. `core/provider_mesh.py:150-205` — confirms the
+unconditional routing and the exact call site.
+
+### Reproduction
+
+`tests/test_prompt_cache_security.py`:
+- `TestCtxCache001Collision::test_prompts_differing_only_in_compressed_middle_do_not_collide`
+  — **FAILS**. Two 501-word prompts, confirmed non-identical, sharing
+  head/tail: the second collides with the first's cached response.
+- `TestBenignShortPromptBaseline` (both cases) — **PASSES**. Short
+  prompts (under the 500-word threshold) don't collide, and identical
+  prompts correctly reuse the cache (confirms this is a real,
+  functioning cache being tested, not something accidentally disabled).
+
+### Blast radius
+
+Confirmed live and unconditional in the production LLM-call path used
+by K4.2. Not yet traced: whether the specific shape required (>500-word
+prompts sharing 250-word head/tail) occurs in practice for real Intent
+Hypothesis prompts under typical retrieved-context sizes — flagged as
+open, not assumed either way.
+
+### Severity / confidence
+
+Mechanism: **VERIFIED**, high confidence, empirically reproduced twice
+(structural finding, then confirmed against the real function with a
+differential control isolating the exact 500-word threshold as the
+cause). Real-world trigger frequency: **UNKNOWN** — depends on
+prompt-length distribution in actual production traffic, not measured
+in this phase.
+
+### Future mitigation (not selected here)
+
+- Hash the full prompt, not a lossy compressed view of it.
+- If compression before hashing remains desired for cost reasons,
+  ensure the key still reflects the full input (e.g. hash-then-compress
+  rather than compress-then-hash).
+- Reconcile with `core/runtime/efficiency.py::PromptCache` — a second,
+  entirely separate prompt-caching implementation found during this
+  audit with zero live callers anywhere in the repository (dead code,
+  not a current risk, but debt worth resolving alongside this fix
+  rather than leaving two parallel implementations, matching the
+  already-tracked DEBT-016 pattern for `ExecutionWatchdog`/
+  `ProgressMonitor`).
+
+### Residual risk
+
+None identified beyond the fix itself — this is a pure correctness/
+cache-key-construction issue, not one where the underlying feature
+(caching LLM responses) carries inherent residual risk once fixed.
+
+### Related Context Compiler requirements
+
+Feeds the Context Compiler's dependency-aware cache identity and
+invalidation requirements directly — a cache key must be a function of
+everything the cached value actually depends on, not a lossy proxy for
+it.
+
+---
+
 ## Stale documentation (tracked separately, not part of CTX-AUTH-001)
 
 `core/orchestrator.py`'s explanatory comment (~line 202) claims
