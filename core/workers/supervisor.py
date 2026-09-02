@@ -184,9 +184,10 @@ class SupervisorWorker(AbstractCognitiveWorker):
         Also requires context.parameters["retry_worker_type"] (the
         worker_type string to re-invoke) and, optionally,
         context.parameters["retry_parameters"] (threaded through to the
-        retried worker's own WorkerContext.parameters via
-        ExecutionContext.metadata["parameters"] —
-        core/runtime/execution_context.py's to_worker_context() bridge).
+        retried worker's own ExecutionContext.parameters bridge property,
+        which reads metadata["parameters"] — ADR-KERNEL-01; the retried
+        worker receives ExecutionContext directly, not a converted
+        WorkerContext).
 
         Neither input given: WorkerResult(success=True, outcome="no_action").
         """
@@ -296,9 +297,11 @@ class SupervisorWorker(AbstractCognitiveWorker):
 
         retry_parameters = context.parameters.get("retry_parameters", {})
         # ExecutionRuntime.invoke() has no `parameters` kwarg directly —
-        # ExecutionContext.to_worker_context() reads
-        # metadata["parameters"] into WorkerContext.parameters (confirmed
-        # by reading core/runtime/execution_context.py directly).
+        # pass it via metadata={"parameters": ...}; the retried worker
+        # reads it back via ExecutionContext.parameters (bridge property
+        # over metadata["parameters"] — ADR-KERNEL-01). The worker
+        # receives ExecutionContext directly; no WorkerContext conversion
+        # occurs anywhere in this path.
         retry_result: WorkerResult = await self._execution_runtime.invoke(
             retry_worker_type,
             query=context.query,

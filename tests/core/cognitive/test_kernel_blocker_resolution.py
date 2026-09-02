@@ -106,6 +106,157 @@ class TestRootOperationIdSurvivesCognitionToCompilation:
         assert not hasattr(workflow.nodes[0], "root_operation_id")
 
 
+class TestRootOperationIdSurvivesRecoveryReplan:
+    """Corrects a claim ADR-KERNEL-01 made without fully tracing the code:
+    it stated the Orchestrator's re-plan loop "creates a fresh Goal()" on
+    recovery. Direct tracing (this session) found otherwise: the only
+    Goal() construction site in the entire codebase is
+    core/cognitive/intent.py's form_goals(), called exactly once per
+    handle() invocation (core/orchestrator.py, single call site,
+    confirmed by grep). The impasse re-plan loop (core/orchestrator.py
+    lines ~368-397) re-invokes plan() with the SAME PlannerRequest --
+    built from the SAME Goal object -- on every retry; it does not touch
+    Goal formation at all. root_operation_id is therefore already,
+    trivially preserved across every current replan iteration, because
+    it is the literal same Python object, not a value that needs
+    explicit re-propagation.
+
+    This test proves that trivial preservation observably, against the
+    real orchestrator path (not a mock of the identity logic itself),
+    and exists specifically as regression protection: if a future change
+    ever introduces a second Goal() construction into this loop, this
+    test is what would catch it losing root_operation_id.
+    """
+
+    @pytest.mark.asyncio
+    async def test_every_plan_call_across_an_impasse_retry_sees_the_same_root_operation_id(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from core.cognitive.compiler import CompilationResult, CompilationStatus
+        from core.cognitive.planner import PlannerResult, PlannerStatus
+        from core.context import ContextMemory
+        from core.governance.governance_kernel import GovernanceResult
+        from core.model_router import RouteResult
+        from core.orchestrator import Orchestrator
+        from core.memory.unified_memory import UnifiedMemory
+
+        memory = AsyncMock(spec=UnifiedMemory)
+        context = MagicMock(spec=ContextMemory)
+        router = MagicMock()
+        router.route = AsyncMock(return_value=RouteResult(answer="unused", source="mock"))
+        governance = MagicMock()
+        governance.evaluate_action = MagicMock(return_value=GovernanceResult())
+        event_stream = AsyncMock()
+        execution_runtime = AsyncMock()
+        workflow_runtime = MagicMock()
+        capability_registry = MagicMock()
+
+        orch = Orchestrator(
+            modules={}, context=context, router=router, memory=memory,
+            governance=governance, event_stream=event_stream,
+            execution_runtime=execution_runtime, workflow_runtime=workflow_runtime,
+            capability_registry=capability_registry,
+            use_k42_frontend=True, max_recovery_attempts=5,
+        )
+
+        goal = Goal(resource_id="g1",
+                     structured_form={"description": "test", "raw_request": "test"})
+        original_root_op_id = goal.root_operation_id
+        assert original_root_op_id  # sanity: Goal() really does generate one
+
+        seen_root_operation_ids = []
+
+        async def _plan_spy(planner_request, *args, **kwargs):
+            seen_root_operation_ids.append(planner_request.goal.root_operation_id)
+            call_number = len(seen_root_operation_ids)
+            if call_number < 3:
+                return PlannerResult(status=PlannerStatus.IMPASSE, operation_id=f"op-{call_number}")
+            return PlannerResult(
+                status=PlannerStatus.READY_FOR_COMPILATION,
+                execution_plan=ExecutionPlan(goal_id="g1", root_operation_id=planner_request.goal.root_operation_id),
+                operation_id=f"op-{call_number}",
+            )
+
+        with patch("core.cognitive.intent.interpret_request",
+                    new=AsyncMock(return_value=[goal])), \
+             patch("core.cognitive.planner.plan", new=AsyncMock(side_effect=_plan_spy)), \
+             patch("core.cognitive.compiler.compile", new=AsyncMock(
+                 return_value=CompilationResult(status=CompilationStatus.REJECTED))):
+            await orch.handle("a request that impasses twice then succeeds")
+
+        assert len(seen_root_operation_ids) == 3, (
+            "expected exactly 3 plan() calls (2 impasses + 1 success); "
+            "got a different count, so this test is not exercising the "
+            "retry loop it claims to"
+        )
+        assert all(rid == original_root_op_id for rid in seen_root_operation_ids), (
+            f"root_operation_id changed across the retry loop: "
+            f"{seen_root_operation_ids} -- the SAME Goal object must "
+            f"produce the SAME root_operation_id on every plan() "
+            f"invocation within one handle() call"
+        )
+
+    @pytest.mark.asyncio
+    async def test_two_separate_handle_calls_get_different_root_operation_ids(self):
+        """The complement of the above: two INDEPENDENT operations (two
+        separate handle() calls, each forming its own Goal via
+        interpret_request()) must NOT share a root_operation_id, even
+        when nothing else distinguishes them (I11: concurrency
+        isolation)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from core.cognitive.compiler import CompilationResult, CompilationStatus
+        from core.cognitive.planner import PlannerResult, PlannerStatus
+        from core.context import ContextMemory
+        from core.governance.governance_kernel import GovernanceResult
+        from core.model_router import RouteResult
+        from core.orchestrator import Orchestrator
+        from core.memory.unified_memory import UnifiedMemory
+
+        memory = AsyncMock(spec=UnifiedMemory)
+        context = MagicMock(spec=ContextMemory)
+        router = MagicMock()
+        router.route = AsyncMock(return_value=RouteResult(answer="unused", source="mock"))
+        governance = MagicMock()
+        governance.evaluate_action = MagicMock(return_value=GovernanceResult())
+        event_stream = AsyncMock()
+        execution_runtime = AsyncMock()
+        workflow_runtime = MagicMock()
+        capability_registry = MagicMock()
+
+        orch = Orchestrator(
+            modules={}, context=context, router=router, memory=memory,
+            governance=governance, event_stream=event_stream,
+            execution_runtime=execution_runtime, workflow_runtime=workflow_runtime,
+            capability_registry=capability_registry,
+            use_k42_frontend=True, max_recovery_attempts=5,
+        )
+
+        seen_root_operation_ids = []
+
+        async def _plan_spy(planner_request, *args, **kwargs):
+            seen_root_operation_ids.append(planner_request.goal.root_operation_id)
+            return PlannerResult(
+                status=PlannerStatus.READY_FOR_COMPILATION,
+                execution_plan=ExecutionPlan(goal_id=planner_request.goal.resource_id),
+                operation_id="op-x",
+            )
+
+        for i in range(2):
+            goal = Goal(resource_id=f"g{i}",
+                         structured_form={"description": "test", "raw_request": "test"})
+            with patch("core.cognitive.intent.interpret_request",
+                        new=AsyncMock(return_value=[goal])), \
+                 patch("core.cognitive.planner.plan", new=AsyncMock(side_effect=_plan_spy)), \
+                 patch("core.cognitive.compiler.compile", new=AsyncMock(
+                     return_value=CompilationResult(status=CompilationStatus.REJECTED))):
+                await orch.handle(f"independent request {i}")
+
+        assert len(seen_root_operation_ids) == 2
+        assert seen_root_operation_ids[0] != seen_root_operation_ids[1], (
+            "two independent handle() calls produced the same "
+            "root_operation_id -- I11 concurrency isolation violated"
+        )
+
+
 class TestAttemptIdentityDistinctFromRetryCount:
     """I3/I6: a bare `attempts` counter cannot serve as a stable,
     opaque attempt identity -- "attempt #2" before a restart and
