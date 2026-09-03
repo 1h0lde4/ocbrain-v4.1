@@ -471,6 +471,61 @@ it.
 
 ---
 
+## CTX-DELETE-001 — Silent L1 Deletion Failure Reported as Success
+
+**Status:** VERIFIED CURRENT GAP (docstring-vs-code discrepancy,
+empirically reproduced)
+
+**Affected component:** `core/memory/unified_memory.py::UnifiedMemory.delete()`,
+step 7 (L1 storage removal)
+
+**Affected boundary:** Correctness/reliability — a caller cannot trust
+the function's own documented return-value contract
+
+Full narrative, evidence, and surrounding context (the deprecated-vs-
+deleted distinction, the graph-traversal exclusion asymmetry, L4
+archive-as-retention) live in
+`docs/research/context-engineering/revocation-deletion-retention-audit.md`.
+This entry exists for numbering consistency with the other findings in
+this document.
+
+### Mechanism
+
+`delete()`'s own docstring: "L1 removal (step 7) is the authoritative
+deletion; if it fails, `False` is returned." The actual code wraps step
+7 in a bare try/except that only logs a warning, with no `return False`
+in the except block; steps 8-9 run unconditionally afterward, and the
+function falls through to an unconditional `return True`.
+
+### Reproduction
+
+`tests/test_unified_memory.py::TestUnifiedMemoryDelete::
+test_delete_returns_false_when_l1_storage_deletion_fails` — **FAILS**.
+Monkey-patches `memory._storage.delete` to raise, calls `delete()`,
+asserts `False` — gets `True`. `76 passed, 1 failed` on the full
+existing `test_unified_memory.py` suite; zero collateral breakage.
+Notably, an existing test (`test_delete_archives_before_removal`)
+carries a docstring making the same "even if L1 fails" claim but never
+actually exercises that failure path — this was a real, previously-
+undetected gap in test coverage, not a duplicate.
+
+### Severity / confidence
+
+VERIFIED, high confidence — direct docstring-vs-code comparison plus a
+reproducible test. Real-world impact depends on how often `_storage.delete()`
+actually raises in production (not measured in this phase) — but the
+core issue is that the function's contract cannot currently be trusted
+regardless of frequency.
+
+### Future mitigation (not selected here)
+
+Either fix the code to match the docstring (`return False` on L1
+failure), or fix the docstring to match the code and have the caller
+independently verify deletion if that guarantee matters to them. Not
+decided here.
+
+---
+
 ## Stale documentation (tracked separately, not part of CTX-AUTH-001)
 
 `core/orchestrator.py`'s explanatory comment (~line 202) claims
