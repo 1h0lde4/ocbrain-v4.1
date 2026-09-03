@@ -1253,7 +1253,33 @@ Every major abstraction must justify its existence.
 
 ---
 
-## 20.6 Systems Thinking Requirements
+## 20.6 Evidence-First Reconciliation
+
+Prior architectural claims — a prior session's ADR, a carried-over summary, a governing prompt's stated premise, or this document's own text — are hypotheses. Current code, current tests, and a freshly traced execution path are the authority.
+
+When a claim about the system's current state cannot be directly verified in this session, do not repeat it as fact. Trace it:
+
+```text
+carried claim
+  ↓
+fresh trace against source, tests, or an executed path
+  ↓
+evidence confirms, contradicts, or partially confirms the claim
+  ↓
+correct the architecture/documentation to match the evidence
+  ↓
+change code only if the code itself is what's wrong
+```
+
+A claim that survives this process becomes evidence for the next session. A claim that does not survive it must be corrected explicitly — struck through or annotated in place, never silently rewritten — so the correction is itself part of the audit trail.
+
+This applies with equal force to prior ADRs and architecture documents, prior session summaries and carried context, a governing prompt's own stated premises, and this agent's own earlier conclusions within the same session. No source is exempt merely because it is recent, authoritative-sounding, or already acted upon.
+
+Finding a carried claim wrong is not a failure of the session that finds it. Implementing a fix for a problem the evidence does not support is the actual failure this section exists to prevent.
+
+---
+
+## 20.7 Systems Thinking Requirements
 
 All implementations must consider:
 
@@ -1275,7 +1301,7 @@ The system must remain coherent as complexity increases.
 
 ---
 
-## 20.7 Autonomous Coding Constraints
+## 20.8 Autonomous Coding Constraints
 
 AI coding agents may:
 
@@ -1297,7 +1323,7 @@ AI coding agents may NOT:
 
 ---
 
-## 20.8 Preferred Engineering Style
+## 20.9 Preferred Engineering Style
 
 Preferred engineering style:
 
@@ -1324,7 +1350,7 @@ prototype-quality infrastructure
 
 ---
 
-## 20.9 Definition of "Done"
+## 20.10 Definition of "Done"
 
 A feature is NOT complete when it merely works.
 
@@ -1343,7 +1369,7 @@ A feature is complete only when:
 
 ---
 
-## 20.10 Prime Directive
+## 20.11 Prime Directive
 
 The AI must operate like a world-class principal engineer designing critical cognitive infrastructure.
 
