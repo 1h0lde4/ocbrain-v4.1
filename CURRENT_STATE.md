@@ -116,6 +116,12 @@ All persistent memory mutations (write, update, delete) are governed before any 
 
 ---
 
+## Verification / Critic / Evidence System
+
+**Not yet on `main`.** Exists on branch `feature/verification-critic-evidence-phase-c` (commit `a4eddc4`, pushed Sept 4, 2026): `core/verification/{identity,epistemic,evidence,verdict,receipt}.py`, matching the frozen `docs/architecture/verification-critic-evidence-system-architecture-v3-final.md` — compositional `VerificationBasis`, scoped `VerificationAssurance`, structural circular-evidence rejection, `UNVERIFIABLE`-only-on-verifier-crash enforced in `verdict.py`'s `__post_init__` (not just documented), immutable receipts with supersession lineage. **Confirmed working:** 12/12 tests pass both via pytest (`tests/test_verification_contracts.py`, this repo's actual convention per `tests/conftest.py`) and a standalone stdlib mirror (`tests/verification_run_tests_stdlib.py`) — both fixed this session (a hardcoded sandbox path from the originating session, `/home/claude/phase-c`, would have broken both on any other machine). Confirmed no regression: this addition introduces none of the 47 pre-existing full-suite collection errors (all missing third-party packages — `chromadb`/`datasketch`/`httpx`/`pytest_asyncio`/`tomli_w` — identical on `main` before this branch existed). **Confirmed still absent:** any code anywhere that actually calls into `core/verification/` — this is contracts only, unwired into `EvaluatorWorker`, `WorkflowRuntime`, or anywhere else. `core/workers/evaluator.py` (298 lines) diffed against `main` as part of this work: measurement-only as the architecture assumed, its caller-supplied-parameter fallback confirmed present and unchanged — `evaluator.py`'s own deliberate, documented design for its own purpose, not something this needed to touch (`docs/architecture/verification-critic-evidence-system-architecture-v2-frozen.md` §30 already requires Verification to treat `EvaluatorWorker` output as contextual, never authoritative, regardless of whether that fallback exists). Roughly 75 of ~90 named Phase C contract types remain unbuilt — see `KNOWN_ISSUES.md` DEBT-018. Gated on Kernel v1.0 freeze and post-C-MoE per the Aug 21–29 Reality Synchronization entries above — not itself a freeze blocker.
+
+---
+
 ## Capability Adapters
 
 3 adapters registered for `CapabilityType.LLM_COMPLETION`:
