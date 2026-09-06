@@ -31,7 +31,7 @@ from core.runtime.execution_budget import ExecutionBudget
 from core.runtime.execution_graph import ExecutionStatus
 from core.runtime.execution_graph import execution_registry
 from core.runtime.progress import ProgressMonitor
-from core.runtime.watchdog import ExecutionWatchdog
+from core.runtime.watchdog import GraphExecutionWatchdog
 from core.runtime.working_memory import WorkingMemory
 from core.workers.base import WorkerResult
 from core.workflow.definition import (
@@ -129,6 +129,32 @@ class WorkflowRuntime:
         self._total_failures: int = 0
         logger.info("WorkflowRuntime initialized")
 
+    @staticmethod
+    def default_budget_for(query: str) -> ExecutionBudget:
+        """The ExecutionBudget used for a workflow execution when the
+        caller doesn't supply one via metadata["execution_budget"].
+
+        Extracted as its own method (previously inline in execute()) so
+        the absolute_ceiling_s / hard_ceiling_s relationship is directly
+        unit-testable — see tests/test_workflow_runtime.py
+        TestWorkflowRuntimeWatchdogReconciliation. absolute_ceiling_s must
+        exceed hard_ceiling_s, not equal it: ExecutionBudget.grant_extension()
+        clamps to (absolute_ceiling_s - hard_ceiling_s), so equal values
+        silently make every extension request a no-op regardless of
+        max_extension_s — a real bug found while tracing DEBT-016
+        (ADR-KERNEL-02); this method is the fix.
+        """
+        word_count = len(query.split())
+        hard_ceiling = 600.0 if word_count >= 500 else 300.0
+        max_extension = 240.0
+        return ExecutionBudget(
+            startup_deadline_s=10.0,
+            progress_deadline_s=45.0,
+            hard_ceiling_s=hard_ceiling,
+            absolute_ceiling_s=hard_ceiling + max_extension,
+            max_extension_s=max_extension,
+        )
+
     async def execute(
         self,
         definition: WorkflowDefinition,
@@ -175,16 +201,8 @@ class WorkflowRuntime:
         monitor = ProgressMonitor(graph, self._event_stream)
         budget = (metadata or {}).get("execution_budget")
         if not isinstance(budget, ExecutionBudget):
-            word_count = len(query.split())
-            hard_ceiling = 600.0 if word_count >= 500 else 300.0
-            budget = ExecutionBudget(
-                startup_deadline_s=10.0,
-                progress_deadline_s=45.0,
-                hard_ceiling_s=hard_ceiling,
-                absolute_ceiling_s=hard_ceiling,
-                max_extension_s=240.0,
-            )
-        watchdog = ExecutionWatchdog(graph, budget, cancel_token, monitor)
+            budget = self.default_budget_for(query)
+        watchdog = GraphExecutionWatchdog(graph, budget, cancel_token, monitor)
         await monitor.record_status(
             graph.root.node_id, ExecutionStatus.RUNNING,
             summary="Execution started", current_action="Preparing execution",

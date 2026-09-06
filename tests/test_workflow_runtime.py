@@ -37,6 +37,7 @@ from core.workflow.runtime import WorkflowRuntime, WorkflowResult
 from core.runtime.worker_registry import WorkerRegistry
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.runtime.cancellation import CancellationToken
+from core.runtime.execution_budget import ExecutionBudget
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.governance.governance_kernel import get_governance_kernel
 from core.events.event_stream import get_event_stream
@@ -89,6 +90,32 @@ class FlakyNodeWorker(AbstractCognitiveWorker):
     @classmethod
     def reset(cls):
         cls.attempts = 0
+
+
+class SlowNodeWorker(AbstractCognitiveWorker):
+    """Sleeps in small increments, cooperatively checking cancellation
+    between them, without ever reporting intermediate progress -- the
+    exact shape that used to defeat the graph-aware watchdog (DEBT-016 /
+    ADR-KERNEL-02): a node that's genuinely running, but never calls
+    report_progress(), so the only sign of life the watchdog can observe
+    is the RUNNING status touch from when it started.
+
+    Checks the token itself because ExecutionRuntime.invoke() does not
+    forcibly preempt a running worker -- cancellation in this architecture
+    is cooperative, not enforced (see core/runtime/cancellation.py); a
+    well-behaved worker is expected to notice and stop."""
+    worker_type = "SlowNodeWorker"
+
+    async def _run(self, context: WorkerContext) -> WorkerResult:
+        seconds = (context.metadata or {}).get("sleep_s", 1.0)
+        step = 0.02
+        elapsed = 0.0
+        while elapsed < seconds:
+            if context.cancellation_token is not None and context.cancellation_token.is_cancelled:
+                return WorkerResult(success=False, error="cancelled mid-sleep")
+            await asyncio.sleep(step)
+            elapsed += step
+        return WorkerResult(success=True, output="finally done")
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
@@ -349,6 +376,72 @@ class TestWorkflowRuntimeCancellation:
         token = CancellationToken()
         token.cancel("test cancellation")
         result = await runtime.execute(d, query="hi", cancellation_token=token)
+        assert result.success is False
+
+
+class TestWorkflowRuntimeWatchdogReconciliation:
+    """DEBT-016 / ADR-KERNEL-02: the graph-aware watchdog (used by every
+    WorkflowRuntime.execute() call, the K4.2 default path) used to only
+    ever *record* a stalled node, never attempt bounded recovery, and
+    never cancel because of a stall (only via an unrelated hard-ceiling
+    check). These exercise the fix through the real execute() path, not
+    just the isolated watchdog unit tests in test_execution_inspection.py.
+    """
+
+    def test_default_budget_has_real_extension_headroom(self):
+        budget = WorkflowRuntime.default_budget_for("hi")
+        # This is the exact bug: absolute_ceiling_s used to equal
+        # hard_ceiling_s, which makes grant_extension() structurally
+        # incapable of granting anything (its own clamp is
+        # min(seconds, absolute_ceiling_s - hard_ceiling_s)) regardless of
+        # what max_extension_s claims. A regression here silently disables
+        # every stall-recovery attempt on the default path.
+        assert budget.absolute_ceiling_s > budget.hard_ceiling_s
+        assert budget.max_extension_s > 0
+        assert budget.grant_extension(budget.max_extension_s) is True
+
+    @pytest.mark.asyncio
+    async def test_stalled_node_recovers_via_extension_and_completes(self):
+        runtime = _make_workflow_runtime(SlowNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-slow-ok",
+            nodes=[WorkflowNode(node_id="a", worker_type="SlowNodeWorker")],
+            entry_node="a",
+        )
+        # Sleeps past progress_deadline_s (stall detected, extension
+        # granted) but well within hard_ceiling_s + the granted extension
+        # -- the workflow should still succeed, having been given more
+        # time rather than given up at the first sign of silence.
+        budget = ExecutionBudget(
+            startup_deadline_s=0.2, progress_deadline_s=0.2,
+            hard_ceiling_s=0.3, absolute_ceiling_s=2.0, max_extension_s=1.5,
+        )
+        result = await runtime.execute(
+            d, query="hi", metadata={"sleep_s": 0.6, "execution_budget": budget},
+        )
+        assert result.success is True
+        assert result.node_results["a"].output == "finally done"
+
+    @pytest.mark.asyncio
+    async def test_stalled_node_beyond_extension_is_cancelled_not_silently_stuck(self):
+        runtime = _make_workflow_runtime(SlowNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-slow-fail",
+            nodes=[WorkflowNode(node_id="a", worker_type="SlowNodeWorker")],
+            entry_node="a",
+        )
+        # Sleeps well beyond hard_ceiling_s + the one available extension:
+        # before DEBT-016, this would have been marked "stalled" and left
+        # to run for the full (much larger) default hard ceiling with no
+        # consequence. Here it must actually fail, promptly, once the
+        # bounded extension is exhausted.
+        budget = ExecutionBudget(
+            startup_deadline_s=0.1, progress_deadline_s=0.1,
+            hard_ceiling_s=0.2, absolute_ceiling_s=0.4, max_extension_s=0.2,
+        )
+        result = await runtime.execute(
+            d, query="hi", metadata={"sleep_s": 5.0, "execution_budget": budget},
+        )
         assert result.success is False
 
 
