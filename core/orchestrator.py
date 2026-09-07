@@ -507,7 +507,7 @@ class Orchestrator:
                     # conversational continuity, while every K2.2-processed
                     # query is not. This mirrors PlannerWorker's own pattern
                     # exactly, including non-blocking failure handling.
-                    self.context.save(query, capability_types, answer, {})
+                    self.context.save(query, capability_types, answer, {}, scope=execution_id)
                     try:
                         await self.memory.write(
                             content=answer,
@@ -723,7 +723,7 @@ class Orchestrator:
                     "languages": parsed.entities.get("languages", []),
                     "filenames": parsed.entities.get("filenames", []),
                 }
-                self.context.save(query, modules_used, answer, entities)
+                self.context.save(query, modules_used, answer, entities, scope=execution_id)
 
                 # 6b. Persist interaction to UnifiedMemory.
                 #
