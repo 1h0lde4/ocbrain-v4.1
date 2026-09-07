@@ -68,6 +68,76 @@ class WorkflowNodeState:
     started_at: float = 0.0
     completed_at: float = 0.0
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Checkpoint-safe serialization (DEBT-003, ADR-KERNEL-03).
+
+        NodeStatus is a plain Enum (not str-subclassed, unlike
+        watchdog_decision.WatchdogVerdict/CancelReason) -- .value is
+        extracted explicitly rather than relying on json.dumps's
+        default=str fallback, which would instead produce the unparseable
+        "NodeStatus.PENDING" rather than "pending".
+        """
+        return {
+            "node_id": self.node_id,
+            "status": self.status.value,
+            "result": _worker_result_to_dict(self.result),
+            "attempts": self.attempts,
+            "attempt_id": self.attempt_id,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowNodeState":
+        return cls(
+            node_id=data.get("node_id", ""),
+            status=NodeStatus(data.get("status", NodeStatus.PENDING.value)),
+            result=_worker_result_from_dict(data.get("result")),
+            attempts=data.get("attempts", 0),
+            attempt_id=data.get("attempt_id", ""),
+            started_at=data.get("started_at", 0.0),
+            completed_at=data.get("completed_at", 0.0),
+        )
+
+
+def _worker_result_to_dict(result: Optional[WorkerResult]) -> Optional[Dict[str, Any]]:
+    if result is None:
+        return None
+    return {
+        "success": result.success,
+        "output": result.output,
+        "error": result.error,
+        "artifacts": result.artifacts,
+        "events_emitted": result.events_emitted,
+        "duration_ms": result.duration_ms,
+        "metadata": result.metadata,
+        # execution_detail (K4.4's structured ExecutionOutcome) is
+        # deliberately NOT restored on resume -- see ADR-KERNEL-03 "What
+        # was explicitly not done". A resumed node's cached result reports
+        # success/output/error/artifacts/metadata faithfully; the original
+        # attempt's detailed failure classification (FailureType, provider,
+        # watchdog_verdict, etc.) is not reconstructed. Round-tripping it
+        # would mean either serializing the whole nested ExecutionOutcome
+        # (a second, parallel checkpoint schema to keep in sync with that
+        # module) or reconstructing it partially and risking a
+        # not-quite-right object being mistaken for the original --
+        # returning None here is the honest choice, not a silent gap.
+    }
+
+
+def _worker_result_from_dict(data: Optional[Dict[str, Any]]) -> Optional[WorkerResult]:
+    if data is None:
+        return None
+    return WorkerResult(
+        success=data.get("success", False),
+        output=data.get("output"),
+        error=data.get("error", ""),
+        artifacts=data.get("artifacts") or {},
+        events_emitted=data.get("events_emitted", 0),
+        duration_ms=data.get("duration_ms", 0.0),
+        metadata=data.get("metadata") or {},
+    )
+
 
 @dataclass
 class WorkflowResult:
@@ -164,20 +234,11 @@ class WorkflowRuntime:
         metadata: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[CancellationToken] = None,
     ) -> WorkflowResult:
-        """Execute a workflow definition.
+        """Execute a workflow definition from the start.
 
         Architecture:
             KERNEL_ARCHITECTURE_v1.0.md §8 — Workflow Model.
             Failure Containment principle: never raises.
-
-        Lifecycle:
-            1. Validate workflow definition
-            2. Create instance state
-            3. Execute nodes in DAG order starting from entry_node
-            4. For each node: invoke via ExecutionRuntime with retry
-            5. On failure: route to error_branch if defined
-            6. Aggregate results into WorkflowResult
-            7. Emit workflow events
 
         Args:
             definition: The workflow DAG to execute.
@@ -189,9 +250,170 @@ class WorkflowRuntime:
         Returns:
             WorkflowResult — always. Never raises.
         """
+        instance_id = str(uuid.uuid4())
+        node_states: Dict[str, WorkflowNodeState] = {
+            node.node_id: WorkflowNodeState(node_id=node.node_id)
+            for node in definition.nodes
+        }
+        return await self._run(
+            definition, instance_id, node_states, {},
+            query=query, session_id=session_id, metadata=metadata,
+            cancellation_token=cancellation_token,
+        )
+
+    async def resume(
+        self,
+        definition: WorkflowDefinition,
+        instance_id: str,
+        *,
+        query: str = "",
+        session_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        cancellation_token: Optional[CancellationToken] = None,
+    ) -> WorkflowResult:
+        """Resume a previously-interrupted execution from its last checkpoint.
+
+        DEBT-003 / ADR-KERNEL-03: WorkflowRuntime.execute() checkpoints
+        node_states after every node boundary (via _save_checkpoint, called
+        from _execute_from). This loads the most recent checkpoint for
+        `instance_id`, reconstructs node_states/node_results from it, and
+        re-enters the same DAG traversal _run()/_execute_from() already
+        use for a fresh execute() call -- already-COMPLETED/FAILED nodes
+        are skipped (their cached result is reused, not re-run) purely as
+        a consequence of _execute_from's existing
+        `if state.status != PENDING: return cached result` check; nothing
+        node-traversal-specific needed to be added for that to work.
+
+        Safety-critical exception: a node whose last known status was
+        RUNNING (or the not-currently-reachable CANCELLED) is reset to
+        PENDING and re-executed from scratch, never resumed "in place".
+        Whether that node's underlying work actually finished before the
+        crash is unknowable from here, and this project's Verification
+        principle applies directly: a status of RUNNING is not evidence of
+        completion, so it must not be treated as one.
+
+        The ExecutionBudget is NOT restored from the checkpoint -- resume
+        always starts a fresh budget via default_budget_for(). Preserving
+        "remaining time across an unknown period of downtime" is
+        ambiguous (too strict if the process was down 2 seconds, too
+        lenient if it was down 2 hours) and is deliberately not attempted
+        here; the caller may still pass their own
+        metadata["execution_budget"], same as execute().
+
+        Known, accepted limitation, not a silent gap: re-executing a node
+        that already produced an external side effect before the crash
+        (e.g. sent an email, wrote a file) will repeat that side effect.
+        General side-effect idempotency is DEBT-015 sub-item (7),
+        explicitly deferred, proposed-only future architecture -- DEBT-003
+        solves durability of *state*, not idempotency of *effects*.
+
+        Returns:
+            WorkflowResult with success=False and a descriptive error (not
+            an exception) if no checkpoint exists for `instance_id`, or if
+            the checkpoint's workflow_id doesn't match `definition`.
+        """
+        checkpoint_name = self._checkpoint_name(instance_id)
+        checkpoint = await self._event_stream.get_checkpoint(checkpoint_name)
+        if checkpoint is None:
+            return WorkflowResult(
+                success=False, workflow_id=definition.workflow_id,
+                instance_id=instance_id,
+                error=f"No checkpoint found for instance '{instance_id}' -- cannot resume",
+            )
+
+        payload = checkpoint.payload or {}
+        checkpointed_workflow_id = payload.get("workflow_id")
+        if checkpointed_workflow_id != definition.workflow_id:
+            return WorkflowResult(
+                success=False, workflow_id=definition.workflow_id,
+                instance_id=instance_id,
+                error=(f"Checkpoint workflow_id mismatch: checkpoint is for "
+                       f"'{checkpointed_workflow_id}', definition given is "
+                       f"'{definition.workflow_id}'"),
+            )
+
+        node_states: Dict[str, WorkflowNodeState] = {}
+        node_results: Dict[str, WorkerResult] = {}
+        for node_id, state_data in payload.get("node_states", {}).items():
+            state = WorkflowNodeState.from_dict(state_data)
+            if state.status in (NodeStatus.RUNNING, NodeStatus.CANCELLED):
+                state.status = NodeStatus.PENDING
+                state.result = None
+            node_states[node_id] = state
+            if state.result is not None:
+                node_results[node_id] = state.result
+        # A node present in `definition` but absent from the checkpoint
+        # (e.g. the definition was extended since the crash) starts fresh.
+        for node in definition.nodes:
+            if node.node_id not in node_states:
+                node_states[node.node_id] = WorkflowNodeState(node_id=node.node_id)
+
+        return await self._run(
+            definition, instance_id, node_states, node_results,
+            query=query, session_id=session_id, metadata=metadata,
+            cancellation_token=cancellation_token,
+            resumed_from=checkpoint_name,
+        )
+
+    def _checkpoint_name(self, instance_id: str) -> str:
+        return f"workflow:{instance_id}"
+
+    async def _save_checkpoint(
+        self, instance_id: str, workflow_id: str,
+        node_states: Dict[str, WorkflowNodeState],
+    ) -> None:
+        """Best-effort durable checkpoint after a node boundary (DEBT-003).
+
+        Never raises: a checkpoint-write failure must not take down a
+        workflow that is otherwise executing correctly. This mirrors
+        _emit_event's existing failure-containment pattern in this same
+        class, not a new convention.
+        """
+        try:
+            await self._event_stream.create_checkpoint(
+                self._checkpoint_name(instance_id),
+                payload={
+                    "workflow_id": workflow_id,
+                    "instance_id": instance_id,
+                    "node_states": {nid: s.to_dict() for nid, s in node_states.items()},
+                    "saved_at": time.time(),
+                },
+            )
+        except Exception as e:
+            logger.warning("WorkflowRuntime: checkpoint write failed for "
+                            "instance '%s': %s", instance_id, e)
+
+    async def _run(
+        self,
+        definition: WorkflowDefinition,
+        instance_id: str,
+        node_states: Dict[str, WorkflowNodeState],
+        node_results: Dict[str, WorkerResult],
+        *,
+        query: str = "",
+        session_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        cancellation_token: Optional[CancellationToken] = None,
+        resumed_from: Optional[str] = None,
+    ) -> WorkflowResult:
+        """Shared execution engine behind both execute() and resume().
+
+        Lifecycle:
+            1. Validate workflow definition
+            2. Build/seed graph + watchdog for this instance
+            3. Emit workflow.started or workflow.resumed
+            4. Execute nodes in DAG order starting from entry_node
+               (already-COMPLETED/FAILED nodes in node_states are skipped
+               by _execute_from's own PENDING check -- see resume()'s
+               docstring)
+            5. Aggregate results into WorkflowResult
+            6. Emit workflow.completed
+
+        Returns:
+            WorkflowResult — always. Never raises.
+        """
         start_time = time.time()
         self._total_executions += 1
-        instance_id = str(uuid.uuid4())
         cancel_token = cancellation_token or CancellationToken()
         execution_id = (metadata or {}).get("execution_id") or instance_id
         graph = execution_registry.create(
@@ -205,7 +427,8 @@ class WorkflowRuntime:
         watchdog = GraphExecutionWatchdog(graph, budget, cancel_token, monitor)
         await monitor.record_status(
             graph.root.node_id, ExecutionStatus.RUNNING,
-            summary="Execution started", current_action="Preparing execution",
+            summary="Execution resumed" if resumed_from else "Execution started",
+            current_action="Preparing execution",
         )
         for workflow_node in definition.nodes:
             await graph.add_node(
@@ -214,6 +437,17 @@ class WorkflowRuntime:
                 operation_type="worker",
                 title=workflow_node.config.get("title", workflow_node.worker_type),
             )
+        if resumed_from:
+            # Seed the fresh ExecutionGraph (execution-inspection UI) so a
+            # resumed run doesn't misleadingly show every node as PENDING
+            # the instant it starts -- graph state here is purely a
+            # reporting surface, node_states above (not this) is what
+            # _execute_from actually reads to decide what to skip.
+            for node_id, state in node_states.items():
+                if state.status == NodeStatus.COMPLETED:
+                    await monitor.record_completion(node_id, summary="Restored from checkpoint")
+                elif state.status == NodeStatus.FAILED:
+                    await monitor.record_failure(node_id, (state.result.error if state.result else "") or "Restored from checkpoint (failed)")
         watchdog.start()
 
         # ── Step 1: Validate ─────────────────────────────────────────────
@@ -229,23 +463,21 @@ class WorkflowRuntime:
                 duration_ms=(time.time() - start_time) * 1000,
             )
 
-        # ── Step 2: Initialize instance state ────────────────────────────
-        node_states: Dict[str, WorkflowNodeState] = {
-            node.node_id: WorkflowNodeState(node_id=node.node_id)
-            for node in definition.nodes
-        }
-        node_results: Dict[str, WorkerResult] = {}
-
-        # ── Step 3: Emit workflow.started ─────────────────────────────────
-        await self._emit_event("workflow.started", {
+        # ── Step 2: Emit workflow.started / workflow.resumed ─────────────
+        await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
             "workflow_id": definition.workflow_id,
             "instance_id": instance_id,
             "name": definition.name,
             "entry_node": definition.entry_node,
             "node_count": len(definition.nodes),
+            **({"checkpoint": resumed_from,
+                "nodes_already_done": sum(
+                    1 for s in node_states.values()
+                    if s.status in (NodeStatus.COMPLETED, NodeStatus.FAILED))}
+               if resumed_from else {}),
         })
 
-        # ── Step 4: Execute DAG from entry_node ──────────────────────────
+        # ── Step 3: Execute DAG from entry_node ──────────────────────────
         run_metadata = {
             **(metadata or {}), "instance_id": instance_id,
             "execution_id": execution_id,
@@ -277,7 +509,7 @@ class WorkflowRuntime:
                 duration_ms=(time.time() - start_time) * 1000,
             )
 
-        # ── Step 5: Aggregate result ─────────────────────────────────────
+        # ── Step 4: Aggregate result ─────────────────────────────────────
         # Workflow success is defined by whether execution terminated along
         # a successful path -- i.e. the outcome of `last_result`, which is
         # whatever _execute_from actually returned last (it follows
@@ -331,7 +563,7 @@ class WorkflowRuntime:
                       "budget": budget},
         )
 
-        # ── Step 6: Emit workflow.completed ──────────────────────────────
+        # ── Step 5: Emit workflow.completed ──────────────────────────────
         await self._emit_event("workflow.completed", {
             "workflow_id": definition.workflow_id,
             "instance_id": instance_id,
@@ -353,11 +585,35 @@ class WorkflowRuntime:
         instance_id: str,
         metadata: Dict[str, Any],
         cancel_token: CancellationToken,
+        visited: Optional[set] = None,
     ) -> Optional[WorkerResult]:
         """Execute a node and its successors recursively.
 
+        `visited` tracks which nodes THIS traversal (this one top-level
+        call to _run(), including everything it recurses into) has already
+        passed through -- defaults to a fresh empty set on the outermost
+        call. This is a different question from `state.status !=
+        PENDING`, and conflating them was a real bug (found by this
+        session's own tests, DEBT-003 / ADR-KERNEL-03): a diamond-shaped
+        DAG (A -> B, A -> C, B -> D, C -> D) correctly reaches D twice in
+        one traversal -- once via B (where D actually executes and then
+        recurses into D's own successors) and once via C (where D must
+        short-circuit, since D's successors were already reached via the
+        B path, and running them again would be wrong). But
+        checkpoint-restored resume (resume(), below) starts some nodes
+        already marked COMPLETED without this traversal ever having
+        visited them -- their `state.status != PENDING` alone looks
+        identical to "already handled this traversal," so the old code
+        returned the cached result and stopped, silently never visiting
+        that node's successors at all. `visited` disambiguates the two: a
+        node not yet in `visited` gets its successors walked regardless of
+        whether it needed fresh execution or was already done: only a
+        SECOND encounter within the same traversal short-circuits.
+
         Returns the result of the last executed node.
         """
+        if visited is None:
+            visited = set()
         if cancel_token.is_cancelled:
             return WorkerResult(success=False, error="Workflow cancelled")
 
@@ -366,9 +622,30 @@ class WorkflowRuntime:
             return WorkerResult(success=False, error=f"Node '{node_id}' not found")
 
         state = node_states[node_id]
+        first_visit_this_traversal = node_id not in visited
+        visited.add(node_id)
+
         if state.status != NodeStatus.PENDING:
-            # Already executed (possible in DAGs with merging paths)
-            return node_results.get(node_id)
+            if not first_visit_this_traversal:
+                # Genuine diamond-merge revisit: successors already
+                # reached via whichever path got here first.
+                return node_results.get(node_id)
+            # First time this traversal has reached this node, but it's
+            # already done -- a checkpoint-restored node (DEBT-003). Reuse
+            # its cached result, but still continue into its successors,
+            # exactly as freshly completing it would.
+            cached = node_results.get(node_id)
+            if state.status == NodeStatus.FAILED:
+                if node.error_branch:
+                    return await self._execute_from(
+                        definition, node.error_branch, node_states, node_results,
+                        query, session_id, instance_id, metadata, cancel_token, visited,
+                    )
+                return cached
+            return await self._continue_to_successors(
+                definition, node_id, cached, node_states, node_results,
+                query, session_id, instance_id, metadata, cancel_token, visited,
+            )
 
         # ── Execute this node with retry ─────────────────────────────────
         state.status = NodeStatus.RUNNING
@@ -403,10 +680,16 @@ class WorkflowRuntime:
                 await monitor.record_completion(
                     node_id, summary=f"{node.worker_type} completed"
                 )
+            # DEBT-003 / ADR-KERNEL-03: durable checkpoint at this node
+            # boundary, after status is finalized but before recursing
+            # into successors, so a crash during the *next* node still
+            # leaves this one correctly recorded as done.
+            await self._save_checkpoint(instance_id, definition.workflow_id, node_states)
         else:
             state.status = NodeStatus.FAILED
             if graph is not None:
                 await monitor.record_failure(node_id, result.error or "Execution failed")
+            await self._save_checkpoint(instance_id, definition.workflow_id, node_states)
             # Route to error branch if defined
             if node.error_branch:
                 logger.info("WorkflowRuntime: node '%s' failed, routing to "
@@ -414,11 +697,34 @@ class WorkflowRuntime:
                 return await self._execute_from(
                     definition, node.error_branch, node_states,
                     node_results, query, session_id, instance_id,
-                    metadata, cancel_token,
+                    metadata, cancel_token, visited,
                 )
             return result
 
-        # ── Execute successors ───────────────────────────────────────────
+        return await self._continue_to_successors(
+            definition, node_id, result, node_states, node_results,
+            query, session_id, instance_id, metadata, cancel_token, visited,
+        )
+
+    async def _continue_to_successors(
+        self,
+        definition: WorkflowDefinition,
+        node_id: str,
+        result: Optional[WorkerResult],
+        node_states: Dict[str, WorkflowNodeState],
+        node_results: Dict[str, WorkerResult],
+        query: str,
+        session_id: str,
+        instance_id: str,
+        metadata: Dict[str, Any],
+        cancel_token: CancellationToken,
+        visited: set,
+    ) -> Optional[WorkerResult]:
+        """Shared by both `_execute_from` exit paths that need to keep
+        walking the DAG: a node that just now completed, and a node that
+        was already COMPLETED (checkpoint-restored) on its first visit
+        this traversal. `result` is returned unchanged if there are no
+        successors, matching both callers' prior inline behavior."""
         successors = definition.get_successors(node_id)
         if not successors:
             return result
@@ -427,7 +733,7 @@ class WorkflowRuntime:
         for succ_id in successors:
             last_result = await self._execute_from(
                 definition, succ_id, node_states, node_results,
-                query, session_id, instance_id, metadata, cancel_token,
+                query, session_id, instance_id, metadata, cancel_token, visited,
             )
         return last_result
 
