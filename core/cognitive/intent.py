@@ -480,12 +480,44 @@ Request:
 Candidates:"""
 
 
+# CTX-AUTH-001a structural containment. These are this template's own
+# three section-header tokens -- the exact strings retrieved context would
+# need to reproduce byte-for-byte to become structurally indistinguishable
+# from a real section boundary once interpolated (see
+# docs/research/context-engineering/context-authority-threat-model.md).
+_STRUCTURAL_HEADER_TOKENS = ("Context:", "Request:", "Candidates:")
+
+
+def _neutralize_structural_tokens(text: str) -> str:
+    """Break byte-identity with this template's own header tokens, if
+    retrieved (untrusted) context happens to contain one.
+
+    Content-agnostic by design: this does not inspect *meaning* (no
+    keyword/phrase blacklist for things like "ignore the above" -- the
+    threat model explicitly rejects that approach as an unwinnable,
+    gameable arms race). It only prevents context from reproducing the
+    literal strings this template itself uses as control-section
+    delimiters, so a fake "Request:"/"Candidates:"/"Context:" sourced
+    from context can never be indistinguishable from the template's real
+    one once interpolated. A zero-width space before the colon is
+    invisible to a human or a model reading the rendered text, but breaks
+    exact substring matching -- ordinary content that merely *mentions*
+    these words (e.g. prose discussing a documentation convention) is
+    unaffected in meaning, only in this one narrow byte-identity property.
+    """
+    for token in _STRUCTURAL_HEADER_TOKENS:
+        if token in text:
+            text = text.replace(token, token[:-1] + "\u200b:")
+    return text
+
+
 def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
                               known_categories: List[str]) -> str:
+    safe_context = _neutralize_structural_tokens(context) if context else context
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
         n=5,
         categories=", ".join(known_categories) if known_categories else "(none yet)",
-        context=context or "(no retrieved context)",
+        context=safe_context or "(no retrieved context)",
         request=raw_request.text,
     )
 
