@@ -982,15 +982,33 @@ class UnifiedMemory:
             logger.debug("Vector removal for %s: %s", entry_id[:8], e)
 
         # 7. Remove L1 storage record (authoritative deletion)
+        #    CTX-DELETE-001 fix: this step's outcome is the return value.
+        #    A raised exception and a clean `False` return (nothing to
+        #    remove) are both treated as "L1 removal did not succeed" --
+        #    the docstring's "if it fails, False is returned" contract
+        #    does not distinguish between the two, and by this point step
+        #    1 has already confirmed the entry was readable, so either
+        #    outcome here is a genuine authoritative-deletion failure
+        #    worth surfacing to the caller, not a benign no-op.
+        l1_removed = False
         try:
-            await self._storage.delete(entry_id)
+            l1_removed = await self._storage.delete(entry_id)
+            if not l1_removed:
+                logger.warning(
+                    "Storage deletion for %s completed without error but "
+                    "removed no row (entry was readable at step 1)",
+                    entry_id[:8],
+                )
         except Exception as e:
             logger.warning("Storage deletion failed for %s: %s", entry_id[:8], e)
 
-        # 8. Evict L0 cache (always)
+        # 8. Evict L0 cache (always -- even if L1 removal failed, per
+        #    docstring: cache must never serve an entry we attempted and
+        #    failed to delete)
         self._l0.evict(entry_id)
 
-        # 9. Execute after_delete hooks (fire-and-forget)
+        # 9. Execute after_delete hooks (fire-and-forget, always -- these
+        #    are notification hooks, not a second deletion gate)
         for hook in self._hooks.after_delete:
             try:
                 result = hook(entry)
@@ -999,7 +1017,7 @@ class UnifiedMemory:
             except Exception as e:
                 logger.debug("after_delete hook error: %s", e)
 
-        return True
+        return l1_removed
 
     # ── Archive helpers (public API for workers) ──────────────────────────
 
