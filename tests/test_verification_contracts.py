@@ -34,6 +34,13 @@ from core.verification.target import VerificationTargetFingerprint, Verification
 from core.verification.dimension import StateVerification, TransitionVerification, InvariantVerification
 from core.verification.retention import RetentionRule, EvidenceRetention, ReceiptRetention, SourceRetention
 from core.verification.control import ControlType, ControlCase
+from core.verification.obligation import DerivationSource, VerificationObligation
+from core.verification.rubric import (
+    RubricLockState, RubricValidationError, CriterionDependencyCycleError,
+    CriterionDependencyType, CriterionDependency, CriterionApplicability,
+    CriterionEvidenceRequirement, Criterion, Rubric, validate_dependency_graph,
+)
+from core.verification.inspection import InspectionStep, InspectionPlan
 
 
 def _basis(*components):
@@ -442,3 +449,273 @@ class TestControlCase:
     def test_empty_description_rejected(self):
         with pytest.raises(ValueError):
             ControlCase(case_id="cc1", control_type=ControlType.POSITIVE, description="")
+
+
+# --- Phase 2: Obligation / Rubric / Criterion / InspectionPlan -------------
+
+
+class TestVerificationObligation:
+    def test_valid_construction(self):
+        ob = VerificationObligation(
+            obligation_id=new_id(),
+            derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="the output must be a valid JSON document",
+            source_reference="user message #3",
+        )
+        assert ob.rubric_id is None
+
+    def test_empty_obligation_id_rejected(self):
+        with pytest.raises(ValueError):
+            VerificationObligation(
+                obligation_id="", derivation_source=DerivationSource.CONSTRAINT,
+                description="x", source_reference="y",
+            )
+
+    def test_empty_description_rejected(self):
+        with pytest.raises(ValueError):
+            VerificationObligation(
+                obligation_id=new_id(), derivation_source=DerivationSource.CONSTRAINT,
+                description="", source_reference="y",
+            )
+
+    def test_empty_source_reference_rejected(self):
+        with pytest.raises(ValueError):
+            VerificationObligation(
+                obligation_id=new_id(), derivation_source=DerivationSource.CONSTRAINT,
+                description="x", source_reference="",
+            )
+
+    def test_explicit_user_requirement_carries_authority(self):
+        ob = VerificationObligation(
+            obligation_id=new_id(), derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="x", source_reference="y",
+        )
+        assert ob.carries_explicit_user_authority
+
+    def test_no_non_explicit_source_carries_authority(self):
+        non_explicit = [s for s in DerivationSource if s is not DerivationSource.EXPLICIT_USER_REQUIREMENT]
+        for source in non_explicit:
+            ob = VerificationObligation(
+                obligation_id=new_id(), derivation_source=source,
+                description="x", source_reference="y",
+            )
+            assert not ob.carries_explicit_user_authority, f"{source} incorrectly carries explicit authority"
+
+
+class TestCriterionDependency:
+    def test_valid_construction(self):
+        dep = CriterionDependency(
+            criterion_id="c2", depends_on_criterion_id="c1",
+            dependency_type=CriterionDependencyType.REQUIRES,
+        )
+        assert dep.dependency_type == CriterionDependencyType.REQUIRES
+
+    def test_self_dependency_rejected(self):
+        with pytest.raises(RubricValidationError):
+            CriterionDependency(
+                criterion_id="c1", depends_on_criterion_id="c1",
+                dependency_type=CriterionDependencyType.REQUIRES,
+            )
+
+
+class TestCriterionApplicability:
+    def test_unconditional_valid(self):
+        ca = CriterionApplicability(applies_unconditionally=True)
+        assert ca.condition_description is None
+
+    def test_conditional_with_description_valid(self):
+        ca = CriterionApplicability(applies_unconditionally=False, condition_description="only when a database migration ran")
+        assert ca.condition_description
+
+    def test_conditional_without_description_rejected(self):
+        with pytest.raises(ValueError):
+            CriterionApplicability(applies_unconditionally=False)
+
+
+class TestCriterionEvidenceRequirement:
+    def test_valid_construction(self):
+        req = CriterionEvidenceRequirement(minimum_evidence_items=2, required_directness=EvidenceDirectness.DIRECT)
+        assert req.minimum_evidence_items == 2
+
+    def test_negative_minimum_rejected(self):
+        with pytest.raises(ValueError):
+            CriterionEvidenceRequirement(minimum_evidence_items=-1)
+
+
+class TestCriterion:
+    def test_valid_construction(self):
+        c = Criterion(
+            criterion_id="c1", rubric_id="r1", description="output is valid JSON",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        assert c.description
+
+    def test_empty_description_rejected(self):
+        with pytest.raises(ValueError):
+            Criterion(
+                criterion_id="c1", rubric_id="r1", description="",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+
+
+class TestRubric:
+    def test_valid_construction(self):
+        r = Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="abc123",
+            created_from="obligation o1", created_by="phase-c-session",
+            derived_from="user requirement", source_requirements=("req1",),
+            context_basis="task target snapshot t1", criteria=("c1", "c2"),
+        )
+        assert r.lock_state == RubricLockState.DRAFT
+
+    def test_empty_version_rejected(self):
+        with pytest.raises(ValueError):
+            Rubric(
+                rubric_id="r1", version="", fingerprint="abc123",
+                created_from="x", created_by="y", derived_from="z",
+                source_requirements=(), context_basis="w", criteria=("c1",),
+            )
+
+    def test_empty_fingerprint_rejected(self):
+        with pytest.raises(ValueError):
+            Rubric(
+                rubric_id="r1", version="1.0.0", fingerprint="",
+                created_from="x", created_by="y", derived_from="z",
+                source_requirements=(), context_basis="w", criteria=("c1",),
+            )
+
+    def test_empty_criteria_rejected(self):
+        with pytest.raises(ValueError):
+            Rubric(
+                rubric_id="r1", version="1.0.0", fingerprint="abc",
+                created_from="x", created_by="y", derived_from="z",
+                source_requirements=(), context_basis="w", criteria=(),
+            )
+
+    def test_duplicate_criterion_id_rejected(self):
+        with pytest.raises(RubricValidationError):
+            Rubric(
+                rubric_id="r1", version="1.0.0", fingerprint="abc",
+                created_from="x", created_by="y", derived_from="z",
+                source_requirements=(), context_basis="w", criteria=("c1", "c1"),
+            )
+
+
+class TestRubricLockStateProgression:
+    def _draft_rubric(self):
+        return Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="abc",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        )
+
+    def test_draft_to_validated_allowed(self):
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED)
+        assert r.lock_state == RubricLockState.VALIDATED
+
+    def test_validated_to_compiled_allowed(self):
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED).advance_to(RubricLockState.COMPILED)
+        assert r.lock_state == RubricLockState.COMPILED
+
+    def test_compiled_to_locked_allowed(self):
+        r = (self._draft_rubric()
+             .advance_to(RubricLockState.VALIDATED)
+             .advance_to(RubricLockState.COMPILED)
+             .advance_to(RubricLockState.LOCKED))
+        assert r.lock_state == RubricLockState.LOCKED
+
+    def test_draft_to_compiled_rejected(self):
+        with pytest.raises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.COMPILED)
+
+    def test_draft_to_locked_rejected(self):
+        with pytest.raises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.LOCKED)
+
+    def test_locked_is_terminal(self):
+        locked = (self._draft_rubric()
+                  .advance_to(RubricLockState.VALIDATED)
+                  .advance_to(RubricLockState.COMPILED)
+                  .advance_to(RubricLockState.LOCKED))
+        with pytest.raises(RubricValidationError):
+            locked.advance_to(RubricLockState.DRAFT)
+
+    def test_advance_to_does_not_mutate_original(self):
+        draft = self._draft_rubric()
+        validated = draft.advance_to(RubricLockState.VALIDATED)
+        assert draft.lock_state == RubricLockState.DRAFT
+        assert validated.lock_state == RubricLockState.VALIDATED
+        assert draft is not validated
+
+
+class TestValidateDependencyGraph:
+    def _criteria(self, ids):
+        return [
+            Criterion(
+                criterion_id=cid, rubric_id="r1", description=f"criterion {cid}",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+            for cid in ids
+        ]
+
+    def test_no_dependencies_passes(self):
+        validate_dependency_graph(self._criteria(["c1", "c2"]), [])
+
+    def test_valid_dependency_passes(self):
+        deps = [CriterionDependency(criterion_id="c2", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES)]
+        validate_dependency_graph(self._criteria(["c1", "c2"]), deps)
+
+    def test_phantom_criterion_reference_rejected(self):
+        deps = [CriterionDependency(criterion_id="ghost", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES)]
+        with pytest.raises(RubricValidationError):
+            validate_dependency_graph(self._criteria(["c1"]), deps)
+
+    def test_phantom_depends_on_rejected(self):
+        deps = [CriterionDependency(criterion_id="c1", depends_on_criterion_id="ghost", dependency_type=CriterionDependencyType.REQUIRES)]
+        with pytest.raises(RubricValidationError):
+            validate_dependency_graph(self._criteria(["c1"]), deps)
+
+    def test_two_node_cycle_detected(self):
+        deps = [
+            CriterionDependency(criterion_id="c1", depends_on_criterion_id="c2", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="c2", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES),
+        ]
+        with pytest.raises(CriterionDependencyCycleError):
+            validate_dependency_graph(self._criteria(["c1", "c2"]), deps)
+
+    def test_three_node_cycle_detected(self):
+        # A > B > C > A -- mission's own pairwise-cycle example, applied here to criterion dependencies
+        deps = [
+            CriterionDependency(criterion_id="a", depends_on_criterion_id="b", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="b", depends_on_criterion_id="c", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="c", depends_on_criterion_id="a", dependency_type=CriterionDependencyType.REQUIRES),
+        ]
+        with pytest.raises(CriterionDependencyCycleError):
+            validate_dependency_graph(self._criteria(["a", "b", "c"]), deps)
+
+
+class TestInspectionStep:
+    def test_valid_construction(self):
+        step = InspectionStep(step_id="s1", plan_id="p1", method_reference="filesystem_exists_check", description="check artifact exists on disk")
+        assert step.method_reference == "filesystem_exists_check"
+
+    def test_empty_method_reference_rejected(self):
+        with pytest.raises(ValueError):
+            InspectionStep(step_id="s1", plan_id="p1", method_reference="", description="x")
+
+    def test_empty_description_rejected(self):
+        with pytest.raises(ValueError):
+            InspectionStep(step_id="s1", plan_id="p1", method_reference="x", description="")
+
+
+class TestInspectionPlan:
+    def test_valid_construction(self):
+        plan = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1", "s2"))
+        assert len(plan.steps) == 2
+
+    def test_empty_steps_rejected(self):
+        with pytest.raises(ValueError):
+            InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=())
