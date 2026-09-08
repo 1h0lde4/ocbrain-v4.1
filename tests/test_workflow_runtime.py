@@ -22,6 +22,8 @@ Architecture:
 """
 
 import asyncio
+import os
+import tempfile
 import pytest
 
 from core.workflow.definition import (
@@ -33,14 +35,14 @@ from core.workflow.definition import (
     build_planner_workflow,
     PLANNER_NODE_ID,
 )
-from core.workflow.runtime import WorkflowRuntime, WorkflowResult
+from core.workflow.runtime import WorkflowRuntime, WorkflowResult, WorkflowNodeState
 from core.runtime.worker_registry import WorkerRegistry
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.governance.governance_kernel import get_governance_kernel
-from core.events.event_stream import get_event_stream
+from core.events.event_stream import EventStream, SQLiteEventStore, get_event_stream
 
 
 # ── Test Workers ─────────────────────────────────────────────────────────────
@@ -118,21 +120,43 @@ class SlowNodeWorker(AbstractCognitiveWorker):
         return WorkerResult(success=True, output="finally done")
 
 
+class CountingNodeWorker(AbstractCognitiveWorker):
+    """Records every invocation by node_id via a class-level counter, so a
+    test can prove a node was (or, for the resume tests, deliberately was
+    NOT) actually re-invoked -- not just that the final WorkflowResult
+    looks right, which could also happen if it were harmlessly re-run and
+    produced the same output. Class-level for the same reason as
+    FlakyNodeWorker above: ExecutionRuntime constructs a fresh Worker
+    instance per invoke()."""
+    worker_type = "CountingNodeWorker"
+    invocations: list = []
+
+    async def _run(self, context: WorkerContext) -> WorkerResult:
+        node_id = (context.metadata or {}).get("node_id")
+        type(self).invocations.append(node_id)
+        return WorkerResult(success=True, output=f"done:{node_id}")
+
+    @classmethod
+    def reset(cls):
+        cls.invocations = []
+
+
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
 
-def _make_workflow_runtime(*worker_classes):
+def _make_workflow_runtime(*worker_classes, event_stream=None):
     registry = WorkerRegistry()
     for cls in worker_classes:
         registry.register(cls)
+    stream = event_stream or get_event_stream()
     execution_runtime = ExecutionRuntime(
         worker_registry=registry,
         governance=get_governance_kernel(),
-        event_stream=get_event_stream(),
+        event_stream=stream,
     )
     return WorkflowRuntime(
         execution_runtime=execution_runtime,
-        event_stream=get_event_stream(),
+        event_stream=stream,
     )
 
 
@@ -443,6 +467,217 @@ class TestWorkflowRuntimeWatchdogReconciliation:
             d, query="hi", metadata={"sleep_s": 5.0, "execution_budget": budget},
         )
         assert result.success is False
+
+
+class TestWorkflowNodeStateSerialization:
+    """DEBT-003 / ADR-KERNEL-03: checkpoint-safe round-tripping."""
+
+    def test_round_trip_preserves_primary_fields(self):
+        original = WorkflowNodeState(
+            node_id="a", status=NodeStatus.COMPLETED,
+            result=WorkerResult(success=True, output="hello", artifacts={"x": 1},
+                                 events_emitted=3, duration_ms=12.5, metadata={"m": "n"}),
+            attempts=2, attempt_id="attempt-123",
+            started_at=100.0, completed_at=105.0,
+        )
+        restored = WorkflowNodeState.from_dict(original.to_dict())
+
+        assert restored.node_id == "a"
+        assert restored.status == NodeStatus.COMPLETED
+        assert restored.attempts == 2
+        assert restored.attempt_id == "attempt-123"
+        assert restored.started_at == 100.0
+        assert restored.completed_at == 105.0
+        assert restored.result.success is True
+        assert restored.result.output == "hello"
+        assert restored.result.artifacts == {"x": 1}
+        assert restored.result.duration_ms == 12.5
+        # Known, documented limitation, not a bug: execution_detail is not
+        # restored (see _worker_result_to_dict's docstring).
+        assert restored.result.execution_detail is None
+
+    def test_round_trip_survives_real_json(self):
+        """to_dict()'s whole point is being JSON-safe -- prove it actually
+        is, not just that Python-to-Python round-tripping works."""
+        import json
+        state = WorkflowNodeState(
+            node_id="b", status=NodeStatus.FAILED,
+            result=WorkerResult(success=False, error="boom"),
+        )
+        blob = json.dumps(state.to_dict())
+        restored = WorkflowNodeState.from_dict(json.loads(blob))
+        assert restored.status == NodeStatus.FAILED
+        assert restored.result.error == "boom"
+
+    def test_pending_node_with_no_result_round_trips_to_none(self):
+        state = WorkflowNodeState(node_id="c")
+        restored = WorkflowNodeState.from_dict(state.to_dict())
+        assert restored.status == NodeStatus.PENDING
+        assert restored.result is None
+
+
+class TestWorkflowRuntimeCheckpointResume:
+    """DEBT-003 / ADR-KERNEL-03: WorkflowRuntime checkpoint/resume."""
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_written_after_each_node_completes(self):
+        CountingNodeWorker.reset()
+        runtime = _make_workflow_runtime(CountingNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-ckpt", name="ckpt",
+            nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker"),
+                   WorkflowNode(node_id="b", worker_type="CountingNodeWorker")],
+            edges=[WorkflowEdge(from_node="a", to_node="b")],
+            entry_node="a",
+        )
+        result = await runtime.execute(d, query="hi")
+        assert result.success is True
+
+        checkpoint = await runtime._event_stream.get_checkpoint(
+            runtime._checkpoint_name(result.instance_id)
+        )
+        assert checkpoint is not None
+        node_states = checkpoint.payload["node_states"]
+        assert node_states["a"]["status"] == "completed"
+        assert node_states["b"]["status"] == "completed"
+        assert checkpoint.payload["workflow_id"] == "w-ckpt"
+
+    @pytest.mark.asyncio
+    async def test_resume_with_no_checkpoint_fails_cleanly_not_an_exception(self):
+        runtime = _make_workflow_runtime(EchoNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w1", nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+        result = await runtime.resume(d, "instance-that-was-never-checkpointed")
+        assert result.success is False
+        assert "no checkpoint" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_resume_rejects_mismatched_workflow_id(self):
+        CountingNodeWorker.reset()
+        runtime = _make_workflow_runtime(CountingNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-original", nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker")],
+            entry_node="a",
+        )
+        result = await runtime.execute(d, query="hi")
+
+        wrong_d = WorkflowDefinition(
+            workflow_id="w-different", nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker")],
+            entry_node="a",
+        )
+        resumed = await runtime.resume(wrong_d, result.instance_id)
+        assert resumed.success is False
+        assert "mismatch" in resumed.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_completed_node_and_only_reruns_pending(self):
+        """The core value proposition: a node that already finished before
+        the (simulated) crash must not be re-invoked on resume -- proven
+        via an invocation counter, not just by checking the final result
+        looks right (which a harmless full re-run would also produce)."""
+        CountingNodeWorker.reset()
+        runtime = _make_workflow_runtime(CountingNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-partial", name="partial",
+            nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker"),
+                   WorkflowNode(node_id="b", worker_type="CountingNodeWorker")],
+            edges=[WorkflowEdge(from_node="a", to_node="b")],
+            entry_node="a",
+        )
+        instance_id = "sim-crash-instance"
+
+        # Simulate a checkpoint left behind by a process that completed
+        # node 'a' and then crashed before node 'b' ever started -- written
+        # directly, not via a real execute() run, so this test does not
+        # depend on execute()'s own checkpoint-writing behavior to set up
+        # its fixture (kept independent of the code path being tested).
+        await runtime._save_checkpoint(instance_id, "w-partial", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED,
+                                    result=WorkerResult(success=True, output="done:a")),
+            "b": WorkflowNodeState(node_id="b"),
+        })
+
+        result = await runtime.resume(d, instance_id, query="hi")
+
+        assert result.success is True
+        assert CountingNodeWorker.invocations == ["b"]  # 'a' was NOT re-invoked
+        assert result.node_results["a"].output == "done:a"  # reused from checkpoint
+        assert result.node_results["b"].output == "done:b"  # actually executed
+
+    @pytest.mark.asyncio
+    async def test_resume_resets_a_running_node_and_reexecutes_it(self):
+        """Safety-critical: a node whose last known status was RUNNING at
+        checkpoint time must be re-executed from scratch on resume, never
+        assumed complete -- whether it actually finished before the crash
+        is unknowable, and this project's Verification principle applies:
+        RUNNING is not evidence of completion."""
+        CountingNodeWorker.reset()
+        runtime = _make_workflow_runtime(CountingNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-crash-mid-node",
+            nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker")],
+            entry_node="a",
+        )
+        instance_id = "sim-crash-mid-node"
+        await runtime._save_checkpoint(instance_id, "w-crash-mid-node", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.RUNNING,
+                                    started_at=1.0),  # never completed before "crash"
+        })
+
+        result = await runtime.resume(d, instance_id, query="hi")
+
+        assert result.success is True
+        assert CountingNodeWorker.invocations == ["a"]  # re-run, not skipped
+        assert result.node_results["a"].output == "done:a"
+
+    @pytest.mark.asyncio
+    async def test_resume_survives_a_real_process_restart(self):
+        """The actual point of DEBT-003: prove durability across a genuine
+        process boundary, not just within one Python process's memory.
+        Two entirely separate WorkflowRuntime/EventStream/SQLiteEventStore
+        instances, sharing only an on-disk file path -- the second one is
+        constructed with no reference to any object the first one created,
+        the same way a freshly-restarted process would be."""
+        CountingNodeWorker.reset()
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "events.db")
+            d = WorkflowDefinition(
+                workflow_id="w-restart", name="restart",
+                nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker"),
+                       WorkflowNode(node_id="b", worker_type="CountingNodeWorker")],
+                edges=[WorkflowEdge(from_node="a", to_node="b")],
+                entry_node="a",
+            )
+
+            # "Before the restart": run node 'a' to completion, then
+            # simulate the crash by simply not calling execute() again --
+            # the checkpoint execute() already wrote for node 'a' is all
+            # that's left once this whole block ends and `stream_before`
+            # goes out of scope.
+            stream_before = EventStream(SQLiteEventStore(db_path=db_path))
+            runtime_before = _make_workflow_runtime(CountingNodeWorker, event_stream=stream_before)
+            partial = WorkflowDefinition(
+                workflow_id="w-restart", name="restart",
+                nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker")],
+                entry_node="a",
+            )
+            first_run = await runtime_before.execute(partial, query="hi")
+            assert first_run.success is True
+            instance_id = first_run.instance_id
+            del stream_before, runtime_before  # nothing after this point may touch process-1 objects
+
+            # "After the restart": a fresh process, fresh objects, only the
+            # SQLite file on disk is shared.
+            stream_after = EventStream(SQLiteEventStore(db_path=db_path))
+            runtime_after = _make_workflow_runtime(CountingNodeWorker, event_stream=stream_after)
+            resumed = await runtime_after.resume(d, instance_id, query="hi")
+
+            assert resumed.success is True
+            assert CountingNodeWorker.invocations == ["a", "b"]  # 'a' from before restart, 'b' after
+            assert resumed.node_results["a"].output == "done:a"
+            assert resumed.node_results["b"].output == "done:b"
 
 
 class TestWorkflowRuntimeStats:
