@@ -680,6 +680,47 @@ class TestWorkflowRuntimeCheckpointResume:
             assert resumed.node_results["b"].output == "done:b"
 
 
+    @pytest.mark.asyncio
+    async def test_duplicate_checkpoint_write_does_not_corrupt_retrieval(self):
+        """Freeze-audit idempotency check: a checkpoint write retried after
+        e.g. a timeout whose write actually succeeded must not corrupt
+        state. EventStream.create_checkpoint() is a plain append -- this
+        proves the append-only design already gives this for free, not
+        that WorkflowRuntime adds any special-case handling."""
+        runtime = _make_workflow_runtime()
+        name = runtime._checkpoint_name("dup-instance")
+        payload = {"workflow_id": "w", "instance_id": "dup-instance",
+                   "node_states": {"a": {"status": "completed"}}}
+        await runtime._event_stream.create_checkpoint(name, payload=payload)
+        await runtime._event_stream.create_checkpoint(name, payload=payload)  # duplicate
+
+        result = await runtime._event_stream.get_checkpoint(name)
+        assert result.payload == payload
+
+    @pytest.mark.asyncio
+    async def test_concurrent_checkpoint_writes_do_not_corrupt_retrieval(self):
+        """Two concurrent writers to the same checkpoint name (e.g. two
+        overlapping node completions racing, however unlikely given
+        _execute_from's own sequencing) must resolve to one coherent
+        payload, never a torn/merged one -- append-only + latest-sequence-
+        wins retrieval gives this structurally, not via any lock
+        WorkflowRuntime itself holds."""
+        runtime = _make_workflow_runtime()
+        name = runtime._checkpoint_name("race-instance")
+        payload_a = {"workflow_id": "w", "instance_id": "race-instance",
+                     "node_states": {"a": {"status": "completed"}}}
+        payload_b = {"workflow_id": "w", "instance_id": "race-instance",
+                     "node_states": {"a": {"status": "completed"}, "b": {"status": "completed"}}}
+
+        await asyncio.gather(
+            runtime._event_stream.create_checkpoint(name, payload=payload_a),
+            runtime._event_stream.create_checkpoint(name, payload=payload_b),
+        )
+
+        result = await runtime._event_stream.get_checkpoint(name)
+        assert result.payload in (payload_a, payload_b)  # one coherent payload, not a corrupted merge
+
+
 class TestWorkflowRuntimeStats:
     @pytest.mark.asyncio
     async def test_stats_track_executions_and_failures(self):
