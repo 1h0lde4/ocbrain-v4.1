@@ -460,6 +460,41 @@ class Orchestrator:
                     )
                     answer = wf_result.output or ""
 
+                    # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06):
+                    # this is "final response acceptance" -- the point
+                    # after which `answer` is what the user receives.
+                    # Before this, wf_result.success was never read on
+                    # this branch at all: a workflow that under-delivered
+                    # against an explicit constraint (WorkflowRuntime now
+                    # detects this, see core/workflow/runtime.py's
+                    # _check_constraints) would still have its partial
+                    # output silently presented as if it fully satisfied
+                    # the request. The output itself is kept, not
+                    # discarded -- partial work usually still has real
+                    # value to the person who asked -- but the system
+                    # must not silently claim it satisfied a constraint it
+                    # didn't. Genuine node errors (success=False with no
+                    # constraint_violations) are deliberately left exactly
+                    # as before: still not checked on this branch. That is
+                    # a real, separate gap (this K4.2 branch has no
+                    # equivalent of the legacy branch's `if not
+                    # wf_result.success` handling below at all), but it is
+                    # not what DEBT-020 is about and pulling it in here
+                    # would be exactly the kind of unrelated-scope
+                    # expansion this fix was explicitly asked not to do.
+                    if wf_result.constraint_violations:
+                        answer = (
+                            answer.rstrip() + "\n\n"
+                            "(Note: this response may not fully satisfy "
+                            "your request -- " +
+                            "; ".join(wf_result.constraint_violations) + ".)"
+                        )
+                        await self._emit_event("orchestrator.response_incomplete", {
+                            "interaction_id": interaction_id,
+                            "execution_id": execution_id,
+                            "constraint_violations": wf_result.constraint_violations,
+                        })
+
                     # Task 5 — post-execution hooks. Same governed
                     # ExecutionRuntime.invoke() path as the SupervisorWorker
                     # call above and PlannerWorker's own invocation in the

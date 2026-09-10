@@ -34,6 +34,7 @@ from core.runtime.progress import ProgressMonitor
 from core.runtime.watchdog import GraphExecutionWatchdog
 from core.runtime.working_memory import WorkingMemory
 from core.workers.base import WorkerResult
+from core.cognitive.planner import Constraint, ConstraintKind
 from core.workflow.definition import (
     NodeStatus,
     RetryPolicy,
@@ -139,17 +140,81 @@ def _worker_result_from_dict(data: Optional[Dict[str, Any]]) -> Optional[WorkerR
     )
 
 
+# DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): which measures this
+# can mechanically check the final output against. Deliberately small --
+# only word_count is populated by extraction today (core/cognitive/
+# planner.py's _extract_word_count_constraints); item_count and
+# file_coverage are not implemented, so a Constraint naming either of
+# those is silently treated as not-yet-measurable (see
+# _check_constraints), not as a violation. Adding a new measure means
+# adding both an extractor and an entry here -- the two are meant to stay
+# in lockstep, not diverge.
+def _measure_output(output: Any, measure: str) -> Optional[float]:
+    """Returns None when `measure` isn't supported or `output` isn't a
+    shape that measure applies to -- never raises, since an unmeasurable
+    constraint must be skipped, not treated as violated (you cannot fail
+    a check you were never able to perform)."""
+    if measure == "word_count" and isinstance(output, str):
+        return float(len(output.split()))
+    return None
+
+
+def _check_constraints(constraints: List[Constraint], output: Any) -> List[str]:
+    """Pure function, no I/O -- directly unit testable without an event
+    loop, matching this codebase's established pattern for this kind of
+    decision logic (see core/runtime/watchdog_decision.py's decide()).
+
+    Only HARD constraints can produce a violation; SOFT constraints are
+    advisory (same HARD/SOFT distinction core/cognitive/planner.py's
+    _detect_contradictions already applies). Only constraints that are
+    both is_measurable() and have a measure this module knows how to
+    compute participate -- everything else (free-text-only constraints,
+    or a measurable constraint naming an as-yet-unimplemented measure) is
+    silently skipped, not flagged, per _measure_output's own contract.
+
+    Returns a human-readable description per violated constraint, empty
+    if none (including if `constraints` is empty, output isn't measurable
+    for any of them, or every measurable constraint is satisfied).
+    """
+    violations: List[str] = []
+    for constraint in constraints:
+        if constraint.kind != ConstraintKind.HARD or not constraint.is_measurable():
+            continue
+        actual = _measure_output(output, constraint.measure)
+        if actual is None:
+            continue
+        if not constraint.is_satisfied_by(actual):
+            violations.append(
+                f"{constraint.measure} was {actual:g}, required "
+                f"{constraint.comparator} {constraint.target:g}"
+            )
+    return violations
+
+
 @dataclass
 class WorkflowResult:
     """Aggregated result of a workflow execution.
 
     Attributes:
-        success: True if all executed nodes succeeded.
+        success: True if all executed nodes succeeded AND (DEBT-020,
+            fixed 2026-09-06) the final output satisfies every measurable
+            hard constraint on the originating WorkflowDefinition, if any.
+            Before this fix, success meant only "the last node didn't
+            error" -- a node that ran to completion but under-delivered
+            against an explicit request (e.g. "write 500 words", produced
+            340) was indistinguishable from a fully correct one. This is
+            the Kernel's completion/success boundary; a false positive
+            here is what DEBT-020 is.
         workflow_id: ID of the workflow definition.
         instance_id: Unique ID for this execution.
         node_results: Per-node results keyed by node_id.
         output: The primary output (from the last executed node).
         error: Error message if workflow failed.
+        constraint_violations: Human-readable description of each
+            measurable hard constraint the final output failed, empty
+            unless success is False specifically because of DEBT-020's
+            check (as opposed to a genuine node error) -- see
+            _check_constraints in this module.
         duration_ms: Total wall-clock duration.
         metadata: Additional result data.
     """
@@ -159,6 +224,7 @@ class WorkflowResult:
     node_results: Dict[str, WorkerResult] = field(default_factory=dict)
     output: Any = None
     error: str = ""
+    constraint_violations: List[str] = field(default_factory=list)
     duration_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -530,6 +596,23 @@ class WorkflowRuntime:
         success = last_result.success if last_result is not None else True
         duration_ms = (time.time() - start_time) * 1000
 
+        # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
+        # completing without error is not the same thing as the request
+        # actually being satisfied. Only checked when node-level success
+        # already holds -- a workflow that genuinely errored is already
+        # correctly reported as failed above, and constraint-checking an
+        # error's output would be checking data that was never meant to
+        # be the final answer. Only HARD constraints can fail a workflow;
+        # SOFT constraints are advisory, matching how _detect_contradictions
+        # (core/cognitive/planner.py) already treats the same distinction.
+        constraint_violations: List[str] = []
+        if success and definition.constraints:
+            constraint_violations = _check_constraints(
+                definition.constraints, last_result.output if last_result else None,
+            )
+            if constraint_violations:
+                success = False
+
         if not success:
             self._total_failures += 1
 
@@ -546,9 +629,17 @@ class WorkflowRuntime:
                 "node_id": graph.root.node_id,
                 "status": "completed" if success else "failed",
                 "summary": "Execution completed" if success else "Execution failed",
+                **({"constraint_violations": constraint_violations} if constraint_violations else {}),
             },
         )
         await watchdog.stop()
+
+        if constraint_violations:
+            error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
+        elif last_result and not last_result.success:
+            error_text = last_result.error
+        else:
+            error_text = ""
 
         result = WorkflowResult(
             success=success,
@@ -556,7 +647,8 @@ class WorkflowRuntime:
             instance_id=instance_id,
             node_results=node_results,
             output=last_result.output if last_result else None,
-            error=last_result.error if last_result and not last_result.success else "",
+            error=error_text,
+            constraint_violations=constraint_violations,
             duration_ms=duration_ms,
             metadata={"query": query, "session_id": session_id,
                       "execution_id": execution_id,

@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from core.cognitive.planner import Constraint
+
 
 class NodeStatus(Enum):
     """Lifecycle status of a workflow node during execution."""
@@ -113,13 +115,19 @@ class WorkflowDefinition:
             constructed outside compile() (e.g. a hand-built test fixture
             or the legacy K2.2 path, neither of which goes through the
             cognitive pipeline this identity threads through). Not
-            duplicated onto individual WorkflowNodes: nodes are not
-            currently persisted, transported, or indexed independently of
-            their parent WorkflowDefinition (no checkpoint/resume exists
-            yet -- KNOWN_ISSUES.md DEBT-003), so per Kernel Blocker A's own
-            I7 guidance, a node-level reference is not yet justified by any
-            actual node-independent lifecycle. Revisit if/when DEBT-003
-            introduces independently-persisted node state.
+            duplicated onto individual WorkflowNodes -- confirmed still
+            correct as of DEBT-003 (checkpoint/resume, ADR-KERNEL-03,
+            2026-09-05): checkpointed node state nests inside one
+            instance-keyed checkpoint, never independently addressable by
+            node, so the I7 threshold this note originally deferred on was
+            checked and not crossed. No longer an open question.
+        constraints: DEBT-020 fix (2026-09-06) -- the List[Constraint]
+            ExecutionPlan.constraints carries, threaded through unchanged
+            by compiler.compile(). Empty for a WorkflowDefinition built
+            outside the cognitive pipeline (same set of cases as
+            root_operation_id above). WorkflowRuntime checks the final
+            output against any measurable constraint here before
+            confirming success -- see core/workflow/runtime.py's _run().
     """
     workflow_id: str = ""
     name: str = ""
@@ -128,6 +136,7 @@ class WorkflowDefinition:
     entry_node: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     root_operation_id: Optional[str] = None
+    constraints: List[Constraint] = field(default_factory=list)
 
     def get_node(self, node_id: str) -> Optional[WorkflowNode]:
         """Look up a node by ID."""
