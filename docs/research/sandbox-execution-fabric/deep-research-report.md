@@ -379,37 +379,51 @@ flowchart LR
 
 # 15. Prompt initial pour la session parallèle (en français)
 
-> **Contexte** : Nous démarrons une session de développement parallèle pour construire le **module Sandbox/Exécution** d’OCBrain. Ce module doit fournir un plan de contrôle sécurisé et un cœur d’exécution isolé pour toutes les capacités, sans toucher le code actuel de Vérification.  
-> **Règles** : 
-> - Tout code lancé dans le sandbox est potentiellement malveillant (même notre propre génération).  
-> - La sécurité est “deny-by-default” : l’agent ne peut accéder que ce que la politique autorise.  
-> - Les tâches de cette session doivent rester isolées du reste du projet (branche dédiée, pas de merge prématuré).  
-> - Documenter chaque décision, règle de sécurité, et tout comportement d’échappement découvert.  
+> **Prérequis (à lire avant de commencer)** : `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` (même commit) — inventaire complet de l'existant et décisions de nommage ci-dessous, déjà tranchées. Ne pas refaire ce travail depuis zéro.
 >
-> **Objectifs de la Phase 1** : Mettre en place une interface et un backend Docker/OCI de base qui assure : isolation FS, contrôle réseau et ressources, capture d’artefacts, et logs structurés.  
+> **Contexte** : Nous démarrons une session de développement parallèle pour construire le **module Sandbox/Exécution** d'OCBrain, sous `core/sandbox/`. Ce module doit fournir un plan de contrôle sécurisé et un cœur d'exécution isolé pour toutes les capacités, sans toucher le code actuel de Vérification ni celui de `core/runtime/` (orchestration de Workers — homonymie volontairement évitée, voir Nommage).
 >
-> **Phases** :  
-> 1. *État des lieux* : Lister précisément l’existant (code OCBrain, config Docker, kernel).  
-> 2. *Contrats* : Formaliser les schémas (voir section **4**). Valider par tests statiques.  
-> 3. *Backend abstrait* : Écrire une interface Go/Python (classe Runtime) avec methods (create, exec, poll, stop, destroy, inspect). Implémenter un stub minimal si nécessaire pour tests d’interface.  
-> 4. *Implémentation Docker* : Choisir mode (runc rootless ou docker run) et appliquer namespace, cgroups, seccomp. Monter le workspace en direct ou via clone (ajuster policy). Encapsuler chaque run.  
-> 5. *Isolation FS/Réseau* : Vérifier qu’aucune donnée hors-workspace n’est accessible (tester symlinks, ../ chemins). Bloquer tout egress TCP/UDP par défaut (ex. `curl 8.8.8.8` échoue). Autoriser explicitement depuis la politique pour le test.  
-> 6. *Limites ressources* : Appliquer CPU/Mem en cgroup. Surprovocation doit aboutir à kill avec raison *RESOURCE_EXCEEDED*.  
-> 7. *Cycle de vie* : Implémenter état **TERMINATED** pour chaque exécution, avec cleanup complet. Un cancel doit tuer immédiatement tous les processus enfants.  
-> 8. *Résultats structurés* : Le code renvoie un `ExecutionResult` complet (exit code, stdout/stderr, artefacts listés, utilisation CPU/Mem, times).   
-> 9. *Batterie de tests* : Exécuter nos tests adversaires (voir section **12**). Bloquer toute faille trouvée.  
-> 10. *Documentation+Diagrammes* : Mettre à jour docs de conception (en français). Créer au moins les diagrammes Mermaid ci-dessus.  
+> **Nommage (déjà tranché, ne pas re-débattre)** :
+> - Préfixe `Sandbox*`, pas `Execution*` : `core/runtime/` possède déjà `ExecutionContext`/`ExecutionRuntime`/`ExecutionOutcome`/`ExecutionBudget`/`ExecutionWatchdog`, pour un tout autre sujet (invocation de Workers en mémoire). Utiliser `SandboxRequest`/`SandboxHandle`/`SandboxResult`/`SandboxEvent`. `SandboxPolicy` (nom du rapport) est conservé tel quel.
+> - L'interface backend abstraite (point 3 ci-dessous) s'appelle `SandboxBackend`, pas `Runtime` seul (`ExecutionRuntime`/`WorkflowRuntime` existent déjà).
+> - Ce qui gate une `SandboxRequest` avant exécution s'appelle `AdmissionGate`, pas `ValidationGate` (déjà pris par `core/cognitive/learning.py`, sans rapport).
+> - Les capacités issues de GitHub (section 7 du rapport) s'appellent des « extensions », pas des « capabilities » (déjà pris par `core/capabilities/`, sans rapport).
 >
-> **Critères de réussite** :  
-> - Un exécutable simple (`echo Hello`) s’exécute dans le sandbox et retourne son output sans bloquer.  
-> - Une tentative d’accès illégal (p.ex. `ls /root`) échoue gracieusement avec log d’erreur.  
-> - Un appel réseau non autorisé est intercepté (log « network blocked »).  
-> - Les logs `ExecutionEvent` reflètent correctement le flux (start, provision, finish).  
-> - Les artefacts (fichiers créés) sont rapportés avec hash.  
-> - Les limites CPU et mémoire sont appliquées (test `stress` aboutit à *RESOURCE_EXCEEDED*).  
-> - Aucun cas critique de tests adversaires n’est possible (exploit documentaire).  
-> - Pas de dépendance externe cloud ou code de Vérification ajouté.  
+> **Réutiliser plutôt que reconstruire** :
+> - `core/skills/skill_interface.py`'s `SkillExecutionConfig` (`mode`/`timeout_sec`/`memory_limit_mb`/`allowed_imports`) est le point de départ le plus proche de `SandboxPolicy`/`RuntimeCapabilities` — actuellement déclaré mais jamais lu ailleurs. Étendre plutôt que dupliquer.
+> - Publier les `SandboxEvent` via l'`EventStream` existant (`core/events/event_stream.py`), pas un nouveau bus.
+> - `modules/system_ctrl/module.py` a déjà un allowlist deny-by-default et un path-jail (`SAFE_ROOT`) — même philosophie, mais code non réutilisable tel quel (isolation même-processus, pas conteneur/VM).
+>
+> **Règles** :
+> - Tout code lancé dans le sandbox est potentiellement malveillant (même notre propre génération).
+> - La sécurité est « deny-by-default » : l'agent ne peut accéder qu'à ce que la politique autorise.
+> - Les tâches de cette session doivent rester isolées du reste du projet (branche `sandbox-fabric`, pas de merge prématuré).
+> - Documenter chaque décision, règle de sécurité, et tout comportement d'échappement découvert.
+>
+> **Objectifs de la Phase 1** : Mettre en place une interface et un backend Docker/OCI de base qui assure : isolation FS, contrôle réseau et ressources, capture d'artefacts, et logs structurés.
+>
+> **Phases** :
+> 1. *État des lieux* : Déjà fait — voir la réconciliation. Ne vérifier que l'état hôte restant (Docker, cgroups v2, seccomp, KVM) si pas déjà noté ailleurs.
+> 2. *Contrats* : Formaliser les schémas (voir section **4** du rapport) sous les noms ci-dessus. Valider par tests statiques.
+> 3. *Backend abstrait* : Écrire `SandboxBackend` (Go/Python) avec methods (create, exec, poll, stop, destroy, inspect). Stub minimal si nécessaire pour tests d'interface.
+> 4. *Implémentation Docker* : Choisir mode (runc rootless ou docker run) et appliquer namespace, cgroups, seccomp. Monter le workspace en direct ou via clone (ajuster policy). Encapsuler chaque run.
+> 5. *Isolation FS/Réseau* : Vérifier qu'aucune donnée hors-workspace n'est accessible (tester symlinks, ../ chemins). Bloquer tout egress TCP/UDP par défaut (ex. `curl 8.8.8.8` échoue). Autoriser explicitement depuis la politique pour le test.
+> 6. *Limites ressources* : Appliquer CPU/Mem en cgroup. Surprovocation doit aboutir à kill avec raison *RESOURCE_EXCEEDED*.
+> 7. *Cycle de vie* : Implémenter état **TERMINATED** pour chaque exécution, avec cleanup complet. Un cancel doit tuer immédiatement tous les processus enfants.
+> 8. *Résultats structurés* : Le code renvoie un `SandboxResult` complet (exit code, stdout/stderr, artefacts listés, utilisation CPU/Mem, times), et émet des `SandboxEvent` via `EventStream`.
+> 9. *Batterie de tests* : Exécuter nos tests adversaires (voir section **12**). Bloquer toute faille trouvée.
+> 10. *Documentation+Diagrammes* : Mettre à jour docs de conception (en français). Créer au moins les diagrammes Mermaid ci-dessus.
+>
+> **Critères de réussite** :
+> - Un exécutable simple (`echo Hello`) s'exécute dans le sandbox et retourne son output sans bloquer.
+> - Une tentative d'accès illégal (p.ex. `ls /root`) échoue gracieusement avec log d'erreur.
+> - Un appel réseau non autorisé est intercepté (log « network blocked »).
+> - Les `SandboxEvent` dans `EventStream` reflètent correctement le flux (start, provision, finish).
+> - Les artefacts (fichiers créés) sont rapportés avec hash.
+> - Les limites CPU et mémoire sont appliquées (test `stress` aboutit à *RESOURCE_EXCEEDED*).
+> - Aucun cas critique de tests adversaires n'est possible (exploit documentaire).
+> - Pas de dépendance externe cloud ni code de Vérification ajouté. `CoderWorker` n'existe pas encore (voir réconciliation) — ce module n'a donc pas encore de consommateur réel ; ne pas bloquer là-dessus.
 >
 > **Critères de clôture (Definition of Done)** : Conformément à la section **14**, toutes les conditions fonctionnelles de base sont satisfaites, la documentation initiale est rédigée, et le code est prêt pour revue finale sans intervention externe.
 
-En suivant ces étapes précises, cette session parallèle fournira à OCBrain un **fabric d’exécution local sûr et prêt à intégrer** (phase ultérieurement) C-MoE et l’ingestion de capacités GitHub.
+En suivant ces étapes précises, cette session parallèle fournira à OCBrain un **fabric d'exécution local sûr et prêt à intégrer** (phase ultérieurement) C-MoE et l'ingestion d'extensions GitHub.
