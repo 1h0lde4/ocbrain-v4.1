@@ -120,6 +120,14 @@ class WorkflowDefinition:
             I7 guidance, a node-level reference is not yet justified by any
             actual node-independent lifecycle. Revisit if/when DEBT-003
             introduces independently-persisted node state.
+        constraints: DEBT-020 -- threaded through unchanged from
+            ExecutionPlan.constraints via compile(), same pattern as
+            root_operation_id above. Typed List[Any] rather than
+            List[core.cognitive.planner.Constraint] to avoid this
+            execution-layer module depending on the cognitive layer;
+            WorkflowRuntime's completion gate is the actual consumer and
+            imports Constraint directly. Empty for a WorkflowDefinition
+            constructed outside compile(), same as root_operation_id.
     """
     workflow_id: str = ""
     name: str = ""
@@ -128,6 +136,7 @@ class WorkflowDefinition:
     entry_node: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     root_operation_id: Optional[str] = None
+    constraints: List[Any] = field(default_factory=list)
 
     def get_node(self, node_id: str) -> Optional[WorkflowNode]:
         """Look up a node by ID."""

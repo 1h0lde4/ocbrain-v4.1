@@ -81,6 +81,16 @@ class ConstraintSource:
     POLICY = "policy"
 
 
+class ConstraintComparator:
+    """DEBT-020: how `measure` must relate to `target` for the constraint
+    to be satisfied. Only the three comparators an actual checkable value
+    needs; not a general expression language (mission Section 13: smallest
+    deterministic semantics justified by current authoritative data)."""
+    GTE = "gte"
+    LTE = "lte"
+    EQ = "eq"
+
+
 @dataclass
 class Constraint:
     """A checkable constraint on plan execution.
@@ -97,12 +107,57 @@ class Constraint:
     not independently identified" — no resource_id, no derived_from,
     no lifecycle_state of its own. It exists inside an ExecutionPlan's
     constraint list, not as a standalone Resource.
+
+    DEBT-020 note: K4.2 §5 above already specified that a Constraint is
+    "checkable" -- but until `measure`/`target`/`comparator` were added,
+    nothing on this class actually carried a checkable value, and
+    EvaluatorWorker never referenced Constraint at all (confirmed by
+    direct grep, zero hits). These three fields fulfill the original,
+    already-documented intent rather than expanding it; all three default
+    to None and every existing construction site is unaffected. Populating
+    them is deliberately NOT done by expanding
+    `_EXTRACT_EXPLICIT_CONSTRAINT_PATTERNS`'s natural-language detection
+    (out of DEBT-020's scope, mission Section 36) -- only by whatever
+    upstream source, today or future, chooses to set them explicitly.
     """
     kind: str = ConstraintKind.HARD
     relation: str = ConstraintRelation.SATISFIES
     source: str = ConstraintSource.EXPLICIT
     rationale: str = ""
     validated_by: Optional[str] = None
+    measure: Optional[str] = None
+    target: Optional[float] = None
+    comparator: Optional[str] = None
+
+    def has_checkable_value(self) -> bool:
+        """True iff this constraint actually carries something evaluable --
+        as opposed to merely having non-None fields with no real meaning."""
+        return (
+            self.measure is not None
+            and self.target is not None
+            and self.comparator is not None
+        )
+
+    def is_satisfied_by(self, observed: float) -> bool:
+        """Evaluate `observed` against this constraint's checkable value.
+
+        Caller must check has_checkable_value() first -- raises if this
+        constraint has nothing to check, rather than silently returning
+        True/False for a comparison that was never actually specified.
+        """
+        if not self.has_checkable_value():
+            raise ValueError(
+                f"Constraint has no checkable value (measure={self.measure!r}, "
+                f"target={self.target!r}, comparator={self.comparator!r}); "
+                "call has_checkable_value() before is_satisfied_by()."
+            )
+        if self.comparator == ConstraintComparator.GTE:
+            return observed >= self.target
+        if self.comparator == ConstraintComparator.LTE:
+            return observed <= self.target
+        if self.comparator == ConstraintComparator.EQ:
+            return observed == self.target
+        raise ValueError(f"Unknown comparator: {self.comparator!r}")
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -1056,6 +1111,16 @@ class ExecutionPlan:
     caused_by: Optional[str] = None
     root_operation_id: Optional[str] = None
     lifecycle_state: str = ExecutionPlanLifecycle.DRAFT
+    # DEBT-020: not part of K4 §6's original field list. Added because
+    # _extract_constraints(goal) (this module) already produces a real
+    # List[Constraint], but until this field existed nothing carried it
+    # past planning -- constraints were consulted for contradiction
+    # precheck and to inform candidate-generation (applicable_constraints
+    # on the transient PlannerRequest), then discarded. K4 §5 already
+    # states a Constraint "is binding and checkable" -- there was simply
+    # nowhere for a checkable one to survive to. Additive; every existing
+    # ExecutionPlan construction site is unaffected.
+    constraints: List[Constraint] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -1532,6 +1597,7 @@ async def plan(
         justification=justification,
         derived_from=[goal.resource_id],
         root_operation_id=goal.root_operation_id,
+        constraints=constraints,
     )
 
     return PlannerResult(

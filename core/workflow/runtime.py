@@ -30,9 +30,16 @@ from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
 from core.runtime.execution_graph import ExecutionStatus
 from core.runtime.execution_graph import execution_registry
+from core.runtime.execution_outcome import (
+    CompletionEvaluation,
+    CompletionReason,
+    CompletionStatus,
+    FailureType,
+)
 from core.runtime.progress import ProgressMonitor
 from core.runtime.watchdog import GraphExecutionWatchdog
 from core.runtime.working_memory import WorkingMemory
+from core.cognitive.planner import Constraint, ConstraintKind
 from core.workers.base import WorkerResult
 from core.workflow.definition import (
     NodeStatus,
@@ -144,7 +151,14 @@ class WorkflowResult:
     """Aggregated result of a workflow execution.
 
     Attributes:
-        success: True if all executed nodes succeeded.
+        success: EXECUTION status only -- whether execution terminated
+            along a successful path (last_result.success), which counts a
+            node recovered via error_branch as success by design. Despite
+            this class's own previous docstring, it was never "all
+            executed nodes succeeded" (the implementation only ever
+            checked last_result) -- corrected during DEBT-020 tracing.
+            Not authoritative for whether the task was actually
+            completed; see completion_status.
         workflow_id: ID of the workflow definition.
         instance_id: Unique ID for this execution.
         node_results: Per-node results keyed by node_id.
@@ -152,6 +166,15 @@ class WorkflowResult:
         error: Error message if workflow failed.
         duration_ms: Total wall-clock duration.
         metadata: Additional result data.
+        completion_status: DEBT-020 -- did the task's authoritative
+            completion conditions actually get satisfied? Independent of
+            `success` above. Defaults to UNKNOWN (fail-closed) rather than
+            SATISFIED so any WorkflowResult built without going through
+            _evaluate_completion() (e.g. a hand-built test fixture, or the
+            early-return exception-containment path) reads as
+            not-yet-evaluated rather than silently successful.
+        completion_reason: Typed reason (CompletionReason value, or "" iff
+            completion_status == SATISFIED). See execution_outcome.py.
     """
     success: bool = True
     workflow_id: str = ""
@@ -161,6 +184,31 @@ class WorkflowResult:
     error: str = ""
     duration_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    completion_status: str = CompletionStatus.UNKNOWN
+    completion_reason: str = ""
+
+
+def _measure_output(output: Any, measure: Optional[str]) -> float:
+    """Compute an observed value from workflow output for a Constraint's
+    `measure` name. DEBT-020: deliberately small -- covers the measures a
+    checkable Constraint can actually specify today (planner.py's
+    ConstraintComparator/measure fields), not a general text-analysis
+    system. Unrecognized output or measure evaluates as 0.0, which
+    Constraint.is_satisfied_by then correctly treats as not meeting any
+    positive gte/eq target -- this function never decides UNKNOWN vs.
+    VIOLATED itself; _evaluate_completion already established that a
+    checkable constraint exists before calling this.
+    """
+    if output is None:
+        return 0.0
+    text = output if isinstance(output, str) else str(output)
+    if measure == "word_count":
+        return float(len(text.split()))
+    if measure == "char_count":
+        return float(len(text))
+    if measure == "item_count":
+        return float(len([line for line in text.splitlines() if line.strip()]))
+    return 0.0
 
 
 # ── Workflow Runtime ──────────────────────────────────────────────────────────
@@ -507,16 +555,19 @@ class WorkflowRuntime:
                 node_results=node_results,
                 error=f"Unexpected workflow error: {e}",
                 duration_ms=(time.time() - start_time) * 1000,
+                completion_status=CompletionStatus.INCOMPLETE,
+                completion_reason=CompletionReason.EXECUTION_FAILURE,
             )
 
         # ── Step 4: Aggregate result ─────────────────────────────────────
-        # Workflow success is defined by whether execution terminated along
-        # a successful path -- i.e. the outcome of `last_result`, which is
-        # whatever _execute_from actually returned last (it follows
-        # error_branch redirection on failure, so a node that failed but
-        # was recovered via its error_branch surfaces here as a success --
-        # that redirection is the entire point of error_branch, and a
-        # workflow that recovered must not be reported as failed).
+        # `success` is EXECUTION status only -- whether execution
+        # terminated along a successful path -- i.e. the outcome of
+        # `last_result`, which is whatever _execute_from actually returned
+        # last (it follows error_branch redirection on failure, so a node
+        # that failed but was recovered via its error_branch surfaces here
+        # as a success -- that redirection is the entire point of
+        # error_branch, and a workflow that recovered must not be reported
+        # as execution-failed).
         #
         # This also correctly handles the cancellation case: a pre-
         # cancelled token makes _execute_from return
@@ -527,11 +578,35 @@ class WorkflowRuntime:
         # that never ran. Checking last_result.success avoids that: an
         # empty node_results with a failed last_result correctly reports
         # failure.
-        success = last_result.success if last_result is not None else True
+        #
+        # DEBT-020: the `else True` fallback below was `else True` before
+        # this fix -- defaulting a missing result to *success*. Whether
+        # last_result can actually be None here was not conclusively
+        # proven either way (node_results.get(node_id) can return None by
+        # plain dict semantics in _execute_from/_continue_to_successors;
+        # whether resume()'s checkpoint restoration always populates
+        # node_results for every non-PENDING node was not traced). Rather
+        # than resolve reachability, this now fails closed regardless: a
+        # missing result can no longer read as success.
+        success = last_result.success if last_result is not None else False
         duration_ms = (time.time() - start_time) * 1000
 
         if not success:
             self._total_failures += 1
+
+        # DEBT-020: task completion is evaluated here, once, for both
+        # callers of this method (the live K4.2 orchestrator path and the
+        # test-only K2.2 legacy path both call WorkflowRuntime.execute()
+        # -- this is their actual, pre-existing convergence point, not a
+        # new one). success (above) staying True never again means the
+        # task was completed; completion.status is the authoritative
+        # answer to that separate question, and defaults to UNKNOWN
+        # (fail-closed) rather than SATISFIED wherever it can't be proven.
+        completion = self._evaluate_completion(
+            last_result=last_result,
+            constraints=definition.constraints,
+            execution_succeeded=success,
+        )
 
         await monitor.record_status(
             graph.root.node_id,
@@ -561,6 +636,8 @@ class WorkflowRuntime:
             metadata={"query": query, "session_id": session_id,
                       "execution_id": execution_id,
                       "budget": budget},
+            completion_status=completion.status,
+            completion_reason=completion.reason,
         )
 
         # ── Step 5: Emit workflow.completed ──────────────────────────────
@@ -568,11 +645,106 @@ class WorkflowRuntime:
             "workflow_id": definition.workflow_id,
             "instance_id": instance_id,
             "success": success,
+            "completion_status": completion.status,
+            "completion_reason": completion.reason,
             "duration_ms": duration_ms,
             "nodes_executed": len(node_results),
         })
 
         return result
+
+    def _evaluate_completion(
+        self,
+        *,
+        last_result: Optional[WorkerResult],
+        constraints: List[Any],
+        execution_succeeded: bool,
+    ) -> CompletionEvaluation:
+        """Evaluate whether the task's authoritative completion conditions
+        were satisfied. Independent of, and evaluated after, `success`
+        (execution status) above -- DEBT-020's core distinction.
+
+        Fails closed: any internal error here produces UNKNOWN /
+        COMPLETION_EVALUATION_FAILED, never a fall-through to
+        "execution succeeded, so the gate must have meant success."
+        """
+        try:
+            if last_result is None:
+                return CompletionEvaluation(
+                    status=CompletionStatus.UNKNOWN,
+                    reason=CompletionReason.NO_RESULT,
+                    detail="last_result was None at aggregation time",
+                )
+
+            if not execution_succeeded:
+                is_cancellation = "cancel" in (last_result.error or "").lower()
+                return CompletionEvaluation(
+                    status=CompletionStatus.INCOMPLETE,
+                    reason=(CompletionReason.CANCELLED if is_cancellation
+                            else CompletionReason.EXECUTION_FAILURE),
+                    detail=last_result.error or "",
+                )
+
+            # Two independent execution-level success signals can exist on
+            # the same WorkerResult (WorkerResult.success, already known
+            # True here, and the richer optional execution_detail) --
+            # nothing reconciles them elsewhere (DEBT-020 finding). Neither
+            # is completion authority, but execution_detail.failure_type is
+            # more informative than the plain boolean when available: a
+            # worker can report success=True while its own execution_detail
+            # already knows the output was partial.
+            execution_detail = getattr(last_result, "execution_detail", None)
+            if (execution_detail is not None
+                    and execution_detail.failure_type == FailureType.COMPLETED_WITH_PARTIAL_OUTPUT):
+                return CompletionEvaluation(
+                    status=CompletionStatus.INCOMPLETE,
+                    reason=CompletionReason.PARTIAL_OUTPUT,
+                    detail="execution_detail.failure_type == COMPLETED_WITH_PARTIAL_OUTPUT",
+                )
+
+            hard_checkable = [
+                c for c in constraints
+                if getattr(c, "kind", None) == ConstraintKind.HARD
+                and isinstance(c, Constraint) and c.has_checkable_value()
+            ]
+            if not hard_checkable:
+                # Correct, not a gap being papered over: most requests
+                # carry no constraint with a checkable value today (no
+                # extraction path populates measure/target/comparator yet
+                # -- out of DEBT-020's scope, mission Section 36). UNKNOWN
+                # is the honest answer, not SATISFIED-by-default.
+                return CompletionEvaluation(
+                    status=CompletionStatus.UNKNOWN,
+                    reason=CompletionReason.NO_CHECKABLE_CONSTRAINT,
+                    detail=f"{len(constraints)} constraint(s) on this plan, "
+                           f"none both hard and checkable",
+                )
+
+            violated = [
+                c for c in hard_checkable
+                if not c.is_satisfied_by(_measure_output(last_result.output, c.measure))
+            ]
+            if violated:
+                return CompletionEvaluation(
+                    status=CompletionStatus.VIOLATED,
+                    reason=CompletionReason.HARD_CONSTRAINT_VIOLATED,
+                    detail=f"{len(violated)}/{len(hard_checkable)} hard "
+                           f"checkable constraint(s) not met",
+                )
+
+            return CompletionEvaluation(status=CompletionStatus.SATISFIED)
+
+        except Exception as e:
+            # Section 33: completion-gate failure fails closed, never
+            # falls through to execution success.
+            logger.error(
+                "WorkflowRuntime: completion evaluation raised: %s", e, exc_info=True,
+            )
+            return CompletionEvaluation(
+                status=CompletionStatus.UNKNOWN,
+                reason=CompletionReason.COMPLETION_EVALUATION_FAILED,
+                detail=str(e),
+            )
 
     async def _execute_from(
         self,

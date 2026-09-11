@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 
 from core.cognitive.planner import ExecutionPlan, PlanStep
 from core.events.event_stream import StreamEvent
+from core.runtime.execution_outcome import CompletionStatus
 from core.workers.base import WorkerContext
 from core.workers.evaluator import (
     EvaluationRecord,
@@ -46,11 +47,31 @@ def _make_plan(resource_id: str = "plan-1", goal_id: str = "goal-1",
     return plan
 
 
-def _completed_event(workflow_id: str, success: bool, sequence: int = 1) -> StreamEvent:
+def _completed_event(
+    workflow_id: str,
+    success: bool,
+    sequence: int = 1,
+    completion_status: str = None,
+) -> StreamEvent:
+    """DEBT-020: real WorkflowRuntime output now carries completion_status
+    alongside success -- they're independent (a plain `success=True` no
+    longer implies goal_completed). Defaulting completion_status to
+    "satisfied" when success and unspecified, "incomplete" otherwise,
+    preserves every existing call site's original intent (a fixture
+    representing a genuinely-successful workflow) rather than requiring
+    every caller to be rewritten. Tests that specifically need to
+    distinguish success from completion_status pass it explicitly.
+    """
+    if completion_status is None:
+        completion_status = CompletionStatus.SATISFIED if success else CompletionStatus.INCOMPLETE
     return StreamEvent(
         event_type="workflow.completed",
         source="WorkflowRuntime",
-        payload={"workflow_id": workflow_id, "success": success},
+        payload={
+            "workflow_id": workflow_id,
+            "success": success,
+            "completion_status": completion_status,
+        },
         sequence=sequence,
     )
 

@@ -79,3 +79,59 @@ class ExecutionOutcome:
     @property
     def is_success(self) -> bool:
         return self.failure_type in (FailureType.SUCCESS, FailureType.COMPLETED_WITH_PARTIAL_OUTPUT)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CompletionStatus / CompletionReason / CompletionEvaluation (DEBT-020)
+#
+# Distinct axis from FailureType above. FailureType (and WorkerResult.success
+# it's attached to) answers "did execution reach a terminal state without
+# erroring" -- including, by design, a node recovered via error_branch. It
+# was never intended to answer "did the output satisfy what the task
+# actually required", and nothing enforced that distinction: the plain
+# execution-status boolean propagated unchanged into workflow.completed's
+# payload and from there into EvaluatorWorker's goal_completed, three layers
+# removed from anything that could have checked scope.
+#
+# See docs/Bugs Hunt & fix reports/DEBT_020_PRE_IMPLEMENTATION_TRACE_AND_GATE_DESIGN.md
+# for the live-path trace this repairs.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class CompletionStatus(str, Enum):
+    """Did the task's authoritative completion conditions actually get
+    satisfied? Independent of, and evaluated after, execution status."""
+
+    SATISFIED = "satisfied"
+    INCOMPLETE = "incomplete"
+    VIOLATED = "violated"
+    UNKNOWN = "unknown"
+
+
+class CompletionReason(str, Enum):
+    """Typed reason a non-SATISFIED CompletionStatus was reached -- same
+    rationale as FailureType: downstream code and eventual user-facing
+    explanations shouldn't have to reverse-engineer a free-text string.
+    Only categories with an actual, populated source in this repository
+    today; DEBT-020 explicitly forbids decorative values nothing ever sets."""
+
+    NO_CHECKABLE_CONSTRAINT = "no_checkable_constraint"
+    HARD_CONSTRAINT_VIOLATED = "hard_constraint_violated"
+    PARTIAL_OUTPUT = "partial_output"
+    EXECUTION_FAILURE = "execution_failure"
+    CANCELLED = "cancelled"
+    NO_RESULT = "no_result"
+    COMPLETION_EVALUATION_FAILED = "completion_evaluation_failed"
+
+
+@dataclass
+class CompletionEvaluation:
+    """Result of evaluating whether a task's authoritative completion
+    conditions were satisfied. `reason` is "" exactly when
+    `status == CompletionStatus.SATISFIED` -- there is nothing to explain
+    in that case, matching WorkerResult.error's existing "" convention.
+    """
+
+    status: CompletionStatus = CompletionStatus.UNKNOWN
+    reason: str = ""
+    detail: str = ""

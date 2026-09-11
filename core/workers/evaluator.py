@@ -73,6 +73,7 @@ from typing import Any, Dict, List, Optional
 from core.cognitive.planner import ExecutionPlan
 from core.events.event_stream import EventStream, StreamEvent, get_event_stream
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
+from core.runtime.execution_outcome import CompletionStatus
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.runtime.execution_context import ExecutionContext
 
@@ -143,12 +144,26 @@ def _build_evaluation_record(
 
     goal_completed / actual_outcome: taken from the most recent (index 0
     — SQLiteEventStore.query() orders sequence DESC) "workflow.completed"
-    event's own `success` payload field when one exists; otherwise from
+    event's own `completion_status` payload field when one exists,
+    True iff it equals CompletionStatus.SATISFIED; otherwise from
     overrides["goal_completed"] (default False). goal_completed and
     actual_outcome are the same underlying signal — K4 §8 names them
     separately because one is Evaluation's own headline field and the
     other is specifically the calibration input paired with
     predicted_confidence, not because they can diverge.
+
+    DEBT-020: previously read the event's `success` field directly --
+    execution status, not task completion (a node recovered via
+    error_branch, or one that simply didn't error, counted as
+    goal_completed=True regardless of whether the output satisfied what
+    was asked). completion_status is the authoritative answer to that
+    separate question; see
+    docs/Bugs Hunt & fix reports/DEBT_020_PRE_IMPLEMENTATION_TRACE_AND_GATE_DESIGN.md.
+    A "workflow.completed" event from before this fix has no
+    completion_status field at all -- .get() with no default falls
+    through to None, which != CompletionStatus.SATISFIED, so a legacy
+    event correctly reads as not-completed rather than defaulting to the
+    old (wrong) semantics.
 
     tool_success_rate: completed / (completed + failed) among the node-
     level worker.completed/worker.failed events found for this
@@ -169,7 +184,10 @@ def _build_evaluation_record(
     context.parameters when available.
     """
     if workflow_completed_events:
-        goal_completed = bool(workflow_completed_events[0].payload.get("success", False))
+        goal_completed = (
+            workflow_completed_events[0].payload.get("completion_status")
+            == CompletionStatus.SATISFIED
+        )
     else:
         goal_completed = bool(overrides.get("goal_completed", False))
 

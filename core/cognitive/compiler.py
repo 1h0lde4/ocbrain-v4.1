@@ -257,6 +257,9 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
         # unchanged, not independently generated -- see WorkflowDefinition's
         # own docstring and Goal.root_operation_id for the full chain.
         root_operation_id=plan.root_operation_id,
+        # DEBT-020: same threading pattern as root_operation_id above --
+        # see WorkflowDefinition's own docstring.
+        constraints=plan.constraints,
     )
 
 
