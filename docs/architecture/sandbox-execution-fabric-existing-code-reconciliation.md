@@ -51,3 +51,30 @@ Recorded here so they aren't re-litigated per file during implementation:
 ## 5. Recommendation
 
 Ready to fire an updated version of the report's §15 kickoff prompt, incorporating: the five corrections (§1), the namespace decision (`core/sandbox/`, `Sandbox*` prefix, §3), the two reuse targets (`SkillExecutionConfig`, `EventStream`, §2), and the two renamed concepts ("extension" instead of "capability"; `AdmissionGate` instead of `ValidationGate`). No blocker found that would delay Phase 1 (Docker/OCI backend, per the report's own plan).
+
+## 6. Phase 1 progress (update, September 11 2026)
+
+Phase 1 was started in this same session, in this same environment. One environment fact changed the plan: `docker`, `runc`, and `podman` were all verified absent here (`which` found none of them), so the "docker run" half of §13 point 4's "runc rootless ou docker run" choice was not available to build or test. The "runc rootless" half was: `unshare` (user/mount/pid/net namespaces), cgroup v1 (memory, pids controllers, writable), and `PR_SET_NO_NEW_PRIVS` via `prctl` were all empirically verified present and working before any production code was written.
+
+**Built and passing (36/36 tests, 3 consecutive clean runs, no leaked cgroups or processes after `destroy()`):**
+
+- `core/sandbox/contracts.py` — all Phase 1 contracts (`SandboxPolicy`, `SandboxRequest`, `SandboxHandle`, `RuntimeCapabilities`, `ArtifactManifest`, `SandboxResult`, `SandboxEvent`), frozen dataclasses, fail-closed `__post_init__` validation.
+- `core/sandbox/backend.py` — the `SandboxBackend` ABC (create/run/cancel/destroy/inspect).
+- `core/sandbox/admission.py` — `AdmissionGate`-equivalent `check_admission()`, deny-by-default; rejects any request naming `allowed_hosts` since no Phase 1 backend enforces an allowlist yet.
+- `core/sandbox/events.py` — thin adapter publishing `SandboxEvent` through the real `EventStream` (`core/events/event_stream.py`), not a parallel bus. Verified against a real `SQLiteEventStore` on a temp DB, not just a mock.
+- `core/sandbox/backends/stub_backend.py` — the report's own anticipated "stub minimal" for interface tests; claims zero `SandboxCapability` values so `AdmissionGate` structurally refuses to admit real work to it.
+- `core/sandbox/backends/namespace_backend.py` + `_ns_init.py` — the real, working Phase 1 backend. Empirically verified, each as its own adversarial test: `echo Hello` runs; `/root` (absent in the jail) fails cleanly; an absolute symlink to `/etc/passwd` created before chroot resolves inside the jail afterward, not to the host file; the same holds for `../../etc/passwd`-style traversal; a fresh net namespace has no route out at all (`ENETUNREACH`) with zero firewall rules needed; a memory-limit violation is detected via the cgroup's own `memory.failcnt` and reported as `RESOURCE_EXCEEDED`; a fork bomb is stopped by `pids.max`; a timeout terminates a long-running command; `cancel()` kills the entire OS process group and leaves nothing orphaned; produced files are collected as artifacts with a real sha256, and the read-only base-rootfs bind points are not mistaken for artifacts.
+
+**Two real bugs found and fixed by these tests, not papered over:**
+
+1. `cancel()`'s result was classified `COMPLETED` instead of `CANCELLED` for a `SIGKILL`-terminated process — fixed by tracking `cancel_requested` on the backend's internal run-state.
+2. OOM detection assumed the memory-limit violation always surfaces as a negative (signal-killed) exit code on the directly-tracked process. Empirically false: when the limit is hit, the kernel's OOM killer can strike *any* process sharing the cgroup (it's inherited across fork/exec across the whole `unshare` → `_ns_init.py` → payload chain), which sometimes surfaces as `unshare` itself exiting with an ordinary *positive* status after catching its child's death. Fixed by checking the cgroup's own `memory.failcnt` first, unconditionally, rather than inferring OOM from exit-code sign.
+
+**Deliberately not attempted here (needs a host with Docker, tracked rather than silently skipped):**
+
+- A `DockerBackend` implementing the same `SandboxBackend` interface via `docker run` — nothing in the interface or contracts should need to change for this to slot in.
+- seccomp-bpf syscall filtering (`no_new_privs` is set; a syscall allowlist is not).
+- Enforcing a non-empty `SandboxPolicy.allowed_hosts` (currently rejected by `AdmissionGate` rather than silently ignored).
+- Mermaid diagrams (report §15 point 10) and a French-language design-doc pass.
+
+No tracking-doc sync (`CURRENT_STATE.md` / `KNOWN_ISSUES.md` / `IMPLEMENTATION_ROADMAP.md`, all on `main`) was performed as part of this Phase 1 push, consistent with §4 above.
