@@ -20,7 +20,23 @@ def create(
     """
     Scaffold a new module. Returns the path to the new module folder.
     Raises ValueError on invalid name or duplicate.
+
+    SECURITY (RCE-001, see KNOWN_ISSUES.md DEBT-021): disabled by default as
+    an emergency containment measure. Set global.module_factory_enabled =
+    true in settings.toml to re-enable. This gate sits here, in the one
+    function every entry point (the /modules/new route, both bundle-import
+    routers, and the local CLI wizard) converges on, rather than in any
+    individual caller, so no entry point can bypass it by omission.
     """
+    if not config.get("global.module_factory_enabled", False):
+        raise RuntimeError(
+            "Module creation is temporarily disabled (RCE-001 containment, "
+            "see KNOWN_ISSUES.md DEBT-021). Set "
+            "global.module_factory_enabled = true in settings.toml to "
+            "re-enable once the fix in this file's placeholder-substitution "
+            "step is confirmed deployed."
+        )
+
     name = name.strip().lower().replace(" ", "_")
     if not name.isidentifier():
         raise ValueError(f"Invalid module name: '{name}'. Use only letters, digits, underscores.")
