@@ -43,7 +43,10 @@ class ContextMemory:
         self._init_db()
 
         # V2.1 FIX: in-memory prompt cache
-        self._prompt_cache: dict[int, str] = {}   # n_turns → formatted string
+        # CTX-SCOPE-001: keyed by (n, scope), not just n -- otherwise one
+        # scope's cached formatted string would be served back to a
+        # different scope requesting the same n.
+        self._prompt_cache: dict[tuple, str] = {}   # (n, scope) → formatted string
         self._prompt_cache_turn: int = -1          # last turn id when cache was built
         self._turns_cache_dirty: bool = True
         self.long_term_memories = []
@@ -64,7 +67,8 @@ class ContextMemory:
                     timestamp    REAL    NOT NULL,
                     query        TEXT    NOT NULL,
                     modules_used TEXT    NOT NULL,
-                    answer       TEXT    NOT NULL
+                    answer       TEXT    NOT NULL,
+                    scope        TEXT    NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS entities (
                     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,18 +87,36 @@ class ContextMemory:
                 );
                 INSERT OR IGNORE INTO schema_meta VALUES ('schema_version','2');
             """)
+            # CTX-SCOPE-001 migration: CREATE TABLE IF NOT EXISTS above does
+            # not alter a `turns` table that already exists from before the
+            # `scope` column was added. Add it explicitly for pre-existing
+            # installations; existing rows get the same '' default new rows
+            # get, so nothing existing changes scope retroactively.
+            existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(turns)").fetchall()}
+            if "scope" not in existing_cols:
+                cur.execute("ALTER TABLE turns ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
             self._conn.commit()
 
     def save(self, query: str, modules_used: list[str], answer: str,
-             entities: Optional[dict] = None):
+             entities: Optional[dict] = None, scope: str = ""):
+        """CTX-SCOPE-001: `scope` identifies which caller/task/session this
+        turn belongs to, so a caller with a genuinely different scope can
+        be excluded from it at read time (see last_n()/format_for_prompt()).
+        Defaults to '' -- unchanged behavior for any caller that does not
+        yet pass one; opting into isolation is per-caller, not automatic,
+        since some callers legitimately want shared continuity within a
+        single ongoing session (see tests/test_context.py) and this
+        method has no way to know which case it's in on its own.
+        """
         from .privacy import privacy
         if not privacy.can_save_history():
             return
         with self._lock:
             cur = self._conn.cursor()
             cur.execute(
-                "INSERT INTO turns (timestamp, query, modules_used, answer) VALUES (?,?,?,?)",
-                (time.time(), query, json.dumps(modules_used), answer),
+                "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
+                "VALUES (?,?,?,?,?)",
+                (time.time(), query, json.dumps(modules_used), answer, scope),
             )
             turn_id = cur.lastrowid
             if entities:
@@ -111,13 +133,23 @@ class ContextMemory:
             self._prompt_cache.clear()
             self._prompt_cache_turn = turn_id
 
-    def last_n(self, n: int = 10) -> list[Turn]:
+    def last_n(self, n: int = 10, scope: Optional[str] = None) -> list[Turn]:
+        """scope=None (default): unfiltered, matching every prior release's
+        behavior exactly -- not a security boundary on its own. Pass an
+        explicit scope to restrict results to turns saved with that same
+        scope (CTX-SCOPE-001)."""
         with self._lock:
             cur = self._conn.cursor()
-            cur.execute(
-                "SELECT id, timestamp, query, modules_used, answer "
-                "FROM turns ORDER BY id DESC LIMIT ?", (n,)
-            )
+            if scope is None:
+                cur.execute(
+                    "SELECT id, timestamp, query, modules_used, answer "
+                    "FROM turns ORDER BY id DESC LIMIT ?", (n,)
+                )
+            else:
+                cur.execute(
+                    "SELECT id, timestamp, query, modules_used, answer "
+                    "FROM turns WHERE scope=? ORDER BY id DESC LIMIT ?", (scope, n),
+                )
             rows = cur.fetchall()
         return [
             Turn(r[0], r[1], r[2], json.loads(r[3]), r[4])
@@ -144,14 +176,21 @@ class ContextMemory:
         self._long_term_memories_string = context_string
         self.long_term_memories = []
 
-    def format_for_prompt(self, n: int = 5) -> str:
+    def format_for_prompt(self, n: int = 5, scope: Optional[str] = None) -> str:
         """
         V2.1: cached — returns the same string until a new turn is saved.
         Avoids a DB round-trip on every query in the same session.
+
+        scope=None (default): unfiltered, matching every prior release's
+        behavior exactly. Pass an explicit scope to restrict the "RECENT
+        CONVERSATION" section to turns saved with that same scope
+        (CTX-SCOPE-001) -- otherwise this section is the most recent N
+        interactions system-wide, regardless of who produced them.
         """
         with self._lock:
-            if n in self._prompt_cache and not self._turns_cache_dirty:
-                return self._prompt_cache[n]
+            cache_key = (n, scope)
+            if cache_key in self._prompt_cache and not self._turns_cache_dirty:
+                return self._prompt_cache[cache_key]
 
             lines = []
             
@@ -166,7 +205,7 @@ class ContextMemory:
                 lines.append("")
 
             # 2. Short-Term History
-            turns = self.last_n(n)
+            turns = self.last_n(n, scope=scope)
             if turns:
                 lines.append("### RECENT CONVERSATION")
                 for t in turns:
@@ -174,7 +213,7 @@ class ContextMemory:
                     lines.append(f"Assistant: {t.answer}")
             
             result = "\n".join(lines)
-            self._prompt_cache[n] = result
+            self._prompt_cache[cache_key] = result
             self._turns_cache_dirty = False
             return result
 
