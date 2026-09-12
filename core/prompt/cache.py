@@ -28,15 +28,27 @@ def compress_context(text: str, max_words: int = 100) -> str:
 
 async def cached_generate(provider, prompt: str, ttl_seconds: float = 3600.0) -> str:
     """
-    Checks cache before generation. Compresses prompt context to save tokens.
+    Checks cache before generation. Compresses prompt context to reduce
+    tokens sent to the provider.
+
+    CTX-CACHE-001 fix: the cache key is hashed from the full, uncompressed
+    `prompt`, not the compressed one. compress_context() keeps only the
+    first/last max_words//2 words for anything over the threshold and
+    discards the entire middle -- two genuinely different prompts sharing
+    the same head and tail (a realistic shape whenever variable content
+    sits between a fixed header and fixed footer, e.g. the Intent
+    Hypothesis template's Context/Request block) previously hashed
+    identically and collided, silently returning one caller's response to
+    an unrelated caller. Compression still applies to what is actually
+    sent to the provider below -- only cache-key identity changed.
     """
-    # 1. Compress prompt if it's exceedingly long
-    # We assume 'prompt' has clear boundaries, but for safety we compress
-    # any monolithic blocks of text if they are huge. 
+    # 1. Compress prompt if it's exceedingly long. This reduces tokens
+    # sent to the provider only -- see the cache-key note above for why
+    # it must not also be what determines cache identity.
     compressed_prompt = compress_context(prompt, max_words=500)
-    
-    # 2. Hash prompt
-    prompt_hash = hashlib.sha256(compressed_prompt.encode('utf-8')).hexdigest()
+
+    # 2. Hash the full prompt (CTX-CACHE-001) -- not compressed_prompt.
+    prompt_hash = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
     
     # 3. Check cache
     now = time.time()
