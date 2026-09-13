@@ -88,6 +88,34 @@ Mission §§4–6, 8–26, 28 (deep code tracing: CTX reconciliation beyond the 
 3. **`interface/api.py` / `core/brain_api.py` authentication.** Per the closure audit's own framing: whether "any local process" is inside or outside OCBrain's trust boundary is a threat-model decision, not something an audit can resolve unilaterally.
 4. **CTX-DELETE-001 / CTX-AUTH-001 classification dispute** — already flagged in this assistant's memory of the project, and independently confirmed as still unresolved by today's own tip commit. This sits inside the CTX reconciliation packet (mission §4) and will need your decision when that packet runs.
 
+## 8a. Packet A — Complete: Closure Audit Fully Read and Reconciled `[VERIFIED-FRESH]`
+
+The closure audit's own formal verdict (its §31) is **🔴 NO-GO**, not the softer "🟡 CONDITIONAL GO is close" language its executive summary opens with — the two are not contradictory once the full document is read: the executive summary is describing how close the *underlying architecture* is, while §31 is the actual gate decision. Its final numbered list matches the commit message's "2 P0 + 5 P1" exactly:
+
+**2 P0 (named blockers):** CTX-DELETE-001, CTX-AUTH-001.
+**5 P1 (required fixes/verifications):** SupervisorWorker retry-reachability, DEBT-016 (watchdog unification), DEBT-003 (checkpoint/resume), CTX-SCOPE-001/CTX-CACHE-001 severity decision, API-authentication threat-model decision.
+
+**Current status of each, checked against today's exact `main`, not inherited from either document:**
+
+| Item | Status today |
+|---|---|
+| DEBT-016 | **Resolved** (`ADR-KERNEL-02`, confirmed present) — closure audit's finding here is stale, its baseline simply predates the fix |
+| DEBT-003 | **Resolved** (`ADR-KERNEL-03`, confirmed present) — same |
+| SupervisorWorker retry-reachability | **Still open, still untracked** — confirmed fresh in §5 above |
+| CTX-DELETE-001 | **Still open** (red test), classification disputed — see below |
+| CTX-AUTH-001 | **Still open** (red test), classification disputed — see below |
+| CTX-SCOPE-001 / CTX-CACHE-001 severity decision | Classified Tier 3 / Tier 1 respectively by the remediation register (see below) — not independently re-verified against a stated Kernel-v1.0-specific rationale |
+| API-authentication threat model | **Still undecided** — no auth mechanism exists; no ADR or `KNOWN_ISSUES.md` entry records an explicit decision either way |
+
+**The CTX-DELETE-001/CTX-AUTH-001 dispute, traced to its primary source `[VERIFIED-FRESH]`:** `docs/reports/context-compiler-remediation-register.md` was read directly (not inferred from `KNOWN_ISSUES.md`'s summary of it). Its actual tiers:
+
+- **Tier 1 ("must fix before Context Compiler adoption"):** REM-002 = CTX-AUTH-001. Stated rationale: *"Root cause... is definitionally in scope for Context Compiler; shipping new infra around a known hole compounds it."* This is a forward-looking constraint on adopting a **different, not-yet-built subsystem** — it does not itself state a position on whether CTX-AUTH-001 should be fixed before Kernel v1.0 freezes independent of Context Compiler.
+- **Tier 3 ("hardening, real, tracked, not blocking"):** REM-007 = CTX-DELETE-001. **No "why this tier" rationale is given for this item at all** — the Tier 3 table has no such column, unlike Tier 1's. The register asserts the classification without arguing it for this specific item.
+
+`KNOWN_ISSUES.md`'s DEBT-019 entry then applies this register to conclude both items "do not gate Kernel v1.0 freeze... a future subsystem, not part of Kernel v1.0's own scope" — but that conclusion is this project's own **inference** from the register (which is organized around Context Compiler/C-MoE milestones, not a Kernel-v1.0-freeze question), not something the register states outright. Meanwhile `core/cognitive/intent.py`'s prompt assembly — where CTX-AUTH-001 lives — is not future/hypothetical code; it is the live entry point every request passes through today, and the closure audit's own Kernel Boundary table (§3) classifies the Cognitive Front-End as Kernel-required.
+
+**This is the actual shape of the decision that needs to be made — not "which audit was right," but:** does a live correctness/security property of the *current* Kernel need to hold before freeze, independent of whether a future subsystem (Context Compiler) ever gets built? The register's own text doesn't answer that question for either item; it answers a different one.
+
 ## 9. Proposed Next-Session Packet Order
 
 A. Finish reading the closure audit (remaining ~450 lines) + triage every net-new finding against current `main`.
