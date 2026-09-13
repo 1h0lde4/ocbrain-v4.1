@@ -47,9 +47,11 @@ class SandboxCapability(Enum):
     MOUNT_NAMESPACE = "mount_namespace"
     PID_NAMESPACE = "pid_namespace"
     NET_NAMESPACE = "net_namespace"
+    UTS_NAMESPACE = "uts_namespace"
     CGROUP_MEMORY = "cgroup_memory"
     CGROUP_PIDS = "cgroup_pids"
     NO_NEW_PRIVS = "no_new_privs"
+    SECCOMP = "seccomp"
     FILESYSTEM_JAIL = "filesystem_jail"
     NETWORK_DENY_DEFAULT = "network_deny_default"
 

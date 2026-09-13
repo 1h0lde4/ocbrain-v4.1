@@ -22,12 +22,13 @@ that to slot in; AdmissionGate and the contracts are backend-agnostic.
 Isolation model, each point independently verified against this exact
 environment before being relied on (see the reconciliation for the
 narrower claims this superseded):
-    - `unshare --user --map-root-user --mount --pid --fork --net`: a fresh
-      net namespace with no further configuration has ONLY loopback -- no
-      route out at all (verified: a raw TCP connect attempt from inside
-      returns ENETUNREACH). That satisfies PI §14.1's network-deny-by-
-      default requirement for free, rather than via an explicit firewall
-      rule that could be misconfigured.
+    - `unshare --user --map-root-user --mount --pid --fork --net --uts`: a
+      fresh net namespace with no further configuration has ONLY loopback
+      -- no route out at all (verified: a raw TCP connect attempt from
+      inside returns ENETUNREACH). That satisfies PI §14.1's network-deny-
+      by-default requirement for free, rather than via an explicit
+      firewall rule that could be misconfigured. `--uts` (added alongside
+      seccomp below) isolates hostname/domainname changes from the host.
     - cgroup v1 memory + pids controllers, one pair of cgroups per handle.
       Joined via `preexec_fn` in the OUTER (not-yet-namespaced) process,
       deliberately BEFORE `unshare` is even exec'd -- cgroup membership is
@@ -38,6 +39,16 @@ narrower claims this superseded):
       rely on without re-deriving kernel semantics from scratch).
     - PR_SET_NO_NEW_PRIVS is set inside _ns_init.py, before exec, so a
       setuid binary inside the jail cannot regain privileges.
+    - A default-ALLOW seccomp-bpf denylist (core/sandbox/backends/
+      _seccomp.py, closing KNOWN_ISSUES.md DEBT-022) is loaded right
+      before exec, blocking ptrace, mount/umount2, kernel-module and
+      kexec syscalls, clock manipulation, keyring syscalls, bpf(),
+      perf_event_open, userfaultfd, and nested unshare/setns, among
+      others -- see that module for the full list and the rationale for
+      denylist-over-allowlist in Phase 1. Ordering matters and was
+      verified, not assumed: the setup phase's own bind-mounts need
+      `mount()` and run before the filter loads, so the payload -- not
+      the setup code -- is what actually gets blocked from mounting.
     - Cancellation kills the whole OS process GROUP (`start_new_session`
       + `os.killpg`), not just the top-level `unshare` process -- verified
       empirically that killing only the tracked PID can leave the
@@ -46,9 +57,11 @@ narrower claims this superseded):
       namespace.
 
 What this does NOT provide yet (tracked, not silently assumed away):
-    - seccomp-bpf syscall filtering (nsjail/bubblewrap-style). no_new_privs
-      is set but a syscall allowlist is not -- report §12's adversarial
-      bench should be re-run once that lands.
+    - The seccomp denylist is a curated Phase 1 set (core/sandbox/
+      backends/_seccomp.py's DENIED_SYSCALLS), not a claim of matching
+      any specific reference profile exactly, and not a strict allowlist
+      -- tightening further is a natural, tracked follow-up once there is
+      real operational experience about what sandboxed workloads call.
     - Non-empty SandboxPolicy.allowed_hosts. AdmissionGate rejects any
       request that names one rather than silently running with full
       network access.
@@ -92,9 +105,11 @@ _CAPS = RuntimeCapabilities(
             SandboxCapability.MOUNT_NAMESPACE,
             SandboxCapability.PID_NAMESPACE,
             SandboxCapability.NET_NAMESPACE,
+            SandboxCapability.UTS_NAMESPACE,
             SandboxCapability.CGROUP_MEMORY,
             SandboxCapability.CGROUP_PIDS,
             SandboxCapability.NO_NEW_PRIVS,
+            SandboxCapability.SECCOMP,
             SandboxCapability.FILESYSTEM_JAIL,
             SandboxCapability.NETWORK_DENY_DEFAULT,
         }
@@ -196,6 +211,7 @@ class NamespaceBackend(SandboxBackend):
             "--pid",
             "--fork",
             "--net",
+            "--uts",
             "--",
             sys.executable,
             _NS_INIT,

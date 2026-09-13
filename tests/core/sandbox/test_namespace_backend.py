@@ -32,6 +32,7 @@ writable cgroup v1 memory controller -- see _namespaces_available().
 import asyncio
 import hashlib
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -255,5 +256,95 @@ async def test_artifacts_are_collected_with_real_hashes(backend, workspace):
 
         # the read-only base rootfs bind points must not appear as "artifacts"
         assert not any(n.startswith(("bin/", "lib/", "usr/")) for n in names)
+    finally:
+        await backend.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_seccomp_blocks_ptrace(backend, workspace):
+    """DEBT-022 closure: ptrace is on the denylist. PTRACE_TRACEME (0) is
+    the cheapest well-defined call to provoke -- expect EPERM (errno 1)."""
+    policy = SandboxPolicy(workspace_dir=workspace, timeout_sec=10)
+    code = (
+        "import ctypes, sys\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "r = libc.ptrace(0, 0, 0, 0)\n"
+        "err = ctypes.get_errno()\n"
+        "sys.exit(0 if (r == -1 and err == 1) else 1)\n"
+    )
+    request = SandboxRequest(command=(sys.executable, "-c", code), policy=policy)
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+        assert result.exit_code == 0, (
+            f"ptrace was not blocked by seccomp; stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+    finally:
+        await backend.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_seccomp_blocks_mount_for_the_payload(backend, workspace):
+    """The setup phase (bind-mounting the base rootfs) needs mount() and
+    runs before the filter loads; the PAYLOAD must not get it -- proves
+    the ordering (mounts -> chroot -> seccomp -> exec) actually holds."""
+    policy = SandboxPolicy(workspace_dir=workspace, timeout_sec=10)
+    code = (
+        "import ctypes, sys\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "r = libc.mount(b'none', b'/', b'tmpfs', 0, None)\n"
+        "err = ctypes.get_errno()\n"
+        "sys.exit(0 if (r == -1 and err == 1) else 1)\n"
+    )
+    request = SandboxRequest(command=(sys.executable, "-c", code), policy=policy)
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+        assert result.exit_code == 0, (
+            f"mount was not blocked for the payload; stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+    finally:
+        await backend.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_seccomp_denylist_does_not_break_normal_execution(backend, workspace):
+    """The risk with any denylist is collateral damage. Exercise a small
+    spread of ordinary syscalls (process spawn, file I/O, getpid) that
+    are NOT on the denylist and must keep working."""
+    policy = SandboxPolicy(workspace_dir=workspace, timeout_sec=10)
+    code = (
+        "import os, subprocess\n"
+        "open('probe.txt', 'w').write('ok')\n"
+        "assert open('probe.txt').read() == 'ok'\n"
+        "r = subprocess.run(['echo', 'nested'], capture_output=True, text=True)\n"
+        "assert r.stdout.strip() == 'nested'\n"
+        "print('pid', os.getpid())\n"
+    )
+    request = SandboxRequest(command=(sys.executable, "-c", code), policy=policy)
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+        assert result.succeeded, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        assert result.stdout.startswith("pid ")
+    finally:
+        await backend.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_uts_namespace_isolates_hostname(backend, workspace):
+    """--uts (added alongside seccomp in this pass): the sandbox can set
+    its OWN hostname without it leaking to the host."""
+    host_hostname_before = socket.gethostname()
+
+    policy = SandboxPolicy(workspace_dir=workspace, timeout_sec=10)
+    code = "import socket\nsocket.sethostname('sandboxed-child-test')\nprint(socket.gethostname())\n"
+    request = SandboxRequest(command=(sys.executable, "-c", code), policy=policy)
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+        assert result.succeeded, f"stderr={result.stderr!r}"
+        assert result.stdout.strip() == "sandboxed-child-test"
+        assert socket.gethostname() == host_hostname_before, "hostname change leaked to the host"
     finally:
         await backend.destroy(handle)

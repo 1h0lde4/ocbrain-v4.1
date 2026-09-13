@@ -73,8 +73,17 @@ Phase 1 was started in this same session, in this same environment. One environm
 **Deliberately not attempted here (needs a host with Docker, tracked rather than silently skipped):**
 
 - A `DockerBackend` implementing the same `SandboxBackend` interface via `docker run` — nothing in the interface or contracts should need to change for this to slot in.
-- seccomp-bpf syscall filtering (`no_new_privs` is set; a syscall allowlist is not).
-- Enforcing a non-empty `SandboxPolicy.allowed_hosts` (currently rejected by `AdmissionGate` rather than silently ignored).
+- Enforcing a non-empty `SandboxPolicy.allowed_hosts` (currently rejected by `AdmissionGate` rather than silently ignored) — tracked as `KNOWN_ISSUES.md` DEBT-023.
 - Mermaid diagrams (report §15 point 10) and a French-language design-doc pass.
 
-No tracking-doc sync (`CURRENT_STATE.md` / `KNOWN_ISSUES.md` / `IMPLEMENTATION_ROADMAP.md`, all on `main`) was performed as part of this Phase 1 push, consistent with §4 above.
+No tracking-doc sync (`CURRENT_STATE.md` / `KNOWN_ISSUES.md` / `IMPLEMENTATION_ROADMAP.md`, all on `main`) was performed as part of this Phase 1 push, consistent with §4 above. (Since resolved — see §7.)
+
+## 7. DEBT-022 closed: seccomp-bpf denylist + UTS namespace (update, September 12 2026)
+
+`core/sandbox/backends/_seccomp.py` binds directly to `libseccomp.so.2` (found already present in the build environment — `ldconfig -p | grep seccomp`) via ctypes, rather than hand-rolling raw BPF instructions: for a security boundary, leaning on a widely-used, independently-audited library is the right trade, not a shortcut. Default-ALLOW with a curated ~29-syscall denylist (`ptrace`, `mount`/`umount2`, kernel-module and `kexec` syscalls, clock manipulation, keyring syscalls, `bpf()`, `perf_event_open`, `userfaultfd`, nested `unshare`/`setns`, among others), `SCMP_ACT_ERRNO(EPERM)` rather than `SCMP_ACT_KILL` so a blocked call looks like an ordinary permission failure a program can handle. Loaded in `_ns_init.py` after the setup phase's own bind-mounts (which need `mount()`) and after chroot, so the *payload* is what's actually restricted, not the setup code — order was verified, not assumed, same as everything else in this document.
+
+One assumption from Phase 1 was checked and found wrong in the process: `seccomp_load()` was assumed to need `PR_SET_NO_NEW_PRIVS` set first for an unprivileged caller. Empirically false for this specific configuration — a process that is only *namespace*-mapped root (via `--map-root-user`) already has the equivalent of `CAP_SYS_ADMIN` within its own user namespace, so `seccomp_load()` succeeds either order here. `no_new_privs` is still set first regardless, as ordinary defense-in-depth, not because this configuration requires it.
+
+`--uts` was added to the `unshare` invocation alongside this (same file, same pass): hostname/domainname changes inside the sandbox no longer leak to the host — verified via `socket.sethostname()` inside vs. `socket.gethostname()` on the host, before and after.
+
+8 new tests (4 in `test_namespace_backend.py`, 4 in `test_seccomp.py`), 44/44 total passing, 3 consecutive clean runs, zero leaked cgroups/processes confirmed after a settle delay. mypy clean across all 10 `core/sandbox/*.py` files. `RuntimeCapabilities` now includes `SECCOMP` and `UTS_NAMESPACE`. `KNOWN_ISSUES.md` DEBT-022 should be moved to Resolved in the next tracking-doc sync.
