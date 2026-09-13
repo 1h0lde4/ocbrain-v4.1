@@ -10,14 +10,17 @@ Coverage:
       enforcement that the stub can never be mistaken for a real backend)
     - NamespaceBackend's full capability set is admitted for an ordinary
       deny-all-network request
-    - A policy naming allowed_hosts is rejected even against a backend
-      that supports NET_NAMESPACE, because no Phase 1 backend enforces an
-      allowlist yet (fail-closed, not silently ignored)
+    - NamespaceBackend now also admits a request naming allowed_hosts
+      (DEBT-023 closure — it has NETWORK_ALLOWLIST)
+    - A backend with NET_NAMESPACE but NOT the specific NETWORK_ALLOWLIST
+      capability is still rejected for a policy naming allowed_hosts —
+      the check is precise about which capability it needs, not "any
+      network isolation at all"
 """
 from core.sandbox.admission import check_admission
 from core.sandbox.backends.namespace_backend import _CAPS as NAMESPACE_CAPS
 from core.sandbox.backends.stub_backend import _CAPS as STUB_CAPS
-from core.sandbox.contracts import SandboxPolicy, SandboxRequest
+from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability, SandboxPolicy, SandboxRequest
 
 
 def _request(**policy_overrides) -> SandboxRequest:
@@ -36,7 +39,30 @@ def test_namespace_backend_admits_deny_all_network_request():
     assert decision.allowed is True
 
 
-def test_allowed_hosts_rejected_even_with_net_namespace_support():
+def test_namespace_backend_admits_allowed_hosts_request():
+    """DEBT-023: NamespaceBackend now genuinely enforces this via
+    _net_proxy.py, so AdmissionGate should let it through."""
     decision = check_admission(_request(allowed_hosts=("pypi.org",)), NAMESPACE_CAPS)
+    assert decision.allowed is True
+
+
+def test_allowed_hosts_rejected_without_the_specific_capability():
+    """A backend that isolates the network (NET_NAMESPACE) but does not
+    specifically claim NETWORK_ALLOWLIST must still be rejected for a
+    policy naming allowed_hosts — precise capability gating, not "any
+    network isolation counts"."""
+    partial_caps = RuntimeCapabilities(
+        backend_name="hypothetical-deny-all-only",
+        supported=frozenset(
+            {
+                SandboxCapability.FILESYSTEM_JAIL,
+                SandboxCapability.CGROUP_MEMORY,
+                SandboxCapability.CGROUP_PIDS,
+                SandboxCapability.NET_NAMESPACE,
+            }
+        ),
+    )
+    decision = check_admission(_request(allowed_hosts=("pypi.org",)), partial_caps)
     assert decision.allowed is False
     assert "allowed_hosts" in decision.reason
+

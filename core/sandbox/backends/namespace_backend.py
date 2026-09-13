@@ -14,6 +14,16 @@ verified in this environment (PI's own "empirical verification over
 document trust" -- see docs/architecture/
 sandbox-execution-fabric-existing-code-reconciliation.md).
 
+New dependency as of DEBT-023's closure: `iproute2` (the `ip` CLI) for
+named-netns/veth management. Not present by default in the build
+environment either -- installed via `apt-get install iproute2` (Ubuntu
+archive, an already-allowed network egress target) before this was
+written; a real deployment host needs it too. `iproute2` is close to
+universal on modern Linux (Docker itself depends on it), so this is a
+low-risk addition, but it is a genuinely new requirement, not an
+assumption -- worth a line in whatever installs this project's system
+packages.
+
 A DockerBackend implementing this same SandboxBackend interface (using
 `docker run` against a real daemon) is a natural, additive follow-up on a
 host that actually has Docker -- nothing here should need to change for
@@ -55,6 +65,21 @@ narrower claims this superseded):
       namespaced descendant (which `unshare --fork` re-execs into) as an
       orphan with no external killer once it's inside its own PID
       namespace.
+    - A non-empty SandboxPolicy.allowed_hosts (closing KNOWN_ISSUES.md
+      DEBT-023) is honored via a named, pre-configured network namespace
+      + veth pair + an allowlist-enforcing forward proxy (core/sandbox/
+      backends/_net_proxy.py) on the host-side peer -- built and
+      configured BEFORE the sandbox process ever starts, specifically to
+      avoid any race between "namespace exists" and "namespace is
+      configured" that reconfiguring an already-unshared --net namespace
+      from outside would risk. The sandbox side gets no default route,
+      so structurally -- not via a firewall rule -- it can reach nothing
+      except that one proxy IP (verified: ENETUNREACH to everything
+      else). This is HTTP(S)-only (HTTP CONNECT tunneling, matching how
+      `pip` and most well-behaved clients already respect HTTP_PROXY/
+      HTTPS_PROXY) -- not a general arbitrary-protocol host allowlist. A
+      raw non-HTTP TCP/UDP connection to an allowed host is still
+      blocked, since only the proxy port itself is reachable at all.
 
 What this does NOT provide yet (tracked, not silently assumed away):
     - The seccomp denylist is a curated Phase 1 set (core/sandbox/
@@ -62,22 +87,24 @@ What this does NOT provide yet (tracked, not silently assumed away):
       any specific reference profile exactly, and not a strict allowlist
       -- tightening further is a natural, tracked follow-up once there is
       real operational experience about what sandboxed workloads call.
-    - Non-empty SandboxPolicy.allowed_hosts. AdmissionGate rejects any
-      request that names one rather than silently running with full
-      network access.
+    - Protocol-agnostic allowed_hosts enforcement (see above -- HTTP(S)
+      via CONNECT only, by design, not yet a general allowlist).
 """
 import asyncio
 import hashlib
+import itertools
 import os
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 
 from core.sandbox.backend import SandboxBackend
+from core.sandbox.backends._net_proxy import AllowlistProxy
 from core.sandbox.contracts import (
     ArtifactManifest,
     RuntimeCapabilities,
@@ -112,9 +139,27 @@ _CAPS = RuntimeCapabilities(
             SandboxCapability.SECCOMP,
             SandboxCapability.FILESYSTEM_JAIL,
             SandboxCapability.NETWORK_DENY_DEFAULT,
+            SandboxCapability.NETWORK_ALLOWLIST,
         }
     ),
 )
+
+_subnet_counter = itertools.count()
+_subnet_lock = threading.Lock()
+
+
+def _alloc_subnet() -> tuple[str, str]:
+    """Allocate a distinct /30 within 10.200.0.0/16 for one sandbox's veth
+    pair. A monotonic counter, not random -- collisions would be a
+    genuinely confusing bug to chase (two sandboxes crosstalking their
+    'isolated' networks), and a counter makes that structurally
+    impossible up to ~16k concurrent allocations rather than merely
+    unlikely."""
+    with _subnet_lock:
+        idx = next(_subnet_counter)
+    base = (idx * 4) % 65536  # always a multiple of 4 -> never overflows a /30 into the next octet
+    octet3, octet4 = (base // 256) % 256, base % 256
+    return f"10.200.{octet3}.{octet4 + 1}", f"10.200.{octet3}.{octet4 + 2}"
 
 
 @dataclass
@@ -130,6 +175,10 @@ class _RunState:
     pgid: int | None = None
     state: SandboxState = SandboxState.PENDING
     cancel_requested: bool = False
+    netns_name: str | None = None
+    veth_host: str | None = None
+    proxy: AllowlistProxy | None = None
+    proxy_host_ip: str | None = None
 
 
 def _write(path: str, value: str) -> None:
@@ -188,12 +237,62 @@ class NamespaceBackend(SandboxBackend):
             workspace_dir=request.policy.workspace_dir,
             state=SandboxState.PROVISIONING,
         )
+
+        if request.policy.allowed_hosts:
+            self._setup_allowlisted_network(handle_id, request.policy.allowed_hosts)
+
         return SandboxHandle(
             handle_id=handle_id,
             request_id=request.request_id,
             backend_name="namespace",
             state=SandboxState.PROVISIONING,
         )
+
+    def _setup_allowlisted_network(self, handle_id: str, allowed_hosts: tuple[str, ...]) -> None:
+        """Named netns + veth pair, fully configured BEFORE the sandbox
+        process ever starts -- avoids any race between "namespace exists"
+        and "namespace is configured" that setting up a veth into an
+        already-unshared --net namespace would have. The sandbox side
+        gets no default route, so it can reach ONLY the directly-
+        connected host peer (verified empirically: no route = ENETUNREACH
+        to anything else, no firewall rule needed for that part) --
+        structural denial, not a rule that could be misconfigured. The
+        proxy (core/sandbox/backends/_net_proxy.py) on that peer IP is
+        the only thing the sandbox can reach, and it enforces
+        allowed_hosts itself.
+        """
+        state = self._handles[handle_id]
+        token = uuid.uuid4().hex[:6]
+        netns_name = f"sbx-{token}"
+        veth_host = f"vh{token}"
+        veth_sbx = f"vs{token}"
+        host_ip, sbx_ip = _alloc_subnet()
+
+        subprocess.run(["ip", "netns", "add", netns_name], check=True)
+        subprocess.run(
+            ["ip", "link", "add", veth_host, "type", "veth", "peer", "name", veth_sbx], check=True
+        )
+        subprocess.run(["ip", "link", "set", veth_sbx, "netns", netns_name], check=True)
+        subprocess.run(["ip", "addr", "add", f"{host_ip}/30", "dev", veth_host], check=True)
+        subprocess.run(["ip", "link", "set", veth_host, "up"], check=True)
+        subprocess.run(
+            ["ip", "netns", "exec", netns_name, "ip", "addr", "add", f"{sbx_ip}/30", "dev", veth_sbx],
+            check=True,
+        )
+        subprocess.run(
+            ["ip", "netns", "exec", netns_name, "ip", "link", "set", veth_sbx, "up"], check=True
+        )
+        subprocess.run(
+            ["ip", "netns", "exec", netns_name, "ip", "link", "set", "lo", "up"], check=True
+        )
+
+        proxy = AllowlistProxy(host_ip, allowed_hosts)
+        proxy.start()
+
+        state.netns_name = netns_name
+        state.veth_host = veth_host
+        state.proxy = proxy
+        state.proxy_host_ip = host_ip
 
     async def run(self, handle: SandboxHandle, request: SandboxRequest) -> SandboxResult:
         loop = asyncio.get_event_loop()
@@ -203,23 +302,58 @@ class NamespaceBackend(SandboxBackend):
         state = self._handles[handle.handle_id]
         state.state = SandboxState.RUNNING
 
-        argv = [
-            "unshare",
-            "--user",
-            "--map-root-user",
-            "--mount",
-            "--pid",
-            "--fork",
-            "--net",
-            "--uts",
-            "--",
-            sys.executable,
-            _NS_INIT,
-            state.workspace_dir,
-            *request.policy.read_only_paths,
-            "--",
-            *request.command,
-        ]
+        # Always start from a full copy of this process's own environment
+        # (equivalent to env=None's inherit-everything, just explicit) so
+        # PATH etc. survive -- _ns_init.py's own `mount` subprocess calls
+        # need PATH lookup to work. request.env applies on top as
+        # overrides, not a wholesale replacement; proxy vars (allowlist
+        # mode only) are layered on top of that.
+        env = dict(os.environ)
+        env.update(request.env)
+
+        if state.netns_name is not None:
+            assert state.proxy is not None, "netns_name set implies _setup_allowlisted_network ran"
+            proxy_url = f"http://{state.proxy_host_ip}:{state.proxy.port}"
+            for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                env[var] = proxy_url
+            argv = [
+                "ip",
+                "netns",
+                "exec",
+                state.netns_name,
+                "unshare",
+                "--user",
+                "--map-root-user",
+                "--mount",
+                "--pid",
+                "--fork",
+                "--uts",
+                "--",
+                sys.executable,
+                _NS_INIT,
+                state.workspace_dir,
+                *request.policy.read_only_paths,
+                "--",
+                *request.command,
+            ]
+        else:
+            argv = [
+                "unshare",
+                "--user",
+                "--map-root-user",
+                "--mount",
+                "--pid",
+                "--fork",
+                "--net",
+                "--uts",
+                "--",
+                sys.executable,
+                _NS_INIT,
+                state.workspace_dir,
+                *request.policy.read_only_paths,
+                "--",
+                *request.command,
+            ]
 
         def _join_cgroups() -> None:
             # Runs in the child, in the ORIGINAL namespaces, before exec
@@ -242,7 +376,7 @@ class NamespaceBackend(SandboxBackend):
                 start_new_session=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                env=request.env or None,
+                env=env,
             )
             state.process = proc
             state.pgid = os.getpgid(proc.pid)
@@ -343,6 +477,14 @@ class NamespaceBackend(SandboxBackend):
         if state is None:
             return
         self._killpg(state.pgid)
+        if state.proxy is not None:
+            state.proxy.stop()
+        if state.veth_host is not None:
+            # deletes both ends of the pair, on whichever side they
+            # currently live (host side and the netns-moved peer)
+            subprocess.run(["ip", "link", "delete", state.veth_host], capture_output=True)
+        if state.netns_name is not None:
+            subprocess.run(["ip", "netns", "delete", state.netns_name], capture_output=True)
         for cgroup_dir in (state.mem_cgroup, state.pids_cgroup):
             for _attempt in range(5):
                 try:

@@ -42,15 +42,13 @@ def check_admission(
             False, "policy names allowed_hosts but backend cannot isolate network at all"
         )
 
-    if request.policy.allowed_hosts:
-        # Phase 1 backends only enforce network deny-by-default; a policy
-        # that *names* allowed hosts is asking for something no Phase 1
-        # backend can actually honor yet. Reject rather than silently
-        # running with full network access.
+    if request.policy.allowed_hosts and not capabilities.supports(
+        SandboxCapability.NETWORK_ALLOWLIST
+    ):
         return AdmissionDecision(
             False,
-            "policy names allowed_hosts, which no Phase 1 backend enforces yet "
-            "(deny-all is the only supported network policy)",
+            "policy names allowed_hosts, which this backend does not enforce "
+            "(it only supports deny-all network policy)",
         )
 
     return AdmissionDecision(True)

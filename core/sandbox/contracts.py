@@ -54,6 +54,7 @@ class SandboxCapability(Enum):
     SECCOMP = "seccomp"
     FILESYSTEM_JAIL = "filesystem_jail"
     NETWORK_DENY_DEFAULT = "network_deny_default"
+    NETWORK_ALLOWLIST = "network_allowlist"
 
 
 @dataclass(frozen=True)
@@ -94,10 +95,12 @@ class SandboxPolicy:
     Fail-closed: __post_init__ rejects zero/negative limits and an empty
     workspace path rather than letting a misconfigured policy reach a
     backend. Network access is deny-by-default (PI §14.1): allowed_hosts
-    is empty unless explicitly populated, and Phase 1 backends are not
-    required to honor a non-empty allowed_hosts yet (see AdmissionGate,
-    which rejects such a policy against a backend that cannot enforce it
-    rather than silently ignoring it).
+    is empty unless explicitly populated. A non-empty allowed_hosts is
+    only honored by a backend that reports NETWORK_ALLOWLIST support
+    (NamespaceBackend, via a per-request forward proxy -- see
+    backends/_net_proxy.py); AdmissionGate rejects the request outright
+    against a backend that cannot enforce it, rather than silently
+    ignoring the field and running with full network access.
     """
 
     workspace_dir: str
