@@ -55,9 +55,10 @@ from core.model_router import ModelRouter
 
 class ModelRouterAdapter(BaseAdapter):
     """Wraps an existing ModelRouter instance. Reads
-    request.payload["module_name"], request.payload["subtask"], and
-    request.payload["context"] (the same three positional arguments
-    ModelRouter.route() already takes) -- chosen to keep the request
+    request.payload["module_name"], request.payload["subtask"],
+    request.payload["context"], and request.payload["scope"] (CTX-SCOPE-001;
+    optional, defaults to "" -- unscoped/legacy shared behavior, matching
+    ModelRouter.route()'s own default) -- chosen to keep the request
     shape a direct, obvious mirror of the wrapped call, not a new
     convention invented for its own sake.
     """
@@ -73,6 +74,7 @@ class ModelRouterAdapter(BaseAdapter):
         module_name = request.payload.get("module_name")
         subtask = request.payload.get("subtask", "")
         context = request.payload.get("context")
+        scope = request.payload.get("scope", "")
 
         if not module_name:
             return CapabilityResult(
@@ -82,7 +84,7 @@ class ModelRouterAdapter(BaseAdapter):
             )
 
         start = time.time()
-        route_result = await self._model_router.route(module_name, subtask, context)
+        route_result = await self._model_router.route(module_name, subtask, context, scope=scope)
         duration_ms = (time.time() - start) * 1000
 
         return CapabilityResult(
