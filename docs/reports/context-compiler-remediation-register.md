@@ -52,30 +52,10 @@ what changed, not what it means for the tier.
 
 | ID | Item | Owning subsystem | Action | Test |
 |---|---|---|---|---|
-| REM-006 | CTX-SCOPE-001: `ContextMemory` has no scope parameter anywhere | `core/context.py` | Thread a scope parameter through `save()`/`last_n()`/`format_for_prompt()` and the `turns` schema | `tests/test_context_scope_security.py` — mechanism tests rewritten and green, **see note below** |
 | REM-008 | CTX-EXPORT-001: `import_module()` has no content/signature validation, `overwrite=True` fully replaces a module's knowledge base | `core/brain_export.py` | Add checksum/signature verification on the bundle; restrict `bundle_path` to an expected directory; consider requiring explicit confirmation beyond a boolean flag for `overwrite=True` | None yet — recommended as a follow-up addition to this register |
 | REM-009 | `core/runtime/efficiency.py`'s `PromptCache`/`cost_aware_call` — dead code, zero live callers | `core/runtime/` | Remove, or wire in and reconcile with `core/prompt/cache.py` rather than leaving two parallel implementations (same pattern as the already-tracked DEBT-016) | — |
 | REM-010 | Stale `core/orchestrator.py` comment claiming `OrchestrationGovernor`/`AgentGovernor`/`ConversationGuardrails` don't exist | `core/orchestrator.py` | Update the comment; mechanical, not a judgment call | — |
 | REM-011 | `KNOWN_ISSUES.md`'s DEBT-013 self-contradiction (active-table row vs. separately-placed resolved note) and `DEBT-017`'s misplacement outside the main table | `KNOWN_ISSUES.md` | Mechanical doc-sync fix, flagged early in this research track, never yet applied | — |
-
-**REM-006 status note (branch-consolidation pass):** the recommended
-mechanism above is now built exactly as specified — `save()`/
-`format_for_prompt()` accept an opt-in `scope` parameter, threaded through
-the `turns` schema — and `tests/test_context_scope_security.py` was rewritten
-by the same branch to test it with real distinguishable scopes (3/3 passing).
-**Not marking REM-006 resolved**, because the mechanism being opt-in means it
-only isolates callers that actually pass a scope. Per
-`docs/Bugs Hunt & fix reports/CONTEXT_ISOLATION_CALLER_AUDIT_SEP2026.md`
-(Sept 7, 2026 — the branch's own closing audit, which corrected an earlier,
-broader caller-list draft in the test file's initial docstring), at least
-three live production call sites remain unscoped: `core/workers/planner.py:218`
-(write), `core/workers/planner.py:305` (read — identified there as the actual
-live exposure, not named in this register's original entry or the original
-threat model), `interface/api.py:381` (write, streaming SSE). Two other write
-sites in `core/orchestrator.py` (lines ~510/726 per that audit) are already
-wired. Wiring the three remaining sites is new implementation work,
-deliberately not done as part of this port — it is the next concrete action
-on this item, not a redesign.
 
 ## Resolved
 
@@ -83,6 +63,7 @@ on this item, not a redesign.
 |---|---|---|
 | REM-001 | CTX-CACHE-001 | `cached_generate()` now hashes the full prompt instead of the lossily-compressed one. `TestCtxCache001Collision` passes. Landed via selective port from `fix/context-security-findings-sep2026` (branch-consolidation pass, Sept 2026). |
 | REM-007 | CTX-DELETE-001 | `UnifiedMemory.delete()` now propagates the real L1 deletion outcome instead of an unconditional `True`. `TestUnifiedMemoryDelete::test_delete_returns_false_when_l1_storage_deletion_fails` passes. Landed via the same selective port. |
+| REM-006 | CTX-SCOPE-001 | Mechanism (branch-consolidation pass) plus all identified live caller sites (this pass, `fix/ctx-scope-001-caller-wiring`): `core/workers/planner.py:218`, `core/model_router.py:314` (both `_dispatch_module()` branches — the closing audit's "`planner.py:305`" citation pointed at the caller, not the true sink), `interface/api.py:381` and its direct `stream_route()` call (found during this pass's own verification, not in the audit's list). Proven against a real `ContextMemory`: `tests/test_planner_worker.py::TestCtxScope001PlannerCallerWiring`, `tests/test_model_router.py`, `tests/test_api_context_scope.py`. One residual, unchanged, non-blocking fragility not touched by this pass: `core/workers/capability_executor.py:121` reaches the same `ModelRouter` chain with `context=""`, short-circuiting before `format_for_prompt()` fires — safe today by accident (audit row #6), not by design. |
 
 ## Tier 4 — Deferred research (not yet evidence-backed enough to prioritize further)
 
