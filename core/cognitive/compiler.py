@@ -257,6 +257,12 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
         # unchanged, not independently generated -- see WorkflowDefinition's
         # own docstring and Goal.root_operation_id for the full chain.
         root_operation_id=plan.root_operation_id,
+        # DEBT-020 (2026-09-06): threaded through unchanged, same pattern
+        # as root_operation_id above -- previously discarded here (plan
+        # had no field to carry it and this call never referenced it),
+        # which is exactly why WorkflowRuntime had nothing to check
+        # completion against. See WorkflowDefinition's own docstring.
+        constraints=plan.constraints,
     )
 
 

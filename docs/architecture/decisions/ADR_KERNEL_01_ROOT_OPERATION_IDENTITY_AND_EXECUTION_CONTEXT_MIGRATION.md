@@ -20,6 +20,8 @@ Introduce `root_operation_id` as a new, distinctly-named field, leaving ADR-K4.2
 - `ExecutionPlan.root_operation_id: Optional[str]` — threaded from `goal.root_operation_id`, never independently generated.
 - `WorkflowDefinition.root_operation_id: Optional[str]` — threaded from `plan.root_operation_id`, never independently generated.
 - `WorkflowNode` does **not** carry this field. Per the canonical plan's own I7 guidance ("first determine whether nodes are always scoped by their parent... a node-level reference may be justified only if nodes are independently persisted, transported, indexed, or emitted"): nodes are not currently persisted, transported, or indexed independently of their parent `WorkflowDefinition` — no checkpoint/resume exists yet (`KNOWN_ISSUES.md` DEBT-003). Revisit this specific decision if/when DEBT-003 changes that.
+
+  **Resolved Sept 5, 2026 (ADR-KERNEL-03):** DEBT-003 is implemented. Checkpointed node state is nested inside one checkpoint keyed by the whole execution's `instance_id` — never independently addressable by node identity alone. This does not cross the threshold I7 set. This decision is confirmed to still hold, not revisited.
 - `WorkflowNodeState.attempt_id: str` — a stable, opaque identifier generated fresh on each retry in `WorkflowRuntime._execute_node_with_retry()`, alongside (not replacing) the existing `attempts: int` counter. Per I3/I6: a bare counter cannot serve as a stable attempt identity across a process restart, even though it remains correct and useful as a retry count in its own right.
 
 ### What was explicitly not done

@@ -320,7 +320,7 @@ class TestModelRouterAdapter:
         assert result.success is True
         assert result.output == "routed answer"
         assert result.metadata["source"] == "native"
-        mock_router.route.assert_awaited_once_with("web_search", "hi", None)
+        mock_router.route.assert_awaited_once_with("web_search", "hi", None, scope="")
 
 
 class TestOllamaAdapter:

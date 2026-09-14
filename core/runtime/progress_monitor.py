@@ -142,6 +142,15 @@ class ProgressMonitor:
             return 0.0
         return time.monotonic() - self._last_progress_at
 
+    def is_actively_progressing(self) -> bool:
+        """Part of the shared `watchdog_decision.ProgressSignal` Protocol
+        (ADR-KERNEL-02) — added, not changed: existing callers of `state`/
+        `snapshot()` are unaffected. Distinguishes "progress recently
+        enough to still be within the progress deadline, and moving right
+        now" (HEALTHY) from "within the deadline but not currently active"
+        (SLOW_BUT_PROGRESSING) in the watchdog's decision logic."""
+        return self._state == ProgressState.PROGRESSING
+
     def throughput_per_sec(self) -> Optional[float]:
         """Best-effort units/sec since first meaningful progress. None
         until at least one progress event has been recorded."""

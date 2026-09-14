@@ -104,6 +104,39 @@ class Constraint:
     rationale: str = ""
     validated_by: Optional[str] = None
 
+    # DEBT-020 (false completion) / Kernel freeze blocker, fixed 2026-09-06.
+    # Prior to this, Constraint had no quantitative field at all -- checkable
+    # only in the sense of a human reading `rationale`. General measure/
+    # comparator/target shape (not word-count-specific) so word-count,
+    # item-count, and file-coverage constraints can all instantiate it
+    # without a redesign, per the originating false-completion report's own
+    # "IMPORTANT DISTINCTION". Extraction currently only populates this for
+    # word-count (the demonstrated bug case, see
+    # _extract_explicit_constraints below) -- item-count/file-coverage
+    # extraction remains future work, not attempted here.
+    measure: Optional[str] = None       # e.g. "word_count"
+    comparator: Optional[str] = None    # ">=" | "<=" | "==" | ">" | "<"
+    target: Optional[float] = None
+
+    def is_measurable(self) -> bool:
+        """Whether this constraint has enough to be checked mechanically,
+        as opposed to only being a free-text rationale for a human/
+        EvaluatorWorker to weigh qualitatively."""
+        return (self.measure is not None and self.comparator is not None
+                and self.target is not None)
+
+    def is_satisfied_by(self, actual: float) -> bool:
+        """Only meaningful when is_measurable() is True -- callers must
+        check that first. Kept as an explicit method (not inline
+        comparator dispatch at every call site) so the comparator set is
+        defined in exactly one place."""
+        comparators = {
+            ">=": lambda a, t: a >= t, "<=": lambda a, t: a <= t,
+            "==": lambda a, t: a == t, ">": lambda a, t: a > t,
+            "<": lambda a, t: a < t,
+        }
+        return comparators[self.comparator](actual, self.target)
+
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
 
@@ -262,6 +295,66 @@ _EXPLICIT_CONSTRAINT_PATTERNS = [
 ]
 
 
+# DEBT-020: word-count phrasing this extracts a checkable Constraint from.
+# Scoped to the demonstrated bug case only -- item-count/file-coverage
+# extraction is future work, not attempted here. Order matters: more
+# specific phrasings ("at least", "no more than") must be tried before the
+# bare "N words" fallback, or "at least 500 words" would have its
+# qualifier silently dropped and be read as an exact-500 constraint.
+_WORD_COUNT_PATTERNS = [
+    (re.compile(r"\b(?:at least|a minimum of|no fewer than)\s+([\d,]+)\s+words?\b", re.I), ">="),
+    (re.compile(r"\b(?:at most|no more than|a maximum of|up to)\s+([\d,]+)\s+words?\b", re.I), "<="),
+    (re.compile(r"\b(?:exactly|precisely)\s+([\d,]+)\s+words?\b", re.I), "=="),
+    (re.compile(r"\b(?:more than|over)\s+([\d,]+)\s+words?\b", re.I), ">"),
+    (re.compile(r"\b(?:fewer than|under|less than)\s+([\d,]+)\s+words?\b", re.I), "<"),
+    # Bare "N words" / "N-word" with no qualifier: read as a floor, not an
+    # exact target -- "write a 500 word story" is normally satisfied by
+    # 550 words; treating it as "==" would make longer outputs fail a
+    # constraint they shouldn't. Tried last, after every qualified pattern
+    # above has had a chance to claim the span first.
+    (re.compile(r"\b([\d,]+)[\s-]words?\b", re.I), ">="),
+]
+
+
+def _extract_word_count_constraints(text: str, claimed_spans: List[tuple]) -> List[Constraint]:
+    """Extract checkable word-count constraints (DEBT-020).
+
+    Shares `claimed_spans` with the caller's modal-language loop so a
+    phrase like "must be at least 500 words" only produces one Constraint
+    (the measurable word-count one, since these patterns are tried by the
+    caller before the generic "must" pattern gets a chance at the same
+    span) rather than a measurable one plus a redundant free-text
+    "requirement_constraint" over the same words.
+    """
+    constraints: List[Constraint] = []
+
+    def _overlaps_claimed(start: int, end: int) -> bool:
+        return any(start < c_end and end > c_start for c_start, c_end in claimed_spans)
+
+    for pattern, comparator in _WORD_COUNT_PATTERNS:
+        for match in pattern.finditer(text):
+            if _overlaps_claimed(match.start(), match.end()):
+                continue
+            claimed_spans.append((match.start(), match.end()))
+            try:
+                target = float(match.group(1).replace(",", ""))
+            except ValueError:
+                continue  # defensive; the pattern's own \d+ makes this unreachable in practice
+
+            start = max(0, match.start() - 20)
+            end = min(len(text), match.end() + 20)
+            context = text[start:end].strip()
+            constraints.append(Constraint(
+                kind=ConstraintKind.HARD,
+                relation=ConstraintRelation.SATISFIES,
+                source=ConstraintSource.EXPLICIT,
+                rationale=f"word_count_constraint: {context}",
+                measure="word_count", comparator=comparator, target=target,
+            ))
+
+    return constraints
+
+
 def _extract_explicit_constraints(text: str) -> List[Constraint]:
     """Extract constraints expressed explicitly in the goal text.
 
@@ -298,6 +391,12 @@ def _extract_explicit_constraints(text: str) -> List[Constraint]:
 
     def _overlaps_claimed(start: int, end: int) -> bool:
         return any(start < c_end and end > c_start for c_start, c_end in claimed_spans)
+
+    # DEBT-020: word-count constraints first, so a phrase like "must be at
+    # least 500 words" is claimed as the measurable word_count constraint
+    # before the generic "must" pattern below gets a chance at the same
+    # span and produces a redundant free-text-only duplicate.
+    constraints.extend(_extract_word_count_constraints(text, claimed_spans))
 
     for pattern, kind, rationale_type in _EXPLICIT_CONSTRAINT_PATTERNS:
         for match in pattern.finditer(text):
@@ -1043,6 +1142,17 @@ class ExecutionPlan:
     (never independently generated here -- ExecutionPlan does not own
     this identity, it only carries it forward). See Goal's own docstring
     for the full distinction from ADR-K4.2-H-08's per-call operation_id.
+
+    constraints (DEBT-020, fixed 2026-09-06): the List[Constraint]
+    _extract_constraints() produces. Before this fix, plan() extracted
+    constraints, used them transiently for _sequence()/_justify(), and
+    then discarded them -- ExecutionPlan had no field to receive them, so
+    by the time this object existed, all constraint information except
+    whatever trace made it into the free-text justification string was
+    already gone. Threaded through unchanged here, then again into
+    WorkflowDefinition by compiler.compile() (core/cognitive/compiler.py),
+    mirroring root_operation_id's own precedent -- so WorkflowRuntime has
+    something to actually check completion against.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "Planner"
@@ -1055,6 +1165,7 @@ class ExecutionPlan:
     derived_from: List[str] = field(default_factory=list)
     caused_by: Optional[str] = None
     root_operation_id: Optional[str] = None
+    constraints: List[Constraint] = field(default_factory=list)
     lifecycle_state: str = ExecutionPlanLifecycle.DRAFT
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1532,6 +1643,7 @@ async def plan(
         justification=justification,
         derived_from=[goal.resource_id],
         root_operation_id=goal.root_operation_id,
+        constraints=constraints,  # DEBT-020: previously discarded here
     )
 
     return PlannerResult(

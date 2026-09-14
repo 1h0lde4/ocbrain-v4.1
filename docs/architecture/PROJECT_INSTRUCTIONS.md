@@ -1389,6 +1389,19 @@ Never sacrifice long-term system integrity for short-term implementation speed.
 
 ---
 
+## 20.12 Architecture Freeze Principle
+
+Once a milestone enters implementation, architectural changes are permitted only if they:
+
+resolve a proven contradiction,
+eliminate ambiguity,
+fix a verified design flaw, or
+are explicitly requested through an approved architecture evolution directive.
+
+New ideas should be recorded as future milestones or research items rather than retroactively changing in-progress architecture.
+
+---
+
 # 21. Final Operational Directive
 
 OCBrain is being designed as:
@@ -1420,3 +1433,6 @@ reject the implementation
 redesign the architecture
 preserve the laws
 ```
+
+An unresolved architecture decision must become more explicit over time, never less explicit.
+
