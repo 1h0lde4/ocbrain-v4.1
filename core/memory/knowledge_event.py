@@ -41,6 +41,8 @@ EVENT_TYPES = {
     "memory_update_escalated",   # Governance escalated a memory update (HITL required)
     "memory_delete_rejected",    # Governance rejected a memory delete
     "memory_delete_escalated",   # Governance escalated a memory delete (HITL required)
+    # CTX-DELETE-001 hardening — L1 storage removal did not confirm success
+    "memory_delete_failed",      # Authoritative L1 deletion raised or returned False
 }
 
 

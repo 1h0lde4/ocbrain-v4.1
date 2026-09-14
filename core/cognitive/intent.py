@@ -513,12 +513,26 @@ def _neutralize_structural_tokens(text: str) -> str:
 
 def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
                               known_categories: List[str]) -> str:
+    # CTX-AUTH-001a (extended): the fix that landed neutralized `context`
+    # only. `known_categories` and `raw_request.text` are interpolated into
+    # this same template via the same bare str.format(), with no delimiter
+    # any more than context had -- the identical vulnerability class
+    # applies to both (known_categories is Intent Ontology L3 content,
+    # system-sourced today but no different in kind from any other
+    # memory-sourced value; raw_request.text is the caller's own words,
+    # which can still contain a structural token by accident, e.g. a
+    # pasted document). Applying the same content-agnostic neutralization
+    # uniformly closes the same gap at every interpolation point in this
+    # function rather than leaving two adjacent, identically-shaped ones.
     safe_context = _neutralize_structural_tokens(context) if context else context
+    categories_str = ", ".join(known_categories) if known_categories else "(none yet)"
+    safe_categories = _neutralize_structural_tokens(categories_str)
+    safe_request_text = _neutralize_structural_tokens(raw_request.text)
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
         n=5,
-        categories=", ".join(known_categories) if known_categories else "(none yet)",
+        categories=safe_categories,
         context=safe_context or "(no retrieved context)",
-        request=raw_request.text,
+        request=safe_request_text,
     )
 
 
@@ -535,6 +549,37 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
     inference degrading to fewer (or zero, handled by the caller) parsed
     hypotheses is the documented open-category fallback path (K4.2 §2),
     not a new failure mode requiring its own handling.
+
+    CTX-AUTH-001b investigated, not fixed here (this docstring records why
+    rather than losing the investigation): TestCtxAuth001ParserAcceptance
+    wants an injection-shaped completion line rejected with no signal
+    available beyond the completion text itself. A front-anchored,
+    non-increasing-score-order mechanism was implemented and initially
+    verified against that one test -- but this codebase's own broader
+    suite (tests/core/cognitive/test_intent.py) proved it unsound:
+    TestArchitectureCompliance::test_hypothesis_ordering explicitly feeds
+    scores out of order (0.1, 0.9, 0.5) and requires all three accepted,
+    with re-ranking left to the caller -- K4.2 §2's own "ranked N-best
+    list" contract does not require the model's own line order to already
+    be descending. test_clamps_out_of_range_scores requires an increasing
+    sequence (0.0 -> 1.0) fully accepted. test_skips_malformed_lines
+    requires a malformed line to be skipped, not treated as a scan-ending
+    anomaly. Every content-based signal considered (score order, score
+    magnitude including the legitimate 1.0 edge case, front-anchored
+    contiguity, "novel:" prefix) either fails to distinguish the specific
+    injected line in that test from an ordinary one, or only does so by
+    violating one of these three pre-existing, intentional behaviors.
+    A keyword/label blacklist would "work" narrowly but is exactly what
+    this template's own threat model rejects as an unwinnable, gameable
+    arms race (see _neutralize_structural_tokens). This matches
+    docs/reports/context-compiler-remediation-register.md's own note that
+    REM-002's parser-acceptance half depends on REM-004's authority
+    taxonomy to be meaningful -- structured provenance surviving from
+    context assembly through to the parsed hypothesis, which Context
+    Compiler is meant to provide and which this task correctly excludes
+    (Context Compiler is not to be fully implemented here). Left
+    unchanged and still red rather than shipping a regression or a
+    gamed fix -- see this pass's final report for the full reasoning.
     """
     hypotheses: List[IntentHypothesis] = []
     for match in _CANDIDATE_LINE.finditer(completion or ""):

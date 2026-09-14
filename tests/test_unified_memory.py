@@ -24,7 +24,9 @@ import pytest_asyncio
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from core.memory.unified_memory import UnifiedMemory, HookRegistry, get_unified_memory
+from core.memory.unified_memory import (
+    UnifiedMemory, HookRegistry, get_unified_memory, DeleteOutcome,
+)
 from core.memory.knowledge_entry import KnowledgeEntry
 from core.memory.knowledge_event import (
     KnowledgeEvent, event_created, event_deleted, event_curated,
@@ -406,6 +408,173 @@ class TestUnifiedMemoryDelete:
         # All entries should be gone
         for eid in ids:
             assert await memory.read(eid) is None
+
+
+class TestDeleteOutcome:
+    """CTX-DELETE-001 hardening: the additive DeleteOutcome contract exposes
+    every distinct outcome delete_with_outcome() already computed
+    internally -- delete()'s bool wrapper must derive from exactly these,
+    not duplicate the branching logic."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_request_for_empty_entry_id(self, memory):
+        assert await memory.delete_with_outcome("") is DeleteOutcome.INVALID_REQUEST
+        assert await memory.delete("") is False
+
+    @pytest.mark.asyncio
+    async def test_not_found_for_nonexistent_id(self, memory):
+        outcome = await memory.delete_with_outcome("does-not-exist-anywhere")
+        assert outcome is DeleteOutcome.NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_denied_when_governance_rejects(self, memory):
+        from core.governance.governance_kernel import GovernanceResult, GovernanceVerdict
+
+        entry_id = await _write(memory, content="a fact protected by policy")
+        mock_gov = MagicMock()
+        mock_gov.evaluate_action.return_value = GovernanceResult(
+            verdict=GovernanceVerdict.REJECT, reason="policy", governor="TestGovernor",
+        )
+        memory.register_governance(mock_gov)
+
+        outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.DENIED
+        assert await memory.read(entry_id) is not None, "denied delete must not mutate"
+
+    @pytest.mark.asyncio
+    async def test_escalated_when_governance_escalates(self, memory):
+        from core.governance.governance_kernel import GovernanceResult, GovernanceVerdict
+
+        entry_id = await _write(memory, content="a fact needing human review")
+        mock_gov = MagicMock()
+        mock_gov.evaluate_action.return_value = GovernanceResult(
+            verdict=GovernanceVerdict.ESCALATE, reason="needs HITL", governor="TestGovernor",
+        )
+        memory.register_governance(mock_gov)
+
+        outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.ESCALATED
+        assert await memory.read(entry_id) is not None, "escalated delete must not mutate"
+
+    @pytest.mark.asyncio
+    async def test_blocked_by_before_delete_hook(self, memory_with_curator):
+        memory, _ = memory_with_curator
+        entry_id = await memory.write(
+            "Immutable audit record — must never be deleted", layer_hint="l4",
+        )
+        outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.BLOCKED
+
+    @pytest.mark.asyncio
+    async def test_failed_when_l1_raises(self, memory):
+        entry_id = await _write(memory, content="a fact that resists deletion")
+        with patch.object(memory._storage, "delete", side_effect=RuntimeError("disk full")):
+            outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.FAILED
+
+    @pytest.mark.asyncio
+    async def test_failed_when_l1_returns_false_without_raising(self, memory):
+        entry_id = await _write(memory, content="a fact whose row vanishes silently")
+        with patch.object(memory._storage, "delete", new=AsyncMock(return_value=False)):
+            outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.FAILED
+
+    @pytest.mark.asyncio
+    async def test_deleted_on_genuine_success(self, memory):
+        entry_id = await _write(memory, content="a fact to actually delete")
+        outcome = await memory.delete_with_outcome(entry_id)
+        assert outcome is DeleteOutcome.DELETED
+        assert await memory.read(entry_id) is None
+
+    @pytest.mark.asyncio
+    async def test_bool_wrapper_is_true_only_for_deleted(self, memory):
+        """delete()'s bool contract must be True iff the outcome is
+        DELETED -- every other outcome is False, with no separate logic
+        path that could drift from delete_with_outcome()'s branching."""
+        entry_id = await _write(memory, content="a fact for bool-equivalence")
+        assert await memory.delete(entry_id) is True
+        # Second delete of the now-gone entry: NOT_FOUND -> False
+        assert await memory.delete(entry_id) is False
+
+
+class TestDeleteFailedAuditEvent:
+    """Section 21 (audit/receipt integrity): a failed deletion must leave
+    an audit trail the same way REJECT/ESCALATE already did -- there was
+    no equivalent event for FAILED before this hardening pass."""
+
+    @pytest.mark.asyncio
+    async def test_l1_failure_archives_a_failed_event(self, memory):
+        entry_id = await _write(memory, content="a fact whose deletion will fail")
+        captured = []
+        original_append = memory._archive.append_event
+
+        async def _capture(event):
+            captured.append(event)
+            return await original_append(event)
+
+        with patch.object(memory._storage, "delete", side_effect=RuntimeError("disk full")), \
+             patch.object(memory._archive, "append_event", side_effect=_capture):
+            outcome = await memory.delete_with_outcome(entry_id, worker_id="test-worker")
+
+        assert outcome is DeleteOutcome.FAILED
+        failed_events = [e for e in captured if e.event_type == "memory_delete_failed"]
+        assert len(failed_events) == 1, "exactly one memory_delete_failed event expected"
+        assert failed_events[0].entry_id == entry_id
+        assert "disk full" in (failed_events[0].metadata or {}).get("error", "")
+
+    @pytest.mark.asyncio
+    async def test_successful_deletion_does_not_also_emit_a_failed_event(self, memory):
+        """Differential control: a normal successful delete must not also
+        produce a memory_delete_failed event -- the new event is specific
+        to the FAILED branch, not fired unconditionally."""
+        entry_id = await _write(memory, content="a fact that deletes cleanly")
+        captured = []
+        original_append = memory._archive.append_event
+
+        async def _capture(event):
+            captured.append(event)
+            return await original_append(event)
+
+        with patch.object(memory._archive, "append_event", side_effect=_capture):
+            outcome = await memory.delete_with_outcome(entry_id)
+
+        assert outcome is DeleteOutcome.DELETED
+        assert not [e for e in captured if e.event_type == "memory_delete_failed"]
+
+
+class TestDeleteConcurrency:
+    """Sections 16/18: concurrent deletes of the same entry must never
+    produce a false success for more than one racer, even though only one
+    of them can win the actual row removal."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_delete_of_same_entry_has_exactly_one_winner(self, memory):
+        entry_id = await _write(memory, content="a fact under concurrent deletion")
+
+        results = await asyncio.gather(
+            memory.delete_with_outcome(entry_id),
+            memory.delete_with_outcome(entry_id),
+        )
+
+        deleted_count = sum(1 for r in results if r is DeleteOutcome.DELETED)
+        assert deleted_count == 1, (
+            f"exactly one concurrent delete should win DELETED, got {results}"
+        )
+        # The loser must never ALSO report DELETED (no false success from a
+        # race). Known, accepted imprecision (documented, not silently
+        # smoothed over): the loser's exact label depends on interleaving
+        # with the storage backend -- NOT_FOUND if its own read() ran after
+        # the winner's removal, FAILED if its read() ran before but its L1
+        # delete() found the row already gone (rowcount 0, no exception).
+        # Either is an accepted non-success outcome; a second DELETED is
+        # the only outcome this test actually forbids.
+        loser = [r for r in results if r is not DeleteOutcome.DELETED][0]
+        assert loser in (DeleteOutcome.NOT_FOUND, DeleteOutcome.FAILED)
+
+        # Regardless of which label the loser got, the entry is genuinely
+        # gone afterward -- the property Section 29 requires tested against
+        # actual persisted state, not just a return value.
+        assert await memory.read(entry_id) is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -957,6 +1126,35 @@ class TestUnifiedMemoryLifecycle:
         )
         stats = await memory.consolidate(min_importance=0.7)
         assert stats["l1_promoted"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_consolidate_does_not_count_failed_eviction(self, memory_with_curator):
+        """Bypass-search finding (CTX-DELETE-001 hardening pass):
+        consolidate()'s eviction path calls self._storage.delete()
+        directly, bypassing delete_with_outcome() entirely. This proves
+        the narrow outcome-truthfulness half of that finding is fixed:
+        a storage layer that reports no row removed must not be counted
+        as a successful eviction. (The separate governance/hook-bypass
+        half of that finding is an architecture question, not fixed
+        here -- see this pass's report.)"""
+        memory, _ = memory_with_curator
+        eid = await memory.write(
+            "Old low-importance episodic event eligible for eviction.",
+            content_type="observation", importance=0.1,
+        )
+        import core.memory.unified_memory as um_module
+        future = um_module.time.time() + (8 * 86400)  # push age_days > 7
+        with patch.object(um_module.time, "time", return_value=future), \
+             patch.object(memory._storage, "delete", new=AsyncMock(return_value=False)):
+            stats = await memory.consolidate(min_importance=0.3)
+
+        assert stats["l1_evicted"] == 0, (
+            "a storage layer reporting no row removed must not be counted "
+            "as a successful eviction"
+        )
+        # And the entry must still be genuinely readable -- the eviction
+        # genuinely didn't happen, consistent with what was reported.
+        assert await memory.read(eid) is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

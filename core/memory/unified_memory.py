@@ -24,6 +24,7 @@ import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -255,6 +256,24 @@ class SearchResult:
 
     def __lt__(self, other: "SearchResult") -> bool:
         return self.composite_score < other.composite_score
+
+
+# ── Delete outcome contract (CTX-DELETE-001 hardening) ─────────────────────
+#
+# Additive alongside delete()'s existing bool contract, not a replacement --
+# every existing caller of delete() keeps its exact current behavior. Each
+# value below corresponds to a distinct return point delete_with_outcome()
+# already had to make internally; the prior bool contract just collapsed
+# all of them (except DELETED) into an undifferentiated False.
+
+class DeleteOutcome(Enum):
+    DELETED         = "deleted"          # authorized, not blocked, L1 confirmed removed
+    NOT_FOUND       = "not_found"        # well-formed entry_id, no such entry
+    INVALID_REQUEST = "invalid_request"  # empty/falsy entry_id
+    DENIED          = "denied"           # governance REJECT
+    ESCALATED       = "escalated"        # governance ESCALATE
+    BLOCKED         = "blocked"          # a before_delete hook returned None
+    FAILED          = "failed"           # L1 storage removal did not confirm removal
 
 
 # ── Unified Memory ────────────────────────────────────────────────────────────
@@ -839,6 +858,28 @@ class UnifiedMemory:
                      reason: str = "", worker_id: str = "") -> bool:
         """Delete an entry from all active memory layers.
 
+        Thin, backward-compatible wrapper: every existing caller of this
+        method keeps its exact current bool contract unchanged. The real
+        pipeline -- and the specific reason behind any non-deletion -- is
+        in delete_with_outcome(); use that directly if the distinction
+        between "not found," "denied," "blocked," and "failed" matters to
+        the caller (CTX-DELETE-001 hardening pass).
+
+        Returns:
+            True  -- DeleteOutcome.DELETED.
+            False -- every other outcome (not found, invalid request,
+                     denied, escalated, blocked, or failed).
+        """
+        outcome = await self.delete_with_outcome(entry_id, reason=reason,
+                                                  worker_id=worker_id)
+        return outcome is DeleteOutcome.DELETED
+
+    async def delete_with_outcome(self, entry_id: str,
+                                   reason: str = "",
+                                   worker_id: str = "") -> "DeleteOutcome":
+        """Delete an entry from all active memory layers, reporting exactly
+        which of the distinct outcomes below occurred.
+
         Deletion orchestration order (UM §5, FA §8 Risk 7; K3.5.1 governance):
           1. Load entry — must exist to proceed
           2. Governance evaluation (Law 1 — Bounded Autonomy) — evaluated
@@ -852,15 +893,30 @@ class UnifiedMemory:
           8. Evict L0 cache (always — even if earlier steps failed)
           9. after_delete hooks — fire-and-forget
 
-        Returns:
-            True  — entry found and successfully deleted.
-            False — entry not found, blocked by governance, OR blocked by a
-                    before_delete hook.
+        Returns exactly one of:
+            DeleteOutcome.INVALID_REQUEST -- entry_id is empty/falsy; no
+                read was even attempted.
+            DeleteOutcome.NOT_FOUND       -- entry_id is well-formed but no
+                such entry exists (already gone, or never existed).
+            DeleteOutcome.DENIED          -- governance rejected the action.
+            DeleteOutcome.ESCALATED       -- governance escalated rather
+                than deciding; treated as non-deletion for this contract.
+            DeleteOutcome.BLOCKED         -- a before_delete hook returned
+                None (e.g. the L4-immutability hook).
+            DeleteOutcome.FAILED          -- every governance/hook gate
+                passed, but the authoritative L1 storage removal (step 7)
+                did not confirm a row was actually removed -- either it
+                raised, or it returned a clean False. This is the
+                CTX-DELETE-001 case: previously silently converted into
+                an unconditional True.
+            DeleteOutcome.DELETED         -- entry found, authorized, not
+                blocked, and L1 removal confirmed a row was removed.
 
         Non-blocking failures:
-            Steps 4–6 are non-blocking: partial failures are logged but do not
-            abort the delete.  L1 removal (step 7) is the authoritative deletion;
-            if it fails, False is returned even though earlier steps may have run.
+            Steps 4–6 are non-blocking: partial failures are logged but do
+            not change the outcome. L1 removal (step 7) is the
+            authoritative deletion outcome — nothing before or after it
+            can turn a FAILED step 7 into DELETED.
 
         K3.5.1: governed. The entry is loaded first (read-only, no side
         effect) so governance evaluates against real confidence/content
@@ -868,14 +924,34 @@ class UnifiedMemory:
         any mutation," matching write()'s placement, since step 1 mutates
         nothing. If governance is not registered, deletes proceed ungoverned
         (write()/update()'s permissive-when-absent pattern).
+
+        Object-level authorization note (CTX-AUTH-001/CTX-DELETE-001
+        hardening pass): `worker_id` is caller-supplied and unverified --
+        it is recorded for audit/logging and passed to governance as
+        metadata, but nothing in this method, in GovernanceKernel, or
+        anywhere else in this codebase checks it against any concept of
+        "does this worker own this entry." KnowledgeEntry has no owner/
+        principal field. This is not an oversight this method can fix in
+        isolation: OCBrain's memory layer has no existing multi-principal
+        ACL model to bind an object-level check to, and fabricating one
+        here (e.g. treating worker_id as if it were a verified identity)
+        would be a fake security boundary, not a real one. What this
+        method *can* and does guarantee is outcome truthfulness --
+        DELETED is only ever returned when step 7 actually confirmed
+        removal.
         """
-        # 1. Load entry
+        # 1. Validate request shape before attempting anything.
+        if not entry_id:
+            logger.debug("delete: empty/invalid entry_id")
+            return DeleteOutcome.INVALID_REQUEST
+
+        # 2. Load entry
         entry = await self.read(entry_id)
         if entry is None:
-            logger.debug("delete: entry %s not found", entry_id[:8] if entry_id else "?")
-            return False
+            logger.debug("delete: entry %s not found", entry_id[:8])
+            return DeleteOutcome.NOT_FOUND
 
-        # 2. Governance evaluation — before any hook or mutation.
+        # 3. Governance evaluation — before any hook or mutation.
         if self._governance is not None:
             from core.governance.governance_kernel import (
                 GovernanceAction, GovernanceVerdict,
@@ -915,7 +991,7 @@ class UnifiedMemory:
                     await self._archive.append_event(reject_ev)
                 except Exception as e:
                     logger.warning("memory_delete_rejected event emission failed: %s", e)
-                return False
+                return DeleteOutcome.DENIED
 
             if gov_result.verdict == GovernanceVerdict.ESCALATE:
                 logger.info(
@@ -937,9 +1013,9 @@ class UnifiedMemory:
                     await self._archive.append_event(escalate_ev)
                 except Exception as e:
                     logger.warning("memory_delete_escalated event emission failed: %s", e)
-                return False
+                return DeleteOutcome.ESCALATED
 
-        # 3. Execute before_delete hooks
+        # 4. Execute before_delete hooks
         for hook in self._hooks.before_delete:
             try:
                 result = hook(entry)
@@ -950,12 +1026,12 @@ class UnifiedMemory:
                         "delete: blocked by before_delete hook for %s",
                         entry_id[:8],
                     )
-                    return False
+                    return DeleteOutcome.BLOCKED
                 entry = result   # hook may return a (possibly modified) entry
             except Exception as e:
                 logger.warning("before_delete hook error: %s", e)
 
-        # 4. Archive deletion event + snapshot (data is preserved in L4 before removal)
+        # 5. Archive deletion event + snapshot (data is preserved in L4 before removal)
         try:
             ev = event_deleted(entry_id, reason=reason, worker_id=worker_id)
             await self._archive.append_event(ev)
@@ -963,7 +1039,7 @@ class UnifiedMemory:
         except Exception as e:
             logger.warning("Archive deletion event failed (non-blocking): %s", e)
 
-        # 5. Remove L3 graph node (non-blocking; graph_node_id may not be set)
+        # 6. Remove L3 graph node (non-blocking; graph_node_id may not be set)
         # Session 5.25: routed through GraphIndexer.remove() (owns removal),
         # rather than calling self._graph directly here.
         if entry.graph_node_id and self._graph_indexer is not None:
@@ -975,40 +1051,41 @@ class UnifiedMemory:
                     entry.graph_node_id, entry_id[:8],
                 )
 
-        # 6. Remove L2 vector index (non-blocking)
+        # 7. Remove L2 vector index (non-blocking)
         try:
             await self._vector.remove(entry_id)
         except Exception as e:
             logger.debug("Vector removal for %s: %s", entry_id[:8], e)
 
-        # 7. Remove L1 storage record (authoritative deletion)
-        #    CTX-DELETE-001 fix: this step's outcome is the return value.
-        #    A raised exception and a clean `False` return (nothing to
+        # 8. Remove L1 storage record (authoritative deletion)
+        #    CTX-DELETE-001: this step's outcome is the return value. A
+        #    raised exception and a clean `False` return (nothing to
         #    remove) are both treated as "L1 removal did not succeed" --
-        #    the docstring's "if it fails, False is returned" contract
-        #    does not distinguish between the two, and by this point step
-        #    1 has already confirmed the entry was readable, so either
-        #    outcome here is a genuine authoritative-deletion failure
-        #    worth surfacing to the caller, not a benign no-op.
+        #    by this point step 2 has already confirmed the entry was
+        #    readable, so either outcome here is a genuine authoritative-
+        #    deletion failure worth surfacing, not a benign no-op.
         l1_removed = False
+        l1_error: Optional[str] = None
         try:
             l1_removed = await self._storage.delete(entry_id)
             if not l1_removed:
+                l1_error = "storage reported no row removed"
                 logger.warning(
                     "Storage deletion for %s completed without error but "
-                    "removed no row (entry was readable at step 1)",
+                    "removed no row (entry was readable at step 2)",
                     entry_id[:8],
                 )
         except Exception as e:
+            l1_error = str(e)
             logger.warning("Storage deletion failed for %s: %s", entry_id[:8], e)
 
-        # 8. Evict L0 cache (always -- even if L1 removal failed, per
+        # 9. Evict L0 cache (always -- even if L1 removal failed, per
         #    docstring: cache must never serve an entry we attempted and
         #    failed to delete)
         self._l0.evict(entry_id)
 
-        # 9. Execute after_delete hooks (fire-and-forget, always -- these
-        #    are notification hooks, not a second deletion gate)
+        # 10. Execute after_delete hooks (fire-and-forget, always -- these
+        #     are notification hooks, not a second deletion gate)
         for hook in self._hooks.after_delete:
             try:
                 result = hook(entry)
@@ -1017,7 +1094,28 @@ class UnifiedMemory:
             except Exception as e:
                 logger.debug("after_delete hook error: %s", e)
 
-        return l1_removed
+        if not l1_removed:
+            # CTX-DELETE-001 / Section 21 audit integrity: a failed
+            # deletion must not create a successful-looking event trail --
+            # REJECT/ESCALATE above both archive an event; FAILED had no
+            # equivalent until this pass.
+            try:
+                from core.memory.knowledge_event import KnowledgeEvent
+                failed_ev = KnowledgeEvent(
+                    event_type="memory_delete_failed",
+                    entry_id=entry_id,
+                    worker_id=worker_id,
+                    metadata={
+                        "error": l1_error,
+                        "step": "l1_storage_removal",
+                    },
+                )
+                await self._archive.append_event(failed_ev)
+            except Exception as e:
+                logger.warning("memory_delete_failed event emission failed: %s", e)
+            return DeleteOutcome.FAILED
+
+        return DeleteOutcome.DELETED
 
     # ── Archive helpers (public API for workers) ──────────────────────────
 
@@ -1096,11 +1194,32 @@ class UnifiedMemory:
                 promoted += 1
 
             elif entry.importance < min_importance and age_days > 7:
-                # Evict old low-importance entries
-                await self._storage.delete(entry.entry_id)
-                self._l0.evict(entry.entry_id)
-                await self._vector.remove(entry.entry_id)
-                evicted += 1
+                # Evict old low-importance entries.
+                # CTX-DELETE-001 bypass-search finding: this bulk path
+                # calls self._storage.delete() directly, bypassing
+                # delete_with_outcome() entirely -- no governance
+                # evaluation, no before_delete hooks, and (until this
+                # fix) no check of the storage layer's own success
+                # signal, incrementing `evicted` unconditionally. The
+                # governance/hook bypass is a separate, larger question
+                # (should bulk system-driven consolidation be gated the
+                # same way a single caller-requested delete is? -- an
+                # architecture decision, not fixed here) flagged
+                # separately in this pass's report. The outcome-
+                # truthfulness half is the same narrow, unambiguous
+                # invariant just established for delete_with_outcome(),
+                # and is fixed here: only count/report an eviction that
+                # the storage layer actually confirmed.
+                if await self._storage.delete(entry.entry_id):
+                    self._l0.evict(entry.entry_id)
+                    await self._vector.remove(entry.entry_id)
+                    evicted += 1
+                else:
+                    logger.warning(
+                        "Consolidation: eviction of %s reported no row "
+                        "removed; not counted as evicted",
+                        entry.entry_id[:8],
+                    )
 
         logger.info("Consolidation: promoted=%d, evicted=%d", promoted, evicted)
         return {"l1_promoted": promoted, "l1_evicted": evicted}
