@@ -32,6 +32,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from core.runtime.execution_outcome import ExecutionOutcome
+from core.runtime.execution_context import ExecutionContext
 
 from core.governance.governance_kernel import (
     GovernanceAction,
@@ -66,9 +67,23 @@ class WorkerState(Enum):
 
 @dataclass
 class WorkerContext:
-    """Execution context passed to every worker invocation.
+    """DEPRECATED (ADR-001; migration completed by ADR-KERNEL-01).
 
-    Architecture:
+    No longer used in the live invocation path: ExecutionRuntime.invoke()
+    used to convert every ExecutionContext to a WorkerContext via
+    to_worker_context() before calling worker.execute() -- that conversion
+    call has been removed (Kernel Blocker B resolution). Workers now
+    receive ExecutionContext directly; execute()/_run()/emit_progress()
+    all take ExecutionContext, using its task_id/query/parameters/
+    recursion_depth bridge properties for full field compatibility.
+
+    Retained, not deleted, only because existing tests still construct it
+    directly to exercise this class's own (now otherwise-unreachable from
+    production code) shape. Delete once no test references it either --
+    see ADR-KERNEL-01 for the exact deletion condition and current
+    reference count.
+
+    Architecture (historical, kept for provenance):
         PI §7.2 — "emit events, stream progress, expose state"
         PI §6.1 — "recursion depth limits" (tracked via recursion_depth)
 
@@ -149,12 +164,12 @@ class AbstractCognitiveWorker(ABC):
         class MyWorker(AbstractCognitiveWorker):
             worker_type = "MyWorker"
 
-            async def _run(self, context: WorkerContext) -> WorkerResult:
+            async def _run(self, context: ExecutionContext) -> WorkerResult:
                 # do actual work here
                 return WorkerResult(success=True, output="done")
 
         worker = MyWorker()
-        result = await worker.execute(WorkerContext(query="do something"))
+        result = await worker.execute(ExecutionContext(metadata={"query": "do something"}))
     """
 
     # ── Class-level identity ──────────────────────────────────────────────
@@ -185,7 +200,7 @@ class AbstractCognitiveWorker(ABC):
 
     # ── Public API (non-overridable) ──────────────────────────────────────
 
-    async def execute(self, context: WorkerContext) -> WorkerResult:
+    async def execute(self, context: ExecutionContext) -> WorkerResult:
         """Execute a task with full governance and event sourcing.
 
         This method is NOT overridable. It enforces:
@@ -194,7 +209,7 @@ class AbstractCognitiveWorker(ABC):
           3. Delegation to _run() for actual work.
 
         Args:
-            context: The WorkerContext describing the task.
+            context: The ExecutionContext describing the task.
 
         Returns:
             WorkerResult with success/failure and output.
@@ -303,14 +318,14 @@ class AbstractCognitiveWorker(ABC):
     # ── Subclass contract ─────────────────────────────────────────────────
 
     @abstractmethod
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Implement the actual worker logic.
 
         This is the ONLY method subclasses must override.
         Governance and event sourcing are handled by execute().
 
         Args:
-            context: The WorkerContext with task details.
+            context: The ExecutionContext with task details.
 
         Returns:
             WorkerResult with the execution outcome.
@@ -319,7 +334,7 @@ class AbstractCognitiveWorker(ABC):
 
     # ── Progress streaming ────────────────────────────────────────────────
 
-    async def emit_progress(self, context: WorkerContext,
+    async def emit_progress(self, context: ExecutionContext,
                             message: str,
                             percent: float = 0.0,
                             data: Optional[Dict[str, Any]] = None) -> None:
@@ -397,7 +412,7 @@ class AbstractCognitiveWorker(ABC):
     # ── Internal event emission ───────────────────────────────────────────
 
     async def _emit_event(self, event_type: str,
-                          context: WorkerContext,
+                          context: ExecutionContext,
                           payload: Dict[str, Any]) -> None:
         """Emit a lifecycle event to the EventStream.
 

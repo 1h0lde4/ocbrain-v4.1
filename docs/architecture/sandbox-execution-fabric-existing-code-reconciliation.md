@@ -1,0 +1,89 @@
+# Sandbox / Execution Fabric — Existing-Code Reconciliation
+
+**Status:** Reconciliation complete. Ready to inform a revised kickoff prompt (report §15) for Phase 1 implementation.
+**Date:** September 11, 2026
+**Scope:** Read/reconcile pass triggered by `docs/research/sandbox-execution-fabric/deep-research-report.md` (external deep-research report on sandbox/execution-fabric design; fact-checked and corrected for 5 errors prior to this pass — see §1). Corresponds to the report's own §3 ("l'état de l'hôte/du dépôt") existing-code check, performed here against the live repository rather than deferred into Phase 1 implementation.
+**Method:** Fresh read of `main` (this branch's base). Documentation-first per `PROJECT_INSTRUCTIONS.md` §18.4.1: `CURRENT_STATE.md`, `KNOWN_ISSUES.md`, `IMPLEMENTATION_ROADMAP.md` checked for sandbox/execution/watchdog/validationgate mentions before touching source. Targeted full reads (not class-name grep alone) of `core/runtime/`, `core/capabilities/`, `core/cognitive/learning.py`, `core/skills/skill_interface.py`, `modules/system_ctrl/module.py`, `modules/coding/module.py`, `core/events/event_stream.py`, `core/workers/`. No runtime code touched — this is a design/reconciliation pass only, per the Architecture Freeze Principle.
+
+---
+
+## 1. Corrections applied to the source report
+
+Five factual errors, checked against primary sources and corrected in place in `docs/research/sandbox-execution-fabric/deep-research-report.md` (this same commit):
+
+1. **nsjail license:** MIT → Apache-2.0 (narrative mention and comparison-table row both fixed).
+2. **nsjail "dernier commit 2021" / reduced-maintenance claim:** unsupported — the repo shows discussion activity into 2025–2026 — removed and replaced.
+3. **Firecracker device count:** "5 devices" is contested even within Firecracker's own materials (main site says 5, the repo's own FAQ says 6, having added `virtio-balloon`). Both mentions updated to reflect the discrepancy rather than assert a single stale number.
+4. **OpenHands/Sysbox row:** corrected a license conflation — OpenHands itself is open-source; the proprietary tier is Sysbox Enterprise Edition, which is itself reportedly being discontinued as a standalone product in favor of the open Community Edition.
+5. **Daytona:** removed an unexplained, unsupported "(mobile)" tag; added the independently-verified June 2026 closed-source transition, since the report's "Proprietary" table classification is correct but recent, and worth dating.
+
+## 2. What already exists — inventory against the report's proposed contracts
+
+Legend: **Extend** = build on top of this · **Reuse philosophy** = same approach, new implementation · **Publish through** = route new events here · **Collision risk** = no functional overlap but name is contested · **Greenfield** = nothing exists.
+
+| Report proposes | Closest existing thing | Where | Verdict |
+|---|---|---|---|
+| `SandboxPolicy` / `RuntimeCapabilities` (timeout, memory, import restrictions) | `SkillExecutionConfig` — `mode` (default `"inline"`), `timeout_sec`, `memory_limit_mb`, `allowed_imports` | `core/skills/skill_interface.py:24` | **Extend.** Declared on skill metadata; confirmed by repo-wide grep to be read nowhere else — a real but currently inert rudiment, not a false lead. |
+| Deny-by-default execution / admission | Action allowlist (`ACTION_HANDLERS`) + path jail (`SAFE_ROOT` / `_safe_path()`) | `modules/system_ctrl/module.py` | **Reuse philosophy, not code.** Same-process jail, not container/VM isolation — the report's own threat model already goes further. Has one documented, fixed vulnerability class (shell-injection, "A7 audit fix") worth reading before designing the new admission chain — same failure mode is easy to reintroduce. |
+| `ExecutionEvent` | `EventStream` — the event-sourced backbone | `core/events/event_stream.py` | **Publish through.** Almost certainly what the report's own placeholder term "Event Backbone" (§3) was gesturing at without knowing the real name. No case found for a second, parallel event system. |
+| `ExecutionRequest` / `ExecutionHandle` / `ExecutionResult` | `ExecutionContext`, `ExecutionRuntime`, `ExecutionOutcome`, `ExecutionBudget`, `ExecutionPolicy`, `ExecutionWatchdog` / `GraphExecutionWatchdog`, `ExecutionGraph`, `ExecutionNode`, `ExecutionRegistry` | `core/runtime/*.py` | **Collision risk — no functional overlap.** This family invokes in-process `Worker` objects for workflow orchestration (`ExecutionRuntime`'s own docstring: "constructs and invokes one Worker for one unit of work"). Nothing to do with sandboxed code execution. Namespace decision in §3. |
+| GitHub-sourced "capabilities" (SBOM/Sigstore admission chain) | `CapabilityRegistry`, `CapabilityRequest`, `CapabilityResult`, `CapabilityContract`, `CapabilityType`, plus planner-side `CapabilityDiscoveryRequest` / `CapabilityMatch` | `core/capabilities/`, `core/cognitive/planner.py` | **Collision risk — no functional overlap.** Existing usage is entirely about routing a request to a registered orchestration capability. Different concern, same word. Naming decision in §3. |
+| Admission gate before execution | `validation_gate()` | `core/cognitive/learning.py:377` | **Collision risk — name is taken.** Gates learning/cognitive decisions through `GovernanceKernel.evaluate_action()`. Notably a single async function, not a class. |
+| `ArtifactManifest` | `CognitiveArtifact` (Protocol) | `core/cognitive/intent.py:54` | **No real overlap** — different layer entirely, name proximity only. |
+| Container/VM isolation backend (Docker/gVisor/Kata/Firecracker) | — | — | **Confirmed greenfield.** Zero hits for docker/firecracker/gvisor/kata/microvm anywhere in application code (`*.py`, excluding tests). |
+| `CoderWorker` as a consumer | Not yet built | `KNOWN_ISSUES.md` still lists it under Future Cognitive Workers; absent from `core/workers/` | **No integration target exists yet.** Building the fabric ahead of its primary consumer is defensible (infrastructure before consumer), but it means Phase 1 can't be integration-tested against a real caller. |
+
+## 3. Naming decisions
+
+Recorded here so they aren't re-litigated per file during implementation:
+
+- **New contracts live under a `Sandbox*` prefix, in a new `core/sandbox/` package — not `Execution*`.** `core/runtime/` already owns `Execution*` for workflow-node orchestration. Recommend `SandboxRequest` / `SandboxHandle` / `SandboxResult` / `SandboxEvent` in place of the report's `Execution*`-prefixed names. `SandboxPolicy` (the report's own name) survives unchanged — it doesn't collide, and it's the name that should eventually point at `SkillExecutionConfig`'s replacement/superset.
+- **"Capability" is avoided for the GitHub-admission concept.** Recommend "extension" or "external package" (e.g. `ExtensionManifest` rather than an implicit `CapabilityManifest`) to keep distance from `core/capabilities/`'s existing, unrelated meaning.
+- **"ValidationGate" is avoided.** Recommend `AdmissionGate` (or `SandboxAdmissionGate`) for whatever gates a `SandboxRequest` before execution.
+- **"Sandbox" itself is kept, deliberately.** It's the report's central term, it's directionally correct (this genuinely is a stronger, different kind of sandbox than `system_ctrl`'s path jail), and avoiding it would fight the report's own vocabulary for no real benefit. The distinction from the existing lighter-weight sandbox should be one documented sentence in the new code's module docstring, not a renaming exercise.
+
+## 4. Non-blocking observations
+
+- The repository's actual current state is considerably busier than the report's own framing assumed: a Kernel v1.0 freeze audit is open (`NOT_FREEZE_READY`, pending a classification decision on DEBT-020), and a Context Engineering Security Audit has five unresolved regressions (DEBT-019). Neither blocks sandbox-fabric work; both are worth knowing about before assuming `main` is quiet.
+- `core/runtime/watchdog_decision.py`'s recent unification (`ADR_KERNEL_02_WATCHDOG_UNIFICATION`, Sept 5 2026 — two independent Watchdog implementations collapsed into one shared, pure `decide()` function behind a `ProgressSignal` Protocol) is a useful precedent if the sandbox fabric ends up needing its own resource-limit watchdog: the same split (pure decision function + typed signal Protocol) rather than a third bespoke implementation.
+- No tracking-doc sync (`CURRENT_STATE.md` / `KNOWN_ISSUES.md` / `IMPLEMENTATION_ROADMAP.md`) was performed as part of this reconciliation — those live on `main` and are out of scope for a `sandbox-fabric`-branch commit under this project's branch-per-layer discipline. Recommend a dedicated sync pass once Phase 1 actually lands.
+
+## 5. Recommendation
+
+Ready to fire an updated version of the report's §15 kickoff prompt, incorporating: the five corrections (§1), the namespace decision (`core/sandbox/`, `Sandbox*` prefix, §3), the two reuse targets (`SkillExecutionConfig`, `EventStream`, §2), and the two renamed concepts ("extension" instead of "capability"; `AdmissionGate` instead of `ValidationGate`). No blocker found that would delay Phase 1 (Docker/OCI backend, per the report's own plan).
+
+## 6. Phase 1 progress (update, September 11 2026)
+
+Phase 1 was started in this same session, in this same environment. One environment fact changed the plan: `docker`, `runc`, and `podman` were all verified absent here (`which` found none of them), so the "docker run" half of §13 point 4's "runc rootless ou docker run" choice was not available to build or test. The "runc rootless" half was: `unshare` (user/mount/pid/net namespaces), cgroup v1 (memory, pids controllers, writable), and `PR_SET_NO_NEW_PRIVS` via `prctl` were all empirically verified present and working before any production code was written.
+
+**Built and passing (36/36 tests, 3 consecutive clean runs, no leaked cgroups or processes after `destroy()`):**
+
+- `core/sandbox/contracts.py` — all Phase 1 contracts (`SandboxPolicy`, `SandboxRequest`, `SandboxHandle`, `RuntimeCapabilities`, `ArtifactManifest`, `SandboxResult`, `SandboxEvent`), frozen dataclasses, fail-closed `__post_init__` validation.
+- `core/sandbox/backend.py` — the `SandboxBackend` ABC (create/run/cancel/destroy/inspect).
+- `core/sandbox/admission.py` — `AdmissionGate`-equivalent `check_admission()`, deny-by-default; rejects any request naming `allowed_hosts` since no Phase 1 backend enforces an allowlist yet.
+- `core/sandbox/events.py` — thin adapter publishing `SandboxEvent` through the real `EventStream` (`core/events/event_stream.py`), not a parallel bus. Verified against a real `SQLiteEventStore` on a temp DB, not just a mock.
+- `core/sandbox/backends/stub_backend.py` — the report's own anticipated "stub minimal" for interface tests; claims zero `SandboxCapability` values so `AdmissionGate` structurally refuses to admit real work to it.
+- `core/sandbox/backends/namespace_backend.py` + `_ns_init.py` — the real, working Phase 1 backend. Empirically verified, each as its own adversarial test: `echo Hello` runs; `/root` (absent in the jail) fails cleanly; an absolute symlink to `/etc/passwd` created before chroot resolves inside the jail afterward, not to the host file; the same holds for `../../etc/passwd`-style traversal; a fresh net namespace has no route out at all (`ENETUNREACH`) with zero firewall rules needed; a memory-limit violation is detected via the cgroup's own `memory.failcnt` and reported as `RESOURCE_EXCEEDED`; a fork bomb is stopped by `pids.max`; a timeout terminates a long-running command; `cancel()` kills the entire OS process group and leaves nothing orphaned; produced files are collected as artifacts with a real sha256, and the read-only base-rootfs bind points are not mistaken for artifacts.
+
+**Two real bugs found and fixed by these tests, not papered over:**
+
+1. `cancel()`'s result was classified `COMPLETED` instead of `CANCELLED` for a `SIGKILL`-terminated process — fixed by tracking `cancel_requested` on the backend's internal run-state.
+2. OOM detection assumed the memory-limit violation always surfaces as a negative (signal-killed) exit code on the directly-tracked process. Empirically false: when the limit is hit, the kernel's OOM killer can strike *any* process sharing the cgroup (it's inherited across fork/exec across the whole `unshare` → `_ns_init.py` → payload chain), which sometimes surfaces as `unshare` itself exiting with an ordinary *positive* status after catching its child's death. Fixed by checking the cgroup's own `memory.failcnt` first, unconditionally, rather than inferring OOM from exit-code sign.
+
+**Deliberately not attempted here (needs a host with Docker, tracked rather than silently skipped):**
+
+- A `DockerBackend` implementing the same `SandboxBackend` interface via `docker run` — nothing in the interface or contracts should need to change for this to slot in.
+- Enforcing a non-empty `SandboxPolicy.allowed_hosts` (currently rejected by `AdmissionGate` rather than silently ignored) — tracked as `KNOWN_ISSUES.md` DEBT-023.
+- Mermaid diagrams (report §15 point 10) and a French-language design-doc pass.
+
+No tracking-doc sync (`CURRENT_STATE.md` / `KNOWN_ISSUES.md` / `IMPLEMENTATION_ROADMAP.md`, all on `main`) was performed as part of this Phase 1 push, consistent with §4 above. (Since resolved — see §7.)
+
+## 7. DEBT-022 closed: seccomp-bpf denylist + UTS namespace (update, September 12 2026)
+
+`core/sandbox/backends/_seccomp.py` binds directly to `libseccomp.so.2` (found already present in the build environment — `ldconfig -p | grep seccomp`) via ctypes, rather than hand-rolling raw BPF instructions: for a security boundary, leaning on a widely-used, independently-audited library is the right trade, not a shortcut. Default-ALLOW with a curated ~29-syscall denylist (`ptrace`, `mount`/`umount2`, kernel-module and `kexec` syscalls, clock manipulation, keyring syscalls, `bpf()`, `perf_event_open`, `userfaultfd`, nested `unshare`/`setns`, among others), `SCMP_ACT_ERRNO(EPERM)` rather than `SCMP_ACT_KILL` so a blocked call looks like an ordinary permission failure a program can handle. Loaded in `_ns_init.py` after the setup phase's own bind-mounts (which need `mount()`) and after chroot, so the *payload* is what's actually restricted, not the setup code — order was verified, not assumed, same as everything else in this document.
+
+One assumption from Phase 1 was checked and found wrong in the process: `seccomp_load()` was assumed to need `PR_SET_NO_NEW_PRIVS` set first for an unprivileged caller. Empirically false for this specific configuration — a process that is only *namespace*-mapped root (via `--map-root-user`) already has the equivalent of `CAP_SYS_ADMIN` within its own user namespace, so `seccomp_load()` succeeds either order here. `no_new_privs` is still set first regardless, as ordinary defense-in-depth, not because this configuration requires it.
+
+`--uts` was added to the `unshare` invocation alongside this (same file, same pass): hostname/domainname changes inside the sandbox no longer leak to the host — verified via `socket.sethostname()` inside vs. `socket.gethostname()` on the host, before and after.
+
+8 new tests (4 in `test_namespace_backend.py`, 4 in `test_seccomp.py`), 44/44 total passing, 3 consecutive clean runs, zero leaked cgroups/processes confirmed after a settle delay. mypy clean across all 10 `core/sandbox/*.py` files. `RuntimeCapabilities` now includes `SECCOMP` and `UTS_NAMESPACE`. `KNOWN_ISSUES.md` DEBT-022 should be moved to Resolved in the next tracking-doc sync.

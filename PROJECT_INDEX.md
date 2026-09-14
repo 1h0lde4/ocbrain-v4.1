@@ -1,7 +1,7 @@
 # OCBrain — Project Index
 
 **Purpose:** Map of the repository for new contributors and AI sessions.
-**Last synchronized:** Aug 22, 2026 (K4.2-H2 integration pass — added the H2-related rows below; the acknowledged July-2026-era gap in the Report Chronology table further down is a separate, larger backfill explicitly flagged as out of scope for that prior edit and still not attempted here)
+**Last synchronized:** Aug 2026 documentation reconciliation pass — added `core/cognitive/` (K4.2 Cognitive Front-End; live since K4.2 completion but absent from this map) and `core/memory/graph/` (live, tested, wired into `UnifiedMemory`, tracked under an informal "Session 5.25" label rather than the K-milestone system) to the directory tree below. The Report Chronology gap noted in the prior sync is unchanged and still not attempted here. Prior sync Aug 22, 2026 (K4.2-H2 integration pass — added the H2-related rows below; the acknowledged July-2026-era gap in the Report Chronology table further down is a separate, larger backfill explicitly flagged as out of scope for that prior edit and still not attempted here)
 
 ---
 
@@ -74,23 +74,46 @@ ocbrain-v4.1-main/
 │   │   ├── planner.py               #   PlannerWorker (K2.2)
 │   │   └── memory_curator.py        #   MemoryCuratorWorker
 │   │
+│   ├── cognitive/                   # K4.2 — Cognitive Front-End (flat modules; added here Aug 2026 —
+│   │   │                            #   missing from this map before, despite being live since K4.2 completion)
+│   │   ├── intent.py                #   Intent interpretation (1052 lines)
+│   │   ├── planner.py               #   Planning (1533 lines)
+│   │   ├── compiler.py              #   Plan compilation (413 lines)
+│   │   ├── learning.py              #   Learning wiring; owns ContentDomain — see KNOWN_ISSUES.md DEBT-011 (731 lines)
+│   │   ├── user_model.py            #   User cognitive model (326 lines)
+│   │   └── recovery.py              #   (78 lines)
+│   │
 │   ├── memory/                      # Memory Service
 │   │   ├── unified_memory.py        #   UnifiedMemory (L0–L4)
 │   │   ├── knowledge_entry.py       #   KnowledgeEntry (canonical Resource)
 │   │   ├── knowledge_event.py       #   KnowledgeEvent (L4 Archive audit trail)
 │   │   ├── assembly.py              #   ContextAssemblyEngine
-│   │   └── retrieval/               #   Retrieval stack
-│   │       ├── fusion.py            #     RetrievalFusionEngine (façade)
-│   │       ├── context/             #     RetrievalContextBuilder
-│   │       └── graphrag/            #     GraphRAGPipeline
+│   │   ├── retrieval/               #   Retrieval stack
+│   │   │   ├── fusion.py            #     RetrievalFusionEngine (façade)
+│   │   │   ├── context/             #     RetrievalContextBuilder
+│   │   │   └── graphrag/            #     GraphRAGPipeline
+│   │   └── graph/                   #   Graph index — wired into UnifiedMemory write/update/delete
+│   │       ├── graph_engine.py      #     (added here Aug 2026 — was live and tested but missing
+│   │       ├── graph_indexer.py     #     from this map; tracked under an informal "Session 5.25"
+│   │       ├── entity_extractor.py  #     label in code comments, not the K-milestone system)
+│   │       └── eligibility.py
 │   │
 │   ├── events/                      # Event System
 │   │   └── event_stream.py          #   EventStream (SQLite WAL, durable)
 │   │
 │   ├── event_bus.py                 # EventBus (in-process pub/sub, non-durable)
-│   ├── orchestrator.py              # Orchestrator (query handler)
+│   ├── orchestrator.py              # Orchestrator.handle() — actual single entry point called by main.py/interface/api.py
 │   ├── model_router.py              # ModelRouter (inference routing)
-│   └── provider_mesh.py             # Provider health management
+│   ├── provider_mesh.py             # Provider health management
+│   │
+│   ├── (added Aug 2026 — found via `find core -maxdepth 1 -name "*.py"`, absent from every prior
+│   │    version of this map; confirmed live via imports in main.py/interface/api.py, NOT individually
+│   │    audited — treat descriptions below as filename-only, not verified content)
+│   ├── orchestrator_v3.py, classifier.py, classifier_v3.py   # orchestrator.py's own dependencies
+│   ├── parser.py, decomposer.py, dispatcher.py, merger.py    #   (parse → classify → decompose → dispatch → merge)
+│   ├── module_registry.py, module_factory.py                 # loads/dispatches modules/ (Legacy expert modules)
+│   ├── brain_api.py, brain_export.py, brain_version.py       # used by interface/api.py for module admin routes
+│   └── migrator.py, privacy.py, config.py, context.py
 │
 ├── docs/
 │   ├── architecture/                # Canonical architecture documents

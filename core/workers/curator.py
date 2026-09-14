@@ -36,6 +36,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
+from core.runtime.execution_context import ExecutionContext
 from core.memory.knowledge_entry import KnowledgeEntry
 from core.memory.knowledge_event import event_curated
 
@@ -140,7 +141,7 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
         memory = get_unified_memory()
         curator = MemoryCuratorWorker()
         curator.register(memory)
-        result = await curator.execute(WorkerContext(query="curate"))
+        result = await curator.execute(ExecutionContext(metadata={"query": "curate"}))
     """
 
     worker_type: str = "MemoryCuratorWorker"
@@ -237,7 +238,7 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
 
     # ── Core Curation Logic ───────────────────────────────────────────────
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Execute a full curation sweep.
 
         Architecture:
@@ -247,7 +248,7 @@ class MemoryCuratorWorker(AbstractCognitiveWorker):
                              connections, detect and resolve contradictions."
 
         Args:
-            context: WorkerContext. The query field is ignored; curation
+            context: ExecutionContext. The query field is ignored; curation
                      is a system-internal operation.
 
         Returns:

@@ -183,7 +183,7 @@ class _RouteContextManager:
         self._answer = answer
         self._original = None
 
-    async def _fake_route(self, module_name, subtask, context):
+    async def _fake_route(self, module_name, subtask, context, scope: str = ""):
         return RouteResult(answer=self._answer, source="patched")
 
     def __enter__(self):

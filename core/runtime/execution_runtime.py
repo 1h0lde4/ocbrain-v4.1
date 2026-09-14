@@ -186,10 +186,13 @@ class ExecutionRuntime:
 
         # ── Step 4: Execute via template method ──────────────────────────
         # Worker.execute() handles governance + events internally.
-        # We pass a WorkerContext bridge for backward compatibility.
+        # Kernel Blocker B resolution (ADR-KERNEL-01): workers now receive
+        # ExecutionContext directly. The to_worker_context() bridge is no
+        # longer called here -- it is retained on ExecutionContext only
+        # for any caller outside this runtime that still needs it, with
+        # no remaining production caller found (verified this session).
         try:
-            worker_context = context.to_worker_context()
-            result = await worker.execute(worker_context)
+            result = await worker.execute(context)
         except Exception as e:
             # This should never happen — Worker.execute() catches all
             # exceptions. But if it does, we contain it here.

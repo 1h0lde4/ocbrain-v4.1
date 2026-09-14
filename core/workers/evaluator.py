@@ -74,6 +74,7 @@ from core.cognitive.planner import ExecutionPlan
 from core.events.event_stream import EventStream, StreamEvent, get_event_stream
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
+from core.runtime.execution_context import ExecutionContext
 
 # Implementation judgment (not separately cited in architecture text),
 # analogous in spirit to Packet 06's ClarificationPolicy default: a
@@ -218,7 +219,7 @@ class EvaluatorWorker(AbstractCognitiveWorker):
         super().__init__(**kwargs)
         self._memory: UnifiedMemory = memory or get_unified_memory()
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Evaluate one execution and write the result to memory.
 
         Required input: context.parameters["execution_plan"], an

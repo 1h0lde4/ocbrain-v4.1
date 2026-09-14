@@ -7,7 +7,7 @@ Architecture Sources:
         §15 (Governance Integration), §16 (Runtime Invariants)
     docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md
         §1 (Top-Level Specification)
-    docs/architecture/OCBRAIN_K4_3_IMPLEMENTATION_TRANSITION.md
+    docs/architecture/OCBRAIN_K4_2_IMPLEMENTATION_TRANSITION.md
         Packet 06 — Plan Compilation
 
 Coverage:

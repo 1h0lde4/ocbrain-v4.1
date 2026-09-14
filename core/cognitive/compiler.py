@@ -253,6 +253,16 @@ def _compile_workflow(plan: ExecutionPlan) -> WorkflowDefinition:
             "execution_plan_id": plan.resource_id,
             "goal_id": plan.goal_id,
         },
+        # Kernel Blocker A resolution (ADR-KERNEL-01): threaded through
+        # unchanged, not independently generated -- see WorkflowDefinition's
+        # own docstring and Goal.root_operation_id for the full chain.
+        root_operation_id=plan.root_operation_id,
+        # DEBT-020 (2026-09-06): threaded through unchanged, same pattern
+        # as root_operation_id above -- previously discarded here (plan
+        # had no field to carry it and this call never referenced it),
+        # which is exactly why WorkflowRuntime had nothing to check
+        # completion against. See WorkflowDefinition's own docstring.
+        constraints=plan.constraints,
     )
 
 
@@ -401,6 +411,7 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
         payload={
             "trace_id": trace_id,
             "operation_id": operation_id,
+            "root_operation_id": workflow_definition.root_operation_id,
             "execution_plan_id": plan.resource_id,
             "workflow_id": workflow_definition.workflow_id,
             "goal_id": plan.goal_id,

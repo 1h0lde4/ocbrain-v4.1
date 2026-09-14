@@ -480,12 +480,44 @@ Request:
 Candidates:"""
 
 
+# CTX-AUTH-001a structural containment. These are this template's own
+# three section-header tokens -- the exact strings retrieved context would
+# need to reproduce byte-for-byte to become structurally indistinguishable
+# from a real section boundary once interpolated (see
+# docs/research/context-engineering/context-authority-threat-model.md).
+_STRUCTURAL_HEADER_TOKENS = ("Context:", "Request:", "Candidates:")
+
+
+def _neutralize_structural_tokens(text: str) -> str:
+    """Break byte-identity with this template's own header tokens, if
+    retrieved (untrusted) context happens to contain one.
+
+    Content-agnostic by design: this does not inspect *meaning* (no
+    keyword/phrase blacklist for things like "ignore the above" -- the
+    threat model explicitly rejects that approach as an unwinnable,
+    gameable arms race). It only prevents context from reproducing the
+    literal strings this template itself uses as control-section
+    delimiters, so a fake "Request:"/"Candidates:"/"Context:" sourced
+    from context can never be indistinguishable from the template's real
+    one once interpolated. A zero-width space before the colon is
+    invisible to a human or a model reading the rendered text, but breaks
+    exact substring matching -- ordinary content that merely *mentions*
+    these words (e.g. prose discussing a documentation convention) is
+    unaffected in meaning, only in this one narrow byte-identity property.
+    """
+    for token in _STRUCTURAL_HEADER_TOKENS:
+        if token in text:
+            text = text.replace(token, token[:-1] + "\u200b:")
+    return text
+
+
 def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
                               known_categories: List[str]) -> str:
+    safe_context = _neutralize_structural_tokens(context) if context else context
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
         n=5,
         categories=", ".join(known_categories) if known_categories else "(none yet)",
-        context=context or "(no retrieved context)",
+        context=safe_context or "(no retrieved context)",
         request=raw_request.text,
     )
 
@@ -673,6 +705,25 @@ class Goal:
     interpret_request() -> form_goals() path (the overwhelming majority);
     populated only when a Goal's formation was itself caused by a
     specific prior event (e.g. a recovery re-plan).
+
+    root_operation_id (Kernel Blocker A resolution, ADR-KERNEL-01):
+    a stable, opaque identifier for the logical operation this Goal
+    belongs to, generated once here and threaded forward unchanged into
+    ExecutionPlan.root_operation_id and WorkflowDefinition.root_operation_id
+    -- the identity that survives the cognition -> compilation -> execution
+    boundary the Kernel Completion reconciliation identified as missing.
+
+    This is deliberately NOT the same field as the `operation_id` local
+    variable inside plan()/compile() (ADR-K4.2-H-08): that one is a
+    per-cognitive-stage-invocation diagnostic correlation ID, intentionally
+    regenerated fresh on every call to plan() or compile() for event
+    correlation, and this change does not touch it, its tests, or its
+    documented semantics. root_operation_id answers a different question
+    ("which logical operation does this artifact ultimately belong to,
+    across every stage and every retry") from the one ADR-K4.2-H-08's
+    operation_id answers ("which single plan()/compile() invocation
+    produced this diagnostic event"). See ADR-KERNEL-01 for the full
+    reconciliation between the two.
     """
     resource_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     produced_by: str = "IntentInterpreter"
@@ -684,6 +735,7 @@ class Goal:
     derived_from: List[str] = field(default_factory=list)
     caused_by: Optional[str] = None
     lifecycle_state: str = GoalLifecycle.DRAFT
+    root_operation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)

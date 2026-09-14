@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from core.cognitive.planner import Constraint
+
 
 class NodeStatus(Enum):
     """Lifecycle status of a workflow node during execution."""
@@ -105,6 +107,27 @@ class WorkflowDefinition:
         edges: Directed edges defining execution order.
         entry_node: The first node to execute. Must exist in nodes.
         metadata: Additional workflow-level configuration.
+        root_operation_id: Kernel Blocker A resolution (ADR-KERNEL-01) --
+            the stable, cross-stage identity of the logical operation this
+            workflow was compiled from, threaded through unchanged from
+            ExecutionPlan.root_operation_id (itself threaded from the
+            originating Goal). None only for a WorkflowDefinition
+            constructed outside compile() (e.g. a hand-built test fixture
+            or the legacy K2.2 path, neither of which goes through the
+            cognitive pipeline this identity threads through). Not
+            duplicated onto individual WorkflowNodes -- confirmed still
+            correct as of DEBT-003 (checkpoint/resume, ADR-KERNEL-03,
+            2026-09-05): checkpointed node state nests inside one
+            instance-keyed checkpoint, never independently addressable by
+            node, so the I7 threshold this note originally deferred on was
+            checked and not crossed. No longer an open question.
+        constraints: DEBT-020 fix (2026-09-06) -- the List[Constraint]
+            ExecutionPlan.constraints carries, threaded through unchanged
+            by compiler.compile(). Empty for a WorkflowDefinition built
+            outside the cognitive pipeline (same set of cases as
+            root_operation_id above). WorkflowRuntime checks the final
+            output against any measurable constraint here before
+            confirming success -- see core/workflow/runtime.py's _run().
     """
     workflow_id: str = ""
     name: str = ""
@@ -112,6 +135,8 @@ class WorkflowDefinition:
     edges: List[WorkflowEdge] = field(default_factory=list)
     entry_node: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
+    root_operation_id: Optional[str] = None
+    constraints: List[Constraint] = field(default_factory=list)
 
     def get_node(self, node_id: str) -> Optional[WorkflowNode]:
         """Look up a node by ID."""

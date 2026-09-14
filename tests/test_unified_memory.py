@@ -279,6 +279,33 @@ class TestUnifiedMemoryDelete:
         assert "deleted" in types
 
     @pytest.mark.asyncio
+    async def test_delete_returns_false_when_l1_storage_deletion_fails(self, memory_with_curator):
+        """CTX-DELETE-001: delete()'s own docstring says L1 removal (step
+        7) is authoritative and returns False on failure, but the actual
+        code only logs the exception and falls through to an
+        unconditional return True. Unlike test_delete_archives_before_removal
+        above (whose docstring makes the same 'even if L1 fails' claim but
+        whose body never actually makes L1 fail), this test exercises that
+        failure path directly. EXPECTED TO FAIL against the current
+        implementation -- do not weaken, xfail (no such convention in this
+        repo), or delete this assertion. See
+        docs/research/context-engineering/revocation-deletion-retention-audit.md."""
+        memory, _ = memory_with_curator
+        eid = await _write(memory)
+
+        async def failing_storage_delete(entry_id):
+            raise RuntimeError("simulated L1 storage failure")
+        memory._storage.delete = failing_storage_delete
+
+        result = await memory.delete(eid)
+
+        assert result is False, (
+            "delete() returned True despite the authoritative L1 storage "
+            "deletion raising an exception -- contradicts its own "
+            "docstring's documented guarantee (CTX-DELETE-001)"
+        )
+
+    @pytest.mark.asyncio
     async def test_delete_blocked_by_before_delete_hook(self, memory_with_curator):
         """L4 entries are blocked from deletion by the curator hook."""
         memory, _ = memory_with_curator

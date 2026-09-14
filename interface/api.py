@@ -311,8 +311,12 @@ async def _stream_response(
         collected   = []
 
         try:
+            # CTX-SCOPE-001: this call bypasses PlannerWorker entirely (the
+            # single-module streaming fast path), so it needs its own scope
+            # wiring rather than inheriting PlannerWorker's -- found during
+            # this fix's own verification, not in the original audit's list.
             async for token in model_router.stream_route(
-                module_name, task.subtask, orchestrator.context
+                module_name, task.subtask, orchestrator.context, scope=execution_id
             ):
                 collected.append(token)
                 if monitor is not None and len(collected) % 32 == 0:
@@ -345,7 +349,9 @@ async def _stream_response(
 
         # Save full collected answer to context (non-blocking)
         asyncio.create_task(
-            _save_context_background(orchestrator, query, [module_name], "".join(collected))
+            _save_context_background(
+                orchestrator, query, [module_name], "".join(collected), execution_id
+            )
         )
 
     else:
@@ -374,11 +380,18 @@ async def _stream_response(
 
 
 async def _save_context_background(
-    orchestrator: Orchestrator, query: str, modules: list[str], answer: str
+    orchestrator: Orchestrator, query: str, modules: list[str], answer: str,
+    execution_id: str = "",
 ):
-    """Fire-and-forget context save after streaming completes."""
+    """Fire-and-forget context save after streaming completes.
+
+    CTX-SCOPE-001: scope=execution_id matches the same identifier
+    Orchestrator.handle() itself already uses for its own context.save()
+    calls (core/orchestrator.py) -- this is the streaming sibling of that
+    same write, previously the one unscoped path.
+    """
     try:
-        orchestrator.context.save(query, modules, answer)
+        orchestrator.context.save(query, modules, answer, scope=execution_id)
     except Exception:
         pass
 

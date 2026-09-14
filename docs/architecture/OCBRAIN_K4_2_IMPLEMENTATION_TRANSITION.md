@@ -1,4 +1,6 @@
-# OCBrain K4.3 — Architecture-to-Implementation Transition
+# OCBrain K4.2 — Architecture-to-Implementation Transition
+
+> **Renamed Aug 28, 2026.** This file's own title said "K4.3" but its entire body (Packets 01-09) is the K4.2 Cognitive Front-End implementation plan, now fully complete (see `IMPLEMENTATION_ROADMAP.md`). It never described the Cognitive Runtime / C-MoE. Renamed to stop it being mistaken for K4.3 architecture, per `docs/studies/OCBRAIN_K4_3_CMOE_ARCHITECTURE_STUDY.md` §2. The real K4.3/C-MoE material is in that study and its companion `OCBRAIN_K4_3_REALITY_GROUNDING_SUBSTUDY.md`.
 
 **Date:** July 24, 2026
 **Status:** DRAFT — awaiting approval

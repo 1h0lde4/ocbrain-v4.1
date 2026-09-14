@@ -43,6 +43,7 @@ from unittest.mock import AsyncMock, patch
 from core.cognitive.compiler import CompilationStatus, compile as compile_plan
 from core.cognitive.intent import Goal, GoalLifecycle, interpret_request
 from core.cognitive.planner import (
+    Constraint,
     ExecutionPlanLifecycle,
     PlannerRequest,
     PlannerStatus,
@@ -187,6 +188,53 @@ class TestFullPipelineHappyPath:
         assert goals[0].lifecycle_state == GoalLifecycle.DRAFT
         assert execution_plan.lifecycle_state == ExecutionPlanLifecycle.DRAFT
         assert compilation_result.status == CompilationStatus.COMPILED
+
+
+class TestConstraintsSurviveRealPipeline:
+    """DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): before this fix,
+    Planner.plan() extracted constraints, used them transiently for
+    _sequence()/_justify(), then discarded them -- ExecutionPlan had no
+    field to receive them. Proves the real fix through the actual pipeline
+    (not the hand-built WorkflowDefinition fixtures
+    tests/test_debt_020_false_completion.py uses for the WorkflowRuntime-
+    level tests): a word-count phrase in the raw request survives
+    interpret_request() -> plan() -> compile() and lands on the final
+    WorkflowDefinition as an actually-checkable Constraint."""
+
+    @pytest.mark.asyncio
+    async def test_word_count_phrase_becomes_a_measurable_constraint_on_the_compiled_definition(self, tmp_path):
+        event_stream = _real_event_stream(tmp_path)
+        registry = _make_registry()
+
+        goals, planner_result, execution_plan, compilation_result = (
+            await _run_full_pipeline(
+                event_stream, registry,
+                text="Write a summary that is at least 500 words long.",
+            ))
+
+        assert compilation_result.status == CompilationStatus.COMPILED
+        measurable = [c for c in execution_plan.constraints if c.is_measurable()]
+        assert len(measurable) == 1
+        assert measurable[0].measure == "word_count"
+        assert measurable[0].comparator == ">="
+        assert measurable[0].target == 500.0
+
+        wd = compilation_result.workflow_definition
+        assert wd.constraints == execution_plan.constraints  # threaded through unchanged, not re-derived
+
+    @pytest.mark.asyncio
+    async def test_request_with_no_word_count_phrase_compiles_with_no_measurable_constraint(self, tmp_path):
+        """Regression guard: this fix must not fabricate constraints for
+        requests that never named a quantitative target."""
+        event_stream = _real_event_stream(tmp_path)
+        registry = _make_registry()
+
+        _, _, execution_plan, compilation_result = await _run_full_pipeline(
+            event_stream, registry, text="Summarize the quarterly report.",
+        )
+
+        assert not any(c.is_measurable() for c in execution_plan.constraints)
+        assert not any(c.is_measurable() for c in compilation_result.workflow_definition.constraints)
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -57,6 +57,7 @@ from typing import Any, Dict
 from core.capabilities.adapter_runtime import AdapterRuntime
 from core.capabilities.capability import CapabilityRequest, CapabilityType
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
+from core.runtime.execution_context import ExecutionContext
 
 
 class CapabilityExecutorWorker(AbstractCognitiveWorker):
@@ -86,7 +87,7 @@ class CapabilityExecutorWorker(AbstractCognitiveWorker):
         super().__init__(**kwargs)
         self._adapter_runtime = adapter_runtime
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Execute the one compiled step this invocation represents.
 
         node_config arrives under context.metadata["node_config"], not

@@ -29,6 +29,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
+from core.runtime.execution_context import ExecutionContext
 
 logger = logging.getLogger("ocbrain.workers.planner")
 
@@ -89,14 +90,14 @@ class PlannerWorker(AbstractCognitiveWorker):
         self._adapter_runtime = adapter_runtime
         self._memory = memory
 
-    async def _run(self, context: WorkerContext) -> WorkerResult:
+    async def _run(self, context: ExecutionContext) -> WorkerResult:
         """Execute the classify→dispatch→merge pipeline.
 
         This is the legacy Orchestrator.handle() logic, moved here to make
         it governable (template method) and event-sourced (lifecycle events).
 
         Args:
-            context: WorkerContext with query in context.query or
+            context: ExecutionContext with query in context.query or
                      context.metadata["query"].
 
         Returns:
@@ -208,13 +209,21 @@ class PlannerWorker(AbstractCognitiveWorker):
                                    "(non-blocking): %s", e)
 
             # ── 8. Save to context memory ────────────────────────────────
+            # CTX-SCOPE-001: scope isolates this caller's saved turn from
+            # other callers sharing the same ContextMemory singleton.
+            # execution_id lives in context.metadata (threaded there by
+            # WorkflowRuntime -- core/workflow/runtime.py's own
+            # `metadata.get("execution_id", instance_id)` pattern, matched
+            # here rather than invented fresh). "" (not present) preserves
+            # exactly the pre-fix unscoped/shared behavior.
             if self._context_memory:
                 entities = {
                     "urls": parsed.entities.get("urls", []),
                     "languages": parsed.entities.get("languages", []),
                     "filenames": parsed.entities.get("filenames", []),
                 }
-                self._context_memory.save(query, modules_used, answer, entities)
+                scope = context.metadata.get("execution_id", "")
+                self._context_memory.save(query, modules_used, answer, entities, scope=scope)
 
             await self.emit_progress(context, "Complete", percent=100.0)
 
@@ -235,7 +244,7 @@ class PlannerWorker(AbstractCognitiveWorker):
             )
 
     async def _dispatch_module(self, mod_name: str, query: str,
-                                context: WorkerContext) -> Any:
+                                context: ExecutionContext) -> Any:
         """Dispatch to a single module.
 
         K2.3 — Legacy Dispatch Migration:
@@ -276,6 +285,13 @@ class PlannerWorker(AbstractCognitiveWorker):
             ("[Error in {mod_name}: {res}]"), which is strictly more
             correct than the previous behavior, not just a refactor.
         """
+        # CTX-SCOPE-001: same execution_id-from-metadata pattern as _run()'s
+        # step 8, and the same reasoning -- see that comment for why
+        # metadata (not context.session_id, which WorkflowRuntime sets to
+        # a per-query interaction hash, not a per-caller identity) is the
+        # correct source.
+        scope = context.metadata.get("execution_id", "")
+
         if self._adapter_runtime is not None:
             from core.capabilities.capability import CapabilityRequest, CapabilityType
 
@@ -285,6 +301,7 @@ class PlannerWorker(AbstractCognitiveWorker):
                     "module_name": mod_name,
                     "subtask": query,
                     "context": self._context_memory,
+                    "scope": scope,
                 },
             )
             capability_result = await self._adapter_runtime.invoke(
@@ -302,7 +319,7 @@ class PlannerWorker(AbstractCognitiveWorker):
 
         if self._model_router:
             return await self._model_router.route(
-                mod_name, query, self._context_memory)
+                mod_name, query, self._context_memory, scope=scope)
 
         raise RuntimeError(
             f"No adapter_runtime or model_router available for module "
