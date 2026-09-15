@@ -593,7 +593,21 @@ class WorkflowRuntime:
         # that never ran. Checking last_result.success avoids that: an
         # empty node_results with a failed last_result correctly reports
         # failure.
-        success = last_result.success if last_result is not None else True
+        #
+        # last_result is None -> False, not True (changed 2026-09-13,
+        # adopted from an independent parallel DEBT-020 implementation
+        # after comparing both against current main -- see ADR-KERNEL-04's
+        # addendum). Not proven reachable via the current call graph, but
+        # not provably unreachable either: a node whose state.status is
+        # already COMPLETED/FAILED (e.g. a hand-constructed
+        # WorkflowNodeState, or a future caller of resume()'s checkpoint
+        # path with an inconsistent node_results entry) with no
+        # corresponding node_results[node_id] falls through exactly this
+        # branch. A workflow the Kernel cannot account for is not
+        # evidence of success -- assume systems fail under scale, per this
+        # project's own engineering standards, and fail closed instead of
+        # open on a case that was never meant to be reachable.
+        success = last_result.success if last_result is not None else False
         duration_ms = (time.time() - start_time) * 1000
 
         # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
