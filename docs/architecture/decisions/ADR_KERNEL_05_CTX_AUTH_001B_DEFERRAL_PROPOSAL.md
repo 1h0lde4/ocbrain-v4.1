@@ -60,6 +60,7 @@ This recommendation explicitly does **not** claim the underlying code is safe in
 - Reasoning, wording, and acceptance criteria reviewed and endorsed as technically defensible.
 - Status remains **PROPOSED**, deliberately — not flipped to Accepted by this review.
 - The deferral is **not yet part of the Kernel v1.0 freeze baseline.** Treating it as such requires the separate, explicit sign-off described below.
+- **For the Kernel-freeze work specifically, Moncif's stated disposition (Sept 12) is: "documented/deferred, but not yet a formally accepted freeze exception."** His own stated reason: this "keeps the evidence-first rule intact and prevents the audit from silently converting a justified present-state observation into a permanent architectural guarantee." Any future freeze verdict referencing this item should carry that exact distinction, not shorthand it to "resolved" or "excepted."
 
 ## Upon formal sign-off (not yet given)
 
