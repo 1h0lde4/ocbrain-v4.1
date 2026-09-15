@@ -19,8 +19,14 @@ Coverage:
       returns EAFNOSUPPORT here with no filter at all)
     - proves the underlying argument-filtering mechanism using a stand-in
       family (AF_INET) that does exist on this host, since AF_ALG itself
-      doesn't: selective blocking by address-family value, not a blanket
-      socket() block
+      doesn't: selective blocking by address-family argument value, not a
+      blanket socket() block
+    - the int-0x80/socketcall bypass Docker's own CVE-2026-31431 fix also
+      covers: compiles a tiny C helper (int $0x80 + MAP_32BIT, the same
+      technique moby/moby's own test suite uses) and confirms a filter
+      built for native x86_64 only gets libseccomp's unrecognized-
+      architecture SIGSYS kill the moment a 32-bit-compat syscall arrives
+      -- skipped, not failed, on a host without gcc/32-bit compat support
 
 These are unit-level tests of the module in isolation; full integration
 (applied inside the real chroot/namespace chain) is covered by the
@@ -28,6 +34,7 @@ seccomp-specific cases in test_namespace_backend.py.
 """
 import subprocess
 import sys
+import textwrap
 
 import pytest
 
@@ -164,3 +171,88 @@ def test_argument_filtering_selectively_blocks_a_stand_in_family():
     result = _run_in_subprocess(code)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "AF_INET_BLOCKED AF_UNIX_STILL_WORKS", result.stdout
+
+
+_SOCKETCALL_INT80_PROBE_C = textwrap.dedent(
+    """
+    #include <stdio.h>
+    #include <sys/mman.h>
+
+    #define AF_INET 2
+    #define SOCK_STREAM 1
+    #define SYS_SOCKET 1
+
+    int main() {
+        unsigned long *args = mmap(NULL, 4096, PROT_READ|PROT_WRITE,
+                                    MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT, -1, 0);
+        if (args == MAP_FAILED) { perror("mmap"); return 2; }
+        args[0] = AF_INET;
+        args[1] = SOCK_STREAM;
+        args[2] = 0;
+
+        long ret;
+        asm volatile(
+            "int $0x80"
+            : "=a"(ret)
+            : "a"(102), "b"(SYS_SOCKET), "c"(args)
+            : "memory"
+        );
+        printf("RESULT=%ld\\n", ret);
+        return 0;
+    }
+    """
+)
+
+
+def _compile_socketcall_probe(tmp_path) -> str | None:
+    """Compiles the int-0x80 socketcall probe on the fly. Returns the
+    binary path, or None if gcc / 32-bit compat headers aren't available
+    (skip, don't fail -- this is testing an optional hardening layer on
+    top of coverage that's already proven by the stand-in-family tests
+    above, not the primary guarantee)."""
+    src = tmp_path / "probe.c"
+    src.write_text(_SOCKETCALL_INT80_PROBE_C)
+    binary = tmp_path / "probe"
+    try:
+        r = subprocess.run(
+            ["gcc", "-o", str(binary), str(src)], capture_output=True, text=True, timeout=30
+        )
+    except FileNotFoundError:
+        return None
+    if r.returncode != 0:
+        return None
+    return str(binary)
+
+
+def test_socketcall_int80_bypass_is_stopped_by_architecture_mismatch(tmp_path):
+    """Docker/Moby's PR #52501 (the same CVE-2026-31431 fix) additionally
+    denies socketcall(2) because a filter conditioning only the native
+    `socket` syscall can be bypassed via the 32-bit compat multiplexer.
+    This filter never adds the x86/x32 architectures at all -- so rather
+    than needing an explicit rule, libseccomp's own "syscall arrived
+    tagged with an architecture I was never told about" safety net kills
+    the process outright the moment the int-0x80 syscall lands. Different
+    mechanism than Docker's explicit multi-arch denial; same outcome,
+    confirmed directly rather than assumed to generalize from the
+    native-syscall tests above."""
+    probe = _compile_socketcall_probe(tmp_path)
+    if probe is None:
+        pytest.skip("gcc / 32-bit compat headers not available in this environment")
+
+    baseline = subprocess.run([probe], capture_output=True, text=True, timeout=10)
+    if baseline.returncode != 0 or "RESULT=" not in baseline.stdout:
+        pytest.skip("int $0x80 32-bit compat syscall path is not reachable on this kernel")
+
+    code = (
+        "import os, socket\n"
+        "from core.sandbox.backends._seccomp import apply_denylist\n"
+        "apply_denylist(deny=(), deny_socket_families=((socket.AF_INET, 'test'),))\n"
+        f"os.execv({probe!r}, [{probe!r}])\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+    assert result.returncode == -31, (  # SIGSYS
+        f"expected the process to be SIGSYS-killed by libseccomp's unrecognized-architecture "
+        f"safety net; got returncode={result.returncode} stdout={result.stdout!r} "
+        f"stderr={result.stderr!r} -- if this ever returns 0 with RESULT= in stdout, the "
+        f"socketcall bypass is working and this is a real, open gap, not a documented one"
+    )

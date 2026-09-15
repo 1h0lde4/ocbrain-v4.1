@@ -128,6 +128,14 @@ DENIED_SYSCALLS: tuple[tuple[str, str], ...] = (
     ("unshare", "prevents the sandboxed payload from creating further nested namespaces itself"),
     ("setns", "prevents the sandboxed payload from joining a namespace it wasn't given"),
     ("syslog", "kernel log buffer access; information-disclosure risk"),
+    ("socketcall", "legacy socket-syscall multiplexer (32-bit/compat ABIs). Resolves to -1 and is "
+                    "skipped on this build host's native x86_64 syscall table -- kept for hosts where "
+                    "it DOES resolve. Empirically confirmed on this host that an int-0x80 compat-mode "
+                    "attempt to reach it independently gets SIGSYS-killed by libseccomp's own "
+                    "unrecognized-architecture safety net (this filter never adds x86/x32 "
+                    "architectures) -- this entry is defense-in-depth for that already-covered case, "
+                    "not a fix for an open gap; matches Docker/Moby's PR #52501 explicit denial of "
+                    "the same syscall for the same underlying CVE-2026-31431 concern."),
 )
 
 # socket() itself stays allowed (this sandbox's own network-allowlist
