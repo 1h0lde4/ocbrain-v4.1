@@ -9,6 +9,18 @@ from core.module_factory import create
 from core.config import config
 
 
+@pytest.fixture(autouse=True)
+def _enable_module_factory():
+    """RCE-001 containment (KNOWN_ISSUES.md DEBT-021) disables module
+    creation by default. Every test in this file is a legitimate,
+    trusted-caller use of create(), so enable it for the duration of each
+    test and restore whatever was there before."""
+    previous = config.get("global.module_factory_enabled", False)
+    config.set("global.module_factory_enabled", True)
+    yield
+    config.set("global.module_factory_enabled", previous)
+
+
 def _cleanup(name):
     """Remove a test module if it exists."""
     dest = Path(__file__).parent.parent / "modules" / name
