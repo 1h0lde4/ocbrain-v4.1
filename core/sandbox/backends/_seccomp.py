@@ -34,6 +34,33 @@ before PR_SET_NO_NEW_PRIVS is set -- user-namespace-local capabilities
 cover this. no_new_privs is still set first in _ns_init.py regardless,
 as unconditional defense-in-depth, not because seccomp_load requires it
 in this specific configuration.
+
+Added Sept 13, 2026: argument-conditioned blocking of AF_ALG and
+AF_VSOCK socket creation (DENIED_SOCKET_FAMILIES), on top of the by-name
+denylist above. `socket()` itself stays allowed by default -- this
+sandbox's own network-allowlist path (_net_proxy.py) needs ordinary
+sockets to work -- but the specific address-family argument is checked
+via libseccomp's `seccomp_rule_add_array()` (the non-variadic array form
+of `seccomp_rule_add()`, which is far more ctypes-friendly than binding
+a true C varargs call). Prompted by CVE-2026-31431 ("Copy Fail",
+CVSS 7.8, CERT-EU advisory 2026-005): a logic flaw in the kernel's
+algif_aead module reachable via AF_ALG sockets that allows a controlled
+page-cache write, exploitable to escalate to root by corrupting a
+setuid binary such as `su` in memory -- explicitly documented as working
+*inside* containers/namespaces, since it's a kernel-level page-cache
+issue rather than something namespace isolation stops on its own. Fixed
+upstream (mainline commit merged 1 April 2026) but still rolling out
+across distributions as of this writing; Docker/Moby's own default
+seccomp profile was independently patched for the same CVE (moby/moby
+PR #52501), blocking the identical pair of address families this module
+now also blocks. Verified via a stand-in test rather than the literal
+CVE scenario: this host's kernel (6.18.44) does not expose AF_ALG at
+all (`socket(AF_ALG, ...)` fails with EAFNOSUPPORT regardless of any
+seccomp rule), so the argument-filtering *mechanism* was proven instead
+by conditionally blocking AF_INET specifically while confirming AF_UNIX
+remained unaffected -- selective blocking by address-family argument
+value, not a blanket socket() block, verified directly rather than
+assumed to generalize correctly to AF_ALG untested.
 """
 import ctypes
 import ctypes.util
@@ -41,6 +68,26 @@ import sys
 
 _SCMP_ACT_ALLOW = 0x7FFF0000
 _EPERM = 1
+_SCMP_CMP_EQ = 4  # libseccomp's scmp_compare enum; verified empirically (see module docstring)
+
+# AF_ALG=38, AF_VSOCK=40 -- standard Linux socket.h values, not
+# libseccomp-specific.
+AF_ALG = 38
+AF_VSOCK = 40
+
+
+class _ScmpArgCmp(ctypes.Structure):
+    """Mirrors libseccomp's struct scmp_arg_cmp exactly (arg index, compare
+    op, and up to two u64 operands) -- passed via seccomp_rule_add_array's
+    array-pointer form rather than binding true C varargs through ctypes.
+    """
+
+    _fields_ = [
+        ("arg", ctypes.c_uint),
+        ("op", ctypes.c_int),
+        ("datum_a", ctypes.c_uint64),
+        ("datum_b", ctypes.c_uint64),
+    ]
 
 
 def _scmp_act_errno(errno: int) -> int:
@@ -83,16 +130,33 @@ DENIED_SYSCALLS: tuple[tuple[str, str], ...] = (
     ("syslog", "kernel log buffer access; information-disclosure risk"),
 )
 
+# socket() itself stays allowed (this sandbox's own network-allowlist
+# proxy needs ordinary sockets); these specific address families are
+# blocked by argument, not the syscall as a whole. Each entry: (AF_*
+# value, rationale).
+DENIED_SOCKET_FAMILIES: tuple[tuple[int, str], ...] = (
+    (AF_ALG, "CVE-2026-31431 'Copy Fail' (CVSS 7.8, CERT-EU 2026-005): page-cache privilege "
+             "escalation via algif_aead, reachable inside containers/namespaces since it's a "
+             "kernel-level issue; matches Docker/Moby's own default-profile fix (PR #52501)"),
+    (AF_VSOCK, "blocked alongside AF_ALG, matching Docker/Moby's own fix for the same CVE -- "
+               "VM-socket family with no legitimate use inside this sandbox"),
+)
+
 
 class SeccompError(RuntimeError):
     pass
 
 
-def apply_denylist(deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS) -> list[str]:
-    """Load a default-ALLOW seccomp-bpf filter denying `deny`'s syscalls.
+def apply_denylist(
+    deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS,
+    deny_socket_families: tuple[tuple[int, str], ...] = DENIED_SOCKET_FAMILIES,
+) -> list[str]:
+    """Load a default-ALLOW seccomp-bpf filter denying `deny`'s syscalls
+    outright, plus `deny_socket_families`'s address families for socket()
+    specifically (socket() itself stays allowed).
 
-    Returns the list of syscall names actually resolved and blocked on
-    this architecture (a name that fails to resolve is skipped, not
+    Returns the syscall names and "socket(AF_*)" labels actually applied
+    on this architecture (a name that fails to resolve is skipped, not
     fatal -- keeps this portable across architectures where a given
     syscall may not exist, rather than hard-failing Phase 1 on anything
     but the exact platform this was built on).
@@ -113,6 +177,14 @@ def apply_denylist(deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS) -> list[
     lib.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]
     lib.seccomp_rule_add.restype = ctypes.c_int
     lib.seccomp_rule_add.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int, ctypes.c_uint]
+    lib.seccomp_rule_add_array.restype = ctypes.c_int
+    lib.seccomp_rule_add_array.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_int,
+        ctypes.c_uint,
+        ctypes.POINTER(_ScmpArgCmp),
+    ]
     lib.seccomp_load.restype = ctypes.c_int
     lib.seccomp_load.argtypes = [ctypes.c_void_p]
     lib.seccomp_release.argtypes = [ctypes.c_void_p]
@@ -124,6 +196,7 @@ def apply_denylist(deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS) -> list[
     blocked: list[str] = []
     try:
         errno_action = _scmp_act_errno(_EPERM)
+
         for name, _rationale in deny:
             syscall_num = lib.seccomp_syscall_resolve_name(name.encode("ascii"))
             if syscall_num < 0:
@@ -132,6 +205,17 @@ def apply_denylist(deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS) -> list[
             if rc != 0:
                 raise SeccompError(f"seccomp_rule_add({name}) failed: rc={rc}")
             blocked.append(name)
+
+        socket_num = lib.seccomp_syscall_resolve_name(b"socket")
+        if socket_num >= 0 and deny_socket_families:
+            for family, _rationale in deny_socket_families:
+                arg_cmp = _ScmpArgCmp(arg=0, op=_SCMP_CMP_EQ, datum_a=family, datum_b=0)
+                rc = lib.seccomp_rule_add_array(
+                    ctx, errno_action, socket_num, 1, ctypes.byref(arg_cmp)
+                )
+                if rc != 0:
+                    raise SeccompError(f"seccomp_rule_add_array(socket, family={family}) failed: rc={rc}")
+                blocked.append(f"socket(family={family})")
 
         rc = lib.seccomp_load(ctx)
         if rc != 0:
