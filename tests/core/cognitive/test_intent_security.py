@@ -6,15 +6,29 @@ Intent Hypothesis generation path (K4.2.1, core/cognitive/intent.py). See:
     docs/research/context-engineering/context-authority-threat-model.md
     (finding CTX-AUTH-001)
 
-STATUS: TestCtxAuth001StructuralContainment and TestCtxAuth001ParserAcceptance
-are EXPECTED TO FAIL (red) against the current implementation. This is
-intentional -- do not weaken these assertions to make them pass, do not
-delete them, and do not mark them xfail (this repository has no xfail
-convention; known failures are tracked and left genuinely red, matching
-how the pre-existing sandbox-connectivity failures are already handled
-elsewhere in this suite). When the underlying fix lands as part of the
-Context Engineering / Context Compiler work, these tests should turn
-green without modification to the assertions themselves.
+STATUS (corrected Sept 15, 2026 -- this comment previously said both tests
+below were expected red; that was stale as of the CTX-AUTH-001a structural
+fix landing and went uncorrected until this pass verified both by direct
+execution instead of re-reading this comment):
+
+TestCtxAuth001StructuralContainment now PASSES. Verified green by running
+this file directly, not inferred from the fix's own commit message.
+
+TestCtxAuth001ParserAcceptance remains EXPECTED TO FAIL (red) against the
+current implementation. This is intentional -- do not weaken this
+assertion to make it pass, do not delete it, and do not mark it xfail
+(this repository has no xfail convention; known failures are tracked and
+left genuinely red, matching how the pre-existing sandbox-connectivity
+failures are already handled elsewhere in this suite). Confirmed still
+failing by direct execution, Sept 15, 2026: an injection-shaped
+completion line is accepted into the hypothesis list indistinguishably
+from a legitimate one, because neither _parse_hypotheses() nor
+IntentHypothesis carries any notion of authority or provenance -- see
+docs/reports/context-compiler-remediation-register.md's REM-002 status
+note. When the underlying fix lands (REM-004's authority taxonomy plus
+an actual acceptance-consumer enforcement mechanism, not a field added
+solely to satisfy this assertion), this test should turn green without
+modification to the assertion itself.
 
 Root cause: _HYPOTHESIS_PROMPT_TEMPLATE interpolates the retrieved-context
 string (already flattened to plain text by ContextAssemblyEngine, with no

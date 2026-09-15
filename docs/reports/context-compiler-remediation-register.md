@@ -25,7 +25,9 @@ below for what actually changed and what didn't.
 | REM-003 | Gap 1: structured `Context` discarded before any consumer | The single most consequential architecture gap; everything else in Section 5 is downstream of this one point | Design (Exit Criterion 2) before implementation | — |
 | REM-004 | Gap 2: no authority taxonomy | Required for REM-002/003 to be meaningful, not a separable nice-to-have | Draft schema (Exit Criterion 3) | — |
 
-**REM-002 status note (branch-consolidation pass):** `fix/context-security-findings-sep2026`
+**REM-002 status note (Sept 15, 2026 freeze-classification pass, supersedes the branch-consolidation note below on verification method, not on conclusion):** Both `TestCtxAuth001StructuralContainment` and `TestCtxAuth001ParserAcceptance` were executed directly against current `main` rather than taken on the prior note's word. Result: **001a (structural) CLOSED** — `_neutralize_structural_tokens()` confirmed passing by execution. **001b (parser/authority acceptance) OPEN** — confirmed failing by execution; `_parse_hypotheses()` accepted an injection-shaped line as an ordinary, undifferentiated `IntentHypothesis`, reproducing the exact acceptance-indistinguishability this item's Action column's "authority framing" half was meant to prevent. Whole-repo grep (`main` and every branch, including `security/freeze-reconciliation-sep2026`, checked and ruled out as stale — 35 commits behind, no new content) confirms no `AuthorityLevel` type or equivalent exists anywhere; REM-004's status of `—` is therefore not just undocumented but structurally certain to be undocumented, since nothing has been built for it to document. **Explicit decision this pass: not closing 001b with a stopgap authority field bolted onto `IntentHypothesis`** — REM-002's own dependency on REM-004 ("required... to be meaningful, not a separable nice-to-have") is a statement about what a real fix requires, and a field added only to satisfy the test's assertion would not supply it. **Not marking REM-002 resolved.** Sequence going forward: whether REM-004 itself should be treated as Kernel v1.0-blocking (as distinct from Context-Compiler-blocking, which this tier already establishes) is Moncif's call, not resolved by this note.
+
+*(Prior branch-consolidation note, kept for history, not superseded on its facts:)* `fix/context-security-findings-sep2026`
 landed a partial mitigation — `core/cognitive/intent.py`'s prompt assembly now
 structurally neutralizes tokens that could forge a second `Request:` section
 (`TestCtxAuth001StructuralContainment`, verified passing). This is only the
@@ -36,8 +38,7 @@ therefore still unmet. A second, distinct component of the same original
 CTX-AUTH-001 finding (per `CURRENT_STATE.md`'s own definition, which already
 named both halves) — the hypothesis *parser* accepting an injection-shaped
 completion line regardless of prompt containment — remains fully unaddressed
-and is still red (`TestCtxAuth001ParserAcceptance`). **Not marking REM-002
-resolved.** Whether this partial mitigation is sufficient to de-prioritize
+and is still red (`TestCtxAuth001ParserAcceptance`). Whether this partial mitigation is sufficient to de-prioritize
 the remaining work pending Context Compiler, or whether the authority-taxonomy
 and parser-side work should move up, is Moncif's call — this note documents
 what changed, not what it means for the tier.
