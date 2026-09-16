@@ -139,6 +139,22 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
         manifest = json.loads(manifest_path.read_text())
 
         name    = manifest["module_name"]
+
+        # SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): name comes
+        # directly from an attacker-controlled manifest.json and is used
+        # below to build a filesystem path that gets shutil.rmtree()'d.
+        # Without this check, a module_name like "../../etc" points that
+        # deletion at an arbitrary directory outside modules/ entirely --
+        # proven empirically against a sandboxed decoy before this fix
+        # existed. Same validation module_factory.create() already applies
+        # to this exact field for the same reason, kept consistent rather
+        # than inventing a second convention.
+        if not name.isidentifier():
+            raise ValueError(
+                f"Invalid module_name in manifest.json: {name!r}. "
+                f"Use only letters, digits, underscores."
+            )
+
         mod_dir = MODULES / name
 
         if mod_dir.exists() and not overwrite:
