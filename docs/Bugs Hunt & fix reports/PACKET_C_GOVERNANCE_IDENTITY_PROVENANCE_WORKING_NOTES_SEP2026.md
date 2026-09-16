@@ -42,3 +42,42 @@ All three production construction sites confirmed, none override it:
 **Classification:** PARTIAL. Live-enforced at the plan and worker granularity (structurally, via `check_drift.py`); not enforced at the capability/payload granularity anywhere in the traced chain. Named gap, not a claim of full bypass.
 
 **Present-day severity context, traced not assumed:** `CapabilityType` (`core/capabilities/capability.py:46`) is deliberately plain string constants, not a closed `Enum` — "new capability types are added by any future session registering a new `CapabilityContract`... exactly the kind of closed-set friction the Constitution's Law of Replaceability warns against." Its own docstring states plainly: **only `LLM_COMPLETION` has a registered `CapabilityContract` and real adapters today** — the other declared types (Web Search, Browser, etc.) are named in the type namespace but not functional. This meaningfully narrows C-2's present-day consequence: with effectively one live, registered capability, "governance didn't evaluate which capability" has little to bite on yet. It does **not** narrow the finding itself, and the architecture is explicitly designed to grow this surface without revisiting this file — meaning C-2 becomes materially more consequential exactly as more capabilities are registered, with nothing currently gating that growth against the granularity gap. Same shape as the CTX-AUTH-001b disposition: not urgent today, on a trajectory where a specific, nameable future change (a second `CapabilityContract` being registered) is the condition that would revisit it.
+
+---
+
+## Finding C-3: Retry attempts re-run governance per attempt — no stale-authorization reuse (attention area #8)
+
+**Traced fresh, and this one is a negative result worth recording as explicitly as a defect would be.**
+
+`core/workflow/runtime.py:832`'s `_execute_node_with_retry()` loops `for attempt in range(1 + policy.max_retries)`, and **every iteration** constructs a fresh `ExecutionContext` and calls `self._execution_runtime.invoke(worker_type=..., context=ctx)` — which routes to the worker's non-overridable, governed `execute()`. There is no path where a retry reuses the first attempt's authorization decision, and no lower-level re-entry that skips `execute()`. Each attempt also gets a fresh `state.attempt_id = str(uuid.uuid4())` alongside the incrementing `state.attempts` counter — the distinction `WorkflowNodeState`'s own docstring (line 54) explains deliberately: `attempt_id` survives process restarts where a bare counter would collide.
+
+**Classification: LIVE-ENFORCED.** Retry does not bypass the authorization boundary.
+
+### C-3a: `recursion_depth` is hardcoded to 0 — investigated, and it is *not* a retry-path widening
+
+The retry loop passes `governance_state={"recursion_depth": 0}` as a literal on every attempt. This does feed a live control: `ExecutionContext.recursion_depth` is a direct alias for `governance_state["recursion_depth"]` (`core/runtime/execution_context.py:110-118`), `base.py:246` passes it into `GovernanceAction.recursion_depth`, and `governance_kernel.py:136` compares it against `max_depth` and rejects above it.
+
+**But this is not a defect introduced by the retry path, and reporting it as one would be wrong.** Every production construction site hardcodes the same literal — `core/runtime/execution_runtime.py:166` and `core/orchestrator.py:216` both do the same — and `orchestrator.py:194` documents the reason explicitly in-line: `handle()` has no actual recursion. **No real depth value is computed anywhere and then discarded**; there is no live recursion in the current architecture for this governor to measure.
+
+The accurate finding is therefore about the *governor*, not the retry path: the recursion-depth limit is **dormant by construction** — consistently, deliberately, and documented — rather than silently bypassed on one path while enforced on others. It becomes a live control only if/when genuine recursive execution is introduced, at which point every one of these three construction sites needs a real depth value rather than a literal.
+
+**Classification: DOCUMENT-ONLY** (the control exists and is wired, but has nothing live to measure today) — explicitly *not* BYPASSABLE, which is what a narrower look at the retry path alone would have wrongly concluded.
+
+---
+
+## Finding C-4: SupervisorWorker's retry path — Session 1's finding re-verified and materially corrected (attention area #9)
+
+**Session 1 of the freeze audit recorded this as a live, untracked gap ("`_attempt_retry()` has no production call site... dual uncoordinated recovery authorities"). Re-checked against current `main` per the evidence-first rule that a prior finding is a hypothesis, not ground truth. The reachability fact holds; the characterization does not.**
+
+Reachability confirmed unchanged on `977ebcc`: `failed_worker_result` is constructed in exactly 13 places, **all 13 in test files** (`test_supervisor_worker.py` ×11, `test_integration_full_pipeline.py` ×1, plus the read site itself). Zero production constructions.
+
+**What Session 1 missed:** this is documented, deliberate, and contractually specified — not an accidental dead path.
+
+- `core/orchestrator.py:428` names the situation explicitly in-line: `_attempt_retry()` is "reached only via a separate `failed_worker_result` parameter **this call site does not set**," and explains why `recovery_budget` is threaded through unconditionally anyway ("simpler and safer than only threading it on some invocations, and costs nothing since it is inert on this path").
+- `supervisor.py:166`'s `_run()` docstring specifies both input paths as independent, with a defined result when neither is supplied (`WorkerResult(success=True, outcome="no_action")`) — not undefined behavior.
+- The constructor docstring states that if `execution_runtime` is `None`, "the retry path (2) is unavailable and `_run()` reports that plainly rather than silently doing nothing."
+- `test_integration_full_pipeline.py:450` passes `failed_worker_result` and asserts it **must be ignored** on that path — the unreachability is itself under test, deliberately.
+
+**Accurate characterization:** a built, tested, documented capability whose activation contract is specified but whose production wiring is intentionally deferred — the same "declared but not registered" pattern C-2 found in `CapabilityType`. Not a governance bypass (any retry it performs goes through `ExecutionRuntime.invoke()` → governed `execute()`, same as C-3), and not silent dead code.
+
+**Classification: TEST-ONLY**, with the important qualifier that this is by design and documented as such, not an oversight. The residual issue is narrower than Session 1 stated: not "an untracked gap," but that **`KNOWN_ISSUES.md` carries no entry noting this deliberate deferral** — so a future session reading only the tracking docs would rediscover it as a surprise, exactly as Session 1 did. Disposition: worth a one-line `KNOWN_ISSUES.md` note recording it as intentional-and-deferred, not a code change. Session 1's "dual uncoordinated recovery authorities" framing should be treated as **superseded by this finding**, not carried into the freeze manifest as-written.
