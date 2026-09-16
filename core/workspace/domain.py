@@ -1,4 +1,26 @@
 """
+⚠ NON-AUTHORITATIVE / PROVISIONAL — NOT THE IMPLEMENTATION BASELINE ⚠
+
+This module is an implementation candidate only. It is NOT a realization of
+`docs/architecture/WORKSPACE_ARCHITECTURE.md`, which is the sole authoritative
+Workspace architecture document. Do not import this module assuming it conforms
+to that document, and do not treat its presence on `main` as architectural
+approval.
+
+Known non-conformance (see WORKSPACE_ARCHITECTURE.md §B.6 for the full audit):
+  - VerificationStatus collapses three independent verification dimensions
+    (§K.1) into one flat enum.
+  - File has no state field — QUARANTINED is unrepresentable (§I.3).
+  - File has no version field — optimistic concurrency is unimplementable (§I.7).
+  - Every "Architecture:" docstring below cites the predecessor UX/UI report,
+    which is itself marked SUPERSEDED — DO NOT USE FOR IMPLEMENTATION.
+
+Disposition (rework to conform / documented exception / remove) is Open
+Decision #19 in WORKSPACE_ARCHITECTURE.md §V, pending an explicit decision from
+the project's decision-makers. This banner should be removed only when that
+decision is made and recorded, not independently of it.
+---
+
 core/workspace/domain.py — Workspace Domain Model
 
 Defines the core domain primitives for OCBrain's workspace architecture:

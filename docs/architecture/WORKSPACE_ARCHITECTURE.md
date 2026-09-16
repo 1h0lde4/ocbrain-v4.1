@@ -11,6 +11,23 @@
 
 > This document is the single authoritative architecture baseline for OCBrain Workspace implementation. Superseded predecessor documents must not be used as independent implementation sources.
 
+### Repository state — authority boundary (NORMATIVE)
+
+Three distinct things exist in the repository under the "Workspace" name. They carry
+different authority and must not be conflated:
+
+| Object | Status | Authority |
+|--------|--------|-----------|
+| **This document** (`docs/architecture/WORKSPACE_ARCHITECTURE.md`) | Canonical architecture | **Authoritative.** The sole source of truth for Workspace architecture |
+| `ocbrain_ux_architecture_report.md`, `ocbrain_architecture_corrections.md` | Superseded architecture documents | **Historical only.** Content consolidated here; must not be used independently (§Appendix: Predecessor Documents) |
+| `core/workspace/domain.py` | Existing implementation candidate | **NOT architecture authority.** Non-conformant against this document (§B.6). Disposition pending (Open Decision #19). Carries a non-authoritative banner in its own module docstring |
+
+**The document determines the implementation, not the reverse.** `core/workspace/
+domain.py` existing on `main` is not evidence that any of its choices are architecturally
+approved — it is exactly the kind of drift this document's authority is meant to prevent.
+Workspace implementation must proceed from this document, not from that module, until
+Open Decision #19 is resolved.
+
 ---
 
 ## Table of Contents
@@ -83,11 +100,18 @@ Throughout this document, statements are classified as:
 | `OPEN DECISION` | Not yet resolved |
 | `HISTORICAL` | Context from earlier development phases |
 
+**Section-reference convention.** A bare `§X` always refers to a section of *this*
+document. References to the superseded predecessors are always written `Source A §X`
+(`ocbrain_ux_architecture_report.md`) or `Source B §X`
+(`ocbrain_architecture_corrections.md`). The two namespaces overlap — both documents use
+single and double letters — so an unqualified letter is never a predecessor reference.
+Full mapping in the Consolidation Coverage Audit.
+
 ---
 
 ## B. Repository Evidence / Verification Basis
 
-### B.1 Live baseline
+### B.1 Live baseline (REPO FACT)
 
 | Property | Value |
 |----------|-------|
@@ -202,10 +226,14 @@ this pass has no authority to modify production code:
 | 10 | No `Execution` class, despite the module docstring claiming one | §D.1, §D.3 | Declared, absent |
 | 11 | No Command envelope type | §H.2 | The NORMATIVE idempotency key has no domain representation |
 
-**Disposition: OPEN DECISION.** Either the module is reworked to conform to this
-document, or a documented exception is recorded. Until one of those happens it must not
-be treated as the Workspace domain model, and no component should import it.
-This document remains authoritative; the code does not amend it.
+**Status: NON-AUTHORITATIVE / PROVISIONAL — NOT THE IMPLEMENTATION BASELINE.**
+This module carries the same banner in its own docstring. It must not be treated as the
+Workspace domain model, and no component should import it on that assumption.
+
+**Disposition: OPEN DECISION (#19).** Either the module is reworked to conform to this
+document, a documented exception is recorded, or it is removed. Until one of those
+happens, this status stands. This document remains authoritative; the code does not
+amend it, regardless of which lands on `main` first.
 
 ---
 
@@ -268,7 +296,7 @@ Project context → Session context → Discussion context → Task → Executio
 
 Sibling discussions are isolated. Zero sibling leakage.
 
-### D.3 Domain primitives
+### D.3 Domain primitives (NORMATIVE)
 
 | Primitive | Owner | Scope | Persistence | Lifecycle |
 |-----------|-------|-------|-------------|-----------|
@@ -364,7 +392,7 @@ layer does not exist yet is the drift this matrix exists to prevent.
 A verified document may have HIGH data trust and ZERO instruction authority.
 A user instruction may have FULL authority while referring to unverified data.
 
-### F.2 Authority hierarchy
+### F.2 Authority hierarchy (NORMATIVE)
 
 | Source | Authority Level |
 |--------|----------------|
@@ -373,7 +401,7 @@ A user instruction may have FULL authority while referring to unverified data.
 | System policy | Global |
 | Everything else | Zero instruction authority |
 
-### F.3 Data trust hierarchy
+### F.3 Data trust hierarchy (NORMATIVE)
 
 | Source | Trust Level | Notes |
 |--------|------------|-------|
@@ -713,7 +741,7 @@ Every artifact carries:
 - `model_used`
 - `computational_level` active during production
 
-### J.3 Artifact types
+### J.3 Artifact types (NORMATIVE)
 
 TEXT, CODE, DATA, REPORT, IMAGE, BINARY, OTHER.
 
@@ -1210,7 +1238,7 @@ it never authorizes them.
 
 ### P.5 Background jobs, interruption, handoff (NORMATIVE)
 
-Consolidated from predecessor §T.
+Consolidated from Source A §T.
 
 | Concept | Definition |
 |---------|-----------|
@@ -1238,7 +1266,7 @@ workspace reports that rather than presenting a stale reconstruction as live sta
 
 ### P.6 Bulk operations (NORMATIVE)
 
-Consolidated from predecessor §BC.
+Consolidated from Source A §BC.
 
 | Operation | Progress | Partial failure | Cancellation | Authorization |
 |-----------|----------|----------------|-------------|---------------|
@@ -1269,7 +1297,7 @@ aggregate.
 
 ### P.7 Data lifecycle (NORMATIVE)
 
-Consolidated from predecessor §AD.
+Consolidated from Source A §AD.
 
 | Action | Meaning |
 |--------|---------|
@@ -1285,7 +1313,7 @@ projections (§O.2), which constrains what may be compacted away.
 
 ### P.8 Import / export / portability (RECOMMENDATION)
 
-Consolidated from predecessor §AE.
+Consolidated from Source A §AE.
 
 | Operation | Scope | Format |
 |-----------|-------|--------|
@@ -1305,7 +1333,7 @@ Consolidated from predecessor §AE.
 
 ### P.9 Provider and capability lifecycle (NORMATIVE)
 
-Consolidated from predecessor §Z.
+Consolidated from Source A §Z.
 
 | Provider state | Meaning |
 |---------------|---------|
@@ -1336,7 +1364,7 @@ Consolidated from predecessor §Z.
 
 ### P.10 Secrets and credentials (NORMATIVE)
 
-Consolidated from predecessor §AC. Reinforces `PROJECT_INSTRUCTIONS.md` §14.2.
+Consolidated from Source A §AC. Reinforces `PROJECT_INSTRUCTIONS.md` §14.2.
 
 | Type | Storage | Exposure to C-MoE |
 |------|---------|------------------|
@@ -1373,7 +1401,7 @@ No unsupported performance claims (e.g., "lower GC pressure") are made.
 
 Tauri remains deferred until the browser workspace stabilizes.
 
-### Q.3 UI requirements
+### Q.3 UI requirements (classified per item below)
 
 Separated by obligation type. The first group is architecture: violating it breaks a
 system invariant. The second is product: binding on the Workspace, but not architectural.
@@ -1571,7 +1599,7 @@ graph TD
 
 ## U. Kernel-Freeze Boundary
 
-### U.1 Pre-freeze / kernel-compatible (can begin now)
+### U.1 Pre-freeze / kernel-compatible (NORMATIVE — can begin now)
 
 Domain modeling, SvelteKit scaffold, authentication foundation, persistence layer, API
 contracts, projection design, basic C-MoE interaction (K4.2), SSE transport, command
@@ -1602,7 +1630,7 @@ kernel change.
 > adapter on the existing one, that crosses into §U.2 and needs a documented freeze
 > exception — the File roadmap position does not grant it.
 
-### U.2 Post-freeze / subsystem-dependent (requires kernel stability)
+### U.2 Post-freeze / subsystem-dependent (NORMATIVE — requires kernel stability)
 
 Deep C-MoE integration, governed workspace capabilities, dynamic identity, advanced
 verification, runtime capability integration.
@@ -1621,7 +1649,7 @@ classified non-kernel / kernel-compatible) and the earlier blanket phrase "full 
 resource system." Only the adaptive-control tail is post-freeze. **The Computational
 Level → Resource Policy → Resource Envelope chain as a whole is not.**
 
-### U.3 Requires specific subsystem
+### U.3 Requires specific subsystem (NORMATIVE)
 
 | Task | Blocked on |
 |------|-----------|
@@ -1708,7 +1736,7 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 
 ## W. Decision / Evidence Ledger
 
-### W.1 Locked decisions
+### W.1 Locked decisions (status per row)
 
 | # | Decision | Basis | Status | Subsystem |
 |---|----------|-------|--------|-----------|
@@ -1751,7 +1779,7 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 37 | Computational Level → Resource Policy → Envelope chain is pre-freeze | ARCHITECTURE DECISION | LOCKED | Resource |
 | 38 | Frontend state model is never the source of domain or API truth | ARCHITECTURE DECISION | LOCKED | API |
 
-### W.2 Provisional decisions
+### W.2 Provisional decisions (status per row)
 
 | # | Decision | Basis | Status | Subsystem |
 |---|----------|-------|--------|-----------|
@@ -1761,7 +1789,7 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 4 | AG-UI pattern borrowing | RECOMMENDATION | PROVISIONAL | Interop |
 | 5 | Computational matrix values | HEURISTIC | PROVISIONAL | Computational |
 
-### W.3 Research decisions
+### W.3 Research decisions (status per row)
 
 | # | Decision | Basis | Status | Subsystem |
 |---|----------|-------|--------|-----------|
@@ -1769,7 +1797,7 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 2 | Multi-expert routing | RESEARCH | RESEARCH | C-MoE |
 | 3 | Dynamic Identity introspection | RESEARCH | RESEARCH | Identity |
 
-### W.4 Key evidence references
+### W.4 Key evidence references (REPO FACT)
 
 | Claim | Source | Symbol/Line |
 |-------|--------|-------------|
@@ -1794,7 +1822,7 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 
 ## Appendix: Architectural Risks and Anti-Patterns (NORMATIVE)
 
-Consolidated from predecessor §AS and §AT.
+Consolidated from Source A §AS and §AT.
 
 | Risk | Severity | Mitigation | Enforced by |
 |------|----------|-----------|------------|
@@ -1821,7 +1849,7 @@ Consolidated from predecessor §AS and §AT.
 
 ## Appendix: Testing Requirements (NORMATIVE)
 
-Consolidated from predecessor §AW.
+Consolidated from Source A §AW.
 
 | Category | Scope |
 |----------|-------|
