@@ -81,3 +81,64 @@ Reachability confirmed unchanged on `977ebcc`: `failed_worker_result` is constru
 **Accurate characterization:** a built, tested, documented capability whose activation contract is specified but whose production wiring is intentionally deferred — the same "declared but not registered" pattern C-2 found in `CapabilityType`. Not a governance bypass (any retry it performs goes through `ExecutionRuntime.invoke()` → governed `execute()`, same as C-3), and not silent dead code.
 
 **Classification: TEST-ONLY**, with the important qualifier that this is by design and documented as such, not an oversight. The residual issue is narrower than Session 1 stated: not "an untracked gap," but that **`KNOWN_ISSUES.md` carries no entry noting this deliberate deferral** — so a future session reading only the tracking docs would rediscover it as a surprise, exactly as Session 1 did. Disposition: worth a one-line `KNOWN_ISSUES.md` note recording it as intentional-and-deferred, not a code change. Session 1's "dual uncoordinated recovery authorities" framing should be treated as **superseded by this finding**, not carried into the freeze manifest as-written.
+
+---
+
+## Finding C-5: BudgetGovernor enforces against caller-reported state and fails open when it is absent
+
+**This is the state/provenance trace endpoint: persisted/reconstructed state → `GovernanceAction` → enforcement point.** Traced fresh, in the direction the packet specifies — not a search for suspicious literals.
+
+### The trace
+
+`core/governance/governance_kernel.py:186` — `BudgetGovernor.evaluate()` reads its two enforcement inputs directly out of `action.metadata`:
+
+```
+step_count  = action.metadata.get("step_count")
+token_spend = action.metadata.get("token_spend")
+```
+
+Walking backwards: `base.py:231` populates them from `context.metadata.get("budget", {})`. `execution_runtime.py:175-178` populates *that* from `(metadata or {}).get("budget", {}).get("steps", 0)` — **it re-reads the caller's own metadata and re-wraps it**. At no point in this chain does the runtime measure, count, or accumulate anything. The value the governor enforces against is the value the caller reported.
+
+### This is documented and deliberate, not accidental
+
+`governance_kernel.py:155-174` explains the history in full: the kernel previously accumulated `_step_count`/`_token_spend` on the singleton, which after 100 evaluations "permanently rejected" every subsequent action (BUG-03). The fix moved budget state to the caller — "the worker or orchestrator is responsible for incrementing these values before each `evaluate_action()` call" — and `reset()` is retained as a documented no-op.
+
+### The two properties that matter for freeze
+
+1. **Fail-open on absence.** When both keys are missing, the governor returns `APPROVE` with a `logger.debug` advisory (not a warning, not an event). The docstring states the rationale plainly: "preserves backward compatibility with callers that do not yet supply budget context." A caller that simply never populates `budget` is never budget-limited, and the only trace is a debug-level log line.
+2. **No authoritative cross-check.** The governor has no independent measurement to compare the reported figure against. A caller reporting `steps: 0` indefinitely is indistinguishable, at the enforcement point, from a caller that genuinely has not spent anything.
+
+### What this is *not* — the distinction the packet asks for
+
+**There is a second, genuinely authoritative budget mechanism, and it must not be conflated with this one.** `core/workflow/runtime.py:490-493` builds an `ExecutionBudget` (defaulting via `default_budget_for(query)` when the caller supplies none) and hands it to `GraphExecutionWatchdog` (`core/runtime/watchdog.py:104`), which supervises "one `ExecutionGraph`... against one shared `ExecutionBudget` for the lifetime of one workflow execution" and holds real consumed state (`execution_budget.py:157`: `self.extension_consumed_s += seconds`). That is measured enforcement that a caller does not report.
+
+Critically, **these are different keys and different objects**: the watchdog path uses `metadata["execution_budget"]` (an `ExecutionBudget` instance); the governor path uses `metadata["budget"]` (a plain dict of `steps`/`tokens`/`cost`). They do not collide, do not cross-validate, and neither knows about the other. So the accurate statement is not "budget enforcement is broken" — workflow-level time/extension budget is genuinely enforced by the watchdog. It is that **the governance-layer budget check specifically is an attestation, not a measurement**, and degrades silently to approval.
+
+### Disposition
+
+Classification: **PARTIAL** — live-enforced when callers supply truthful budget context (the workflow path does thread real values), fail-open and unverifiable when they do not.
+
+This satisfies the packet's "manufacture a state that *looks authorized*" test in the narrow sense — a caller reaching `evaluate_action()` controls the numbers its own budget check is evaluated against — but with two honest limits on severity: (a) every production caller traced is in-tree code, not an external principal, so this is a robustness/defense-in-depth gap rather than a reachable privilege boundary today; and (b) it follows directly from a deliberate, documented architectural decision (BUG-03) that fixed a worse failure mode. It should be recorded as a known limitation of the governance budget check with a named condition for revisiting — **any future path where budget metadata originates outside the kernel's own trusted callers** — rather than reopened as a defect in the BUG-03 fix.
+
+---
+
+## Finding C-6: Persisted checkpoint state is *not* an authority substitute — resume traced and cleared, with one bounded caveat
+
+**Directly answering the packet's sharpest question: can a persisted record become an authority substitute for a fresh governed decision?** Traced against `core/workflow/runtime.py:330-412`. **Largely: no.** Recording the negative result with the same rigor as a defect, because "we checked and it holds" is freeze-relevant evidence.
+
+### Why it holds
+
+1. **Restored state is not caller-supplied.** `resume()`'s signature takes `instance_id`, *not* `node_states`. The state is loaded internally via `self._event_stream.get_checkpoint(...)`. There is no API surface here through which a caller hands in a fabricated set of COMPLETED nodes — the obvious "manufacture authorized state" vector is closed by construction.
+2. **Cached results are inputs, not authorizations.** Already-COMPLETED nodes are skipped and their results reused, but every node that *does* execute on resume re-enters the same governed `execute()` path (per C-3). Resume does not re-perform an already-performed action under a stale decision; it declines to repeat work while governing all new work freshly.
+3. **`RUNNING` is explicitly not treated as evidence of completion.** Nodes last seen `RUNNING` (or `CANCELLED`) are reset to `PENDING` and re-executed from scratch, with the reasoning stated in-line: "Whether that node's underlying work actually finished before the crash is unknowable from here... a status of RUNNING is not evidence of completion, so it must not be treated as one." That is precisely the verification discipline this audit has been applying, already correctly encoded in the code.
+4. **Cross-workflow checkpoint reuse is blocked.** A `workflow_id` mismatch between checkpoint and definition returns a descriptive failure rather than proceeding.
+
+**Classification: LIVE-ENFORCED.**
+
+### The two bounded caveats — recorded, not inflated
+
+**(a) Checkpoint-store trust boundary.** The above holds *given* the checkpoint store is trustworthy. Fabricated COMPLETED states with arbitrary cached results would be accepted if an actor could write directly to the underlying event-stream/SQLite store — those results become inputs to downstream nodes. This is a materially different threat model (direct local persistence write access) than anything reachable through the runtime's own APIs, and in a local-first single-principal system it is largely subsumed by "the attacker already has local write access." Recorded as a bounded assumption of the resume design, **not** claimed as a live vulnerability.
+
+**(b) Fresh budget per resume interacts with C-5.** `resume()` deliberately does *not* restore the `ExecutionBudget` — it starts fresh via `default_budget_for()`, with documented reasoning ("too strict if the process was down 2 seconds, too lenient if it was down 2 hours"). The decision is sound in isolation and openly stated. The observation worth carrying forward is only this: combined with C-5's fail-open governance budget check, **no mechanism traced imposes a cumulative ceiling across repeated resumes.** Each resume gets a fresh watchdog budget, and the governance-layer check does not compensate because it enforces only what callers report. Flagged as an interaction to be aware of at freeze, explicitly *not* as a defect in either component — both are individually documented and reasoned.
+
+Also noted, already tracked, not re-litigated here: re-executing a node that produced an external side effect before the crash repeats that side effect — `DEBT-015` sub-item (7), explicitly deferred as proposed-only future architecture. DEBT-003 solved durability of *state*, not idempotency of *effects*, and says so.
