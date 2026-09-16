@@ -6,7 +6,7 @@
 |-------|-------|
 | **Status** | AUTHORITATIVE |
 | **Repository baseline** | `c67187a` (main) |
-| **Last verified** | 2026-09-16 (final consistency & authority pass) |
+| **Last verified** | 2026-09-16 (final consistency & authority pass; Decision #12 closed same day — see §O.1.1) |
 | **Supersedes** | `ocbrain_ux_architecture_report.md`, `ocbrain_architecture_corrections.md` |
 
 > This document is the single authoritative architecture baseline for OCBrain Workspace implementation. Superseded predecessor documents must not be used as independent implementation sources.
@@ -57,7 +57,7 @@ Open Decision #19 is resolved.
 - [W. Decision / Evidence Ledger](#w-decision--evidence-ledger)
 - [Appendix: Architectural Risks and Anti-Patterns](#appendix-architectural-risks-and-anti-patterns-normative)
 - [Appendix: Testing Requirements](#appendix-testing-requirements-normative)
-- [Appendix: 21 Architectural Invariants](#appendix-21-architectural-invariants-normative)
+- [Appendix: 23 Architectural Invariants](#appendix-23-architectural-invariants-normative)
 - [Appendix: Predecessor Documents](#appendix-predecessor-documents)
 - [Appendix: Consolidation Coverage Audit](#appendix-consolidation-coverage-audit)
 
@@ -553,19 +553,24 @@ These are four distinct identities and must not be collapsed:
 most one logical command.
 
 **What it does not guarantee:** that a command which crashed part-way through left no
-partial side effects. A command that mutated domain state, then crashed before its event
-was appended, is *not* made whole by rejecting the retransmission — the retransmission
-returns a recorded outcome that may not describe reality. See §O.1 for the underlying
-atomicity gap this depends on.
+partial side effects outside the domain mutation itself.
 
-**Crash/recovery semantics: OPEN.** Whether a command found in `Executing` after restart
-is resumed, failed, or compensated is not decided and not implemented. It must not be
-assumed resolved by the idempotency key. Related existing work: DEBT-015 proposed an
-Operation / ExecutionAttempt / ExecutionSnapshot model covering this identity split; it
-is **proposed only, not implemented**, and its sub-item (6) was resolved under
-ADR-KERNEL-03 (checkpoint/resume) without adopting the rest of the schema. That
-checkpoint/resume mechanism is node-level within a workflow execution, not
-command-level, and does not close this item.
+**Narrowed by Decision #12 (§O.1.1, ADOPTED).** The domain mutation and its event append
+are now atomic by rule: a command can no longer crash such that its state changed but no
+event was recorded, or the reverse. A crash can only land *before* that transaction
+starts or *after* it has committed — never inside it. What remains open is what happens
+around that atomic unit, not within it:
+
+**Crash/recovery semantics: still OPEN** (narrowed, not closed — see §V #13). Whether a
+command found in `Executing` after restart is resumed, failed, or compensated is not
+decided. Whether secondary effects (projections, SSE, search indexing — §O.1.1) that
+should have followed a committed transaction actually ran, and what happens if they
+didn't, is also not decided. Neither is resolved by the idempotency key. Related
+existing work: DEBT-015 proposed an Operation / ExecutionAttempt / ExecutionSnapshot
+model covering this identity split; it is **proposed only, not implemented**, and its
+sub-item (6) was resolved under ADR-KERNEL-03 (checkpoint/resume) without adopting the
+rest of the schema. That checkpoint/resume mechanism is node-level within a workflow
+execution, not command-level, and does not close this item.
 
 ### H.3 Command lifecycle (NORMATIVE)
 
@@ -1010,11 +1015,19 @@ UI (client)
     → API Layer (validate, auth, rate-limit)
       → Application Layer / Command Handler
         → Authority checks (GovernanceKernel.evaluate_action where required)
-        → Domain mutation (Repository.save / Runtime action)
-        → EventStream.append() (authoritative event)
-  → EventStream → Projection update
-  → SSE delta → Client → UI update
+        → ── BEGIN local transaction (single connection) ──────────────
+            → Version check (optimistic concurrency; reject on mismatch)
+            → Domain mutation (Repository.save / Runtime action)
+            → EventStream.append() (authoritative event)
+          ── COMMIT — both succeed, or neither does ────────────────────
+  → (post-commit) EventStream → Projection update
+  → (post-commit) SSE delta → Client → UI update
 ```
+
+The bracketed span is the Transactional Unit of Work (§O.1.1, Decision #12,
+**ADOPTED**). Everything below the commit line is a secondary effect: it happens
+*after* the authoritative transaction succeeds, never as a substitute for it, and
+never able to roll it back.
 
 **Inviolable rules:**
 - The UI NEVER directly mutates projections
@@ -1025,37 +1038,116 @@ UI (client)
   before their domain projections are updated.** Operational telemetry, health, and
   transient runtime observations are not required to become EventStream domain events
   (§E.2)
+- The domain mutation and its event append are atomic with each other (§O.1.1);
+  projection updates are not part of that atomic unit and are always eventually
+  consistent, never synchronously guaranteed
 
-### O.1.1 Domain mutation / EventStream consistency (REPO FACT + OPEN)
+### O.1.1 Domain mutation / EventStream consistency (NORMATIVE — Decision #12, ADOPTED)
 
-The write path shows:
+**CLOSED.** Open Decision #12 is resolved as **ADOPTED — Transactional Unit of Work**,
+decided directly by the project's decision-maker on this document. This section is the
+single authoritative statement of that decision; §V's Open Decisions table and §W.1's
+Decision Ledger both point back here rather than restating it.
+
+#### The rule
+
+For every authoritative Workspace domain mutation that requires a corresponding
+authoritative domain event, **the domain mutation and the event append MUST participate
+in the same local SQLite transaction and the same database connection.** The operation
+is considered committed only when both succeed.
 
 ```
-Domain mutation → EventStream.append() → Projection
+BEGIN (single connection)
+  1. Version check       — optimistic concurrency; stale writes rejected here
+  2. Domain mutation      — write the domain row(s)
+  3. EventStream.append() — write the authoritative event
+COMMIT                    — atomically, or ROLLBACK — neither takes effect
 ```
 
-**These two steps are not currently atomic.** Verified against `c67187a`:
+If the version check fails, the transaction never reaches step 2 — the command is
+rejected, not retried automatically (§I.7's reject/refresh/merge/explicit-conflict
+outcomes apply). If the domain mutation succeeds but the event append fails, the whole
+transaction rolls back: **there is no state where step 2 is durable and step 3 is not.**
+This is the mechanism that fulfills the NORMATIVE constraint this section previously
+stated as unmet: an authoritative domain state change can no longer be permanently
+committed while its corresponding historical event is lost, because they are the same
+commit.
 
-- `SQLiteEventStore._append_sync()` opens its **own** `sqlite3.connect(self._db_path)`
-  per append and commits on that connection independently
-  (`core/events/event_stream.py`).
+#### Optimistic concurrency is part of the same boundary
+
+The version check is not a separate pre-check — it executes inside the same transaction
+as the mutation and event append, so a concurrent writer cannot pass the check and then
+lose the race before committing. §I.7's File version-mismatch handling is the concrete
+instance of this general rule for the File entity specifically; this section is the
+general rule every authoritative domain mutation follows.
+
+#### What this decision does NOT do
+
+- **It does not turn Workspace into full event sourcing.** Domain state is stored
+  directly in domain tables, not solely derived by replaying events. EventStream remains
+  the authoritative *historical* record (§E.1) — it is not required to be the sole
+  source from which current domain state is reconstructed. This is unchanged from, and
+  consistent with, §E.3's classification of "Domain state" as owned by "Domain store +
+  events," not by events alone.
+- **It does not require all domain state to be reconstructed from events.** Domain
+  *projections* remain rebuildable from EventStream replay per §O.2 — that requirement
+  was already scoped to projections, not to the domain store itself, and nothing here
+  changes it.
+- **It is not a transactional outbox, and it is not 2PC.** Both are unnecessary here
+  because domain state and the event log currently share one local SQLite database. If
+  OCBrain later publishes events to an external broker or messaging system, a
+  transactional outbox may be introduced **at that external integration boundary** —
+  that is a separate, future decision, not required by this one, and not the mechanism
+  this section adopts for the local mutation/event pair.
+
+#### Secondary effects are post-commit, not part of the boundary
+
+Projections, SSE notifications, search indexing, telemetry, notifications, external
+messaging, and LLM/tool execution are **not** part of the atomic transaction. They occur
+*after* it commits and must use their own retry/idempotency mechanisms where
+appropriate:
+
+| Secondary effect | Consistency model | Cross-reference |
+|------------------|-------------------|-----------------|
+| Domain projections | Eventually consistent, rebuilt from committed events | §O.2, §O.3 |
+| SSE notification | Best-effort delivery; client reconnects and replays from `Last-Event-ID` | §O.4 |
+| Search indexing | Eventually consistent; never authoritative for absence (§P.4) | §P.4 |
+| Telemetry / operational observations | Non-authoritative by definition | §E.2 |
+| External messaging, LLM/tool execution | Own retry and idempotency; outside this boundary entirely | — |
+
+A failure in any of these does not roll back the domain transaction, and a retry of any
+of these must not be able to re-execute the domain mutation itself — that is what
+command idempotency (§H.2) already governs, and it remains a **separate concern** from
+this section's atomicity guarantee. This decision does not conflate the two: atomicity
+answers *did the mutation and its event happen together*; idempotency answers *what
+happens if the same command arrives twice*. A command can be atomically applied exactly
+once and still need idempotency handling for a duplicate submission of that same
+command.
+
+#### Current implementation status: NOT YET SUFFICIENT (REPO FACT)
+
+This is an architecture decision, not a code change. The current implementation does
+**not** yet satisfy it, and that gap is recorded rather than silently treated as
+compliant:
+
+- `SQLiteEventStore._append_sync()` (`core/events/event_stream.py`) opens its **own**
+  `sqlite3.connect(self._db_path)` per append and commits on that connection
+  independently, verified fresh against `c67187a` (unchanged since the prior audit).
 - Repo-wide grep for `outbox`, `two_phase`, `2pc` under `core/`: **zero matches.**
-- No shared transaction, transactional outbox, or event-first write ordering exists
-  anywhere between a domain mutation and its event append.
+- No `Repository`, `UnitOfWork`, or shared-connection abstraction exists anywhere in the
+  repository today.
 - The Workspace domain has no persistence layer at all yet (P0 item #2), so there is
-  currently no domain store for an event append to be transactional *with*.
+  currently no domain store for an event append to share a connection *with*.
 
-**Consistency mechanism: OPEN.** It is not being invented here. The candidates —
-single transaction over a shared store, transactional outbox, or event-first semantics
-where the event is the mutation — are a P0 decision, not an implementation detail to be
-settled later by whoever writes the repository layer first.
+**This is expected, not a defect to fix in this pass.** `SQLiteEventStore` predates this
+decision and was never required to anticipate it. It must be brought into conformance
+— given a shared-connection append path usable by the future Workspace repository layer
+— **when the Workspace persistence layer (P0 item #2) is built**, not before. Building
+that persistence layer without implementing this rule would be building it
+non-conformant to an already-adopted decision, not building ahead of an open one.
 
-**NORMATIVE constraint on whatever is chosen:** an authoritative domain state change
-must not be permanently committable while its corresponding historical event is silently
-lost. A mutation whose event append failed is not a successful mutation. Failure must be
-detectable and must surface — it must not present as success with a missing event.
-
-This is the atomicity gap §H.2's crash/recovery analysis depends on.
+No `UnitOfWork` or repository API is invented here. That implementation is future work,
+scoped to P0 item #2, and out of scope for this documentation pass.
 
 ### O.2 Read path (NORMATIVE)
 
@@ -1539,7 +1631,7 @@ graph TD
 | # | Item | Freeze? | Classification |
 |---|------|---------|---------------|
 | 1 | Domain model (Project/Session/Discussion/Task/File/Artifact) | No | Non-kernel |
-| 2 | Persistence layer (SQLite-backed repositories) | No | Non-kernel |
+| 2 | Persistence layer (SQLite-backed repositories) — **must implement the Transactional Unit of Work (§O.1.1, Decision #12) from the outset**, not retrofit it afterward | No | Non-kernel |
 | 3 | API contract definitions (Pydantic models, OpenAPI) | No | Non-kernel |
 | 4 | Authentication foundation (API key / session token) | No | Non-kernel |
 | 5 | File capability adapter + storage backend | No | Non-kernel |
@@ -1693,7 +1785,7 @@ Applied:
 | FILE_ACCESS adapter via existing CapabilityRegistry (§U.1) | `KERNEL-COMPATIBLE` |
 | Policy-aware routing input to existing Router (§N.1) | `KERNEL-COMPATIBLE` |
 | Scoped CapabilityRequest (§G.5) | `UNRESOLVED` — may be `KERNEL-COMPATIBLE` or require a capability-contract change; not determinable until designed |
-| Domain mutation / EventStream atomicity (§O.1.1) | `UNRESOLVED` — depends on Open Decision #12; event-first semantics could touch EventStream's contract |
+| Transactional Unit of Work — domain mutation / EventStream atomicity (§O.1.1) | `NON-KERNEL` — **resolved by Decision #12's closure.** Local SQLite transaction over the future Workspace persistence layer and the existing `SQLiteEventStore`; touches neither the frozen kernel nor EventStream's external contract |
 | Deep runtime-native adaptive resource control (§U.2) | `FREEZE-EXCEPTION-REQUIRED` |
 | Dynamic escalation / de-escalation in-loop (§T #29) | `FREEZE-EXCEPTION-REQUIRED` |
 | Advanced C-MoE, task-aware adaptive routing (§T #24, #28) | `FREEZE-EXCEPTION-REQUIRED` |
@@ -1701,9 +1793,12 @@ Applied:
 | Advanced Verification integration (§T #27) | `FREEZE-EXCEPTION-REQUIRED` |
 | `core/workspace/domain.py` as shipped (§B.6) | `UNRESOLVED` — non-conformant; disposition is Open Decision #19 |
 
-**Two items are `UNRESOLVED` rather than assumed compatible.** Neither may be started on
-the assumption that it will turn out kernel-compatible; each needs its classification
-settled first. `UNRESOLVED` is a stop, not a default-permit.
+**One item remains `UNRESOLVED` rather than assumed compatible** (Scoped
+CapabilityRequest) and may not be started on the assumption that it will turn out
+kernel-compatible — it needs its classification settled first. `UNRESOLVED` is a stop,
+not a default-permit. The Transactional Unit of Work row above was `UNRESOLVED` in the
+prior revision of this document and is now settled: Decision #12's closure makes it
+`NON-KERNEL`.
 
 ---
 
@@ -1722,8 +1817,8 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 9 | Verification vocabulary | VERIFIED/REFUTED vs VERIFIED/CONTRADICTED | Low | Domain modeling | OPEN |
 | 10 | Command lifecycle subset | Full lifecycle / simplified per type | Low | API design | OPEN |
 | 11 | Quarantine storage | Temp directory / staging table | Low | File adapter design | OPEN |
-| 12 | Domain mutation / EventStream atomicity | Single transaction / transactional outbox / event-first | **High** | P0 persistence design | **OPEN** (§O.1.1) |
-| 13 | Command crash/recovery semantics | Resume / fail / compensate | **High** | #12 | **OPEN** (§H.2) |
+| 12 | ~~Domain mutation / EventStream atomicity~~ | ~~Single transaction / transactional outbox / event-first~~ | — | — | **CLOSED — ADOPTED: Transactional Unit of Work.** See §O.1.1, §W.1 #39–#42 |
+| 13 | Command crash/recovery semantics | Resume / fail / compensate | Medium (narrowed by #12's closure — see note) | P0 persistence layer implementation | **OPEN** (§H.2) |
 | 14 | Fail-closed behavior for missing principal | Deny / default principal | **High** | Principal system (DEBT-025) | **OPEN** (§G.4) |
 | 15 | Capability scope representation | Scoped CapabilityRequest / policy table | **High** | P0, gates File Adapter | **OPEN** (§G.5) |
 | 16 | File merge semantics | Reject-only / per-class merge strategies | Medium | File adapter design | **OPEN** (§I.7) |
@@ -1731,6 +1826,14 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 18 | Search index rebuild procedure | Replay+reindex / snapshot restore | Medium | #12 | **OPEN** (§P.4) |
 | 19 | `core/workspace/domain.py` disposition | Rework to conform / documented exception / remove | **High** | Moncif decision | **OPEN** (§B.6) |
 | 20 | CTX-EXPORT-001 freeze classification | Blocking / non-blocking for Kernel v1.0 | **High** | Moncif decision | **OPEN** (§B.3) |
+
+**Note on #13's narrowing.** Decision #12's closure means a crash can no longer be
+observed *mid-way through* a domain mutation and its event append — that pair is now
+atomic by rule, once implemented. What #13 still covers is narrower: what the system
+does with a command's lifecycle status (§H.3) across a process restart when the crash
+occurred *outside* that atomic unit — before it started, or after it committed but
+before secondary effects ran. #13 is not closed by #12; it is scoped more precisely by
+it.
 
 ---
 
@@ -1778,6 +1881,10 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | 36 | Resource fields classified CEILING/TARGET/PREFERENCE/DERIVED; not interchangeable | ARCHITECTURE DECISION | LOCKED | Resource |
 | 37 | Computational Level → Resource Policy → Envelope chain is pre-freeze | ARCHITECTURE DECISION | LOCKED | Resource |
 | 38 | Frontend state model is never the source of domain or API truth | ARCHITECTURE DECISION | LOCKED | API |
+| 39 | Domain mutation + event append share one local transaction and connection (Transactional Unit of Work) | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
+| 40 | Optimistic concurrency version check executes inside that same transaction, not as a separate pre-check | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
+| 41 | Secondary/external effects (projections, SSE, search, telemetry, notifications, external messaging, LLM/tool execution) are post-commit, own retry/idempotency, never part of the atomic boundary | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
+| 42 | Transactional outbox is reserved for a future external-broker boundary, not required for the local mutation/event pair; 2PC not required | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
 
 ### W.2 Provisional decisions (status per row)
 
@@ -1817,6 +1924,8 @@ settled first. `UNRESOLVED` is a stop, not a default-permit.
 | UnifiedMemory L0–L4 | `core/memory/unified_memory.py` | ~58KB module |
 | 7 governors | `core/governance/governance_kernel.py` | Template Method pattern |
 | CTX-AUTH-001 partially closed | `CURRENT_STATE.md` | Updated at `aae1310` |
+| `SQLiteEventStore._append_sync()` opens its own connection per call (Decision #12: not yet conformant) | `core/events/event_stream.py` | `_append_sync()` L230–240 |
+| No Repository/UnitOfWork abstraction exists anywhere in the repository | `core/` (repo-wide grep) | `class.*Repository\b`, `class.*UnitOfWork` — zero matches |
 
 ---
 
@@ -1831,7 +1940,7 @@ Consolidated from Source A §AS and §AT.
 | C-MoE filesystem authority | Critical | All ops through Governance → Adapter | §G.5, §I.5 |
 | MAX causing unbounded work | Critical | Hard caps on every enforceable dimension | §M.1, §N.2, §N.3 |
 | Instruction injection via file content | Critical | Trust boundary enforcement | §F.1 |
-| Domain state committed without its event | **Critical** | **Unmitigated — Open Decision #12** | §O.1.1 |
+| Domain state committed without its event | **Critical** | **Architecturally mitigated — Decision #12 ADOPTED (Transactional Unit of Work); not yet implemented, current `SQLiteEventStore` is non-conformant** | §O.1.1 |
 | Stale projection read as truth | High | Freshness states; negatives never inferred | §O.3.1 |
 | Stale index exposing unauthorized entities | High | Query-time authorization against current state | §P.2, §P.4 |
 
@@ -1868,7 +1977,7 @@ before it is accepted as proving anything.
 
 ---
 
-## Appendix: 21 Architectural Invariants (NORMATIVE)
+## Appendix: 23 Architectural Invariants (NORMATIVE)
 
 1. No component may bypass GovernanceKernel for actions requiring authorization
 2. EventStream is append-only and immutable
@@ -1891,6 +2000,8 @@ before it is accepted as proving anything.
 19. Computational Level does not depend on C-MoE
 20. MCP output is untrusted external data
 21. Kernel freeze requires documented exception for modification
+22. Authoritative domain mutation and its corresponding domain event append share one local transaction and connection; commit succeeds only if both do (Decision #12)
+23. Secondary and external effects (projections, SSE, search, telemetry, notifications, external messaging, LLM/tool execution) occur only after that transaction commits, use their own retry/idempotency, and are never part of the atomic boundary or a substitute for it (Decision #12)
 
 ---
 
@@ -2016,7 +2127,7 @@ and 18 were landed but **incompletely** — this pass completed each:
 | 11 Authentication / ownership model | §D.4, §L.3 | `PRESERVED` |
 | 12 File-root semantics | §I.1 | `PRESERVED` |
 | 13 File ingestion lifecycle | §I.2 | `PRESERVED` |
-| 14 Workspace / event write path | §O.1 | `CORRECTED` — §O.1.1 atomicity gap recorded |
+| 14 Workspace / event write path | §O.1, §O.1.1 | `CORRECTED` — atomicity gap recorded, then closed via Decision #12 (ADOPTED — Transactional Unit of Work) |
 | 15 External protocol claims | §R.1 | `PRESERVED` |
 | 16 Frontend recommendation | §Q.1 | `PRESERVED` |
 | 17 Search / security scope | §P.2 | `PRESERVED` + `CORRECTED` (§P.4) |
