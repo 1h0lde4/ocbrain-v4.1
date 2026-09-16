@@ -142,3 +142,48 @@ This satisfies the packet's "manufacture a state that *looks authorized*" test i
 **(b) Fresh budget per resume interacts with C-5.** `resume()` deliberately does *not* restore the `ExecutionBudget` — it starts fresh via `default_budget_for()`, with documented reasoning ("too strict if the process was down 2 seconds, too lenient if it was down 2 hours"). The decision is sound in isolation and openly stated. The observation worth carrying forward is only this: combined with C-5's fail-open governance budget check, **no mechanism traced imposes a cumulative ceiling across repeated resumes.** Each resume gets a fresh watchdog budget, and the governance-layer check does not compensate because it enforces only what callers report. Flagged as an interaction to be aware of at freeze, explicitly *not* as a defect in either component — both are individually documented and reasoned.
 
 Also noted, already tracked, not re-litigated here: re-executing a node that produced an external side effect before the crash repeats that side effect — `DEBT-015` sub-item (7), explicitly deferred as proposed-only future architecture. DEBT-003 solved durability of *state*, not idempotency of *effects*, and says so.
+
+---
+
+## Finding C-7: A parallel HTTP control plane reaches privileged operations without transiting governance
+
+**Found while running the authority-escalation trace — not on the cognitive path, which is why earlier passes over that path kept coming back clean.**
+
+`interface/api.py` exposes privileged mutating endpoints: `POST /modules/new`, `/train/{module_name}`, `/distill`, `/import`, `/export`, `PUT /config`, `/update/install`, `/update/restart`, `/rollback`.
+
+Three facts established by fresh grep, all negative results in the dangerous direction:
+
+1. **No authentication anywhere in `interface/`.** Searched `Depends(`, `api_key`, `Authorization`, `authenticate`, `HTTPBearer`, `verify_token`, `Security(` — zero hits. This confirms Session 1's grep-level observation at a higher standard.
+2. **No governance anywhere in `interface/api.py`.** Searched `evaluate_action` / `governance` — zero hits. The HTTP control plane does not transit `GovernanceKernel` at all.
+3. **Bound to loopback.** `main.py:453` binds `host="127.0.0.1"` — the single binding found. This is the decisive mitigating fact and it is consistent with LAW 5 (local-first).
+
+### What this is, stated precisely
+
+This is **not an escalation *from* the cognitive path** — nothing traced lets a request, plan, cached result, or event reach these endpoints. It is a **second, parallel authority plane** that exists alongside the governed cognitive path and does not share its controls.
+
+Nor is it straightforwardly a LAW 1 violation ("no autonomous capability may bypass governance"): a human operator invoking `/rollback` is not autonomous capability bypassing governance — it is arguably the human *exercising* governance authority directly, which is the model PI §13 describes ("human approve → deploy"). Confirmed supporting evidence: `/evolve/plan` only calls `propose_upgrades()`/`prioritize_upgrades()` and returns proposals — it generates, it does not deploy — and the actual promotion path does enforce `EvolutionGovernor.SELF_MODIFYING_ACTIONS` (`core/cognitive/learning.py:650-652`). That endpoint is therefore **not** a bypass, and should not be reported as one.
+
+**The freeze-relevant residual is narrower and real:** in a loopback-only, unauthenticated model, *any* local process — another application, a malicious dependency, a browser page issuing cross-origin form posts to localhost — inherits full control-plane authority with no governance evaluation and no actor identity recorded. The plane has already produced one materialized vulnerability on exactly this basis (RCE-001, `POST /modules/new`, since fixed), which is evidence that the absence of a governance boundary here is load-bearing rather than theoretical.
+
+**Classification: PARTIAL** — governed by the deployment boundary (loopback) rather than by the governance kernel, with no defense in depth behind that single boundary and no actor identity on any privileged action. Disposition: record explicitly in the freeze manifest as an accepted local-first trust-model assumption, with the named revisit condition being **any change that binds the API off-loopback, adds a remote/proxy path, or introduces multi-user operation** — at which point this becomes a first-order authorization defect rather than a trust-model assumption.
+
+---
+
+## Packet C closing invariant — formal answer
+
+> *Can any persisted event, receipt, compiled plan, cached result, reconstructed context, or caller-supplied metadata cause a privileged adapter invocation without a fresh canonical governance decision for that execution instance?*
+
+**Answer: No — for adapter invocation specifically, the invariant holds.** Established by attempting to falsify it, not to confirm it:
+
+| Attack | Result |
+|---|---|
+| Direct `worker._run()` call bypassing governed `execute()` | **Fails.** Sole production call is `base.py:281`, inside `execute()`. All other `_run(` hits are unrelated classes (sqlite thread-pool helper, watchdog loop, `WorkflowRuntime._run()` DAG traversal). |
+| `ExecutionRuntime.invoke()` skipping governance | **Fails.** Routes to `worker.execute(context)` (`execution_runtime.py:195`), documented as governance-handling. |
+| HTTP/API surface reaching an adapter directly | **Fails.** Zero occurrences of adapter/capability invocation anywhere in `interface/`. |
+| Persisted event/receipt used to gate a decision | **Fails.** Zero code branches on persisted event content to authorize. Events are evidence only; the sole persisted-state consumers are `replay()` (observability) and `get_checkpoint` (resume, cleared in C-6). |
+| Reconstructed context / cached result as authorization | **Fails.** Resume loads state internally by `instance_id`; cached results are inputs, and every node that actually executes re-enters governed `execute()`. |
+| Both live adapter call sites | Both inside workers (`capability_executor.py:124`, `planner.py:307`), therefore both downstream of a governed `execute()`. |
+
+**The one precise qualification, carried from C-5:** caller-supplied metadata *can* influence the **content** of the governance decision (budget attestation, fail-open on absence) — but it cannot skip the decision. The boundary is exact and worth stating in these terms for the freeze record: **metadata can weaken what the governance decision sees; it cannot cause the decision not to happen.** C-2's granularity gap sits in the same place — the decision always occurs, but is coarser than the action it authorizes.
+
+**Conclusion:** Packet C's provenance boundary is in good shape. The governed cognitive path is sound against every falsification attempt made. The two substantive residuals are C-5 (attestation vs. measurement, PARTIAL) and C-7 (parallel ungoverned control plane bounded only by loopback, PARTIAL) — both with named, concrete revisit conditions rather than open-ended uncertainty.
