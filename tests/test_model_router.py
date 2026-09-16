@@ -108,3 +108,85 @@ def test_regression_triggers_rollback():
 
     # Restore
     config.set_module_state("knowledge", "stage", "bootstrap")
+
+
+# ── CTX-SCOPE-001 caller wiring: does scope actually reach format_for_prompt? ──
+#
+# The audit's row #4 (docs/Bugs Hunt & fix reports/CONTEXT_ISOLATION_CALLER_AUDIT_SEP2026.md)
+# traces the real unwired read to here, not to planner.py's line number it
+# cites -- _build_prompt() is the true sink. These tests prove the thread,
+# not just that it doesn't crash: they assert the actual scope value that
+# reaches context.format_for_prompt().
+
+
+def test_build_prompt_forwards_scope_to_format_for_prompt():
+    router = ModelRouter()
+    mock_context = MagicMock()
+    mock_context.format_for_prompt.return_value = ""
+
+    router._build_prompt("a subtask", mock_context, "caller-scope-123")
+
+    mock_context.format_for_prompt.assert_called_once_with(5, scope="caller-scope-123")
+
+
+def test_build_prompt_default_scope_is_empty_string_not_none():
+    """The default must match ContextMemory.format_for_prompt()'s own
+    unscoped sentinel exactly -- "" -- not None, so omitting scope keeps
+    behaving exactly as it did before this fix (see
+    tests/test_context_scope_security.py::test_no_scope_supplied_preserves_legacy_shared_behavior,
+    which is the ContextMemory-level half of this same guarantee)."""
+    router = ModelRouter()
+    mock_context = MagicMock()
+    mock_context.format_for_prompt.return_value = ""
+
+    router._build_prompt("a subtask", mock_context)
+
+    mock_context.format_for_prompt.assert_called_once_with(5, scope="")
+
+
+@pytest.mark.asyncio
+async def test_route_bootstrap_forwards_scope_end_to_end():
+    """route() -> _call_external() -> _build_prompt() -> format_for_prompt(),
+    with nothing mocked in between -- only the actual network call
+    (generate_with_fallback) and the context object are faked."""
+    router = ModelRouter()
+    mock_context = MagicMock()
+    mock_context.format_for_prompt.return_value = ""
+
+    with patch("core.model_router.generate_with_fallback", new_callable=AsyncMock) as mock_gen, \
+         patch.object(router, "_record_training_pair"), \
+         patch.object(router, "_increment_query_count"):
+        mock_gen.return_value = "external answer"
+        await router.route("coding", "write hello world", mock_context, scope="route-e2e-scope")
+
+    mock_context.format_for_prompt.assert_called_once_with(5, scope="route-e2e-scope")
+
+
+@pytest.mark.asyncio
+async def test_stream_route_forwards_scope_to_build_prompt():
+    """The streaming sibling of route() -- exercised directly by
+    interface/api.py's single-module SSE fast path, which this same fix
+    also wires (found during verification, not named in the original
+    audit)."""
+    router = ModelRouter()
+    mock_context = MagicMock()
+    mock_context.format_for_prompt.return_value = ""
+
+    with patch("core.model_router.httpx.AsyncClient") as mock_client_cls:
+        mock_stream_cm = AsyncMock()
+        mock_response = MagicMock()
+
+        async def _empty_lines():
+            return
+            yield  # pragma: no cover -- makes this an async generator
+
+        mock_response.aiter_lines = _empty_lines
+        mock_response.raise_for_status = MagicMock()
+        mock_stream_cm.__aenter__.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value.stream = MagicMock(
+            return_value=mock_stream_cm)
+
+        async for _ in router.stream_route("coding", "hi", mock_context, scope="stream-scope"):
+            pass
+
+    mock_context.format_for_prompt.assert_called_once_with(5, scope="stream-scope")
