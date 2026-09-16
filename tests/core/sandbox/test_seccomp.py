@@ -102,7 +102,7 @@ def test_denied_socket_families_is_non_trivial():
     blocked by argument, not by blocking socket() outright."""
     from core.sandbox.backends._seccomp import AF_ALG, AF_VSOCK, DENIED_SOCKET_FAMILIES
 
-    families = [f for f, _rationale in DENIED_SOCKET_FAMILIES]
+    families = [f for f, _errno, _rationale in DENIED_SOCKET_FAMILIES]
     assert AF_ALG in families
     assert AF_VSOCK in families
     assert AF_ALG == 38 and AF_VSOCK == 40  # standard Linux socket.h values
@@ -155,7 +155,7 @@ def test_argument_filtering_selectively_blocks_a_stand_in_family():
     code = (
         "import socket\n"
         "from core.sandbox.backends._seccomp import apply_denylist\n"
-        "apply_denylist(deny=(), deny_socket_families=((socket.AF_INET, 'test'),))\n"
+        "apply_denylist(deny=(), deny_socket_families=((socket.AF_INET, 1, 'test'),))\n"
         "try:\n"
         "    socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
         "    print('AF_INET_NOT_BLOCKED')\n"
@@ -246,7 +246,7 @@ def test_socketcall_int80_bypass_is_stopped_by_architecture_mismatch(tmp_path):
     code = (
         "import os, socket\n"
         "from core.sandbox.backends._seccomp import apply_denylist\n"
-        "apply_denylist(deny=(), deny_socket_families=((socket.AF_INET, 'test'),))\n"
+        "apply_denylist(deny=(), deny_socket_families=((socket.AF_INET, 1, 'test'),))\n"
         f"os.execv({probe!r}, [{probe!r}])\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)

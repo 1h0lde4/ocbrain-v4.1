@@ -68,6 +68,7 @@ import sys
 
 _SCMP_ACT_ALLOW = 0x7FFF0000
 _EPERM = 1
+_EAFNOSUPPORT = 97
 _SCMP_CMP_EQ = 4  # libseccomp's scmp_compare enum; verified empirically (see module docstring)
 
 # AF_ALG=38, AF_VSOCK=40 -- standard Linux socket.h values, not
@@ -141,13 +142,23 @@ DENIED_SYSCALLS: tuple[tuple[str, str], ...] = (
 # socket() itself stays allowed (this sandbox's own network-allowlist
 # proxy needs ordinary sockets); these specific address families are
 # blocked by argument, not the syscall as a whole. Each entry: (AF_*
-# value, rationale).
-DENIED_SOCKET_FAMILIES: tuple[tuple[int, str], ...] = (
-    (AF_ALG, "CVE-2026-31431 'Copy Fail' (CVSS 7.8, CERT-EU 2026-005): page-cache privilege "
-             "escalation via algif_aead, reachable inside containers/namespaces since it's a "
-             "kernel-level issue; matches Docker/Moby's own default-profile fix (PR #52501)"),
-    (AF_VSOCK, "blocked alongside AF_ALG, matching Docker/Moby's own fix for the same CVE -- "
-               "VM-socket family with no legitimate use inside this sandbox"),
+# value, errno to return, rationale). errno is per-entry, not uniform --
+# AF_ALG uses EAFNOSUPPORT specifically, matching Docker/Moby's own
+# merged fix (moby/profiles#20) and its stated rationale: "EAFNOSUPPORT
+# is the semantically correct errno... apps that probe for AF_ALG
+# support will interpret it as 'not available here' rather than
+# 'permission denied'" -- a refinement this branch's own first pass
+# missed and Docker's review process caught, adopted here once found
+# (see docs/architecture/sandbox-fabric-docker-backend-security-comparison.md).
+DENIED_SOCKET_FAMILIES: tuple[tuple[int, int, str], ...] = (
+    (AF_ALG, _EAFNOSUPPORT,
+     "CVE-2026-31431 'Copy Fail' (CVSS 7.8, CERT-EU 2026-005): page-cache privilege "
+     "escalation via algif_aead, reachable inside containers/namespaces since it's a "
+     "kernel-level issue; matches Docker/Moby's own default-profile fix (PR #52501). "
+     "EAFNOSUPPORT, not EPERM, matching Docker's own rule for this exact family."),
+    (AF_VSOCK, _EPERM,
+     "blocked alongside AF_ALG, matching Docker/Moby's own fix for the same CVE -- "
+     "VM-socket family with no legitimate use inside this sandbox"),
 )
 
 
@@ -157,7 +168,7 @@ class SeccompError(RuntimeError):
 
 def apply_denylist(
     deny: tuple[tuple[str, str], ...] = DENIED_SYSCALLS,
-    deny_socket_families: tuple[tuple[int, str], ...] = DENIED_SOCKET_FAMILIES,
+    deny_socket_families: tuple[tuple[int, int, str], ...] = DENIED_SOCKET_FAMILIES,
 ) -> list[str]:
     """Load a default-ALLOW seccomp-bpf filter denying `deny`'s syscalls
     outright, plus `deny_socket_families`'s address families for socket()
@@ -216,10 +227,10 @@ def apply_denylist(
 
         socket_num = lib.seccomp_syscall_resolve_name(b"socket")
         if socket_num >= 0 and deny_socket_families:
-            for family, _rationale in deny_socket_families:
+            for family, family_errno, _rationale in deny_socket_families:
                 arg_cmp = _ScmpArgCmp(arg=0, op=_SCMP_CMP_EQ, datum_a=family, datum_b=0)
                 rc = lib.seccomp_rule_add_array(
-                    ctx, errno_action, socket_num, 1, ctypes.byref(arg_cmp)
+                    ctx, _scmp_act_errno(family_errno), socket_num, 1, ctypes.byref(arg_cmp)
                 )
                 if rc != 0:
                     raise SeccompError(f"seccomp_rule_add_array(socket, family={family}) failed: rc={rc}")
