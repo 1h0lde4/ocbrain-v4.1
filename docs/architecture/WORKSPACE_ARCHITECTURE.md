@@ -579,8 +579,25 @@ Every mutating command carries:
 - `target_entity_id`, `target_entity_type`
 - `payload`
 
-Duplicate `command_id` → return the recorded outcome of the first attempt, never
-re-execute the command.
+**Duplicate `command_id` resolution (NORMATIVE — corrected, see below):**
+
+```
+Same command_id:
+  - if a durable outcome exists            → return it
+  - if execution is durably known in progress → return current status
+  - if the prior attempt may have crashed before
+    its outcome became durable             → do NOT silently re-execute;
+                                              recovery behavior is governed
+                                              by the command crash/recovery
+                                              decision (§V #13, still OPEN)
+```
+
+The previous wording here — "return the recorded outcome of the first attempt, never
+re-execute" — asserted an outcome always exists to return. It does not: if the first
+attempt crashed before any outcome became durable, there is nothing to return, and the
+old wording gave no answer for that case. This is not resolved by inventing exactly-once
+semantics. It is resolved by naming the third branch explicitly and deferring it to
+§V #13, which is where crash/recovery behavior actually gets decided — not here.
 
 **`command_id` deduplication is NOT exactly-once side-effect execution (NORMATIVE).**
 These are four distinct identities and must not be collapsed:
@@ -592,11 +609,15 @@ These are four distinct identities and must not be collapsed:
 | **Side-effect idempotency** | Per side effect, per target | Property of the *operation*, not of the envelope. A `command_id` cannot make a non-idempotent side effect idempotent |
 | **Crash/recovery semantics** | Per command, across process restart | What happens to a command observed as `Executing` when the server died mid-flight |
 
-**What deduplication does guarantee:** the same `command_id` submitted twice executes at
-most one logical command.
+**What deduplication does guarantee:** the same `command_id` submitted twice never
+triggers a second execution attempt while a durable outcome or an in-progress execution
+is known — the first two branches above are unconditional.
 
-**What it does not guarantee:** that a command which crashed part-way through left no
-partial side effects outside the domain mutation itself.
+**What it does not guarantee:** an answer for the third branch. A command whose prior
+attempt may have crashed before its outcome became durable is not silently retried, but
+deduplication itself does not say what happens to it next — that a command which crashed
+part-way through left no partial side effects outside the domain mutation, or what state
+it should be recovered into. That gap is real, and it is §V #13's, not this section's.
 
 **Narrowed by Decision #12 (§O.1.1, ADOPTED).** The domain mutation and its event append
 are now atomic by rule: a command can no longer crash such that its state changed but no
@@ -1222,15 +1243,27 @@ would be wrong. Every read path is classified:
 **Rebuild semantics differ by class (NORMATIVE):**
 
 - **Domain projections** are derived from authoritative domain events and must be
-  completely reconstructable by replaying the EventStream.
+  completely reconstructable by replaying the EventStream. **`SearchIndexProjection` is
+  not in this bucket** — see below.
 - **Operational projections** derive from runtime and observation sources and may
   combine current runtime state with historical events. They are **not** required to be
   reconstructable from the EventStream alone, because their inputs were never
   authoritative domain events in the first place (§E.2). A restarted process legitimately
   cannot reconstruct the live runtime state of an execution that is no longer running.
+- **Hybrid projections** combine EventStream replay with a second, non-event
+  authoritative source, and are reconstructable only by re-establishing both —
+  EventStream replay alone is insufficient by design, not by omission. `§O.3`'s
+  runtime-backed rows (`ExecutionTimelineProjection`, `ResourceUsageProjection`) pair
+  events with live runtime state; `SearchIndexProjection` pairs events with current
+  file/content (§P.4) — its rebuild requires EventStream replay **and** re-reading
+  current content, because file content itself is never carried in an event (§E.1).
+  A blanket "Domain projections are EventStream-reconstructable" rule must not be read
+  as covering `SearchIndexProjection`; it is deliberately excluded from that rule, not an
+  unnoticed exception to it.
 
-Requiring EventStream-only rebuild for operational projections would force telemetry into
-the authoritative event log — the exact conflation §E.2 forbids.
+Requiring EventStream-only rebuild for operational or hybrid projections would force
+telemetry, or file content itself, into the authoritative event log — the exact
+conflation §E.2 forbids.
 
 ### O.3 Projections (NORMATIVE)
 
@@ -1245,7 +1278,7 @@ the authoritative event log — the exact conflation §E.2 forbids.
 | FileListProjection | Domain | EventStream replay |
 | ArtifactProjection | Domain | EventStream replay |
 | NotificationProjection | Domain | EventStream replay |
-| SearchIndexProjection | Domain | EventStream replay + re-index of current content (§P.4) |
+| SearchIndexProjection | **Hybrid — search-specific** | Historical metadata from EventStream replay **+** current searchable content from authoritative file/content sources (§P.4); authorization checked against current authority, never from the index (§P.2, §P.4) |
 | ExecutionTimelineProjection | Hybrid | Historical events + live runtime for in-flight executions |
 | ResourceUsageProjection | Hybrid | Historical events + Runtime/Watchdog/ExecutionBudget |
 | ComputationalControlProjection | Domain | EventStream replay |
@@ -1351,8 +1384,11 @@ Multi-scope search supporting exact and semantic queries across: global, project
 
 ### P.4 Search index consistency (NORMATIVE where stated, otherwise OPEN)
 
-`SearchIndexProjection` is a projection (§O.3) and therefore inherits §O.3.1 freshness
-semantics. Search-specific behavior:
+`SearchIndexProjection` is a projection (§O.3), classified **Hybrid — search-specific**
+(corrected; it was previously misclassified as Domain, which contradicted this section's
+own rebuild description below in three separate places). It inherits §O.3.1 freshness
+semantics like any projection, but its rebuild is never EventStream-only — see §O.2's
+Hybrid bullet. Search-specific behavior:
 
 | Concern | Disposition |
 |---------|------------|
@@ -1935,6 +1971,8 @@ it.
 | 41 | Secondary/external effects (projections, SSE, search, telemetry, notifications, external messaging, LLM/tool execution) are post-commit, own retry/idempotency, never part of the atomic boundary | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
 | 42 | Transactional outbox is reserved for a future external-broker boundary, not required for the local mutation/event pair; 2PC not required | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
 | 43 | `core/workspace/domain.py` disposition: REWORK, not documented exception, not removal — scheduled with P0 #1 (Domain model) + P0 #2 (Persistence layer), together with its currently-missing siblings (`repository.py`, `service.py`, `interface/workspace_api.py`) | ARCHITECTURE DECISION | LOCKED | Workspace |
+| 44 | Duplicate `command_id` resolves in three branches — durable outcome / durably in-progress / possibly-crashed-before-durable — not two; the third branch defers to §V #13, never silently re-executes, never invents exactly-once | ARCHITECTURE DECISION | LOCKED | Command |
+| 45 | `SearchIndexProjection` is Hybrid, not Domain — rebuild requires EventStream replay **and** re-reading current content; excluded from the "Domain projections are EventStream-reconstructable" rule by definition, not by exception | ARCHITECTURE DECISION | LOCKED | Projections/Search |
 
 ### W.2 Provisional decisions (status per row)
 
