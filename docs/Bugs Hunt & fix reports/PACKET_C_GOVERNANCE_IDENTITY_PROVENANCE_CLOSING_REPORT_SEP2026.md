@@ -21,7 +21,7 @@ All four have been reconciled in `KNOWN_ISSUES.md` — updated in place with dat
 
 | Finding | Disposition | Relationship to prior tracking |
 |---|---|---|
-| **C-1 — `CapabilityRequest`/`Result` identity gap** | UNPROVEN as a control | Genuinely new — checked deliberately against the register before filing, not just by absence of accidental discovery. No prior entry existed; now added as `DEBT-027`, cross-referenced to the related but distinct `DEBT-015` sub-item (1). |
+| **C-1 — `CapabilityRequest`/`Result` identity gap** | UNPROVEN as a control | Genuinely new — checked deliberately against the register before filing, not just by absence of accidental discovery. No prior entry existed; now added as `DEBT-030`, cross-referenced to the related but distinct `DEBT-015` sub-item (1). |
 | **C-2 — Governance granularity gap** | PARTIAL | Genuinely new; checked against the register, no match. |
 | **C-3 — Retry/resume authorization** | LIVE-ENFORCED | Genuinely new (negative result); checked against the register, no match. |
 | **C-3a — Hardcoded `recursion_depth`** | DOCUMENT-ONLY / NOT BYPASSABLE | Genuinely new (negative result, investigated per Moncif's explicit constraint not to escalate a dormant governor into a defect without evidence of exploitability); checked against the register, no match. |
@@ -71,7 +71,7 @@ Two substantive residuals, both PARTIAL, both with concrete revisit triggers —
 
 **DEBT-025 (C-7).** `interface/api.py`'s privileged control-plane endpoints have no authentication and no governance evaluation, mitigated today by loopback binding and (for the browser-specific vector) CSRF header middleware — not by a governance boundary. Revisit trigger, now explicit where the row previously just said disposition had not been made: any off-loopback binding, proxy-mediated exposure, multi-user deployment, or another actor capable of reaching these endpoints.
 
-**C-1 remains unresolved but is now reconciled into `KNOWN_ISSUES.md` as `DEBT-027`**, added during this closing pass rather than left as a flagged-but-untracked item in this report alone.
+**C-1 remains unresolved but is now reconciled into `KNOWN_ISSUES.md` as `DEBT-030`**, added during this closing pass rather than left as a flagged-but-untracked item in this report alone.
 
 ---
 
@@ -83,4 +83,4 @@ Session 1 of this engagement's freeze audit recorded SupervisorWorker's `_attemp
 
 ## G. Status
 
-Packet C is closed with this report. Of its seven findings, three are new coverage (`DEBT-027`, and C-2/C-3/C-3a which remain findings within this report without register entries of their own, being negative/clean results rather than open debt) and four are independent re-confirmations of pre-existing tracked items — `DEBT-007`, `DEBT-024`, `DEBT-025`, and `DEBT-003`'s resolved entry — each updated in place with genuine refinements, none duplicated. Two substantive residuals carry forward to the freeze manifest with named revisit triggers: `DEBT-007` and `DEBT-025`. `DEBT-024` and `DEBT-003` are fully resolved, not residuals. The provenance and authorization boundary of the governed cognitive execution path was tested by falsification, not merely reviewed, and held.
+Packet C is closed with this report. Of its seven findings, three are new coverage (`DEBT-030`, and C-2/C-3/C-3a which remain findings within this report without register entries of their own, being negative/clean results rather than open debt) and four are independent re-confirmations of pre-existing tracked items — `DEBT-007`, `DEBT-024`, `DEBT-025`, and `DEBT-003`'s resolved entry — each updated in place with genuine refinements, none duplicated. Two substantive residuals carry forward to the freeze manifest with named revisit triggers: `DEBT-007` and `DEBT-025`. `DEBT-024` and `DEBT-003` are fully resolved, not residuals. The provenance and authorization boundary of the governed cognitive execution path was tested by falsification, not merely reviewed, and held.
