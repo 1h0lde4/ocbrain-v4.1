@@ -15,10 +15,14 @@ Known non-conformance (see WORKSPACE_ARCHITECTURE.md §B.6 for the full audit):
   - Every "Architecture:" docstring below cites the predecessor UX/UI report,
     which is itself marked SUPERSEDED — DO NOT USE FOR IMPLEMENTATION.
 
-Disposition (rework to conform / documented exception / remove) is Open
-Decision #19 in WORKSPACE_ARCHITECTURE.md §V, pending an explicit decision from
-the project's decision-makers. This banner should be removed only when that
-decision is made and recorded, not independently of it.
+Disposition (WORKSPACE_ARCHITECTURE.md §V Open Decision #19): CLOSED — REWORK.
+Not a documented exception, not removal. This module is to be reworked to
+conform, together with its currently-missing siblings named below
+(repository.py, service.py, workspace_api.py), as part of P0 #1 (Domain
+model) + P0 #2 (Persistence layer) — see WORKSPACE_ARCHITECTURE.md §B.6 for
+the full gap list and KNOWN_ISSUES.md DEBT-027 for the tracking-register
+entry. This banner comes down only when that rework actually lands and is
+re-verified conformant, not merely because the decision above was made.
 ---
 
 core/workspace/domain.py — Workspace Domain Model

@@ -20,13 +20,14 @@ different authority and must not be conflated:
 |--------|--------|-----------|
 | **This document** (`docs/architecture/WORKSPACE_ARCHITECTURE.md`) | Canonical architecture | **Authoritative.** The sole source of truth for Workspace architecture |
 | `ocbrain_ux_architecture_report.md`, `ocbrain_architecture_corrections.md` | Superseded architecture documents | **Historical only.** Content consolidated here; must not be used independently (§Appendix: Predecessor Documents) |
-| `core/workspace/domain.py` | Existing implementation candidate | **NOT architecture authority.** Non-conformant against this document (§B.6). Disposition pending (Open Decision #19). Carries a non-authoritative banner in its own module docstring |
+| `core/workspace/domain.py` | Existing implementation candidate | **NOT architecture authority.** Non-conformant against this document (§B.6). **Disposition: REWORK** (Decision #19, CLOSED) — scheduled with P0 #1 (Domain model) + P0 #2 (Persistence layer), not patched independently. Carries a non-authoritative banner in its own module docstring |
 
 **The document determines the implementation, not the reverse.** `core/workspace/
 domain.py` existing on `main` is not evidence that any of its choices are architecturally
 approved — it is exactly the kind of drift this document's authority is meant to prevent.
 Workspace implementation must proceed from this document, not from that module, until
-Open Decision #19 is resolved.
+the rework scheduled under Decision #19 actually lands and is re-verified conformant —
+the decision being closed is not the same as the code being fixed.
 
 ---
 
@@ -194,7 +195,7 @@ search authorization model: **no Principal system exists in the repository today
 | Capability types | `core/capabilities/capability.py` | 204 | Only LLM_COMPLETION registered |
 | Sandbox contracts | `core/sandbox/contracts.py` | 229 | Implemented |
 | FILE_ACCESS | `core/capabilities/capability.py:73` | — | Declared, zero adapters |
-| Workspace domain model | `core/workspace/domain.py` | 554 | **Added `69375c9`. Unwired, untested, non-conformant — see §B.6** |
+| Workspace domain model | `core/workspace/domain.py` | 554 | **Added `69375c9`. Unwired, untested, non-conformant — see §B.6. Disposition: REWORK (Decision #19, CLOSED)** |
 
 ### B.6 `core/workspace/domain.py` conformance audit (REPO FACT)
 
@@ -228,12 +229,54 @@ this pass has no authority to modify production code:
 
 **Status: NON-AUTHORITATIVE / PROVISIONAL — NOT THE IMPLEMENTATION BASELINE.**
 This module carries the same banner in its own docstring. It must not be treated as the
-Workspace domain model, and no component should import it on that assumption.
+Workspace domain model, and no component should import it on that assumption. This
+status does not change until the rework below actually lands and is re-verified
+conformant — closing the decision is not the same event as fixing the code.
 
-**Disposition: OPEN DECISION (#19).** Either the module is reworked to conform to this
-document, a documented exception is recorded, or it is removed. Until one of those
-happens, this status stands. This document remains authoritative; the code does not
-amend it, regardless of which lands on `main` first.
+**Disposition: CLOSED — REWORK.** Decided directly by the project's decision-maker.
+`core/workspace/domain.py` is a valid but incomplete first-draft foundation: its entity
+set (`Project, Session, Discussion, Task, File, Artifact`) matches this document's own
+primitives, and its cross-references to the *existing* kernel (`Goal`, `ExecutionPlan`,
+`WorkflowDefinition`, `ExecutionContext`, `ExecutionOutcome`) are all verified accurate
+— this is not an ungrounded or careless drop. The 11 gaps above are structural, not
+stylistic, and are to be resolved together as part of **P0 #1 (Domain model) + P0 #2
+(Persistence layer)** — not patched independently, and not carried forward as a
+documented exception. **Not removed. Not an exception.**
+
+Required closure, when P0 #1/#2 is implemented — every gap above resolved together
+against this document, not piecemeal:
+
+- Verification as independent status/relations, not the flat 4-value enum (gap #1)
+- File state (gap #2)
+- File version/concurrency semantics (gap #3)
+- File ownership (gap #4)
+- Artifact semantics/versioning (gaps #5, #6)
+- `ResourceEnvelope` (gap #8)
+- `ResourceBudget` semantics (gap #7)
+- `ResourceAllocation` semantics (gap #9)
+- `Execution` (gap #10)
+- `Command` (gap #11)
+- Transactional consistency / Unit-of-Work boundary (§O.1.1, Decision #12 — this file's
+  persistence layer must implement that rule from the outset)
+
+**Sibling boundary, reconciled explicitly.** The module's own docstring names three
+files as deliberately out of scope for it — `core/workspace/repository.py`,
+`core/workspace/service.py`, `interface/workspace_api.py` — and none of the three exist
+yet. These are to be built alongside the rework, not left for `domain.py` to become a
+de facto standalone implementation of concerns it was never meant to carry alone:
+
+```
+core/workspace/domain.py       — data only, this rework
+core/workspace/repository.py   — persistence, Decision #12's transactional boundary
+core/workspace/service.py      — business logic, Governance-mediated mutation
+interface/workspace_api.py     — transport schema (§O.6), not the domain model
+```
+
+**Tracked in the project's continuity register:** `KNOWN_ISSUES.md` DEBT-027 records
+this disposition so the file's current, still-non-conformant shape on `main` is not
+mistaken for a finalized contract by a future implementer who never reads this document.
+This document remains authoritative; the code does not amend it, regardless of which
+lands on `main` first.
 
 ---
 
@@ -717,6 +760,7 @@ implementable outcomes — `merge` must not be assumed available.
 
 **Implementation status: REPO FACT — blocked.** `core/workspace/domain.py`'s `File` has
 no `version` field (§B.6 gap #3), so none of the above is currently expressible.
+Disposition: REWORK, scheduled with P0 #1+#2 (Decision #19, CLOSED), not a permanent gap.
 
 ### I.8 Large file handling (RECOMMENDATION)
 
@@ -776,6 +820,7 @@ changes in place under optimistic concurrency (§I.7). An Artifact is not.
 **Implementation status: REPO FACT — non-conformant.** `core/workspace/domain.py`'s
 `Artifact` carries `version: int` plus `modified_at` and no `derived_from`/`supersedes`
 (§B.6 gaps #5, #6) — in-place mutation semantics, which this section forbids.
+Disposition: REWORK, scheduled with P0 #1+#2 (Decision #19, CLOSED).
 
 ---
 
@@ -837,7 +882,9 @@ artifact — a refutation record, for example.
 
 **Vocabulary note.** This section uses REFUTED. Open Decision #9 (REFUTED vs
 CONTRADICTED) remains open; `core/workspace/domain.py` has already picked CONTRADICTED
-unilaterally (§B.6 gap #1). That code choice does not settle the decision.
+unilaterally (§B.6 gap #1). That code choice does not settle the decision, and will be
+revisited as part of this file's REWORK (Decision #19, CLOSED), not decided by whichever
+lands on `main` first.
 
 ---
 
@@ -1630,7 +1677,7 @@ graph TD
 
 | # | Item | Freeze? | Classification |
 |---|------|---------|---------------|
-| 1 | Domain model (Project/Session/Discussion/Task/File/Artifact) | No | Non-kernel |
+| 1 | Domain model (Project/Session/Discussion/Task/File/Artifact) — **includes reworking `core/workspace/domain.py` per Decision #19 (REWORK), together with its currently-missing siblings `repository.py`/`service.py`/`interface/workspace_api.py` (§B.6)**, not building fresh alongside it | No | Non-kernel |
 | 2 | Persistence layer (SQLite-backed repositories) — **must implement the Transactional Unit of Work (§O.1.1, Decision #12) from the outset**, not retrofit it afterward | No | Non-kernel |
 | 3 | API contract definitions (Pydantic models, OpenAPI) | No | Non-kernel |
 | 4 | Authentication foundation (API key / session token) | No | Non-kernel |
@@ -1791,14 +1838,16 @@ Applied:
 | Advanced C-MoE, task-aware adaptive routing (§T #24, #28) | `FREEZE-EXCEPTION-REQUIRED` |
 | Dynamic Identity via Component Registry (§T #26) | `FREEZE-EXCEPTION-REQUIRED` |
 | Advanced Verification integration (§T #27) | `FREEZE-EXCEPTION-REQUIRED` |
-| `core/workspace/domain.py` as shipped (§B.6) | `UNRESOLVED` — non-conformant; disposition is Open Decision #19 |
+| `core/workspace/domain.py` rework (§B.6, Decision #19 CLOSED) | `NON-KERNEL` — resolved by Decision #19's closure. Scheduled with P0 #1+#2, both already `NON-KERNEL`; touches neither the frozen kernel nor any external contract. The file *as currently shipped* remains non-conformant until that rework lands |
 
 **One item remains `UNRESOLVED` rather than assumed compatible** (Scoped
 CapabilityRequest) and may not be started on the assumption that it will turn out
 kernel-compatible — it needs its classification settled first. `UNRESOLVED` is a stop,
-not a default-permit. The Transactional Unit of Work row above was `UNRESOLVED` in the
-prior revision of this document and is now settled: Decision #12's closure makes it
-`NON-KERNEL`.
+not a default-permit. Two other rows were `UNRESOLVED` in earlier revisions of this
+document and are now both settled, by two separate closed decisions: the Transactional
+Unit of Work row (Decision #12) and the `core/workspace/domain.py` row (Decision #19) —
+each independently resolves to `NON-KERNEL`, not because either was assumed compatible,
+but because each decision was actually closed.
 
 ---
 
@@ -1824,7 +1873,7 @@ prior revision of this document and is now settled: Decision #12's closure makes
 | 16 | File merge semantics | Reject-only / per-class merge strategies | Medium | File adapter design | **OPEN** (§I.7) |
 | 17 | Search indexing latency target | Defined SLA / best-effort | Medium | Search implementation | **OPEN** (§P.4) |
 | 18 | Search index rebuild procedure | Replay+reindex / snapshot restore | Medium | #12 | **OPEN** (§P.4) |
-| 19 | `core/workspace/domain.py` disposition | Rework to conform / documented exception / remove | **High** | Moncif decision | **OPEN** (§B.6) |
+| 19 | ~~`core/workspace/domain.py` disposition~~ | ~~Rework to conform / documented exception / remove~~ | — | — | **CLOSED — REWORK, scheduled with P0 #1+#2.** See §B.6, §W.1 #43, `KNOWN_ISSUES.md` DEBT-027 |
 | 20 | CTX-EXPORT-001 freeze classification | Blocking / non-blocking for Kernel v1.0 | **High** | Moncif decision | **OPEN** (§B.3) |
 
 **Note on #13's narrowing.** Decision #12's closure means a crash can no longer be
@@ -1885,6 +1934,7 @@ it.
 | 40 | Optimistic concurrency version check executes inside that same transaction, not as a separate pre-check | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
 | 41 | Secondary/external effects (projections, SSE, search, telemetry, notifications, external messaging, LLM/tool execution) are post-commit, own retry/idempotency, never part of the atomic boundary | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
 | 42 | Transactional outbox is reserved for a future external-broker boundary, not required for the local mutation/event pair; 2PC not required | ARCHITECTURE DECISION | LOCKED | Events/Persistence |
+| 43 | `core/workspace/domain.py` disposition: REWORK, not documented exception, not removal — scheduled with P0 #1 (Domain model) + P0 #2 (Persistence layer), together with its currently-missing siblings (`repository.py`, `service.py`, `interface/workspace_api.py`) | ARCHITECTURE DECISION | LOCKED | Workspace |
 
 ### W.2 Provisional decisions (status per row)
 
