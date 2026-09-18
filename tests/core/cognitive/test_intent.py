@@ -28,6 +28,7 @@ from core.cognitive.intent import (
     IntentModality,
     NormalizationRejected,
     RawRequest,
+    _apply_output_containment,
     _detect_language,
     _detect_modality,
     _estimate_complexity,
@@ -375,6 +376,43 @@ class TestParseHypotheses:
         hypotheses = _parse_hypotheses("edge_low | 0.0\nedge_high | 1.0")
         assert hypotheses[0].score == 0.0
         assert hypotheses[1].score == 1.0
+
+
+# ── Output containment (CTX-AUTH-001b / DEBT-019 defense-in-depth) ─────────
+# Direct unit coverage for _apply_output_containment in isolation -- the
+# zip-sourced remediation (Sept 2026) added this function with no dedicated
+# test of its own; added as part of the Sept 16 2026 reconciliation. Per
+# that function's own docstring, cap/order enforcement is hardening, not
+# CTX-AUTH-001b closure -- see TestCtxAuth001ParserAcceptance in
+# test_intent_security.py for the still-open authority regression.
+
+class TestApplyOutputContainment:
+    def test_within_cap_and_non_increasing_is_unaffected(self):
+        hyps = [IntentHypothesis(label="a", score=0.9), IntentHypothesis(label="b", score=0.5)]
+        assert _apply_output_containment(hyps) == hyps
+
+    def test_caps_at_max_hypotheses(self):
+        hyps = [IntentHypothesis(label=str(i), score=1.0 - i * 0.1) for i in range(8)]
+        kept = _apply_output_containment(hyps)
+        assert len(kept) == 5
+        assert [h.label for h in kept] == ["0", "1", "2", "3", "4"]
+
+    def test_drops_from_first_score_increase_onward(self):
+        hyps = [
+            IntentHypothesis(label="a", score=0.8),
+            IntentHypothesis(label="b", score=0.6),
+            IntentHypothesis(label="c", score=0.7),   # breaks non-increasing order
+            IntentHypothesis(label="d", score=0.4),   # never reached
+        ]
+        kept = _apply_output_containment(hyps)
+        assert [h.label for h in kept] == ["a", "b"]
+
+    def test_ties_are_allowed(self):
+        hyps = [IntentHypothesis(label="a", score=0.5), IntentHypothesis(label="b", score=0.5)]
+        assert _apply_output_containment(hyps) == hyps
+
+    def test_empty_input_yields_empty_output(self):
+        assert _apply_output_containment([]) == []
 
 
 # ── Modality / complexity heuristics (K4.2.1) ──────────────────────────────
