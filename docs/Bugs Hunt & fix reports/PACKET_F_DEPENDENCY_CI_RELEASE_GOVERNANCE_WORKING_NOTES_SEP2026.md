@@ -33,3 +33,21 @@ Packet E traced these to the byte level: `KeyError: '_type'` raised entirely ins
 **Disposition:** split the file's framing — either a second, explicitly separate section for the 5 chromadb-schema entries with the correct root cause noted (mirroring Packet E's classification), or at minimum a comment on those 5 lines correcting the attribution. Low-cost, high-value fix for whoever next relies on this file to reason about CI health. Not implemented here — characterization, consistent with how Packet E's own chromadb disposition was left to Moncif.
 
 **Not yet checked:** whether the other 29 entries are genuinely HF-connectivity failures, as opposed to some other, third mislabeled cause. Given the exact match on all 5 chromadb-specific names and the mechanism-level certainty that they can't be HF-related, confidence in *this* finding doesn't depend on auditing the other 29 — and per Moncif's standing instruction, installing the heavy ML stack to verify the other 29 is not justified by any question currently open. Flagged as a bounded limit of this finding, not a gap papered over.
+
+---
+
+## Finding F-2: `release.yml` already pins the working chromadb version; `requirements.txt` was never tightened to match
+
+**Checked first: no existing register entry tracks the core chromadb pin/fixture issue itself (Packet E characterized it in working notes; F-1 is about the CI allowlist's mislabeling, a distinct thing). This is the first dedicated entry for the core issue, now substantially sharpened.**
+
+`.github/workflows/release.yml` — the workflow that actually builds every shipped artifact (Linux/Windows/macOS/Android) — does not rely on `requirements.txt`'s loose `chromadb>=0.4.0,<1.0` constraint alone. Before installing requirements, all three desktop build jobs run `pip install chromadb==0.5.3 numpy==1.26.4 scipy==1.13.1` — an **exact** pin, overriding whatever `requirements.txt` would otherwise resolve.
+
+**Tested directly, on a throwaway copy, original never touched (same discipline as Packet E):** installed `chromadb==0.5.3` and pointed it at a copy of the same `system_ctrl` fixture that fails under `0.6.3`. **It read successfully.**
+
+This closes the loop Packet E left open. The most likely explanation, consistent with all the evidence: whoever wrote `release.yml`'s exact pin did so because they'd already hit this exact incompatibility and pinned around it — but that knowledge was never propagated back into `requirements.txt`, which is what `ci.yml`'s test job, and any developer running a plain `pip install -r requirements.txt`, actually gets. The release pipeline has been silently correct; the test/dev pipeline has been silently wrong, and CI's own known-failures allowlist (`F-1`) has been quietly absorbing the resulting failures rather than surfacing the mismatch.
+
+**This substantially sharpens Packet E's left-open disposition.** Of the three options Packet E named (regenerate fixtures / relax the pin / quarantine), there is now a fourth, better-evidenced option: **tighten `requirements.txt`'s chromadb constraint to match what `release.yml` already proves works** — `==0.5.3` or at least `<0.6.0`. This requires no fixture regeneration and no test quarantining; it makes the test/dev environment match the one that's already known-good.
+
+**Classification: PARTIAL** — the release pipeline has live, correct dependency governance for this package; the test/CI/local-dev pipeline does not, and the two have silently diverged.
+
+**Disposition, offered as a strong recommendation, not implemented here:** align `requirements.txt`'s chromadb constraint with `release.yml`'s proven `0.5.3` pin. This is the single highest-value, lowest-risk fix surfaced by either Packet E or Packet F — it's empirically verified, requires touching one line, and would make Packet E's 5 chromadb failures disappear from the *minimal-dependency sandbox* baseline entirely (F-1's mislabeling issue would also become moot for those 5, since they'd stop failing at all). Left for Moncif to decide and apply, consistent with "characterization, not remediation."
