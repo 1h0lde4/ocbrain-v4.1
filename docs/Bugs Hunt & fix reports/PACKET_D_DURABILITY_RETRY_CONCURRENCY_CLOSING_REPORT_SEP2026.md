@@ -18,7 +18,7 @@ Fixing D-3's `DEBT-003` entry surfaced that this packet's branch, created off fr
 | **D-1 — `DEBT-010` race pattern, sibling search** | LIVE-ENFORCED (negative result) | None — narrows `DEBT-010`'s isolation, no new row |
 | **D-2 — Event-log idempotency infrastructure** | DOCUMENT-ONLY | Narrows `DEBT-015`(7) in place |
 | **D-3 — `resume()` concurrency guard** | UNPROVEN (dormant, unreachable) | Sharpens `DEBT-003`'s resolved entry in place |
-| **D-4 — SQLite write-lock contention** | UNPROVEN (real gap, empirically unreachable at tested scale) | New: `DEBT-028` |
+| **D-4 — SQLite write-lock contention** | UNPROVEN (real gap, empirically unreachable at tested scale) | New: `DEBT-036` |
 | **D-5 — `PlannerWorker` duplicate-side-effect path** | Live-reachable, narrow trigger probability | New: `DEBT-029` |
 | **D-6 — Crash-simulation tests (durability, atomicity)** | Both hold, confirmed empirically | Confirming test run for D-5; no separate row |
 
@@ -32,7 +32,7 @@ Moncif scoped this packet's useful closure point explicitly: *whether checkpoint
 
 ## D. Residuals carried to the freeze manifest
 
-**`DEBT-028` (D-4).** No retry/backoff for SQLite lock contention. Real gap, empirically cleared at every tested scale up to 3,000-way concurrency — the protection is a side effect of the default bounded thread pool, not a deliberate guard. Revisit trigger: anything that removes that throttling (a custom unbounded executor, multiple worker processes sharing one SQLite file, a future non-WAL backend).
+**`DEBT-036` (D-4).** No retry/backoff for SQLite lock contention. Real gap, empirically cleared at every tested scale up to 3,000-way concurrency — the protection is a side effect of the default bounded thread pool, not a deliberate guard. Revisit trigger: anything that removes that throttling (a custom unbounded executor, multiple worker processes sharing one SQLite file, a future non-WAL backend).
 
 **`DEBT-029` (D-5).** Live duplicate-side-effect path via one missing `try/except`. Narrow trigger probability, real cost when it fires (a duplicated capability call). Fix is cheap and specific: guard Step 8 the way Step 7 already is.
 
@@ -40,4 +40,4 @@ Moncif scoped this packet's useful closure point explicitly: *whether checkpoint
 
 ## E. Status
 
-Packet D is closed with this report. Two new debt items (`DEBT-028`, `DEBT-029`), both with named revisit conditions; three existing items sharpened in place (`DEBT-003`, `DEBT-015`, `DEBT-010`'s isolation confirmed) rather than duplicated. Every finding was checked against the register before being treated as new, per the precondition Packet C's own closure established — and this packet's closing check, done deliberately rather than incidentally, confirmed no duplicates slipped through this time. Kept to the scope set: no general SQLite-hardening review, no expansion beyond checkpoint/resume's actual duplicate-or-lose question.
+Packet D is closed with this report. Two new debt items (`DEBT-036`, `DEBT-029`), both with named revisit conditions; three existing items sharpened in place (`DEBT-003`, `DEBT-015`, `DEBT-010`'s isolation confirmed) rather than duplicated. Every finding was checked against the register before being treated as new, per the precondition Packet C's own closure established — and this packet's closing check, done deliberately rather than incidentally, confirmed no duplicates slipped through this time. Kept to the scope set: no general SQLite-hardening review, no expansion beyond checkpoint/resume's actual duplicate-or-lose question.
