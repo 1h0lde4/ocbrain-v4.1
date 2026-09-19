@@ -67,3 +67,67 @@ Queried GitHub's branch-protection API directly for `main`: `"Branch not protect
 **Classification: DOCUMENT-ONLY at the repository-governance level** (the check exists, runs, and is well-built; nothing requires it to pass) — **LIVE-ENFORCED at the application level**, exactly as Packet C found (the running code's own governance boundary is real and does not depend on this gap).
 
 **Disposition:** enabling branch protection on `main` with `drift-and-ownership` and `tests` as required status checks would close this gap directly and cheaply — a repository setting, not a code change. Left as a recommendation, not applied here, consistent with "characterization, not remediation." Worth explicit note for the eventual freeze manifest: this is the one finding across Packets C through F that reaches outside the application/runtime boundary entirely and into repository governance itself.
+
+---
+
+## Finding F-4: A release can publish successfully with the Android artifact silently missing
+
+**Register checked first: genuinely new, no prior entry covers release-artifact failure semantics.**
+
+Traced the full chain end to end, each link verified rather than assumed:
+
+1. `build-android`'s APK-building step ends `... --release || true`. `|| true` makes the step's exit code always `0`, regardless of whether `p4a` actually succeeded — confirmed by reading the line directly, with the job's own comment candidly stating the intent: "attempt a p4a run as well and ignore failures to ensure CI continuity."
+2. Because the step "succeeds," the `build-android` **job** succeeds (nothing else in that job depends on the APK existing) — the Termux tarball is built separately, earlier, unaffected by whether `p4a` works.
+3. `release:`'s `needs: [build-linux, build-windows, build-macos, build-android]` is satisfied by job success, not artifact existence — confirmed this is GitHub Actions' standard `needs:` semantics (gates on job outcome, not on what a job produced).
+4. `actions/upload-artifact@v4`'s `path:` for the Android job includes `*.apk` with no `if-no-files-found` override — its default is `warn`, not `error`. Since the tarball still exists, this step "succeeds" regardless.
+5. `softprops/action-gh-release@v2`'s own `files:` list includes `release-dist/*.apk`, and the workflow does not set `fail_on_unmatched_files: true`. **Verified externally, not just inferred from the workflow's own YAML:** that flag is opt-in and defaults to non-failing — `action-gh-release`'s own issue tracker documents exactly this failure mode (issue #383, "The action should fail with an error if the files: settings are not valid," closed by adding the *opt-in* flag this workflow doesn't set): a missing-file glob prints a notice and the release **publishes successfully anyway**.
+
+**Direct answer to the question asked:** yes, a release can succeed with a broken/missing component, silently, with no failure signal anywhere in the pipeline — only a buried log notice a maintainer would have to go looking for.
+
+**Classification: release-only, PARTIAL** (the release mechanism functions and produces artifacts for 3 of 4 platforms reliably; it just cannot detect or report the 4th failing) — not evidence of anything reaching the kernel/capability boundary; this is packaging/build integrity, scoped as such.
+
+**Disposition:** two independent, low-cost fixes, either sufficient alone: remove `|| true` (or replace it with an explicit check that sets a job output/summary flag on failure without hard-failing CI, if silent tolerance is genuinely wanted for this one best-effort platform), and/or add `fail_on_unmatched_files: true` to the release step so a missing artifact for *any* platform is caught at the one point that currently has no visibility into the other four steps' outcomes. Not implemented here.
+
+---
+
+## Finding F-5: Dependency version divergence between release and test/CI is systemic, not chromadb-specific — confirmed with a second instance
+
+**This directly bears on `DEBT-032`'s disposition, addressed in the synthesis section below rather than re-argued here.**
+
+Checked whether `numpy`/`scipy` — the other two packages `release.yml` pins exactly alongside chromadb — also diverge from what `requirements.txt` resolves. `numpy` isn't even a direct dependency of this project at all — it appears in `requirements.txt` nowhere; it's pulled in transitively by chromadb with no ceiling. `scipy` is a direct dependency, but only as `>=1.11.0` — no ceiling. In this environment, that resolves to `1.17.1`; `release.yml` pins `numpy==1.26.4` (matches what's here) and **`scipy==1.13.1`** (does not — a second, independently confirmed divergence).
+
+**Full inventory of `requirements.txt` (21 lines): zero exact pins anywhere.** 18 of 20 packages are floor-only (`>=X`, no ceiling at all); only `chromadb` and `sentence-transformers` carry any upper bound. **No lock file of any kind exists anywhere in the repository** — no `requirements-lock.txt`, `poetry.lock`, `Pipfile.lock`, or `constraints.txt`. No Dockerfile either, so there's no alternate, more-reproducible manifest to cross-check against — the entire dependency surface is governed by these 21 unbounded-or-loosely-bounded lines, with `release.yml`'s three inline exact pins as the *only* exact version constraints that exist anywhere in this project.
+
+**Classification: PARTIAL, systemic.** The two confirmed divergent packages (chromadb, scipy) are not an isolated coincidence — they're the two places release.yml happened to need to pin something exactly, out of a dependency set where literally nothing else has a ceiling at all. Any of the other 18 unbounded packages could diverge the same way at any future point, silently, with nothing in CI positioned to notice until (as with chromadb) a fixture or behavior-dependent test starts failing for reasons that look, from the CI-log surface, indistinguishable from an unrelated environmental issue.
+
+---
+
+## Finding F-6: Supply-chain posture — no automated dependency monitoring, no vulnerability scanning, mutable Action pins, no environment or tag protection
+
+Batched together as related, moderate findings rather than one row each, per the packet's own guidance not to over-fragment the register:
+
+- **No Dependabot or Renovate configuration** anywhere in `.github/` — dependency updates and any associated security advisories are entirely manual.
+- **No vulnerability scanning in CI** — no `pip-audit`, `safety`, OSV, or `bandit` step anywhere in either workflow.
+- **Every third-party GitHub Action is pinned by mutable version tag** (`@v4`, `@v5`, `@v2`), not an immutable commit SHA — `actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `softprops/action-gh-release@v2`. A compromised upstream action publishing malicious content under the same tag would be picked up automatically on the next run, with nothing in this repository's own configuration providing a check.
+- **No GitHub Environments configured** (confirmed via API: `total_count: 0`) — `release.yml`'s `workflow_dispatch` has no manual-approval gate or deployment protection of any kind.
+- **No tag protection rules** (confirmed via API: 404).
+- **Workflow permissions, checked and found appropriately scoped, not a finding:** `ci.yml` declares `contents: read` at the workflow level, matching what its jobs actually do; `release.yml` declares `contents: write`, which is what creating a release and uploading assets genuinely requires. No excess permission found here — stated for completeness, not filed as a gap.
+
+**Classification: repository/supply-chain-only, DOCUMENT-ONLY for the intended protections (none exist to be either enforced or bypassed).** None of this reaches the kernel/capability boundary — it's entirely about the integrity of the path code and dependencies take *into* the repository and *out* as shipped artifacts, upstream and downstream of the runtime boundary Packet C traced.
+
+**Disposition:** standard, well-understood hardening steps, all independent and individually cheap: add Dependabot (or equivalent) for automated update PRs; add a `pip-audit` step to CI; pin Actions by SHA with the version as a trailing comment (the common convention); consider a required-approval Environment for the release workflow given it publishes public artifacts. Not implemented here.
+
+---
+
+## Kernel/capability-boundary cross-check (area 5)
+
+| Finding | Classification | Why |
+|---|---|---|
+| F-1 (`DEBT-031`) — allowlist mislabeling | Repository-only | About the accuracy of CI documentation; no bearing on what code does at runtime. |
+| F-2 (`DEBT-032`) — release/test dependency divergence | Release-only | About which dependency versions ship vs. get tested; the *code* being governed is identical either way — this is a supply-chain/reproducibility question, not a capability or governance-decision question. |
+| F-3 (`DEBT-033`) — no branch protection | **Repository-only, but the one finding that is explicitly an assurance layer around the kernel boundary** | Direct connection to Packet C's `C-2`. Stated precisely to preserve the distinction from Packet C: branch protection is not part of `GovernanceKernel` and does not evaluate any `GovernanceAction` — it is a repository-level control over whether code reaches `main` at all. It sits *outside and upstream of* the runtime boundary Packet C traced, assuring that the boundary's own enforcement code (`check_drift.py`'s `DRIFT-05`) is actually checked before merge — it does not itself enforce anything the kernel enforces, and its absence does not change what the already-traced runtime governance boundary does for code that is running today. |
+| F-4 (`DEBT-034`) — Android release failure semantics | Release-only | Packaging/build integrity; no interaction with capability admission, governance decisions, or any traced execution path. |
+| F-5 (`DEBT-032` refinement) — systemic dependency divergence | Release-only | Same reasoning as F-2, generalized. |
+| F-6 (`DEBT-035`) — supply-chain posture | Repository-only | Upstream of the runtime entirely — concerns the integrity of what enters the repository and how it's shipped, not what the running kernel does with it. |
+
+**Net result: zero Packet F findings are kernel-boundary or capability-boundary relevant in the sense of changing what Packet C established about the running application.** `F-3` is the one genuine connection Moncif's framing was looking for, and it is deliberately classified as an assurance layer, not as part of the boundary itself — preserving exactly the distinction requested. This is itself a meaningful, positive result for the freeze manifest: the governance/capability boundary traced in Packet C does not depend on any of the repository, CI, or release-level gaps this packet found. Those gaps are real and worth fixing, but they are a different, upstream layer of assurance, not a hole in the kernel's own enforcement.
