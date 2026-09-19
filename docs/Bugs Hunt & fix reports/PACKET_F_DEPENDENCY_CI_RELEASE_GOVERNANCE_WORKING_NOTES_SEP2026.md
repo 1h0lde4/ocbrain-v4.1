@@ -131,3 +131,11 @@ Batched together as related, moderate findings rather than one row each, per the
 | F-6 (`DEBT-035`) — supply-chain posture | Repository-only | Upstream of the runtime entirely — concerns the integrity of what enters the repository and how it's shipped, not what the running kernel does with it. |
 
 **Net result: zero Packet F findings are kernel-boundary or capability-boundary relevant in the sense of changing what Packet C established about the running application.** `F-3` is the one genuine connection Moncif's framing was looking for, and it is deliberately classified as an assurance layer, not as part of the boundary itself — preserving exactly the distinction requested. This is itself a meaningful, positive result for the freeze manifest: the governance/capability boundary traced in Packet C does not depend on any of the repository, CI, or release-level gaps this packet found. Those gaps are real and worth fixing, but they are a different, upstream layer of assurance, not a hole in the kernel's own enforcement.
+
+---
+
+## Checked and cleared, not filed as findings
+
+- **No wheel/sdist packaging exists at all** — `install/build.py` only produces PyInstaller binaries plus platform installers (deb/rpm/PKGBUILD/NSIS/macOS pkg/Homebrew formula). OCBrain isn't distributed via PyPI; there's no wheel/sdist content to check against repo source because none is produced.
+- **`|| true` is unique to the Android job** — confirmed by grep across the whole file: the other three platform jobs (Linux/Windows/macOS) have no tolerant-failure pattern, so `F-4` is precisely scoped to Android and does not generalize to the other three.
+- **`.gitignore` correctly excludes `dist/`, `build/`, `__pycache__/`**, and every build job starts from a fresh `actions/checkout` — no path for stale local artifacts to leak into a CI-built release.
