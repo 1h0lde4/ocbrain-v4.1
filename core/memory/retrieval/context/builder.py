@@ -28,7 +28,7 @@ import logging
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from core.memory.retrieval.context.context import (
-    Context, ContextBlock, ContradictionGroup, ProvenanceRecord,
+    AuthorityLevel, Context, ContextBlock, ContradictionGroup, ProvenanceRecord,
 )
 from core.memory.retrieval.context.duplicates import DuplicateDetector, MinHashDuplicateDetector
 from core.memory.retrieval.context.token_counter import HeuristicTokenCounter, TokenCounter
@@ -126,6 +126,13 @@ class RetrievalContextBuilder:
             graph_distance=evidence_item.graph_distance,
             graph_path=[{"relation": h.relation, "node_id": h.node_id} for h in evidence_item.path],
             seed_entry_id=evidence_item.seed_entry_id,
+            # CTX-AUTH-001 / REM-004: a hard constant, never derived from
+            # `entry` -- every block this builder produces originates from
+            # retrieval by construction, regardless of what its content
+            # says about itself. This is the one site in production that
+            # assigns authority; nothing downstream may raise it (mission
+            # §8, authority monotonicity).
+            authority=AuthorityLevel.RETRIEVED,
         )
         return ContextBlock(
             primary_entry_id=entry.entry_id,
