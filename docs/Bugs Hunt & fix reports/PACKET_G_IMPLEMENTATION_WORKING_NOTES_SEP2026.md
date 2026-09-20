@@ -45,3 +45,15 @@ All five chromadb-schema failures (`test_cache_concurrency`, `test_empty_retriev
 **Verification, bounded honestly as stated in the execution prompt:** this environment cannot trigger an actual Actions run. Verified instead: the YAML parses correctly (`yaml.safe_load`, full file, not just the changed fragment) and the field lands in the intended step under `with:`. `fail_on_unmatched_files` is confirmed as a real, documented, opt-in input of `softprops/action-gh-release` — established externally during `F-4`'s own investigation (that action's issue #383), not assumed.
 
 **Disposition:** `DEBT-034` moves from "characterized, two options offered" to "implemented (the `fail_on_unmatched_files` option), verification bounded to syntactic/logical correctness." The `|| true` tolerance itself is left as-is, by deliberate choice stated above, not overlooked.
+
+---
+
+## Track 4: Supply-chain controls (`DEBT-035`) — implemented, verification bounded as stated
+
+**Action SHA-pinning.** Looked up the exact current commit SHA behind each mutable version tag via the GitHub API (`git/refs/tags/{tag}`) rather than guessing or using a plausible-looking placeholder — all five resolved directly to commit objects, no extra dereference needed for an annotated tag. Replaced all 23 occurrences across both workflow files (`actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`, `softprops/action-gh-release@v2`) with `@<40-char-SHA> # v<N>` — the standard convention: the SHA is what's actually trusted, the comment keeps the human-readable version visible. Verified the occurrence count before and after matched exactly (23 → 23) before treating the change as complete, and that both workflow files still parse as valid YAML afterward.
+
+**Dependabot.** Added `.github/dependabot.yml` with two ecosystems: `pip` (for `requirements.txt`) and `github-actions`. The second is not incidental — pinning by SHA closes the "a compromised tag silently updates" risk, but a SHA pin also doesn't self-update the way a mutable tag implicitly did; Dependabot's `github-actions` ecosystem is the mechanism that now proposes a reviewable PR bumping the pin when a new release exists, so the SHA-pinning fix and the Dependabot addition are a matched pair, not two independent items.
+
+**Verification, bounded as stated in the execution prompt:** no way to trigger Dependabot itself or an actual Actions run from this environment. Confirmed instead: exact SHA lookups against the real GitHub API (not fabricated), occurrence-count integrity before/after the bulk replacement, and full-file YAML validity for all three touched/added files.
+
+**Disposition:** `DEBT-035` moves from "characterized, four independent recommendations" to "two of four implemented (Action SHA-pinning, Dependabot), verification bounded as described." `pip-audit` in CI and a required-approval Environment for the release workflow remain open — not attempted this pass; recorded as still-open rather than silently dropped.
