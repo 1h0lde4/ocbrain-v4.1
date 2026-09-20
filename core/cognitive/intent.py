@@ -38,15 +38,32 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
-logger = logging.getLogger(__name__)
-
+from core.cognitive.authority import (
+    AcceptedHypothesis,
+    InferenceLineage,
+    InferenceOutcome,
+    LineageInput,
+    Origin,
+    ProposalDisposition,
+    content_digest,
+)
+from core.cognitive.intent_acceptance import (
+    MAX_CANDIDATES,
+    POLICY_VERSION,
+    ParsedProposal,
+    accept_proposals,
+    filter_known_categories,
+    policy_default,
+)
 from core.events.event_stream import EventStream, get_event_stream
 from core.memory.assembly import ContextAssemblyEngine
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.observability.tracer import get_trace_id
 from core.provider_mesh import generate_with_fallback, resolve_provider
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -220,6 +237,20 @@ class Intent:
     caused_by: Optional[str] = None  # D9 (ADR-K4.2-H-09): event_id or None.
     detected_language: Optional[str] = None  # G2 (K4.2 completion): from RawRequest.
     lifecycle_state: str = IntentLifecycle.DRAFT
+    # REM-004 (ADR-KERNEL-06, DRAFT) -- additive, all defaulted; every existing
+    # field, type and call site above is unchanged (K4.2 contract-evolution
+    # spec §7: contracts in core/cognitive/intent.py are "additive only").
+    #   selected_proposal: the immutable, mint-guarded envelope of `selected`
+    #       (origin INTENT_MODEL, authority MODEL_PROPOSAL, lineage/taint).
+    #       `selected` itself stays the frozen K4.2 IntentHypothesis; the
+    #       envelope is what carries security meaning.
+    #   inference_outcome: WHY the selected hypothesis exists (a security
+    #       rejection is distinguishable from "the model had no answer").
+    #   rejected_proposals: bounded audit records of rejected/quarantined
+    #       model proposals -- evidence only, never re-enter a prompt or Goal.
+    selected_proposal: Optional[AcceptedHypothesis] = None
+    inference_outcome: Optional[InferenceOutcome] = None
+    rejected_proposals: List[ProposalDisposition] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -468,6 +499,9 @@ candidate interpretations of what the user wants.
 Output one candidate per line, in the exact form:
 label | score
 
+label is a short lowercase name: words of letters a-z and digits joined by
+single spaces or underscores, starting with a letter, at most 64 characters
+(no other symbols).
 score is a number between 0.00 and 1.00, highest confidence first.
 
 Known intent categories (may be empty on a fresh system): {categories}
@@ -481,6 +515,17 @@ Request:
 {request}
 
 Candidates:"""
+
+
+# Prompts are infrastructure and versioned (PROJECT_INSTRUCTIONS §15).
+# v1 = the original template; v2 (REM-004) states the label contract the
+# acceptance gate enforces, so the output format we ask for is exactly the
+# one we accept. The version is recorded in every proposal's lineage.
+_HYPOTHESIS_PROMPT_VERSION = "intent-hypotheses/2"
+_INTENT_ROUTE = "intent_interpreter"
+# Bounded parser input: a provider cannot make the parser (or the candidate
+# list) grow without limit.
+_MAX_COMPLETION_CHARS = 32768
 
 
 # CTX-AUTH-001a structural containment. These are this template's own
@@ -549,7 +594,7 @@ def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
     if safe_context:
         safe_context = f"{_UNTRUSTED_CONTEXT_NOTE}\n{safe_context}"
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
-        n=5,
+        n=MAX_CANDIDATES,
         categories=", ".join(known_categories) if known_categories else "(none yet)",
         context=safe_context or "(no retrieved context)",
         request=raw_request.text,
@@ -569,6 +614,14 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
     inference degrading to fewer (or zero, handled by the caller) parsed
     hypotheses is the documented open-category fallback path (K4.2 §2),
     not a new failure mode requiring its own handling.
+
+    REM-004: this function is SYNTAX ONLY and remains so. The objects it
+    returns are unvetted claims by the model -- no origin, no authority, no
+    eligibility. Security semantics live in the acceptance boundary
+    (core/cognitive/intent_acceptance.py), and infer_hypotheses() is the sole
+    production caller of this parser (asserted by
+    tests/core/cognitive/test_intent_authority_boundary.py). Nothing may
+    treat this function's output as accepted.
     """
     hypotheses: List[IntentHypothesis] = []
     for match in _CANDIDATE_LINE.finditer(completion or ""):
@@ -674,6 +727,176 @@ def _estimate_complexity(text: str, hypothesis_count: int) -> float:
     return round(min(1.0, 0.6 * length_signal + 0.4 * ambiguity_signal), 2)
 
 
+@dataclass(frozen=True)
+class HypothesisInference:
+    """Result of ONE governed inference (REM-004): what was accepted, what was
+    not and why, and the lineage the trusted runtime recorded.
+
+    `accepted` is never empty: when no model proposal is eligible it holds the
+    trusted-code open-category default (origin RUNTIME_DEFAULT), and `outcome`
+    says why -- so a security rejection (ALL_REJECTED) is never
+    indistinguishable from "the model had no answer" (NO_OUTPUT/PARSE_FAILURE)
+    or an infrastructure failure (PROVIDER_FAILURE/INTERNAL_ERROR).
+    """
+    accepted: Tuple[AcceptedHypothesis, ...]
+    dispositions: Tuple[ProposalDisposition, ...]
+    outcome: InferenceOutcome
+    lineage: InferenceLineage
+    parsed_count: int = 0
+    rejected_total: int = 0
+    quarantined_total: int = 0
+    omitted_dispositions: int = 0
+
+    @property
+    def hypotheses(self) -> List[IntentHypothesis]:
+        """Fresh IntentHypothesis objects (the frozen K4.2 shape) for
+        Intent.hypotheses / Intent.selected. The immutable AcceptedHypothesis
+        in `accepted` remains the security record."""
+        return [IntentHypothesis(label=a.label, score=a.score) for a in self.accepted]
+
+
+class InferredHypotheses(list):
+    """generate_hypotheses()'s frozen public return type -- a plain
+    List[IntentHypothesis], for every caller and every test double -- that
+    additionally carries the HypothesisInference that produced it, so the
+    consumer seam (interpret_request) can use the full lineage instead of
+    re-deriving a conservative one.
+
+    Carrying an inference does NOT make a list trustworthy: interpret_request
+    re-checks that the list still equals what the inference accepted, and
+    treats any other list (a mock, a foreign implementation, a list that was
+    mutated) as unvetted claims that must cross the same acceptance gate.
+    """
+
+    def __init__(self, inference: "HypothesisInference") -> None:
+        super().__init__(inference.hypotheses)
+        self._inference = inference
+
+    @property
+    def inference(self) -> "HypothesisInference":
+        return self._inference
+
+
+async def infer_hypotheses(
+    raw_request: RawRequest,
+    *,
+    memory: Optional[UnifiedMemory] = None,
+    known_categories: Optional[List[str]] = None,
+) -> HypothesisInference:
+    """Governed multi-hypothesis inference: retrieve -> prompt -> model ->
+    parse (syntax) -> accept (authority/provenance) -> rank.
+
+    The single production seam between an LLM completion and Intent: every
+    model-derived hypothesis passes through accept_proposals() here, and
+    ranking happens only after acceptance (authority eligibility precedes
+    confidence ranking).
+
+    Failure semantics -- recovery may preserve or reduce authority, never
+    raise it. Every path below ends in either eligible MODEL_PROPOSALs or the
+    trusted-code open-category default, with a distinct, auditable outcome:
+        retrieval failure  -> proceed with NO retrieved context (less
+                              untrusted input, not more authority)
+        provider failure   -> PROVIDER_FAILURE  -> default
+        empty completion   -> NO_OUTPUT         -> default
+        non-text completion / no parseable line -> PARSE_FAILURE -> default
+        every proposal rejected/quarantined     -> ALL_REJECTED  -> default
+        unexpected error in parse/acceptance    -> INTERNAL_ERROR -> default
+    Cancellation (BaseException) is never swallowed.
+    """
+    memory = memory or get_unified_memory()
+    scope_id = get_trace_id()
+
+    vocabulary, dropped = filter_known_categories(known_categories or [])
+    if dropped:
+        logger.warning(
+            "[IntentAcceptance] %d known_categories entr%s do not satisfy the "
+            "label contract and were not used", dropped, "y" if dropped == 1 else "ies")
+
+    try:
+        context = await ContextAssemblyEngine(memory).assemble_context(raw_request.text)
+    except Exception:
+        # assemble_context() already degrades to "" on no results; a hard
+        # failure in retrieval should not block inference -- proceed with no
+        # context rather than propagate. (Less retrieved data, not more
+        # authority.)
+        logger.warning("[IntentAcceptance] context assembly failed; "
+                       "proceeding with no retrieved context")
+        context = ""
+    if not isinstance(context, str):
+        context = ""
+
+    prompt = _build_hypothesis_prompt(raw_request, context, list(vocabulary))
+
+    # Lineage is recorded by trusted code from what it actually put in the
+    # prompt. Each input keeps its own origin/authority; nothing is aggregated.
+    inputs = [LineageInput.from_text("request", Origin.USER, raw_request.text)]
+    if context:
+        inputs.append(LineageInput.from_text("context", Origin.RETRIEVED_SOURCE, context))
+    if vocabulary:
+        inputs.append(LineageInput.from_text(
+            "known_categories", Origin.RETRIEVED_SOURCE, "\n".join(vocabulary)))
+    lineage = InferenceLineage(
+        scope_id=scope_id, route=_INTENT_ROUTE,
+        template_version=_HYPOTHESIS_PROMPT_VERSION,
+        prompt_digest=content_digest(prompt, length=32), inputs=tuple(inputs))
+
+    outcome = InferenceOutcome.ACCEPTED
+    report = None
+    try:
+        completion = await generate_with_fallback(resolve_provider(_INTENT_ROUTE), prompt)
+    except Exception as exc:
+        logger.warning("[IntentAcceptance] provider failure (%s); using the "
+                       "open-category default", type(exc).__name__)
+        outcome = InferenceOutcome.PROVIDER_FAILURE
+    else:
+        if completion is None or (isinstance(completion, str) and not completion.strip()):
+            outcome = InferenceOutcome.NO_OUTPUT
+        elif not isinstance(completion, str):
+            outcome = InferenceOutcome.PARSE_FAILURE
+        else:
+            try:
+                parsed = [
+                    ParsedProposal(label=h.label, score=h.score, position=i)
+                    for i, h in enumerate(
+                        _apply_output_containment(
+                            _parse_hypotheses(completion[:_MAX_COMPLETION_CHARS])))
+                ]
+                if not parsed:
+                    outcome = InferenceOutcome.PARSE_FAILURE
+                else:
+                    report = accept_proposals(
+                        parsed, known_categories=vocabulary, lineage=lineage)
+                    if not report.accepted:
+                        outcome = InferenceOutcome.ALL_REJECTED
+            except Exception:
+                logger.error("[IntentAcceptance] unexpected error in parse/acceptance; "
+                             "failing closed to the open-category default", exc_info=True)
+                outcome, report = InferenceOutcome.INTERNAL_ERROR, None
+
+    if report is not None and (report.rejected_total or report.quarantined_total):
+        logger.warning(
+            "[IntentAcceptance] outcome=%s parsed=%d rejected=%d quarantined=%d "
+            "policy=%s", outcome.value, report.parsed_count, report.rejected_total,
+            report.quarantined_total, POLICY_VERSION)
+
+    if report is not None and report.accepted:
+        accepted = report.accepted
+    else:
+        # Open-category degrade path (K4.2 §2) -- minted by trusted code with
+        # a fixed token. No rejected content is ever copied into it.
+        accepted = (policy_default(lineage),)
+
+    return HypothesisInference(
+        accepted=accepted,
+        dispositions=report.dispositions if report is not None else (),
+        outcome=outcome, lineage=lineage,
+        parsed_count=report.parsed_count if report is not None else 0,
+        rejected_total=report.rejected_total if report is not None else 0,
+        quarantined_total=report.quarantined_total if report is not None else 0,
+        omitted_dispositions=report.omitted_dispositions if report is not None else 0,
+    )
+
+
 async def generate_hypotheses(
     raw_request: RawRequest,
     *,
@@ -706,40 +929,108 @@ async def generate_hypotheses(
     list is the correct, expected input on a system where nothing has
     been promoted yet, and a caller that has access to the ontology may
     supply it.
+
+    REM-004: the public signature and return type are UNCHANGED (frozen
+    K4.2-H1 contract), but the returned list now contains only hypotheses
+    that crossed the acceptance boundary, ranked by score among those only;
+    when none is eligible it is the single open-category default
+    ``novel | 0.1`` as before. Callers that need to know *why* (accepted vs.
+    rejected vs. no output) or need each hypothesis's immutable
+    authority/lineage use infer_hypotheses(), the additive richer entrypoint.
     """
-    memory = memory or get_unified_memory()
+    inference = await infer_hypotheses(
+        raw_request, memory=memory, known_categories=known_categories)
+    return InferredHypotheses(inference)
 
+
+def _accept_unattested(
+    proposals: Any,
+    raw_request: RawRequest,
+    known_categories: Optional[List[str]],
+) -> HypothesisInference:
+    """Consumer-side acceptance for a hypothesis list whose production the
+    runtime did not itself witness (a test double, a foreign implementation,
+    or a list mutated after inference).
+
+    Such a list is only a set of CLAIMS. It crosses the same deterministic gate
+    as model output, with lineage built from what trusted code does know: the
+    user's request and the request scope. It does not know what context, if
+    any, influenced the claims, so it CONSERVATIVELY records an unaccounted
+    retrieved-data input (retrieved_data_influence is True) -- unknown
+    lineage fails closed toward more suspicion, never less.
+    """
+    vocabulary, _ = filter_known_categories(known_categories or [])
+    lineage = InferenceLineage(
+        scope_id=get_trace_id(), route="unattested", template_version="unknown",
+        prompt_digest="unknown",
+        inputs=(
+            LineageInput.from_text("request", Origin.USER, raw_request.text),
+            LineageInput.from_text("context", Origin.RETRIEVED_SOURCE, ""),
+        ))
+    items = list(proposals) if isinstance(proposals, (list, tuple)) else []
+    if not items:
+        # Nothing was proposed -> nothing to select (unchanged pre-REM-004
+        # behaviour for an empty list: selected is None).
+        return HypothesisInference(accepted=(), dispositions=(),
+                                   outcome=InferenceOutcome.NO_OUTPUT, lineage=lineage)
+    parsed = [
+        ParsedProposal(
+            label=getattr(h, "label", "") if isinstance(getattr(h, "label", None), str) else "",
+            score=(h.score if isinstance(getattr(h, "score", None), (int, float))
+                   and not isinstance(h.score, bool) else float("nan")),
+            position=i)
+        for i, h in enumerate(items)
+    ]
+    report = accept_proposals(parsed, known_categories=vocabulary, lineage=lineage)
+    accepted = report.accepted if report.accepted else (policy_default(lineage),)
+    return HypothesisInference(
+        accepted=accepted, dispositions=report.dispositions,
+        outcome=(InferenceOutcome.ACCEPTED if report.accepted
+                 else InferenceOutcome.ALL_REJECTED),
+        lineage=lineage, parsed_count=report.parsed_count,
+        rejected_total=report.rejected_total, quarantined_total=report.quarantined_total,
+        omitted_dispositions=report.omitted_dispositions)
+
+
+def _bound_to_request(inference: HypothesisInference, raw_request: RawRequest) -> bool:
+    """True iff `inference` was produced for THIS request in THIS request scope.
+
+    A carried inference is only as good as its binding: a stale inference from
+    request A, handed to request B, must not lend B its lineage -- above all
+    its taint bit (A may have had no retrieved data while B does), and never
+    its authority state. Scope is the existing trace_id (ADR-K4.2-H-08); the
+    request is matched by the digest trusted code recorded at inference.
+    Any doubt (missing input, unexpected shape) is "not bound".
+    """
     try:
-        context = await ContextAssemblyEngine(memory).assemble_context(raw_request.text)
-    except Exception:
-        # assemble_context() already degrades to "" on no results; a hard
-        # failure in retrieval should not block inference -- proceed with
-        # no context rather than propagate.
-        context = ""
-
-    prompt = _build_hypothesis_prompt(raw_request, context, known_categories or [])
-
-    hypotheses: List[IntentHypothesis] = []
-    try:
-        completion = await generate_with_fallback(
-            resolve_provider("intent_interpreter"), prompt,
+        requests = [i for i in inference.lineage.inputs if i.role == "request"]
+        return (
+            inference.lineage.scope_id == get_trace_id()
+            and len(requests) == 1
+            and requests[0].digest == content_digest(raw_request.text)
         )
-        # CTX-AUTH-001b / DEBT-019: _apply_output_containment is hardening,
-        # not closure -- see its docstring. Authority-based acceptance is
-        # still open pending a design decision (IntentHypothesis has no
-        # provenance field; K4.2 §12 frozen field-set) -- ADR required
-        # before implementation, not in scope for this reconciliation.
-        hypotheses = _apply_output_containment(_parse_hypotheses(completion))
     except Exception:
-        hypotheses = []
+        return False
 
-    if not hypotheses:
-        # Open-category degrade path (K4.2 §2) -- every provider failed,
-        # or none produced a parseable candidate.
-        hypotheses = [IntentHypothesis(label="novel", score=0.1)]
 
-    hypotheses.sort(key=lambda h: h.score, reverse=True)
-    return hypotheses
+def _attested_inference(
+    result: Any,
+    raw_request: RawRequest,
+    known_categories: Optional[List[str]],
+) -> HypothesisInference:
+    """The consumer-seam guarantee: whatever generate_hypotheses() returned,
+    Intent is built only from proposals that crossed the acceptance gate."""
+    carried = getattr(result, "inference", None)
+    if (isinstance(carried, HypothesisInference) and isinstance(result, list)
+            and _bound_to_request(carried, raw_request)):
+        try:
+            unchanged = ([(h.label, h.score) for h in result]
+                         == [(a.label, a.score) for a in carried.accepted])
+        except Exception:
+            unchanged = False
+        if unchanged:
+            return carried
+    return _accept_unattested(result, raw_request, known_categories)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -826,6 +1117,14 @@ class Goal:
     caused_by: Optional[str] = None
     lifecycle_state: str = GoalLifecycle.DRAFT
     root_operation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    # REM-004 (ADR-KERNEL-06, DRAFT) -- additive, defaulted. Provenance of the
+    # model-derived signals in structured_form ("category" and the label
+    # prefix of "semantic_description"): an immutable AcceptedHypothesis whose
+    # authority is MODEL_PROPOSAL. None means UNATTESTED (hand-built/legacy
+    # Intent, or a failed consuming-boundary check) -- consumers must then
+    # treat those signals as non-user-authority. The user's own text lives in
+    # structured_form["description"]/["raw_request"] (USER_INSTRUCTION, K42-001).
+    category_provenance: Optional[AcceptedHypothesis] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -840,6 +1139,42 @@ class Goal:
 # confidence when no match exists"). This is an implementation choice for
 # the penalty magnitude -- K4.2 does not specify an exact value.
 _SCHEMA_VALIDATION_PENALTY = 0.1
+
+
+def _attested_selection(intent: Intent) -> Tuple[str, str, Optional[AcceptedHypothesis]]:
+    """(category, semantic_label, provenance) that Goal formation may use.
+
+    REM-004 consuming-boundary check (time-of-check/time-of-use). The frozen
+    K4.2 carriers -- Intent.selected (a mutable IntentHypothesis) and
+    Intent.dimensions.category -- are plain mutable state, so the immutable
+    envelope alone cannot close the seam. When an AcceptedHypothesis is
+    attached, BOTH carriers must still equal what it accepted; otherwise the
+    value is not what the gate accepted and we fail closed to the
+    open-category default with no provenance (never trust either copy).
+
+    An Intent with no envelope (hand-built or legacy) keeps pre-REM-004
+    behaviour and yields provenance None == UNATTESTED: consumers must treat
+    its model-derived signals as non-user-authority. Every production Intent
+    comes from interpret_request(), which always attaches an envelope.
+
+    semantic_label is "" for the open-category token, which carries no
+    semantic information (unchanged G1 behaviour).
+    """
+    category = intent.dimensions.category if intent.dimensions else "novel"
+    label = intent.selected.label if intent.selected else ""
+    semantic_label = "" if label == "novel" else label
+    envelope = getattr(intent, "selected_proposal", None)
+    if not isinstance(envelope, AcceptedHypothesis):
+        return category, semantic_label, None
+    if (intent.selected is not None and intent.selected.label == envelope.label
+            and category == envelope.label):
+        return category, semantic_label, envelope
+    logger.error(
+        "[IntentAcceptance] Intent %s no longer agrees with its accepted "
+        "envelope (selected=%s category=%s accepted=%s); failing closed to the "
+        "open-category default", getattr(intent, "resource_id", "?"),
+        content_digest(label), content_digest(category), content_digest(envelope.label))
+    return "novel", "", None
 
 
 def _validate_structured_form(
@@ -860,9 +1195,11 @@ def _validate_structured_form(
         confidence_adjustment is the amount to subtract from the inherited
         confidence (0.0 if validated, _SCHEMA_VALIDATION_PENALTY if not).
     """
-    category = "novel"
-    if intent.dimensions:
-        category = intent.dimensions.category
+    # REM-004: category and the semantic label come from the ATTESTED
+    # selection (see _attested_selection) -- an envelope-backed Intent whose
+    # mutable carriers no longer agree with what the gate accepted fails
+    # closed to the open-category default instead of trusting either copy.
+    category, _hypothesis_label, _ = _attested_selection(intent)
 
     # Build the structured_form from the Intent's actual request content.
     # K4.2 §4: "never a bare NL string internally" -- even without an
@@ -889,11 +1226,6 @@ def _validate_structured_form(
     # the open-category fallback and carries no semantic information),
     # semantic_description combines the classification with the request
     # to provide richer matching context for capability discovery.
-    _hypothesis_label = (
-        intent.selected.label
-        if intent.selected and intent.selected.label != "novel"
-        else ""
-    )
     _semantic_desc = (
         f"{_hypothesis_label}: {intent.raw_request}"
         if _hypothesis_label
@@ -992,6 +1324,9 @@ def form_goals(
     """
     # 1. Detect compound requests (K4.2 §4).
     parts = _split_compound_goals(intent.raw_request)
+    # REM-004: provenance of the model-derived category signal, shared by
+    # every part (the split is syntactic; all parts inherit one interpretation).
+    _, _, provenance = _attested_selection(intent)
 
     goals: List[Goal] = []
     for part_text in parts:
@@ -1027,6 +1362,7 @@ def form_goals(
             confidence=goal_confidence,
             derived_from=[intent.resource_id],
             lifecycle_state=GoalLifecycle.VERIFIED if validated else GoalLifecycle.DRAFT,
+            category_provenance=provenance,
         )
         goals.append(goal)
 
@@ -1074,8 +1410,10 @@ async def interpret_request(
     or more Goals"). A single-goal request returns a list of length 1.
 
     Events: emits cognitive.intent_hypotheses_generated and
-    cognitive.intent_interpreted (K4.2.1, unchanged), then
-    cognitive.goal_formed (K4.2.2, K4.2 §11 / K4 §12).
+    cognitive.intent_interpreted (K4.2.1, unchanged shape; REM-004 adds
+    optional bounded keys), then cognitive.goal_formed (K4.2.2, K4.2 §11 /
+    K4 §12). REM-004 also emits cognitive.intent_proposals_rejected, but only
+    when a model proposal was rejected or quarantined.
 
     Raises:
         NormalizationRejected: propagated from normalize_request() --
@@ -1098,9 +1436,19 @@ async def interpret_request(
     raw_request = normalize_request(raw_text)
 
     # ── K4.2.1: Intent Inference ─────────────────────────────────────
-    hypotheses = await generate_hypotheses(
-        raw_request, memory=memory, known_categories=known_categories,
+    # REM-004: inference goes through the acceptance boundary. `hypotheses`
+    # holds ONLY eligible proposals, ranked after acceptance; the immutable
+    # envelope of the selected one rides on Intent.selected_proposal.
+    # generate_hypotheses() stays the call seam (existing callers and test
+    # doubles patch it); the boundary is enforced HERE, at the consumer, so
+    # it cannot be bypassed by whatever that function returns.
+    inference = _attested_inference(
+        await generate_hypotheses(
+            raw_request, memory=memory, known_categories=known_categories),
+        raw_request, known_categories,
     )
+    hypotheses = inference.hypotheses
+    selected_envelope = inference.accepted[0] if inference.accepted else None
 
     await event_stream.append(
         "cognitive.intent_hypotheses_generated",
@@ -1109,8 +1457,38 @@ async def interpret_request(
             "trace_id": trace_id,
             "hypothesis_count": len(hypotheses),
             "labels": [h.label for h in hypotheses],
+            # REM-004 additive keys -- bounded and content-free (hashes and
+            # closed-vocabulary tokens only; no prompt, completion or label
+            # text beyond the already-validated identifiers above).
+            "inference_outcome": inference.outcome.value,
+            "proposal_authority": (selected_envelope.authority.value
+                                   if selected_envelope else None),
+            "acceptance_policy": POLICY_VERSION,
+            "retrieved_data_influence": inference.lineage.retrieved_data_influence,
+            "prompt_digest": inference.lineage.prompt_digest,
+            "rejected_count": inference.rejected_total,
+            "quarantined_count": inference.quarantined_total,
         },
     )
+
+    if inference.dispositions:
+        # Evidence of a security/contract decision -- NOT an authority source.
+        # Emitted only when something was actually rejected/quarantined, so the
+        # ordinary event sequence (3 events, 4 for compound) is unchanged.
+        await event_stream.append(
+            "cognitive.intent_proposals_rejected",
+            source="IntentInterpreter",
+            payload={
+                "trace_id": trace_id,
+                "acceptance_policy": POLICY_VERSION,
+                "inference_outcome": inference.outcome.value,
+                "prompt_digest": inference.lineage.prompt_digest,
+                "rejected_count": inference.rejected_total,
+                "quarantined_count": inference.quarantined_total,
+                "omitted_records": inference.omitted_dispositions,
+                "records": [d.to_event_dict() for d in inference.dispositions],
+            },
+        )
 
     selected = hypotheses[0] if hypotheses else None
     dimensions = IntentDimensions(
@@ -1127,6 +1505,9 @@ async def interpret_request(
         dimensions=dimensions,
         lifecycle_state=IntentLifecycle.INTERPRETED,
         detected_language=raw_request.detected_language,  # G2
+        selected_proposal=selected_envelope,
+        inference_outcome=inference.outcome,
+        rejected_proposals=list(inference.dispositions),
     )
 
     await event_stream.append(
@@ -1137,6 +1518,12 @@ async def interpret_request(
             "intent_id": intent.resource_id,
             "selected_label": selected.label if selected else None,
             "confidence": intent.confidence,
+            # REM-004 additive keys.
+            "selected_authority": (selected_envelope.authority.value
+                                   if selected_envelope else None),
+            "selected_retrieved_data_influence": (
+                selected_envelope.retrieved_data_influence if selected_envelope else False),
+            "inference_outcome": inference.outcome.value,
         },
     )
 

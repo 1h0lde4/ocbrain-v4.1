@@ -545,11 +545,18 @@ async def _extract_constraints(
     # 1. Extract explicit constraints from the goal description.
     description = goal.structured_form.get("description", "")
     raw_request = goal.structured_form.get("raw_request", "")
-    # Use the most specific text available for constraint extraction.
-    # G1 (K4.2 completion): prefer semantic_description for richer
-    # semantic context; fall back to description, then raw_request.
-    text = (goal.structured_form.get("semantic_description")
-            or description or raw_request)
+    # REM-004 (ADR-KERNEL-06, DRAFT): explicit constraints are, by this
+    # module's own definition (_extract_explicit_constraints, citing K4.2 §12),
+    # "constraints the user stated directly in the request" -- so they are
+    # extracted ONLY from USER_INSTRUCTION-authority text:
+    # description (the per-part text for compound goals), then raw_request.
+    # semantic_description is deliberately NOT used here: it is
+    # "<label>: <request>", and the label is a MODEL_PROPOSAL. Mining it would
+    # let a model-chosen word (e.g. the perfectly valid label "only") become a
+    # HARD constraint attributed to the user -- a MODEL_PROPOSAL ->
+    # USER_INSTRUCTION escalation. semantic_description remains the input to
+    # capability discovery (a ranking signal governed downstream), unchanged.
+    text = description or raw_request
     constraints.extend(_extract_explicit_constraints(text))
 
     # 2. Extract inferred constraints from the goal's structure.

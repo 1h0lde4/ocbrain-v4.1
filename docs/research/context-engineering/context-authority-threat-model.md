@@ -219,6 +219,18 @@ inherent to the system's purpose — the invariant to preserve is
 *structural* (retrieved data cannot impersonate control structure), not
 elimination of all retrieved-content influence on output.
 
+### Status update — Sept 20, 2026 (REM-004 / CTX-AUTH-001b implemented on a branch; NOT on `main`)
+
+Branch `fix/ctx-auth-001b-rem004-authority-boundary-sep2026` (base `main` @ `4669e21`; head commit subject `security: close CTX-AUTH-001b with authority boundary`). Design and decisions: `docs/architecture/decisions/ADR_KERNEL_06_INSTRUCTION_AUTHORITY_TAXONOMY.md` -- **DRAFT, unapproved**.
+
+- **Sub-finding (a), structural containment:** unchanged; closed.
+- **Sub-finding (b), parser acceptance:** on the branch the acceptance condition holds. `TestCtxAuth001ParserAcceptance` passes with its assertion unchanged. The parser (`_parse_hypotheses`) stays syntax-only; every parsed line then crosses a deterministic acceptance gate (`core/cognitive/intent_acceptance.py`) before ranking, and `interpret_request` enforces the boundary itself on whatever `generate_hypotheses()` returns. Accepted proposals are immutable, mint-guarded `AcceptedHypothesis` objects whose authority is *derived from trusted origin* (`MODEL_PROPOSAL`), never from content, score, or serialization (`core/cognitive/authority.py`).
+- **Corrections to this document's earlier statements** (recorded, not silently rewritten): (1) the Evidence/Reproduction sections describe the 001b test as isolating the parser; it drives `generate_hypotheses()`. (2) "Future mitigation (not selected here)" proposed a parser-output field distinguishing model-substantiated hypotheses from ones whose text appeared verbatim in context. That could not have closed this test: its mocked context is **empty**, so no verbatim/provenance mechanism can separate the two completion lines. What closes it is a closed-world label contract (a whitelist by form, with UPPER_SNAKE reserved for trusted-runtime tokens), which is content-agnostic but does not detect a *well-formed* hijack. (3) "No content-agnostic signal exists" was too strong for the same reason.
+- **New finding recorded (found while tracing, not in the original finding):** the planner extracted `ConstraintSource.EXPLICIT` ("constraints the user stated directly") from `semantic_description = "<model label>: <request>"`. Demonstrated against the old planner: a valid model label `only` produced a HARD explicit constraint on a request with no constraint words. Fixed: explicit constraints now come only from `description`/`raw_request`.
+- **Still true:** the finding's blast radius requires attacker content in retrieved context; **real hostile exploitation is not demonstrated**. The Sept 7 structural weakness remained verified and the synthetic reproduction verified; after this branch the *tested authority-escalation paths* are closed, which is not a claim that prompt injection is impossible. A well-formed hijack of the category *hint* is accepted as a tainted `MODEL_PROPOSAL` and contained (typing, taint visibility, no user-authority sink, `GovernanceKernel` untouched), not detected.
+- **Gaps:** Gap 1 (structured `Context` discarded before any consumer, REM-003) is **untouched** -- lineage records a digest and size per input class only, not per-source provenance. Gap 2 (authority taxonomy, REM-004) is implemented **only at the Intent -> Goal boundary**, not as a system-wide model.
+- **Unmeasured:** the label contract's false-rejection rate against a real local model (none available in the verification sandbox).
+
 ### Related Context Compiler requirements
 
 - Authority model (Gap 2, architecture comparison) — `trust_score`/
