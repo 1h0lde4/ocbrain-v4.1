@@ -1,4 +1,4 @@
-# ADR-KERNEL-05: Verifiable Hypothesis Provenance (CTX-AUTH-001b)
+# ADR-KERNEL-06: Verifiable Hypothesis Provenance (CTX-AUTH-001b)
 
 **Status:** ACCEPTED — disposition and mechanism both decided (Moncif,
 Sept 16 2026). **Not yet implemented.** CTX-AUTH-001b stays OPEN until
@@ -11,6 +11,10 @@ below — this ADR is the accepted design, not a closure of the finding.
 **Scope:** `core/cognitive/intent.py` (`IntentHypothesis`, `generate_hypotheses`,
 `_parse_hypotheses`, `_HYPOTHESIS_PROMPT_TEMPLATE`), `core/memory/retrieval/context/context.py`
 (`AuthorityLevel`, `ProvenanceRecord`).
+**Numbering note:** drafted and accepted Sept 16, 2026 as `ADR-KERNEL-05`; renumbered to
+`ADR-KERNEL-06` because `ADR-KERNEL-05` is already held by the PROPOSED
+`ADR_KERNEL_05_CTX_AUTH_001B_DEFERRAL_PROPOSAL.md` on branch
+`fix/ctx-auth-001-ctx-delete-001-sep2026`. Content unchanged.
 **Series note:** `ADR-KERNEL-NN`, not `ADR-K4.2-H-NN` — kept, per Moncif's
 explicit decision not to renumber. Kernel v1.0 freeze-scoped, not part of
 the closed Aug 2026 H1/H2 packet sequence.

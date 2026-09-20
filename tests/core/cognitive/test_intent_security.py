@@ -8,7 +8,7 @@ Intent Hypothesis generation path (K4.2.1, core/cognitive/intent.py). See:
 
 STATUS (corrected Sept 15, 2026, extended Sept 16 2026 during the
 DEBT-019/CTX-AUTH-001b reconciliation -- see
-docs/architecture/decisions/ADR_KERNEL_05_VERIFIABLE_HYPOTHESIS_PROVENANCE.md;
+docs/architecture/decisions/ADR_KERNEL_06_VERIFIABLE_HYPOTHESIS_PROVENANCE.md;
 this comment previously said both tests were expected red; that was stale
 as of the CTX-AUTH-001a structural fix landing and went uncorrected until
 the Sept 15 pass verified both by direct execution instead of re-reading
@@ -38,7 +38,7 @@ property it exists to catch. Do not "fix" this test by raising the
 score back, or by any other change that lets shape/cap/order
 enforcement substitute for the missing check.
 
-Closure prerequisite: ADR-KERNEL-05 (Sept 16, 2026) is the accepted
+Closure prerequisite: ADR-KERNEL-06 (Sept 16, 2026; drafted as -05) is the accepted
 design -- Option A, explicit source citation verified by deterministic
 lookup against the actual assembled Context.blocks, fail-closed (no
 citation => no authoritative provenance, authority inherited never
