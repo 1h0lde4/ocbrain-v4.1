@@ -49,12 +49,31 @@ class ContextMemory:
         self._prompt_cache: dict[tuple, str] = {}   # (n, scope) → formatted string
         self._prompt_cache_turn: int = -1          # last turn id when cache was built
         self._turns_cache_dirty: bool = True
-        self.long_term_memories = []
-        self._long_term_memories_string = ""
 
-    def set_long_term_memories(self, memories: list[dict]):
-        self.long_term_memories = memories
-        self._long_term_memories_string = ""
+        # CTX-SCOPE-001: both keyed by scope (default '' -- the same
+        # legacy/shared bucket save() already uses), not a single
+        # process-global value. Previously `self.long_term_memories` and
+        # `self._long_term_memories_string` were flat singleton fields
+        # that every scope's format_for_prompt() call read unconditionally
+        # -- a live leak worse than the turns-table gap this finding was
+        # originally opened for, since even a caller passing a real scope
+        # to format_for_prompt() still inherited whatever the *last*
+        # caller of either setter had written, regardless of scope. See
+        # set_long_term_memories_string()'s docstring for the full
+        # rationale; both setters feed the same injection point in
+        # format_for_prompt() and must carry the same isolation guarantee
+        # turns already has.
+        self._long_term_memories_by_scope: dict[str, list[dict]] = {}
+        self._long_term_memories_string_by_scope: dict[str, str] = {}
+
+    def set_long_term_memories(self, memories: list[dict], scope: str = ""):
+        """CTX-SCOPE-001: stored under `scope` (default '' -- save()'s own
+        legacy/shared bucket), not a single process-global list. See
+        set_long_term_memories_string()'s docstring for the full
+        rationale -- this setter feeds the same format_for_prompt()
+        injection point and must carry the same isolation guarantee."""
+        self._long_term_memories_by_scope[scope] = memories
+        self._long_term_memories_string_by_scope[scope] = ""
         self._turns_cache_dirty = True
         self._prompt_cache.clear()
 
@@ -165,16 +184,40 @@ class ContextMemory:
             )
             return [r[0] for r in cur.fetchall()]
 
-    def boost_module(self, module_name: str, recent_turns: int = 3) -> float:
-        for t in self.last_n(recent_turns):
+    def boost_module(self, module_name: str, recent_turns: int = 3,
+                      scope: Optional[str] = None) -> float:
+        """CTX-SCOPE-001: scope=None matches last_n()/format_for_prompt()'s
+        own convention -- unfiltered, exact prior behavior for any caller
+        that doesn't pass one. Pass an explicit scope to restrict the
+        recency check to that scope's own turns; otherwise a module's
+        recent popularity with ANY caller system-wide silently boosts
+        THIS caller's classification confidence for it, leaking a signal
+        derived from another execution's activity."""
+        for t in self.last_n(recent_turns, scope=scope):
             if module_name in t.modules_used:
                 return 0.1
         return 0.0
 
-    def set_long_term_memories_string(self, context_string: str):
-        """Sets the pre-formatted long-term memory string (Phase 5)."""
-        self._long_term_memories_string = context_string
-        self.long_term_memories = []
+    def set_long_term_memories_string(self, context_string: str, scope: str = ""):
+        """Sets the pre-formatted long-term memory string (Phase 5).
+
+        CTX-SCOPE-001: the stored value is associated with `scope`
+        (default '' -- the same legacy/shared bucket save() already uses),
+        not written to a single process-wide singleton string.
+        format_for_prompt(scope=X) retrieves only what was stored under
+        scope=X; an unrelated scope gets nothing from this call -- the
+        same guarantee last_n()/the turns table already had. Previously
+        this mutated one shared attribute injected into every caller's
+        prompt unconditionally, regardless of what scope (if any) that
+        caller passed to format_for_prompt() -- a real, live leak, and a
+        worse one than the turns-table gap this finding was originally
+        opened for, since even a caller doing everything else right still
+        inherited whichever execution last called this setter.
+        """
+        self._long_term_memories_string_by_scope[scope] = context_string
+        self._long_term_memories_by_scope[scope] = []
+        self._turns_cache_dirty = True
+        self._prompt_cache.clear()
 
     def format_for_prompt(self, n: int = 5, scope: Optional[str] = None) -> str:
         """
@@ -193,14 +236,30 @@ class ContextMemory:
                 return self._prompt_cache[cache_key]
 
             lines = []
-            
+
             # 1. Long-Term Memory Injection (Phase 3/5)
-            if hasattr(self, "_long_term_memories_string") and self._long_term_memories_string:
-                lines.append(self._long_term_memories_string)
+            # CTX-SCOPE-001: looked up per-scope -- see
+            # set_long_term_memories_string()'s docstring. scope=None (no
+            # filter requested) falls back to the '' legacy/shared bucket
+            # specifically for this sub-feature: unlike turns, which can be
+            # meaningfully unioned across every scope at once (that's what
+            # last_n(scope=None) already does below), there is no coherent
+            # meaning to "the combined long-term-memory string of several
+            # unrelated scopes." The one sensible reading of "no scope
+            # requested" here is "the shared bucket every unmodified caller
+            # already writes to on the setter side" -- which is also
+            # exactly what preserves prior behavior for any caller not yet
+            # updated on either side. A caller that DOES pass an explicit
+            # scope only ever sees what was stored under that exact scope.
+            lt_key = scope if scope is not None else ""
+            lt_string = self._long_term_memories_string_by_scope.get(lt_key, "")
+            lt_memories = self._long_term_memories_by_scope.get(lt_key, [])
+            if lt_string:
+                lines.append(lt_string)
                 lines.append("")
-            elif self.long_term_memories:
+            elif lt_memories:
                 lines.append("### RELEVANT KNOWLEDGE")
-                for mem in self.long_term_memories:
+                for mem in lt_memories:
                     lines.append(f"- {mem.get('summary', mem.get('fact'))}")
                 lines.append("")
 

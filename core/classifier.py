@@ -32,7 +32,14 @@ class Label:
     subtask: str
 
 
-async def label(parsed: ParsedQuery, context) -> list[Label]:
+async def label(parsed: ParsedQuery, context, scope: str | None = None) -> list[Label]:
+    """CTX-SCOPE-001: `scope` is forwarded to context.boost_module() so the
+    keyword-match confidence boost only reflects THIS caller's own recent
+    module usage. Without it, boost_module() falls back to its own
+    scope=None default -- unfiltered, system-wide -- meaning any other
+    execution's recent activity silently shifts this caller's
+    classification confidence, a real cross-execution signal leak even
+    though no conversation text itself is exposed."""
     module_names = config.all_module_names()
     scores: dict[str, float] = {}
 
@@ -42,7 +49,7 @@ async def label(parsed: ParsedQuery, context) -> list[Label]:
         hits = sum(1 for kw in kws if kw.lower() in parsed.raw.lower())
         if hits:
             base = min(0.4 + hits * 0.15, 0.85)
-            boost = context.boost_module(mod) if context else 0.0
+            boost = context.boost_module(mod, scope=scope) if context else 0.0
             scores[mod] = min(base + boost, 1.0)
 
     # ── Stage 2: fast-path gate — skip LLM entirely ──────────
