@@ -300,8 +300,14 @@ async def _stream_response(
                                     current_action="Receiving model output")
 
     # Parse + classify (fast — typically < 10ms)
+    # CTX-SCOPE-001: classifier.label() forwards scope into
+    # ContextMemory.boost_module() -- confirmed live (this call site is
+    # the actual reachable caller; the prior Context Isolation Caller
+    # Audit's row 9 attributed core/classifier.py:45 to a dormant
+    # Legacy-Bridge-only classify(), which is a different function in a
+    # different module, core/classifier_v3.py).
     parsed = parser.parse(query)
-    labels = await classifier.label(parsed, orchestrator.context)
+    labels = await classifier.label(parsed, orchestrator.context, scope=execution_id)
     tasks  = decomposer.build(parsed, labels)
 
     # For single-module queries: stream tokens directly
