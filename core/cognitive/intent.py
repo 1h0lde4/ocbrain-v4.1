@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from enum import Enum
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -42,19 +43,20 @@ from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 from core.cognitive.authority import (
     AcceptedHypothesis,
+    CitableBlock,
     InferenceLineage,
     InferenceOutcome,
     LineageInput,
     Origin,
-    ProposalDisposition,
+    ProposalRejection,
     content_digest,
+    may_instruct,
+    request_citable_block,
 )
 from core.cognitive.intent_acceptance import (
-    MAX_CANDIDATES,
     POLICY_VERSION,
     ParsedProposal,
     accept_proposals,
-    filter_known_categories,
     policy_default,
 )
 from core.events.event_stream import EventStream, get_event_stream
@@ -64,6 +66,19 @@ from core.observability.tracer import get_trace_id
 from core.provider_mesh import generate_with_fallback, resolve_provider
 
 logger = logging.getLogger(__name__)
+
+
+def _to_jsonable(value: Any) -> Any:
+    """Recursively make a dataclasses.asdict() result JSON-safe. AuthorityLevel
+    (REM-004) is a plain Enum, and the REM-004 envelope nests tuples; existing
+    K4.2 fields contain neither, so their serialized shape is unchanged."""
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {k: _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_jsonable(v) for v in value]
+    return value
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -144,6 +159,14 @@ class IntentHypothesis:
     label: str
     score: float
     embedding_ref: Optional[str] = None
+    # ADR-KERNEL-06 (Mechanism A): the pointer the MODEL WROTE for this
+    # candidate -- "request" (the user's own words) or a bracketed context
+    # index like "[2]" -- never a fact until verified. Additive, optional,
+    # least-privilege default (same category of change as ADR-K4.2-H-09's
+    # `caused_by`). Populated only by the parser; the acceptance gate's
+    # output objects leave it None because the VERIFIED fact lives on the
+    # immutable AcceptedHypothesis envelope, not on this mutable claim.
+    source: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -246,14 +269,15 @@ class Intent:
     #       envelope is what carries security meaning.
     #   inference_outcome: WHY the selected hypothesis exists (a security
     #       rejection is distinguishable from "the model had no answer").
-    #   rejected_proposals: bounded audit records of rejected/quarantined
-    #       model proposals -- evidence only, never re-enter a prompt or Goal.
+    #   rejected_proposals: bounded audit records of model proposals rejected
+    #       by the acceptance contract -- evidence only, never re-enter a
+    #       prompt or Goal.
     selected_proposal: Optional[AcceptedHypothesis] = None
     inference_outcome: Optional[InferenceOutcome] = None
-    rejected_proposals: List[ProposalDisposition] = field(default_factory=list)
+    rejected_proposals: List[ProposalRejection] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return dataclasses.asdict(self)
+        return _to_jsonable(dataclasses.asdict(self))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -498,10 +522,14 @@ candidate interpretations of what the user wants.
 
 Output one candidate per line, in the exact form:
 label | score
+or, when you can point to exactly where the candidate comes from, add a
+third field naming that source:
+label | score | request        (the user's own request, verbatim above)
+label | score | [N]             (one of the numbered context sources below,
+                                  using its own bracketed number as shown there)
+Cite at most one source, and only "request" or a bracketed number that
+appears below; omit the third field when neither applies.
 
-label is a short lowercase name: words of letters a-z and digits joined by
-single spaces or underscores, starting with a letter, at most 64 characters
-(no other symbols).
 score is a number between 0.00 and 1.00, highest confidence first.
 
 Known intent categories (may be empty on a fresh system): {categories}
@@ -518,10 +546,11 @@ Candidates:"""
 
 
 # Prompts are infrastructure and versioned (PROJECT_INSTRUCTIONS §15).
-# v1 = the original template; v2 (REM-004) states the label contract the
-# acceptance gate enforces, so the output format we ask for is exactly the
-# one we accept. The version is recorded in every proposal's lineage.
-_HYPOTHESIS_PROMPT_VERSION = "intent-hypotheses/2"
+# v1 = the original template; v2 (an earlier draft of this work) is not
+# shipped; v3 (ADR-KERNEL-06, Mechanism A) enumerates the ACTUAL context
+# blocks as numbered sources and adds the optional citation field. The
+# version is recorded in every proposal's lineage.
+_HYPOTHESIS_PROMPT_VERSION = "intent-hypotheses/4"
 _INTENT_ROUTE = "intent_interpreter"
 # Bounded parser input: a provider cannot make the parser (or the candidate
 # list) grow without limit.
@@ -587,22 +616,76 @@ def _neutralize_role_markers(text: str) -> str:
     return text
 
 
+_MAX_CITABLE_BLOCKS = 20
+_SOURCE_REF_IN_CONTENT = re.compile(r"\[([1-9][0-9]{0,2})\]")
+
+
+def _enumerate_context(context: str) -> Tuple[str, Tuple[CitableBlock, ...]]:
+    """Enumerate the ACTUAL blocks assembled for this request as numbered,
+    citable sources (ADR-KERNEL-06, Mechanism A).
+
+    Returns (text for the prompt, citation table). The table is built by
+    trusted code from the real ContextBlocks (ref -> primary_entry_id, the
+    block's own ProvenanceRecord.authority, a content digest) and is the ONLY
+    thing a citation is ever verified against. A context that carries no
+    structured Context -- a plain str from a test double or a legacy path --
+    has nothing citable: it is returned unchanged with an empty table, so any
+    citation against it fails closed. Any surprise while enumerating also
+    fails closed to "nothing citable" rather than to a partial table.
+
+    Block content is neutralized so retrieved text cannot imitate a trusted
+    "[2]" enumeration marker. (The raw request itself is always separately
+    citable as "request" -- see request_citable_block() -- and is never one
+    of these numbered blocks.)
+    """
+    structured = getattr(context, "context", None)
+    blocks = getattr(structured, "blocks", None)
+    if not blocks:
+        return context, ()
+    try:
+        lines: List[str] = []
+        table: List[CitableBlock] = []
+        for i, block in enumerate(list(blocks)[:_MAX_CITABLE_BLOCKS], start=1):
+            ref = f"[{i}]"
+            content = str(block.content)
+            lines.append(
+                f"{ref} " + _SOURCE_REF_IN_CONTENT.sub("[\u200b\\1]", content))
+            table.append(CitableBlock(
+                ref=ref, entry_id=str(block.primary_entry_id),
+                authority=block.provenance.authority, digest=content_digest(content)))
+        return "\n".join(lines), tuple(table)
+    except Exception:
+        logger.warning("[IntentAcceptance] context blocks could not be enumerated; "
+                       "nothing will be citable for this request")
+        return context, ()
+
+
 def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
                               known_categories: List[str]) -> str:
     safe_context = _neutralize_structural_tokens(context) if context else context
     safe_context = _neutralize_role_markers(safe_context) if safe_context else safe_context
     if safe_context:
         safe_context = f"{_UNTRUSTED_CONTEXT_NOTE}\n{safe_context}"
+    # known_categories are read back through memory retrieval, so by channel
+    # they are RETRIEVED data too (ADR-KERNEL-06 / REM-004). Same treatment as
+    # context, and again content-agnostic: whitespace is collapsed so the
+    # categories stay ONE prompt line, and the template's own control tokens
+    # lose byte-identity. Nothing is rejected and no category is dropped.
+    safe_categories = [
+        _neutralize_role_markers(_neutralize_structural_tokens(" ".join(str(c).split())))
+        for c in known_categories
+    ]
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
-        n=MAX_CANDIDATES,
-        categories=", ".join(known_categories) if known_categories else "(none yet)",
+        n=_MAX_HYPOTHESES,
+        categories=", ".join(safe_categories) if safe_categories else "(none yet)",
         context=safe_context or "(no retrieved context)",
         request=raw_request.text,
     )
 
 
 _CANDIDATE_LINE = re.compile(
-    r"^[ \t]*(?P<label>[^|\n]+?)[ \t]*\|[ \t]*(?P<score>[01](?:\.\d+)?)[ \t]*$",
+    r"^[ \t]*(?P<label>[^|\n]+?)[ \t]*\|[ \t]*(?P<score>[01](?:\.\d+)?)"
+    r"(?:[ \t]*\|[ \t]*(?P<source>[^|\s][^|\n]*?))?[ \t]*$",
     re.MULTILINE,
 )
 
@@ -629,7 +712,10 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
         if not label:
             continue
         score = max(0.0, min(1.0, float(match.group("score"))))
-        hypotheses.append(IntentHypothesis(label=label, score=score))
+        src = match.group("source")
+        hypotheses.append(IntentHypothesis(
+            label=label, score=score,
+            source=src.strip() if src is not None else None))
     return hypotheses
 
 
@@ -734,18 +820,18 @@ class HypothesisInference:
 
     `accepted` is never empty: when no model proposal is eligible it holds the
     trusted-code open-category default (origin RUNTIME_DEFAULT), and `outcome`
-    says why -- so a security rejection (ALL_REJECTED) is never
+    says why -- so a contract rejection (ALL_REJECTED) is never
     indistinguishable from "the model had no answer" (NO_OUTPUT/PARSE_FAILURE)
     or an infrastructure failure (PROVIDER_FAILURE/INTERNAL_ERROR).
     """
     accepted: Tuple[AcceptedHypothesis, ...]
-    dispositions: Tuple[ProposalDisposition, ...]
+    rejections: Tuple[ProposalRejection, ...]
     outcome: InferenceOutcome
     lineage: InferenceLineage
     parsed_count: int = 0
     rejected_total: int = 0
-    quarantined_total: int = 0
-    omitted_dispositions: int = 0
+    omitted_rejections: int = 0
+    verified_total: int = 0
 
     @property
     def hypotheses(self) -> List[IntentHypothesis]:
@@ -799,18 +885,14 @@ async def infer_hypotheses(
         provider failure   -> PROVIDER_FAILURE  -> default
         empty completion   -> NO_OUTPUT         -> default
         non-text completion / no parseable line -> PARSE_FAILURE -> default
-        every proposal rejected/quarantined     -> ALL_REJECTED  -> default
+        every proposal rejected by the contract -> ALL_REJECTED  -> default
         unexpected error in parse/acceptance    -> INTERNAL_ERROR -> default
     Cancellation (BaseException) is never swallowed.
     """
     memory = memory or get_unified_memory()
     scope_id = get_trace_id()
 
-    vocabulary, dropped = filter_known_categories(known_categories or [])
-    if dropped:
-        logger.warning(
-            "[IntentAcceptance] %d known_categories entr%s do not satisfy the "
-            "label contract and were not used", dropped, "y" if dropped == 1 else "ies")
+    vocabulary = tuple(c for c in (known_categories or []) if isinstance(c, str))
 
     try:
         context = await ContextAssemblyEngine(memory).assemble_context(raw_request.text)
@@ -825,20 +907,27 @@ async def infer_hypotheses(
     if not isinstance(context, str):
         context = ""
 
-    prompt = _build_hypothesis_prompt(raw_request, context, list(vocabulary))
+    # ADR-KERNEL-06: enumerate the ACTUAL blocks as citable sources, and
+    # ALWAYS make the raw request itself citable too (Mechanism A's USER-
+    # authority path). The table is trusted-runtime state; the model only
+    # ever supplies a pointer into it.
+    context_text, context_citable = _enumerate_context(context)
+    citable = (request_citable_block(raw_request.text),) + context_citable
+    prompt = _build_hypothesis_prompt(raw_request, context_text, list(vocabulary))
 
     # Lineage is recorded by trusted code from what it actually put in the
     # prompt. Each input keeps its own origin/authority; nothing is aggregated.
     inputs = [LineageInput.from_text("request", Origin.USER, raw_request.text)]
-    if context:
-        inputs.append(LineageInput.from_text("context", Origin.RETRIEVED_SOURCE, context))
+    if context_text:
+        inputs.append(LineageInput.from_text("context", Origin.RETRIEVED_SOURCE, context_text))
     if vocabulary:
         inputs.append(LineageInput.from_text(
             "known_categories", Origin.RETRIEVED_SOURCE, "\n".join(vocabulary)))
     lineage = InferenceLineage(
         scope_id=scope_id, route=_INTENT_ROUTE,
         template_version=_HYPOTHESIS_PROMPT_VERSION,
-        prompt_digest=content_digest(prompt, length=32), inputs=tuple(inputs))
+        prompt_digest=content_digest(prompt, length=32), inputs=tuple(inputs),
+        citable=citable)
 
     outcome = InferenceOutcome.ACCEPTED
     report = None
@@ -856,7 +945,8 @@ async def infer_hypotheses(
         else:
             try:
                 parsed = [
-                    ParsedProposal(label=h.label, score=h.score, position=i)
+                    ParsedProposal(label=h.label, score=h.score, position=i,
+                                   source=h.source)
                     for i, h in enumerate(
                         _apply_output_containment(
                             _parse_hypotheses(completion[:_MAX_COMPLETION_CHARS])))
@@ -865,7 +955,8 @@ async def infer_hypotheses(
                     outcome = InferenceOutcome.PARSE_FAILURE
                 else:
                     report = accept_proposals(
-                        parsed, known_categories=vocabulary, lineage=lineage)
+                        parsed, known_categories=vocabulary, lineage=lineage,
+                        max_candidates=_MAX_HYPOTHESES)
                     if not report.accepted:
                         outcome = InferenceOutcome.ALL_REJECTED
             except Exception:
@@ -873,11 +964,11 @@ async def infer_hypotheses(
                              "failing closed to the open-category default", exc_info=True)
                 outcome, report = InferenceOutcome.INTERNAL_ERROR, None
 
-    if report is not None and (report.rejected_total or report.quarantined_total):
+    if report is not None and report.rejected_total:
         logger.warning(
-            "[IntentAcceptance] outcome=%s parsed=%d rejected=%d quarantined=%d "
+            "[IntentAcceptance] outcome=%s parsed=%d rejected=%d verified=%d "
             "policy=%s", outcome.value, report.parsed_count, report.rejected_total,
-            report.quarantined_total, POLICY_VERSION)
+            report.verified_total, POLICY_VERSION)
 
     if report is not None and report.accepted:
         accepted = report.accepted
@@ -888,12 +979,12 @@ async def infer_hypotheses(
 
     return HypothesisInference(
         accepted=accepted,
-        dispositions=report.dispositions if report is not None else (),
+        rejections=report.rejections if report is not None else (),
         outcome=outcome, lineage=lineage,
         parsed_count=report.parsed_count if report is not None else 0,
         rejected_total=report.rejected_total if report is not None else 0,
-        quarantined_total=report.quarantined_total if report is not None else 0,
-        omitted_dispositions=report.omitted_dispositions if report is not None else 0,
+        omitted_rejections=report.omitted_rejections if report is not None else 0,
+        verified_total=report.verified_total if report is not None else 0,
     )
 
 
@@ -930,13 +1021,16 @@ async def generate_hypotheses(
     been promoted yet, and a caller that has access to the ontology may
     supply it.
 
-    REM-004: the public signature and return type are UNCHANGED (frozen
-    K4.2-H1 contract), but the returned list now contains only hypotheses
-    that crossed the acceptance boundary, ranked by score among those only;
-    when none is eligible it is the single open-category default
-    ``novel | 0.1`` as before. Callers that need to know *why* (accepted vs.
-    rejected vs. no output) or need each hypothesis's immutable
-    authority/lineage use infer_hypotheses(), the additive richer entrypoint.
+    REM-004 / ADR-KERNEL-06: the public signature and return type are
+    UNCHANGED (frozen K4.2-H1 contract). The returned list is the hypotheses
+    that crossed the acceptance contract (bounded, deduplicated, invalid
+    scores dropped), ranked by score; when none survives it is the single
+    open-category default ``novel | 0.1`` as before. Every returned hypothesis
+    EXISTS, whether or not its citation verified -- "candidate exists" is not
+    "candidate is trusted". Whether a hypothesis carries verified provenance
+    lives on its immutable envelope, which callers that need it (or need to
+    know *why* a list is what it is) read from infer_hypotheses(), the
+    additive richer entrypoint.
     """
     inference = await infer_hypotheses(
         raw_request, memory=memory, known_categories=known_categories)
@@ -959,37 +1053,43 @@ def _accept_unattested(
     retrieved-data input (retrieved_data_influence is True) -- unknown
     lineage fails closed toward more suspicion, never less.
     """
-    vocabulary, _ = filter_known_categories(known_categories or [])
+    vocabulary = tuple(c for c in (known_categories or []) if isinstance(c, str))
     lineage = InferenceLineage(
         scope_id=get_trace_id(), route="unattested", template_version="unknown",
         prompt_digest="unknown",
         inputs=(
             LineageInput.from_text("request", Origin.USER, raw_request.text),
             LineageInput.from_text("context", Origin.RETRIEVED_SOURCE, ""),
-        ))
+        ),
+        # request is ALWAYS citable, same as the attested path (ADR-KERNEL-06).
+        citable=(request_citable_block(raw_request.text),))
     items = list(proposals) if isinstance(proposals, (list, tuple)) else []
     if not items:
         # Nothing was proposed -> nothing to select (unchanged pre-REM-004
         # behaviour for an empty list: selected is None).
-        return HypothesisInference(accepted=(), dispositions=(),
+        return HypothesisInference(accepted=(), rejections=(),
                                    outcome=InferenceOutcome.NO_OUTPUT, lineage=lineage)
     parsed = [
         ParsedProposal(
             label=getattr(h, "label", "") if isinstance(getattr(h, "label", None), str) else "",
             score=(h.score if isinstance(getattr(h, "score", None), (int, float))
                    and not isinstance(h.score, bool) else float("nan")),
-            position=i)
+            position=i,
+            source=(getattr(h, "source", None)
+                    if isinstance(getattr(h, "source", None), str) else None))
         for i, h in enumerate(items)
     ]
-    report = accept_proposals(parsed, known_categories=vocabulary, lineage=lineage)
+    report = accept_proposals(parsed, known_categories=vocabulary, lineage=lineage,
+                              max_candidates=_MAX_HYPOTHESES)
     accepted = report.accepted if report.accepted else (policy_default(lineage),)
     return HypothesisInference(
-        accepted=accepted, dispositions=report.dispositions,
+        accepted=accepted, rejections=report.rejections,
         outcome=(InferenceOutcome.ACCEPTED if report.accepted
                  else InferenceOutcome.ALL_REJECTED),
         lineage=lineage, parsed_count=report.parsed_count,
-        rejected_total=report.rejected_total, quarantined_total=report.quarantined_total,
-        omitted_dispositions=report.omitted_dispositions)
+        rejected_total=report.rejected_total,
+        omitted_rejections=report.omitted_rejections,
+        verified_total=report.verified_total)
 
 
 def _bound_to_request(inference: HypothesisInference, raw_request: RawRequest) -> bool:
@@ -1127,7 +1227,7 @@ class Goal:
     category_provenance: Optional[AcceptedHypothesis] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return dataclasses.asdict(self)
+        return _to_jsonable(dataclasses.asdict(self))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1389,6 +1489,46 @@ def form_goals(
 # Top-level entry point — K4.2 §1, §15 (K4.2.1 + K4.2.2)
 # ─────────────────────────────────────────────────────────────────────────
 
+def _authority_label(envelope: Optional[AcceptedHypothesis]) -> Optional[str]:
+    """The verified provenance authority for one accepted proposal, as an
+    AuthorityLevel string ("user", "retrieved", ...) -- or None when there is
+    none (uncited, malformed, unresolved, or ambiguous). This is the
+    live_citation_check.py `authorities` axis: an attribution FACT about
+    where the model says (and the system verified) the content came from --
+    never the envelope's own authority, which is always "generated"."""
+    if envelope is None or envelope.provenance is None:
+        return None
+    return envelope.provenance.authority.value
+
+
+def _selection_gate(envelope: Optional[AcceptedHypothesis]) -> str:
+    """A single classification of the SELECTED proposal for
+    live_citation_check.py and any other consumer that wants one label:
+
+        open_category_fallback  the trusted-code `novel`|0.1 default
+        verified_operative      verified provenance whose authority can
+                                 instruct (today: only "request" -> USER)
+        verified_nonoperative   verified provenance that cannot instruct
+                                 (today: a context block -> RETRIEVED)
+        unverified              no usable citation (uncited, malformed,
+                                 unresolved, or ambiguous)
+        none                    nothing was selected at all
+
+    This is a DESCRIPTIVE label for observability, not an authorization
+    decision: nothing downstream may treat "verified_operative" as license to
+    skip GovernanceKernel (AUTH-12/13; DRIFT-10 keeps this module from ever
+    importing it).
+    """
+    if envelope is None:
+        return "none"
+    if envelope.origin is Origin.RUNTIME_DEFAULT:
+        return "open_category_fallback"
+    if envelope.provenance is None:
+        return "unverified"
+    return ("verified_operative" if may_instruct(envelope.provenance.authority)
+            else "verified_nonoperative")
+
+
 async def interpret_request(
     raw_text: str,
     *,
@@ -1413,7 +1553,7 @@ async def interpret_request(
     cognitive.intent_interpreted (K4.2.1, unchanged shape; REM-004 adds
     optional bounded keys), then cognitive.goal_formed (K4.2.2, K4.2 §11 /
     K4 §12). REM-004 also emits cognitive.intent_proposals_rejected, but only
-    when a model proposal was rejected or quarantined.
+    when a model proposal was rejected by the acceptance contract.
 
     Raises:
         NormalizationRejected: propagated from normalize_request() --
@@ -1457,9 +1597,14 @@ async def interpret_request(
             "trace_id": trace_id,
             "hypothesis_count": len(hypotheses),
             "labels": [h.label for h in hypotheses],
-            # REM-004 additive keys -- bounded and content-free (hashes and
-            # closed-vocabulary tokens only; no prompt, completion or label
-            # text beyond the already-validated identifiers above).
+            # ADR-KERNEL-06: verified provenance authority, parallel to
+            # "labels" -- one entry per accepted hypothesis, or None where
+            # there is no verified provenance. This is an attribution fact
+            # (what the model cited and the system verified), never the
+            # generated-proposal's own authority.
+            "authorities": [_authority_label(a) for a in inference.accepted],
+            # REM-004 additive keys -- bounded and content-free (hashes, counts
+            # and closed-vocabulary tokens only; no prompt or completion text).
             "inference_outcome": inference.outcome.value,
             "proposal_authority": (selected_envelope.authority.value
                                    if selected_envelope else None),
@@ -1467,14 +1612,14 @@ async def interpret_request(
             "retrieved_data_influence": inference.lineage.retrieved_data_influence,
             "prompt_digest": inference.lineage.prompt_digest,
             "rejected_count": inference.rejected_total,
-            "quarantined_count": inference.quarantined_total,
+            "verified_count": inference.verified_total,
         },
     )
 
-    if inference.dispositions:
-        # Evidence of a security/contract decision -- NOT an authority source.
-        # Emitted only when something was actually rejected/quarantined, so the
-        # ordinary event sequence (3 events, 4 for compound) is unchanged.
+    if inference.rejections:
+        # Evidence of a contract decision -- NOT an authority source. Emitted
+        # only when something was actually rejected, so the ordinary event
+        # sequence (3 events, 4 for compound) is unchanged.
         await event_stream.append(
             "cognitive.intent_proposals_rejected",
             source="IntentInterpreter",
@@ -1484,9 +1629,8 @@ async def interpret_request(
                 "inference_outcome": inference.outcome.value,
                 "prompt_digest": inference.lineage.prompt_digest,
                 "rejected_count": inference.rejected_total,
-                "quarantined_count": inference.quarantined_total,
-                "omitted_records": inference.omitted_dispositions,
-                "records": [d.to_event_dict() for d in inference.dispositions],
+                "omitted_records": inference.omitted_rejections,
+                "records": [d.to_event_dict() for d in inference.rejections],
             },
         )
 
@@ -1507,7 +1651,7 @@ async def interpret_request(
         detected_language=raw_request.detected_language,  # G2
         selected_proposal=selected_envelope,
         inference_outcome=inference.outcome,
-        rejected_proposals=list(inference.dispositions),
+        rejected_proposals=list(inference.rejections),
     )
 
     await event_stream.append(
@@ -1523,6 +1667,9 @@ async def interpret_request(
                                    if selected_envelope else None),
             "selected_retrieved_data_influence": (
                 selected_envelope.retrieved_data_influence if selected_envelope else False),
+            "selected_provenance_status": (
+                selected_envelope.provenance_status.value if selected_envelope else None),
+            "selection_gate": _selection_gate(selected_envelope),
             "inference_outcome": inference.outcome.value,
         },
     )

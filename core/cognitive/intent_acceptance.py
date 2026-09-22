@@ -1,58 +1,69 @@
 """
-core/cognitive/intent_acceptance.py -- REM-004 acceptance boundary for Intent
-hypotheses (CTX-AUTH-001b).
+core/cognitive/intent_acceptance.py -- REM-004 / ADR-KERNEL-06 acceptance
+boundary for Intent hypotheses (CTX-AUTH-001b, Mechanism A).
 
-Architecture:
-    docs/architecture/decisions/ADR_KERNEL_06_INSTRUCTION_AUTHORITY_TAXONOMY.md
-    (DRAFT -- implemented here, not approved by this file).
+Architecture: docs/architecture/decisions/ADR_KERNEL_06_VERIFIABLE_HYPOTHESIS_PROVENANCE.md
+(ACCEPTED -- the governing design) and, for the implementation-level choices
+that ADR leaves open, ADR_KERNEL_07_HYPOTHESIS_PROVENANCE_ENVELOPE.md (DRAFT).
 
 Pipeline this module is the middle stage of:
 
-    raw completion  --(intent._parse_hypotheses: SYNTAX only)-->  ParsedProposal[]
-        --(accept_proposals: THIS module: admission + provenance)-->
-    AcceptedHypothesis[] (eligible, ranked)  +  ProposalDisposition[] (audit)
-        --> Intent.selected
+    raw completion --(intent._parse_hypotheses: SYNTAX only)--> ParsedProposal[]
+        --(accept_proposals: THIS module)--> AcceptedHypothesis[] + ProposalRejection[]
+        --> ranked by score --> Intent.selected
 
-Invariant: authority eligibility precedes confidence ranking. A candidate
-that fails admission never reaches the sort, so a self-reported 1.00 cannot
-win by score. Ranking then uses only the (untrusted) score, among eligible
-candidates only, with completion position as the deterministic tie-break.
+What it does (deterministic, dependency-free, no I/O, no LLM, no global state):
 
-What this gate is -- and is not (see the ADR's threat-model honesty section):
+  * Citation verification -- the heart of ADR-KERNEL-06. The model supplies
+    only a POINTER: either the fixed token "request" (the user's own current-
+    turn words) or a bracketed index like "[2]" naming one of the numbered
+    context sources enumerated in the prompt. The system resolves that
+    pointer against THIS request's actual citation table
+    (InferenceLineage.citable, which always includes "request" and, when
+    context was assembled, its real blocks) and derives the provenance
+    authority from the source it finds -- USER for "request", or a context
+    block's own authority (RETRIEVED today) -- or finds nothing. Authority is
+    inherited from a verified source, never inferred: from a label, a score,
+    an ordering, a keyword, a prefix, or the model's word.
+  * Fail closed, uniformly: no citation, a malformed one, an unresolvable
+    one, or contradictory ones all give the same outcome -- the proposal
+    EXISTS, with no verified provenance. There is no path from an unverified
+    citation to a verified one, and no carve-out for an UNCITED proposal: the
+    ADR is explicit that even a candidate plausibly synthesized purely from
+    the request is not promoted to USER authority merely for existing --
+    USER authority requires the model to actually cite "request" and that
+    citation to verify (which it always does, since the request always
+    exists -- see the module-level residual-risk note this implies).
+  * Bounded-resource hygiene: invalid scores, over-long/empty labels and
+    duplicates are rejected as auditable records; the candidate set is
+    capped.
 
-  * It IS deterministic, dependency-free, and cheap: no LLM, no I/O, no
-    global state. Same inputs -> same report, on any request, in any order of
-    concurrent requests.
-  * It enforces a CLOSED-WORLD LABEL CONTRACT, not a content blacklist.
-    A category label is a short lowercase NAME: words of a-z/0-9 joined by
-    single spaces or underscores ("code_review", "creative writing"), at most
-    64 characters, optionally prefixed by "novel:". Everything else --
-    uppercase, punctuation, quotes, markdown, delimiters, control or
-    non-ASCII characters -- is not a category label. This is a whitelist by
-    *form*; it never inspects what a label means, so there is no keyword list
-    to evade. (Lowercase multi-word names are legitimate categories in the
-    existing K4.2 evidence, so spaces are allowed; the planner no longer
-    mines labels for constraints, so free text in a label has no path to a
-    user-authority field.)
-  * The contract carves out a RESERVED NAMESPACE: UPPER_SNAKE_CASE. Every
-    trusted-runtime token that gets serialized (authority, origin, reason,
-    outcome) lives there. A model-controlled string is therefore textually
-    disjoint from every trusted token; it can never be mistaken for one in a
-    log line, an event, or a replayed payload. Labels that *look like*
-    trusted tokens are QUARANTINED (bounded escaped preview kept for audit),
-    not repaired: lowercasing them would launder a spoofing attempt into a
-    valid label.
-  * It is NOT an authority model and does NOT detect a well-formed hijack
-    (e.g. a lowercase `create_account | 1.00`). Such a proposal is accepted
-    as an ordinary MODEL_PROPOSAL and stays exactly that: it cannot become
-    USER_INSTRUCTION/SYSTEM_POLICY, cannot reach a user-authority field, and
-    cannot bypass GovernanceKernel. That containment lives in authority.py,
-    intent.py (Goal formation) and planner.py, and is what the tests prove.
-  * It does not import GovernanceKernel (DRIFT-10) and authorizes no action.
+RESIDUAL RISK, stated plainly (ADR-KERNEL-06 names this as the trigger
+condition for evaluating Option C, and live_citation_check.py measures it
+operationally, not this module): because "request" always resolves, a model
+that is *told* (e.g. by injected content) to cite "request" on fabricated
+content will have that citation verify. This module cannot distinguish an
+honest "this really came from the user" from a fabricated one -- Mechanism A
+verifies that a citation POINTS somewhere real, not that the model's claim
+about WHY it cited that source is true. See TestResidualRisk.
 
-Failure semantics: every rejection is a deterministic decision with a reason
-code, retained as a bounded record. Nothing is swallowed with a bare
-`except: continue`.
+What it deliberately does NOT do:
+
+  * It does not remove a proposal for the SHAPE of its label. ADR-KERNEL-06
+    rules out structural/lexical heuristics as authority proxies, and the
+    owner's CTX-AUTH-001b test forbids shape/cap/order enforcement from
+    standing in for the provenance check. (An earlier draft of this work
+    used a label-form contract; it was removed for exactly that reason.)
+  * It does not rank by verification. A proposal that cites a retrieved
+    block is attributed to retrieved material -- that is attribution, not
+    trust -- so verification is metadata for policy, not a ranking tier.
+  * It does not authorize any action and does not import GovernanceKernel
+    (DRIFT-10): "Cognitive reasoning proposes. Kernel governance authorizes."
+
+Duplicate labels collapse to the LOWEST claimed score and to the provenance
+they all agree on; any disagreement between occurrences (verified vs. not,
+or different sources) is AMBIGUOUS_CITATION -- deterministic and independent
+of completion order.
 """
 import math
 import re
@@ -60,94 +71,70 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from core.cognitive.authority import (
+    MAX_LABEL_LENGTH,
+    REQUEST_REF,
     AcceptedHypothesis,
     CategoryClass,
-    Disposition,
     InferenceLineage,
     Origin,
-    ProposalDisposition,
+    ProposalRejection,
+    ProvenanceStatus,
     ReasonCode,
+    VerifiedProvenance,
     authority_for,
     content_digest,
     mint_model_proposal,
     mint_policy_default,
-    safe_preview,
 )
 
-POLICY_VERSION = "intent-acceptance/1"
+POLICY_VERSION = "intent-acceptance/2"
 
 OPEN_CATEGORY_TOKEN = "novel"
-NOVEL_PREFIX = OPEN_CATEGORY_TOKEN + ":"
-MAX_CANDIDATES = 5            # mirrors the "up to n" the prompt asks for
-MAX_LABEL_LENGTH = 64
-MAX_STORED_DISPOSITIONS = 16  # audit records are bounded; counts stay exact
 FALLBACK_SCORE = 0.1          # K4.2 §2 open-category degrade path (unchanged)
+MAX_STORED_REJECTIONS = 16    # audit records are bounded; counts stay exact
 
-# Words of a-z/0-9 (first char a letter) joined by SINGLE spaces or underscores.
-_LABEL_NAME = re.compile(r"[a-z][a-z0-9]*(?:[ _][a-z0-9]+)*")
-# The reserved namespace: UPPER_SNAKE_CASE, the shape of every serialized
-# trusted-runtime token (authority, origin, reason, outcome).
-_RESERVED_SHAPE = re.compile(r"[A-Z][A-Z0-9_]*")
-
-
-def _is_label_name(core: str) -> bool:
-    return len(core) <= MAX_LABEL_LENGTH and _LABEL_NAME.fullmatch(core) is not None
+_CITATION_TOKEN = re.compile(r"request|\[[1-9][0-9]{0,2}\]")
 
 
 @dataclass(frozen=True)
 class ParsedProposal:
     """Syntax-level output of the parser: a claim by the model, nothing more.
-    Carries no origin, authority or eligibility -- those are assigned here,
-    from trusted state, never from this object."""
+    `citation` is the token the model WROTE -- a pointer to be verified, not a
+    fact. Carries no origin, authority or provenance; those are assigned
+    here, from trusted state."""
     label: str
     score: float
     position: int
+    source: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class AcceptanceReport:
-    accepted: Tuple[AcceptedHypothesis, ...]        # eligible, ranked
-    dispositions: Tuple[ProposalDisposition, ...]   # bounded audit records
+    accepted: Tuple[AcceptedHypothesis, ...]        # ranked by score, stable
+    rejections: Tuple[ProposalRejection, ...]       # bounded audit records
     parsed_count: int
     rejected_total: int                             # exact, even if records omitted
-    quarantined_total: int
-    omitted_dispositions: int
+    omitted_rejections: int
+    verified_total: int                             # accepted proposals with verified provenance
 
 
-def filter_known_categories(categories: Iterable[str]) -> Tuple[Tuple[str, ...], int]:
-    """The trusted vocabulary must itself satisfy the label contract.
-
-    known_categories is read back through memory retrieval (promoted L3
-    entries), so by channel it is RETRIEVED_DATA. Requiring contract-form
-    names keeps that vocabulary inert: it can neither be matched by a
-    contract-compliant label unless it is itself compliant, nor carry
-    markup/delimiter/instruction-shaped text into the prompt.
-    Returns (kept, dropped_count).
+def verify_citation(
+    source: Optional[str], lineage: InferenceLineage,
+) -> Tuple[ProvenanceStatus, Optional[VerifiedProvenance]]:
+    """Mechanism A's verification step. Pure function of (claimed pointer,
+    this request's citation table). Anything short of an exact, resolvable
+    pointer -- "request" or a bracketed block index -- yields no provenance.
+    "request" always resolves (InferenceLineage always carries it); see the
+    module docstring's residual-risk note for what that does and does not mean.
     """
-    kept: List[str] = []
-    seen = set()
-    dropped = 0
-    for category in categories:
-        if (isinstance(category, str) and _is_label_name(category)
-                and category not in seen):
-            seen.add(category)
-            kept.append(category)
-        else:
-            dropped += 1
-    return tuple(kept), dropped
-
-
-def admit_label(label: str) -> Optional[Tuple[Disposition, ReasonCode]]:
-    """None if `label` satisfies the label contract, else the deterministic
-    (disposition, reason) that excludes it. Pure function of the string."""
-    if label == OPEN_CATEGORY_TOKEN:
-        return None
-    core = label[len(NOVEL_PREFIX):] if label.startswith(NOVEL_PREFIX) else label
-    if _is_label_name(core):
-        return None
-    if _RESERVED_SHAPE.fullmatch(core):
-        return Disposition.QUARANTINED, ReasonCode.RESERVED_NAMESPACE
-    return Disposition.REJECTED, ReasonCode.LABEL_GRAMMAR
+    if source is None:
+        return ProvenanceStatus.UNCITED, None
+    if not isinstance(source, str) or _CITATION_TOKEN.fullmatch(source) is None:
+        return ProvenanceStatus.MALFORMED_CITATION, None
+    block = lineage.resolve(source)
+    if block is None:
+        return ProvenanceStatus.UNRESOLVED_CITATION, None
+    return ProvenanceStatus.VERIFIED, VerifiedProvenance.from_block(block)
 
 
 def _score_ok(score: object) -> bool:
@@ -155,88 +142,95 @@ def _score_ok(score: object) -> bool:
             and math.isfinite(score) and 0.0 <= score <= 1.0)
 
 
+def _label_ok(label: object) -> bool:
+    return isinstance(label, str) and 0 < len(label) <= MAX_LABEL_LENGTH
+
+
 def accept_proposals(
     parsed: Sequence[ParsedProposal],
     *,
     known_categories: Iterable[str],
     lineage: InferenceLineage,
+    max_candidates: int,
     policy_version: str = POLICY_VERSION,
-    max_candidates: int = MAX_CANDIDATES,
 ) -> AcceptanceReport:
-    """Admission + provenance for one model invocation's parsed proposals.
-
-    Every accepted proposal gets origin INTENT_MODEL and the authority
-    derived from it (MODEL_PROPOSAL) plus the invocation's lineage. Neither
-    is influenced by the label, the score, or anything the model wrote.
+    """Admission + provenance verification for one model invocation's parsed
+    proposals. Every accepted proposal gets origin INTENT_MODEL and the
+    authority derived from it (GENERATED) plus the invocation's lineage;
+    neither is influenced by the label, the score, or anything the model
+    wrote. Only a citation that resolves in THIS request's table yields
+    verified provenance.
     """
     known = frozenset(known_categories)
     origin = Origin.INTENT_MODEL
     authority = authority_for(origin)
 
-    records: List[ProposalDisposition] = []
-    counts = {Disposition.REJECTED: 0, Disposition.QUARANTINED: 0}
+    records: List[ProposalRejection] = []
+    rejected = 0
     omitted = 0
 
-    def record(p: ParsedProposal, disposition: Disposition, reason: ReasonCode) -> None:
-        nonlocal omitted
-        counts[disposition] += 1
-        if len(records) >= MAX_STORED_DISPOSITIONS:
+    def reject(p: ParsedProposal, reason: ReasonCode) -> None:
+        nonlocal rejected, omitted
+        rejected += 1
+        if len(records) >= MAX_STORED_REJECTIONS:
             omitted += 1
             return
-        records.append(ProposalDisposition(
-            position=p.position, disposition=disposition, reason_code=reason,
-            origin=origin, authority=authority,
-            label_digest=content_digest(p.label), label_length=len(p.label),
-            score_claim=float(p.score) if _score_ok(p.score) else None,
-            label_preview=(safe_preview(p.label)
-                           if disposition is Disposition.QUARANTINED else None)))
+        label = p.label if isinstance(p.label, str) else ""
+        records.append(ProposalRejection(
+            position=p.position, reason_code=reason, origin=origin,
+            authority=authority, label_digest=content_digest(label),
+            label_length=len(label),
+            score_claim=float(p.score) if _score_ok(p.score) else None))
 
-    # 1. Admission (order-independent per candidate) + duplicate collapse.
-    kept: List[Tuple[int, str, float]] = []   # (position, label, score), first-seen order
+    # 1. Admission + provenance verification + duplicate collapse. Each
+    #    entry: [position, label, score, status, provenance], first-seen order.
+    kept: List[list] = []
     index_by_label: Dict[str, int] = {}
     for p in parsed:
         if not _score_ok(p.score):
-            record(p, Disposition.REJECTED, ReasonCode.SCORE_INVALID)
+            reject(p, ReasonCode.SCORE_INVALID)
             continue
-        verdict = admit_label(p.label)
-        if verdict is not None:
-            record(p, verdict[0], verdict[1])
+        if not _label_ok(p.label):
+            reject(p, ReasonCode.LABEL_INVALID)
             continue
+        status, provenance = verify_citation(p.source, lineage)
         if p.label in index_by_label:
-            # Conservative and order-independent: a repeated label can never
-            # raise its own confidence; the lowest claimed score survives.
-            idx = index_by_label[p.label]
-            pos0, label0, score0 = kept[idx]
-            kept[idx] = (pos0, label0, min(score0, float(p.score)))
-            record(p, Disposition.REJECTED, ReasonCode.DUPLICATE_LABEL)
+            # Conservative and order-independent: repetition can never raise
+            # a proposal's confidence or upgrade its provenance.
+            entry = kept[index_by_label[p.label]]
+            entry[2] = min(float(entry[2]), float(p.score))
+            if (entry[3], entry[4]) != (status, provenance):
+                entry[3], entry[4] = ProvenanceStatus.AMBIGUOUS_CITATION, None
+            reject(p, ReasonCode.DUPLICATE_LABEL)
             continue
         index_by_label[p.label] = len(kept)
-        kept.append((p.position, p.label, float(p.score)))
+        kept.append([p.position, p.label, float(p.score), status, provenance])
 
     # 2. Bound the candidate set by completion position (score is untrusted,
-    #    so it is not used to decide who survives the cap).
-    for pos, label, score in kept[max_candidates:]:
-        record(ParsedProposal(label=label, score=score, position=pos),
-               Disposition.REJECTED, ReasonCode.CANDIDATE_LIMIT)
+    #    so it does not decide who survives the cap).
+    for pos, label, score, _status, _prov in kept[max_candidates:]:
+        reject(ParsedProposal(label=str(label), score=float(score), position=int(pos)),
+               ReasonCode.CANDIDATE_LIMIT)
     kept = kept[:max_candidates]
 
     # 3. Mint envelopes (origin/authority/lineage from trusted state) ...
     accepted = [
         mint_model_proposal(
-            label=label, score=score,
+            label=str(label), score=float(score),
             category_class=(CategoryClass.KNOWN_CATEGORY if label in known
                             else CategoryClass.OPEN_CATEGORY),
-            lineage=lineage, policy_version=policy_version, position=pos)
-        for pos, label, score in kept
+            provenance_status=status, provenance=provenance,
+            lineage=lineage, policy_version=policy_version, position=int(pos))
+        for pos, label, score, status, provenance in kept
     ]
-    # 4. ... and only now rank. Stable sort: equal scores keep completion order.
+    # 4. ... then rank by the (untrusted) score. Stable: ties keep completion order.
     accepted.sort(key=lambda a: a.score, reverse=True)
 
     return AcceptanceReport(
-        accepted=tuple(accepted), dispositions=tuple(records),
-        parsed_count=len(parsed), rejected_total=counts[Disposition.REJECTED],
-        quarantined_total=counts[Disposition.QUARANTINED],
-        omitted_dispositions=omitted)
+        accepted=tuple(accepted), rejections=tuple(records),
+        parsed_count=len(parsed), rejected_total=rejected,
+        omitted_rejections=omitted,
+        verified_total=sum(1 for a in accepted if a.has_verified_provenance))
 
 
 def policy_default(lineage: InferenceLineage) -> AcceptedHypothesis:

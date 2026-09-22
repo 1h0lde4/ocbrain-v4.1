@@ -78,6 +78,30 @@ from core.memory.retrieval.context import RetrievalContextBuilder, Context
 logger = logging.getLogger("ocbrain.memory.assembly")
 
 
+class AssembledContext(str):
+    """The flattened context string -- byte-identical to what
+    ContextAssemblyEngine.assemble_context() has always returned, and a plain
+    ``str`` to every existing caller and test double -- that additionally
+    carries the structured ``Context`` it was built from.
+
+    CTX-AUTH-001b / ADR-KERNEL-06 (Verifiable Hypothesis Provenance): the
+    Intent consumer must be able to enumerate the ACTUAL blocks assembled for
+    one request, so that a model's citation of a block can be verified by a
+    deterministic lookup against them (the model supplies only a pointer; the
+    system decides whether it is real). Returning the structured Context
+    alongside the text avoids a second retrieval and cannot drift from what
+    the text was built from. A ``str`` produced by anything else (a mock, a
+    legacy path) has no ``.context`` and therefore no citable blocks.
+    """
+
+    context: Context
+
+    def __new__(cls, text: str, context: Context) -> "AssembledContext":
+        obj = super().__new__(cls, text)
+        obj.context = context
+        return obj
+
+
 class ContextAssemblyEngine:
     """
     Goal-aware context assembly from multi-tier memories.
@@ -201,7 +225,10 @@ class ContextAssemblyEngine:
                 else:
                     sections.append(f"{block.content}")
 
-        return "\n\n".join(sections)
+        text = "\n\n".join(sections)
+        # ADR-KERNEL-06: same text as always, plus the structured Context it
+        # was built from (see AssembledContext). "" stays a plain str.
+        return AssembledContext(text, context) if text else text
 
 
 # ── Composition root ──────────────────────────────────────────────────────────
