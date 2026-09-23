@@ -200,6 +200,43 @@ def test_no_new_sandbox_capability_claimed_yet():
     assert len(backend.capabilities.supported) == 0
 
 
+def test_a1_network_allowlist_requires_net_namespace_currently_holds():
+    # A1 — current _CAPS is empty, so the paired-claim invariant holds
+    # trivially. Real value is test_a1_invariant_actually_fires_when_violated
+    # below: a fail-closed check that's never observed firing isn't
+    # actually verified.
+    from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
+
+    backend = DockerBackend(image_ref="example/image:tag")
+    _check_a1_paired_capability_invariant(backend.capabilities)  # must not raise
+
+
+def test_a1_invariant_actually_fires_when_violated():
+    # A1's whole point, proven directly: claiming NETWORK_ALLOWLIST
+    # without NET_NAMESPACE must be rejected, not silently accepted.
+    from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
+    from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability
+
+    bad = RuntimeCapabilities(
+        backend_name="docker", supported=frozenset({SandboxCapability.NETWORK_ALLOWLIST})
+    )
+    with pytest.raises(AssertionError):
+        _check_a1_paired_capability_invariant(bad)
+
+
+def test_a1_net_namespace_alone_is_fine():
+    # NET_NAMESPACE without NETWORK_ALLOWLIST is a legitimate
+    # intermediate state (e.g. only NETWORK_DENY_DEFAULT earned so far)
+    # — A1 only constrains the NETWORK_ALLOWLIST direction.
+    from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
+    from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability
+
+    ok = RuntimeCapabilities(
+        backend_name="docker", supported=frozenset({SandboxCapability.NET_NAMESPACE})
+    )
+    _check_a1_paired_capability_invariant(ok)  # must not raise
+
+
 # ======================================================================
 # Daemon-dependent tests — each individually skipped in every
 # environment this has been run in so far. Representative subset, not
@@ -347,3 +384,86 @@ async def test_two_concurrent_sandboxes_do_not_collide(tmp_path):
         assert h1.handle_id != h2.handle_id
     finally:
         await asyncio.gather(b1.destroy(h1), b2.destroy(h2))
+
+
+# ======================================================================
+# A2 — MOUNT/PID/UTS_NAMESPACE have no defined gate in the base prompt;
+# these are that gate, tested directly against a real container rather
+# than inferred from HostConfig (the addendum's own wording: "container
+# doesn't share the host mount namespace; can't see or signal host
+# PIDs; hostname/domainname changes stay container-local").
+# ======================================================================
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start(backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path))
+    request = SandboxRequest(command=("sleep", "10"), policy=policy)
+    handle = await backend.create(request)
+    container_id = backend._handles[handle.handle_id].container_id
+    subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
+    mount_point = "/tmp/a2-pytest-host-only-mount"
+    try:
+        subprocess.run(["mkdir", "-p", mount_point], check=True)
+        subprocess.run(["mount", "-t", "tmpfs", "tmpfs", mount_point], check=True)
+        out = subprocess.run(
+            ["docker", "exec", container_id, "cat", "/proc/self/mountinfo"],
+            capture_output=True, text=True,
+        )
+        assert "a2-pytest-host-only-mount" not in out.stdout
+    finally:
+        subprocess.run(["umount", mount_point], check=False)
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a2_pid_namespace_cannot_signal_or_see_a_real_host_pid(backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path))
+    request = SandboxRequest(command=("sleep", "10"), policy=policy)
+    handle = await backend.create(request)
+    container_id = backend._handles[handle.handle_id].container_id
+    subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
+    host_proc = subprocess.Popen(["sleep", "30"])
+    try:
+        result = subprocess.run(
+            ["docker", "exec", container_id, "sh", "-c", f"kill -0 {host_proc.pid}"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0  # the host PID does not resolve inside the container
+        ls_out = subprocess.run(
+            ["docker", "exec", container_id, "sh", "-c", f"ls /proc | grep -c '^{host_proc.pid}$' || true"],
+            capture_output=True, text=True,
+        )
+        assert ls_out.stdout.strip() == "0"
+    finally:
+        host_proc.kill()
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a2_uts_namespace_container_hostname_is_independent_of_host(backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path))
+    request = SandboxRequest(command=("sleep", "10"), policy=policy)
+    handle = await backend.create(request)
+    container_id = backend._handles[handle.handle_id].container_id
+    subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
+    try:
+        host_hostname = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
+        container_hostname = subprocess.run(
+            ["docker", "exec", container_id, "hostname"], capture_output=True, text=True
+        ).stdout.strip()
+        assert container_hostname != host_hostname
+        assert container_hostname == container_id[:12]  # Docker's default: short container ID
+        # And: no CAP_SYS_ADMIN inside means it can't even attempt to
+        # change it at runtime either — a stronger property than A2
+        # strictly asks for, but directly a consequence of A6.
+        change_attempt = subprocess.run(
+            ["docker", "exec", container_id, "hostname", "should-not-be-settable"],
+            capture_output=True, text=True,
+        )
+        assert change_attempt.returncode != 0
+    finally:
+        await backend.destroy(handle)

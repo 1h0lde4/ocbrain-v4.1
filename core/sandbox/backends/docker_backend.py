@@ -70,6 +70,7 @@ from core.sandbox.backends._net_proxy import AllowlistProxy
 from core.sandbox.contracts import (
     ArtifactManifest,
     RuntimeCapabilities,
+    SandboxCapability,
     SandboxHandle,
     SandboxRequest,
     SandboxResult,
@@ -82,6 +83,33 @@ from core.sandbox.contracts import (
 # casually; each value requires its own passing gate, individually, per
 # the checklist.
 _CAPS = RuntimeCapabilities(backend_name="docker", supported=frozenset())
+
+
+def _check_a1_paired_capability_invariant(caps: RuntimeCapabilities) -> None:
+    """Addendum A1. admission.py's check_admission() runs two independent
+    fail-closed checks for a request with allowed_hosts set: NET_NAMESPACE
+    must be supported ("backend cannot isolate network at all") *and*
+    NETWORK_ALLOWLIST must be supported ("only supports deny-all network
+    policy") — checked separately, so claiming one without the other
+    leaves allowed_hosts functionally broken even though both this
+    module's own tests and Phase 5's own suite might otherwise pass.
+
+    Enforced here at import time, not only in a test that could bit-rot:
+    if a future change ever adds NETWORK_ALLOWLIST to _CAPS without
+    NET_NAMESPACE alongside it, importing this module raises immediately
+    rather than shipping a backend that silently can't do what it claims.
+    """
+    if SandboxCapability.NETWORK_ALLOWLIST in caps.supported:
+        if SandboxCapability.NET_NAMESPACE not in caps.supported:
+            raise AssertionError(
+                "addendum A1: NETWORK_ALLOWLIST claimed without NET_NAMESPACE — "
+                "admission.py's check_admission() would reject every "
+                "allowed_hosts request regardless of what NETWORK_ALLOWLIST "
+                "itself does; add NET_NAMESPACE to _CAPS alongside it"
+            )
+
+
+_check_a1_paired_capability_invariant(_CAPS)
 
 # Addendum A3: image reference is backend-private configuration, never a
 # field on SandboxRequest. Environment variable, not a hardcoded default —
