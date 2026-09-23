@@ -46,3 +46,13 @@ Read directly, not solely through the Sept 7 document's summary of it. No disagr
 This pass closes the gap the Sept 7 audit couldn't have covered (the three new files) and independently re-confirms `v3-final.md`. It does not attempt the remaining ❌ rows' own field-by-field design work — `Claim`/`Assumption`/`Reference`/`Oracle` (Phase 3), `VerificationMethod`/`Dimension` proper (Phase 5), `Critique`/`VerificationFinding` (Phase 5), the five `*Coverage` types (Phase 6), `VerificationRun`/`Step`/`Trace` (Phase 7), `EscalationRequest`/`AdjudicationRecord` (Phase 9), event contracts (Phase 12), `BlindVerificationContext`, `PolicyPrecedence` — those still need their own design pass each, in the master prompt's own phase order, not compressed into this document.
 
 **Before Phase 2/3 work resumes on this branch:** F1 and F2 above need a decision from Moncif — not blocking Phase 1 itself, but cheap to resolve now rather than after more code is built on top of `Rubric`.
+
+## 6. Resolution (22 Sept 2026, commit `5202752`)
+
+Both fixed, same session, rather than left open:
+
+- **F1** — `construct_note: Optional[str]` renamed to `construct: Optional["VerificationConstruct"]`, matching the original design's forward-reference field exactly. `from __future__ import annotations` is already active in `rubric.py`, so the reference resolves fine with nothing to import yet.
+- **F2** — `advance_to(target, *, criteria=None, dependencies=())` now requires `criteria` when `target is VALIDATED` and calls `validate_dependency_graph()` against it before permitting the transition.
+- **F3 (found while implementing F2, not previously listed above)** — `advance_to` also now checks that the supplied `criteria`'s ids match `self.criteria` exactly. Without this, F2's own fix could be satisfied by validating an unrelated criterion set and still reaching VALIDATED — a caller could pass any criteria that merely happened to pass `validate_dependency_graph()`, regardless of whether they were this rubric's own. Included here rather than deferred, since it's the same underlying defect (a state claiming a check occurred against *this* rubric) surfacing a second way, not a new, separable concern.
+
+Three regression tests added to both runners (`test_validated_without_criteria_rejected`, `test_validated_criteria_mismatch_rejected`, `test_validated_runs_real_dependency_validation` — the last uses a genuine two-node cycle, since `CriterionDependency.__post_init__` already rejects self-loops at construction, before they'd ever reach the graph-level check). 101/101 pass on both pytest and the stdlib mirror.
