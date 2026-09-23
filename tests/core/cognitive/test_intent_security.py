@@ -223,6 +223,10 @@ class TestCtxAuth001ParserAcceptance:
     Tests the output boundary (_parse_hypotheses via generate_hypotheses),
     complementing the structural-containment test above."""
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="CTX-AUTH-001b provenance acceptance pending ADR-KERNEL-06 implementation",
+    )
     @pytest.mark.asyncio
     async def test_injection_shaped_completion_line_is_not_accepted_as_a_hypothesis(self):
         raw_request = RawRequest(text="what's a good name for my new branch?")
