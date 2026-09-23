@@ -51,3 +51,5 @@ tests/test_session4c_architecture.py::TestIssue1SummaryFieldSemantics::test_quer
 tests/test_system_ctrl.py::test_empty_action_rejected
 tests/test_system_ctrl.py::test_execute_write_file
 tests/test_system_ctrl.py::test_unknown_action_rejected
+# Security invariant test (CTX-AUTH-001b open finding, intentionally failing on main until origin/fix/ctx-auth-001b-verified-provenance-sep2026 is merged)
+tests/core/cognitive/test_intent_security.py::TestCtxAuth001ParserAcceptance::test_injection_shaped_completion_line_is_not_accepted_as_a_hypothesis
