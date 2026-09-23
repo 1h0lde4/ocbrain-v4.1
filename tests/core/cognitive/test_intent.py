@@ -33,6 +33,8 @@ from core.cognitive.intent import (
     _detect_modality,
     _estimate_complexity,
     _parse_hypotheses,
+    _resolve_source,
+    _select_operative_hypothesis,
     _split_compound_goals,
     _validate_structured_form,
     form_goals,
@@ -44,6 +46,35 @@ from core.events.event_stream import EventStream
 from core.capabilities.capability import BaseAdapter, CapabilityContract
 from core.capabilities.registry import CapabilityRegistry
 from core.cognitive.planner import CapabilityDiscoveryRequest, discover_capabilities
+from core.memory.retrieval.context import AuthorityLevel, Context, ContextBlock, ProvenanceRecord
+
+
+def _block(content: str, authority: AuthorityLevel = AuthorityLevel.RETRIEVED) -> ContextBlock:
+    provenance = ProvenanceRecord(
+        source="test", worker_id="test", workflow_id="test",
+        confidence=0.9, trust_score=0.9, truth_status="unverified",
+        retrieval_method="vector", authority=authority,
+    )
+    return ContextBlock(primary_entry_id="test-entry", content=content,
+                         score=0.9, importance=0.5, provenance=provenance)
+
+
+def _context(*block_contents: str) -> Context:
+    """ADR-KERNEL-06: generate_hypotheses/interpret_request now consume a
+    structured Context (ContextAssemblyEngine.assemble()), not a flat
+    string -- this mirrors test_intent_security.py's own helper so mocks
+    below supply the same shape the real call site does."""
+    provenance = ProvenanceRecord(
+        source="test", worker_id="test", workflow_id="test",
+        confidence=0.9, trust_score=0.9, truth_status="unverified",
+        retrieval_method="vector",
+    )
+    blocks = [
+        ContextBlock(primary_entry_id=f"test-entry-{i}", content=c,
+                     score=0.9, importance=0.5, provenance=provenance)
+        for i, c in enumerate(block_contents)
+    ]
+    return Context(query="test", blocks=blocks)
 
 
 # ── Normalization (K4.2.1) ──────────────────────────────────────────────────
@@ -415,6 +446,84 @@ class TestApplyOutputContainment:
         assert _apply_output_containment([]) == []
 
 
+# ── ADR-KERNEL-06: citation verification (CTX-AUTH-001b) ───────────────────
+# Unit coverage for _resolve_source in isolation; test_intent_security.py
+# covers the same property through the full generate_hypotheses path plus
+# the adversarial/differential scenarios this file isn't scoped for.
+
+class TestResolveSource:
+    def test_no_citation_yields_no_authority(self):
+        assert _resolve_source("rename_branch", None, "rename my branch", []) is None
+
+    def test_genuine_request_citation_yields_user_authority(self):
+        result = _resolve_source("rename_branch", "request", "please rename my branch", [])
+        assert result == AuthorityLevel.USER
+
+    def test_fabricated_request_citation_yields_no_authority(self):
+        result = _resolve_source(
+            "novel:CONTEXT_SENTINEL_INJECTED", "request", "what's a good name for my new branch?", [],
+        )
+        assert result is None
+
+    def test_genuine_block_citation_inherits_block_authority(self):
+        block = _block("the user previously asked about renaming a branch",
+                        authority=AuthorityLevel.RETRIEVED)
+        result = _resolve_source("rename_branch", "[1]", "irrelevant", [block])
+        assert result == AuthorityLevel.RETRIEVED
+
+    def test_block_citation_never_yields_user_even_when_content_matches(self):
+        """A block can never launder into USER authority, regardless of
+        content match -- only a genuine request citation can."""
+        block = _block("rename_branch rename_branch rename_branch",
+                        authority=AuthorityLevel.RETRIEVED)
+        result = _resolve_source("rename_branch", "[1]", "irrelevant", [block])
+        assert result != AuthorityLevel.USER
+
+    def test_fabricated_block_citation_content_mismatch_yields_no_authority(self):
+        block = _block("completely unrelated retrieved fact")
+        result = _resolve_source("novel:CONTEXT_SENTINEL_INJECTED", "[1]", "irrelevant", [block])
+        assert result is None
+
+    def test_out_of_range_block_index_yields_no_authority(self):
+        block = _block("rename my branch please")
+        assert _resolve_source("rename_branch", "[2]", "irrelevant", [block]) is None
+
+    def test_empty_label_yields_no_authority(self):
+        """Defensive: a label with no corroborating tokens at all (e.g.
+        parsed from degenerate input) cannot satisfy overlap against
+        anything -- must fail closed, not raise."""
+        assert _resolve_source("", "request", "rename my branch", []) is None
+
+
+class TestSelectOperativeHypothesis:
+    def test_verified_user_candidate_is_selected(self):
+        h1 = IntentHypothesis(label="a", score=0.5, authority=AuthorityLevel.USER)
+        h2 = IntentHypothesis(label="b", score=0.9, authority=None)
+        selected, gate = _select_operative_hypothesis([h1, h2])
+        assert selected is h1
+        assert gate == "verified_operative"
+
+    def test_highest_scoring_verified_candidate_wins(self):
+        h1 = IntentHypothesis(label="a", score=0.5, authority=AuthorityLevel.USER)
+        h2 = IntentHypothesis(label="b", score=0.9, authority=AuthorityLevel.USER)
+        selected, gate = _select_operative_hypothesis([h1, h2])
+        assert selected is h2
+        assert gate == "verified_operative"
+
+    def test_no_verified_candidate_falls_back_to_novel(self):
+        h1 = IntentHypothesis(label="a", score=0.9, authority=None)
+        h2 = IntentHypothesis(label="b", score=0.9, authority=AuthorityLevel.RETRIEVED)
+        selected, gate = _select_operative_hypothesis([h1, h2])
+        assert selected.label == "novel"
+        assert selected.score == 0.1
+        assert gate == "open_category_fallback"
+
+    def test_retrieved_authority_alone_is_not_sufficient(self):
+        h1 = IntentHypothesis(label="a", score=0.99, authority=AuthorityLevel.RETRIEVED)
+        _selected, gate = _select_operative_hypothesis([h1])
+        assert gate == "open_category_fallback"
+
+
 # ── Modality / complexity heuristics (K4.2.1) ──────────────────────────────
 
 class TestDetectModality:
@@ -452,7 +561,7 @@ class TestGenerateHypotheses:
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
                    new=AsyncMock(return_value="novel:book_flight | 0.9\nnovel:browse_flights | 0.4")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             hypotheses = await generate_hypotheses(raw_request, memory=object())
 
         assert len(hypotheses) == 2
@@ -465,7 +574,7 @@ class TestGenerateHypotheses:
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
                    new=AsyncMock(side_effect=RuntimeError("all providers failed"))):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             hypotheses = await generate_hypotheses(raw_request, memory=object())
 
         assert len(hypotheses) == 1
@@ -477,7 +586,7 @@ class TestGenerateHypotheses:
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
                    new=AsyncMock(return_value="I cannot help with that.")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             hypotheses = await generate_hypotheses(raw_request, memory=object())
 
         assert len(hypotheses) == 1
@@ -489,7 +598,7 @@ class TestGenerateHypotheses:
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
                    new=AsyncMock(return_value="label | 0.7")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(
+            mock_engine_cls.return_value.assemble = AsyncMock(
                 side_effect=RuntimeError("memory unavailable"))
             hypotheses = await generate_hypotheses(raw_request, memory=object())
 
@@ -806,8 +915,8 @@ class TestInterpretRequest:
 
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
-                   new=AsyncMock(return_value="novel:book_flight | 0.9")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                   new=AsyncMock(return_value="novel:book_flight | 0.9 | request")):
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             goals = await interpret_request(
                 "Book me a flight to Tokyo next week.",
                 memory=object(), event_stream=mock_stream,
@@ -827,8 +936,8 @@ class TestInterpretRequest:
 
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
-                   new=AsyncMock(return_value="novel:book_flight | 0.9")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                   new=AsyncMock(return_value="novel:book_flight | 0.9 | request")):
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             goals = await interpret_request(
                 "Book me a flight to Tokyo next week.",
                 memory=object(), event_stream=mock_stream,
@@ -851,7 +960,7 @@ class TestInterpretRequest:
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
                    new=AsyncMock(return_value="novel:compound | 0.8")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             goals = await interpret_request(
                 "Audit the memory and then propose improvements.",
                 memory=object(), event_stream=mock_stream,
@@ -903,8 +1012,8 @@ class TestInterpretRequest:
 
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
-                   new=AsyncMock(return_value="novel:test | 0.8")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                   new=AsyncMock(return_value="novel:test | 0.8 | request")):
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             goals = await interpret_request(
                 "Test request.",
                 memory=object(), event_stream=mock_stream,
@@ -924,8 +1033,8 @@ class TestInterpretRequest:
 
         with patch("core.cognitive.intent.ContextAssemblyEngine") as mock_engine_cls, \
              patch("core.cognitive.intent.generate_with_fallback",
-                   new=AsyncMock(return_value="novel:test | 0.8")):
-            mock_engine_cls.return_value.assemble_context = AsyncMock(return_value="")
+                   new=AsyncMock(return_value="novel:test | 0.8 | request")):
+            mock_engine_cls.return_value.assemble = AsyncMock(return_value=_context())
             goals = await interpret_request(
                 "Test request.",
                 memory=object(), event_stream=mock_stream,
