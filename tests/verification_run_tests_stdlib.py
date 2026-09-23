@@ -40,6 +40,9 @@ from core.verification.rubric import (
     CriterionEvidenceRequirement, Criterion, Rubric, validate_dependency_graph,
 )
 from core.verification.inspection import InspectionStep, InspectionPlan
+from core.verification.observation import ObservationForm, Observation, Interpretation
+from core.verification.claim import ClaimOrigin, Claim
+from core.verification.assumption import Assumption
 
 
 def basis(*components):
@@ -732,6 +735,87 @@ class TestInspectionPlan(unittest.TestCase):
     def test_empty_steps_rejected(self):
         with self.assertRaises(ValueError):
             InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=())
+
+
+class TestObservation(unittest.TestCase):
+    def _obs(self, **overrides):
+        defaults = dict(
+            observation_id="obs1", authority=ObservationAuthority.FILESYSTEM,
+            form=ObservationForm.BINARY_PRESENCE, content_summary="file present",
+            observed_at=datetime.now(timezone.utc), locator="/repo/core/verification/rubric.py",
+        )
+        defaults.update(overrides)
+        return Observation(**defaults)
+
+    def test_valid_construction(self):
+        obs = self._obs()
+        self.assertEqual(obs.form, ObservationForm.BINARY_PRESENCE)
+
+    def test_empty_content_summary_rejected(self):
+        with self.assertRaises(ValueError):
+            self._obs(content_summary="")
+
+    def test_empty_locator_rejected(self):
+        with self.assertRaises(ValueError):
+            self._obs(locator="")
+
+
+class TestInterpretation(unittest.TestCase):
+    def test_valid_construction(self):
+        interp = Interpretation(observation_id="obs1", meaning="the file exists", interpreted_by="deterministic_rule")
+        self.assertEqual(interp.meaning, "the file exists")
+
+    def test_empty_meaning_rejected(self):
+        with self.assertRaises(ValueError):
+            Interpretation(observation_id="obs1", meaning="", interpreted_by="deterministic_rule")
+
+    def test_empty_interpreted_by_rejected(self):
+        with self.assertRaises(ValueError):
+            Interpretation(observation_id="obs1", meaning="x", interpreted_by="")
+
+
+class TestClaim(unittest.TestCase):
+    def test_direct_assertion_valid(self):
+        c = Claim(claim_id="c1", content="the API returns 200 on success", origin=ClaimOrigin.DIRECT_ASSERTION)
+        self.assertIsNone(c.source_observation_id)
+
+    def test_interpreted_observation_valid(self):
+        c = Claim(claim_id="c1", content="the file exists", origin=ClaimOrigin.INTERPRETED_OBSERVATION, source_observation_id="obs1")
+        self.assertEqual(c.source_observation_id, "obs1")
+
+    def test_derived_valid(self):
+        c = Claim(claim_id="c1", content="therefore the pipeline is idle", origin=ClaimOrigin.DERIVED)
+        self.assertEqual(c.origin, ClaimOrigin.DERIVED)
+
+    def test_empty_content_rejected(self):
+        with self.assertRaises(ValueError):
+            Claim(claim_id="c1", content="", origin=ClaimOrigin.DIRECT_ASSERTION)
+
+    def test_interpreted_observation_without_source_rejected(self):
+        with self.assertRaises(ValueError):
+            Claim(claim_id="c1", content="x", origin=ClaimOrigin.INTERPRETED_OBSERVATION)
+
+    def test_direct_assertion_with_source_rejected(self):
+        with self.assertRaises(ValueError):
+            Claim(claim_id="c1", content="x", origin=ClaimOrigin.DIRECT_ASSERTION, source_observation_id="obs1")
+
+    def test_derived_with_source_rejected(self):
+        with self.assertRaises(ValueError):
+            Claim(claim_id="c1", content="x", origin=ClaimOrigin.DERIVED, source_observation_id="obs1")
+
+
+class TestAssumption(unittest.TestCase):
+    def test_valid_construction(self):
+        a = Assumption(assumption_id="a1", description="the database replica is current", relied_upon_for="freshness of the queried target state")
+        self.assertEqual(a.assumption_id, "a1")
+
+    def test_empty_description_rejected(self):
+        with self.assertRaises(ValueError):
+            Assumption(assumption_id="a1", description="", relied_upon_for="x")
+
+    def test_empty_relied_upon_for_rejected(self):
+        with self.assertRaises(ValueError):
+            Assumption(assumption_id="a1", description="x", relied_upon_for="")
 
 
 if __name__ == "__main__":
