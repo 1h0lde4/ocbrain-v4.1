@@ -43,6 +43,8 @@ from core.verification.inspection import InspectionStep, InspectionPlan
 from core.verification.observation import ObservationForm, Observation, Interpretation
 from core.verification.claim import ClaimOrigin, Claim
 from core.verification.assumption import Assumption
+from core.verification.reference import ReferenceKind, Reference, GroundTruth
+from core.verification.oracle import Oracle
 
 
 def basis(*components):
@@ -816,6 +818,52 @@ class TestAssumption(unittest.TestCase):
     def test_empty_relied_upon_for_rejected(self):
         with self.assertRaises(ValueError):
             Assumption(assumption_id="a1", description="x", relied_upon_for="")
+
+
+class TestReference(unittest.TestCase):
+    def test_valid_construction(self):
+        r = Reference(reference_id="r1", kind=ReferenceKind.EXPECTED_VALUE, content_summary="expected HTTP 200", source="API spec v2")
+        self.assertEqual(r.kind, ReferenceKind.EXPECTED_VALUE)
+
+    def test_empty_content_summary_rejected(self):
+        with self.assertRaises(ValueError):
+            Reference(reference_id="r1", kind=ReferenceKind.EXPECTED_VALUE, content_summary="", source="x")
+
+    def test_empty_source_rejected(self):
+        with self.assertRaises(ValueError):
+            Reference(reference_id="r1", kind=ReferenceKind.EXPECTED_VALUE, content_summary="x", source="")
+
+
+class TestGroundTruth(unittest.TestCase):
+    def test_valid_construction(self):
+        gt = GroundTruth(ground_truth_id="gt1", reference_id="r1", established_by="human:moncif", established_via="human_review")
+        self.assertEqual(gt.established_via, "human_review")
+
+    def test_empty_established_by_rejected(self):
+        with self.assertRaises(ValueError):
+            GroundTruth(ground_truth_id="gt1", reference_id="r1", established_by="", established_via="human_review")
+
+    def test_empty_established_via_rejected(self):
+        with self.assertRaises(ValueError):
+            GroundTruth(ground_truth_id="gt1", reference_id="r1", established_by="human:moncif", established_via="")
+
+
+class TestOracle(unittest.TestCase):
+    def test_valid_construction(self):
+        o = Oracle(oracle_id="o1", description="reference implementation diff", is_executable=True, is_reproducible=True, is_validated=False)
+        self.assertFalse(o.is_authoritative)
+
+    def test_authoritative_without_validated_rejected(self):
+        with self.assertRaises(ValueError):
+            Oracle(oracle_id="o1", description="x", is_executable=True, is_reproducible=True, is_validated=False, is_authoritative=True)
+
+    def test_authoritative_with_validated_allowed(self):
+        o = Oracle(oracle_id="o1", description="x", is_executable=True, is_reproducible=True, is_validated=True, is_authoritative=True)
+        self.assertTrue(o.is_authoritative)
+
+    def test_empty_description_rejected(self):
+        with self.assertRaises(ValueError):
+            Oracle(oracle_id="o1", description="", is_executable=True, is_reproducible=True, is_validated=True)
 
 
 if __name__ == "__main__":
