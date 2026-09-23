@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 from core.events.event_stream import EventStream, get_event_stream
 from core.memory.assembly import ContextAssemblyEngine
+from core.memory.retrieval.context import AuthorityLevel, Context, ContextBlock
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.observability.tracer import get_trace_id
 from core.provider_mesh import generate_with_fallback, resolve_provider
@@ -123,10 +124,27 @@ class IntentHypothesis:
     in this category for the same reason (no resource_id, no derived_from,
     no lifecycle_state of its own): it only ever exists inside
     Intent.hypotheses.
+
+    source / authority (ADR-KERNEL-06, Sept 2026): additive, both
+    Optional, so the frozen label/score/embedding_ref triple above is
+    unchanged for any caller still constructing IntentHypothesis(label=...,
+    score=...) alone -- test fixtures included.
+      source: the citation exactly as the completion claimed it -- None
+        (no citation), "request", or "[N]". Recorded for audit even when
+        never verified; a claimed source is not itself evidence of
+        anything (see _resolve_source).
+      authority: resolved by _resolve_source() against the real assembled
+        inputs for *this* execution, never against source's say-so alone.
+        None means "not authoritative" -- fail-closed default, matching
+        ProvenanceRecord.authority's own convention -- regardless of what
+        source claims. Only _resolve_source assigns this field; nothing
+        else may.
     """
     label: str
     score: float
     embedding_ref: Optional[str] = None
+    source: Optional[str] = None
+    authority: Optional[AuthorityLevel] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -466,9 +484,14 @@ Given a user request and retrieved context, produce up to {n} ranked
 candidate interpretations of what the user wants.
 
 Output one candidate per line, in the exact form:
-label | score
+label | score | source
 
 score is a number between 0.00 and 1.00, highest confidence first.
+source identifies what the candidate is actually grounded in: write
+"request" if it comes from the user's request below, or the bracketed
+reference number of a context entry (e.g. "[2]") if it comes from context.
+Omit the "| source" segment entirely only when a candidate has no such
+grounding -- do not guess a source to fill the field.
 
 Known intent categories (may be empty on a fresh system): {categories}
 If a candidate does not match a known category, prefix its label with
@@ -542,22 +565,58 @@ def _neutralize_role_markers(text: str) -> str:
     return text
 
 
-def _build_hypothesis_prompt(raw_request: RawRequest, context: str,
+_BLOCK_MARKER_PATTERN = re.compile(r"^\[[1-9][0-9]*\]", re.MULTILINE)
+
+
+def _neutralize_block_markers(text: str) -> str:
+    """ADR-KERNEL-06: this template uses a leading "[N] " at the start of
+    a line to delimit one citable context entry from the next -- its
+    newest structural token, alongside the three _neutralize_structural_
+    tokens handles and the three _neutralize_role_markers handles.
+    Retrieved (untrusted) block content must not be able to forge what
+    looks like a different entry's boundary (or a different index for
+    this same one); same content-agnostic, byte-identity-breaking
+    technique as those two functions, applied here instead of duplicated
+    into them, since this pattern (not a fixed literal) is specific to
+    this template's citation format.
+    """
+    return _BLOCK_MARKER_PATTERN.sub(
+        lambda m: m.group(0)[:1] + "\u200b" + m.group(0)[1:], text,
+    )
+
+
+def _render_citable_context(context: Context) -> str:
+    """ADR-KERNEL-06 Mechanism A: each block gets a short, per-request
+    index (1-based, in context.blocks order) as its citable reference --
+    deliberately not primary_entry_id, which would make the model quote
+    raw storage identifiers for no security benefit. generate_hypotheses
+    resolves a claimed "[N]" back to context.blocks[N-1] for the same
+    request, so the mapping is exact by construction, not re-derived.
+    """
+    if not context.blocks:
+        return "(no retrieved context)"
+    lines: List[str] = [_UNTRUSTED_CONTEXT_NOTE]
+    for i, block in enumerate(context.blocks, start=1):
+        safe = _neutralize_structural_tokens(block.content)
+        safe = _neutralize_role_markers(safe)
+        safe = _neutralize_block_markers(safe)
+        lines.append(f"[{i}] {safe}")
+    return "\n".join(lines)
+
+
+def _build_hypothesis_prompt(raw_request: RawRequest, context: Context,
                               known_categories: List[str]) -> str:
-    safe_context = _neutralize_structural_tokens(context) if context else context
-    safe_context = _neutralize_role_markers(safe_context) if safe_context else safe_context
-    if safe_context:
-        safe_context = f"{_UNTRUSTED_CONTEXT_NOTE}\n{safe_context}"
     return _HYPOTHESIS_PROMPT_TEMPLATE.format(
         n=5,
         categories=", ".join(known_categories) if known_categories else "(none yet)",
-        context=safe_context or "(no retrieved context)",
+        context=_render_citable_context(context),
         request=raw_request.text,
     )
 
 
 _CANDIDATE_LINE = re.compile(
-    r"^[ \t]*(?P<label>[^|\n]+?)[ \t]*\|[ \t]*(?P<score>[01](?:\.\d+)?)[ \t]*$",
+    r"^[ \t]*(?P<label>[^|\n]+?)[ \t]*\|[ \t]*(?P<score>[01](?:\.\d+)?)"
+    r"(?:[ \t]*\|[ \t]*(?P<source>request|\[[1-9][0-9]*\]))?[ \t]*$",
     re.MULTILINE,
 )
 
@@ -569,6 +628,11 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
     inference degrading to fewer (or zero, handled by the caller) parsed
     hypotheses is the documented open-category fallback path (K4.2 §2),
     not a new failure mode requiring its own handling.
+
+    source is recorded here exactly as claimed (or None) -- ADR-KERNEL-06:
+    parsing is not verification. authority stays unresolved (None) until
+    generate_hypotheses calls _resolve_source with the real request text
+    and real blocks this parse alone has no access to.
     """
     hypotheses: List[IntentHypothesis] = []
     for match in _CANDIDATE_LINE.finditer(completion or ""):
@@ -576,7 +640,9 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
         if not label:
             continue
         score = max(0.0, min(1.0, float(match.group("score"))))
-        hypotheses.append(IntentHypothesis(label=label, score=score))
+        hypotheses.append(
+            IntentHypothesis(label=label, score=score, source=match.group("source"))
+        )
     return hypotheses
 
 
@@ -629,6 +695,111 @@ def _apply_output_containment(hypotheses: List[IntentHypothesis]) -> List[Intent
         kept.append(h)
         last_score = h.score
     return kept
+
+
+_MIN_CORROBORATING_TOKEN_LEN = 3
+
+
+def _content_tokens(text: str) -> "set[str]":
+    """Lowercase alphanumeric tokens of length >=
+    _MIN_CORROBORATING_TOKEN_LEN. A plain, deterministic string operation
+    over literal text -- no vector, no model, no learned/inferred
+    closeness. Used only inside _resolve_source, to check whether an
+    *already-cited* candidate's content is at all consistent with the one
+    specific source it names; never used to grant authority to an uncited
+    candidate, and never used to compare candidates against each other.
+    """
+    return {
+        tok for tok in re.findall(r"[a-z0-9]+", text.lower())
+        if len(tok) >= _MIN_CORROBORATING_TOKEN_LEN
+    }
+
+
+def _resolve_source(
+    label: str,
+    source: Optional[str],
+    raw_request_text: str,
+    blocks: List[ContextBlock],
+) -> Optional[AuthorityLevel]:
+    """ADR-KERNEL-06 Mechanism A -- deterministic lookup against the real
+    assembled inputs for this execution, not the completion's own say-so.
+
+    A claimed source only inherits authority if BOTH hold:
+      1. it names something that actually exists for this execution --
+         "request" always does; "[N]" only if N indexes a real block;
+      2. the candidate's own content corroborates that specific source --
+         at least one _content_tokens overlap with the named source's
+         real text.
+
+    (2) exists because (1) alone is not enough to resist fabrication:
+    "request" always exists by construction, so checking existence alone
+    would let any candidate claim it for free -- exactly what
+    live_citation_check.py's cite-request/line-spoof payloads probe for.
+    (2) is a literal token-overlap check against this execution's real
+    text, not embedding similarity (no vector, no inferred closeness --
+    ADR-KERNEL-06 §2 rules that out as an authority proxy) and not a
+    content-based accept/reject heuristic evaluated on the candidate in
+    isolation (that section's "lexical heuristic" is about guessing trust
+    from a candidate's own surface features with *no* citation at all --
+    see _neutralize_role_markers/_neutralize_structural_tokens above,
+    which are deliberately content-agnostic for exactly that reason).
+    This is different in kind: it verifies a specific, already-claimed
+    pointer actually resolves to real, present data, applied identically
+    to every citation, request or block alike. Authority inherited from a
+    block is exactly that block's own provenance.authority (today always
+    RETRIEVED -- never assumed, always read from the real block); a
+    verified "request" citation inherits AuthorityLevel.USER, the base
+    case the whole chain grounds out in (the user's own literal input is
+    definitionally USER-authority by construction -- not an inference).
+
+    No citation, an unresolvable one, or one that fails corroboration:
+    None. Fail closed in every case, same as no citation at all.
+    """
+    if not source:
+        return None
+    label_tokens = _content_tokens(label)
+    if not label_tokens:
+        return None
+
+    if source == "request":
+        if label_tokens & _content_tokens(raw_request_text):
+            return AuthorityLevel.USER
+        return None
+
+    match = re.fullmatch(r"\[([1-9][0-9]*)\]", source)
+    if not match:
+        return None
+    index = int(match.group(1)) - 1
+    if not (0 <= index < len(blocks)):
+        return None
+    block = blocks[index]
+    if label_tokens & _content_tokens(block.content):
+        return block.provenance.authority
+    return None
+
+
+def _select_operative_hypothesis(
+    hypotheses: List[IntentHypothesis],
+) -> "tuple[IntentHypothesis, str]":
+    """ADR-KERNEL-06 §8 (Sept 20 2026 implementation decision): the
+    accepted Intent may only be selected on a verified AuthorityLevel.USER
+    candidate. Existing in hypotheses (surfaced, inspectable, still
+    returned to the caller) is deliberately not the same bar as being
+    selected as operative -- candidate exists != candidate is trusted,
+    applied at the selection boundary, not only the acceptance boundary.
+
+    No verified-USER candidate -> open-category fallback: the exact same
+    label/score generate_hypotheses already uses for its own total-failure
+    fallback (K4.2 §2), not a new convention introduced here.
+
+    Returns (selected, gate); gate is "verified_operative" or
+    "open_category_fallback" -- live_citation_check.py's own vocabulary,
+    reported on cognitive.intent_interpreted as selection_gate.
+    """
+    verified = [h for h in hypotheses if h.authority == AuthorityLevel.USER]
+    if verified:
+        return max(verified, key=lambda h: h.score), "verified_operative"
+    return IntentHypothesis(label="novel", score=0.1), "open_category_fallback"
 
 
 def _detect_modality(text: str) -> str:
@@ -698,7 +869,12 @@ async def generate_hypotheses(
     logic. generate_with_fallback already health-ranks providers, retries
     on failure, and routes through the existing prompt cache and
     safe_llm_call semaphore/timeout -- reusing it rather than calling
-    Provider.generate() directly avoids duplicating that machinery.
+    Provider.generate() directly avoids duplicating that machinery. Uses
+    ContextAssemblyEngine.assemble() (ADR-KERNEL-06, Sept 2026) rather than
+    assemble_context() -- the structured Context, not a flattened string,
+    since citation verification below needs real, individually addressable
+    ContextBlocks. assemble_context()'s own string contract, and its other
+    two callers, are unaffected by this method existing.
 
     known_categories represents the Intent Ontology's current L3 entries
     (K4.2 §2's "Intent memory" paragraph). Looking those up is not part of
@@ -710,12 +886,12 @@ async def generate_hypotheses(
     memory = memory or get_unified_memory()
 
     try:
-        context = await ContextAssemblyEngine(memory).assemble_context(raw_request.text)
+        context = await ContextAssemblyEngine(memory).assemble(raw_request.text)
     except Exception:
-        # assemble_context() already degrades to "" on no results; a hard
-        # failure in retrieval should not block inference -- proceed with
-        # no context rather than propagate.
-        context = ""
+        # assemble() degrades to an empty-blocks Context on no results;
+        # a hard failure in retrieval should not block inference --
+        # proceed with no context rather than propagate.
+        context = Context(query=raw_request.text)
 
     prompt = _build_hypothesis_prompt(raw_request, context, known_categories or [])
 
@@ -724,12 +900,19 @@ async def generate_hypotheses(
         completion = await generate_with_fallback(
             resolve_provider("intent_interpreter"), prompt,
         )
-        # CTX-AUTH-001b / DEBT-019: _apply_output_containment is hardening,
-        # not closure -- see its docstring. Authority-based acceptance is
-        # still open pending a design decision (IntentHypothesis has no
-        # provenance field; K4.2 §12 frozen field-set) -- ADR required
-        # before implementation, not in scope for this reconciliation.
+        # _apply_output_containment is hardening, not authority -- see its
+        # own docstring; kept as defense-in-depth, independent of the
+        # citation verification below.
         hypotheses = _apply_output_containment(_parse_hypotheses(completion))
+        # ADR-KERNEL-06: resolve authority against the real request text
+        # and the real blocks assembled for THIS execution -- never
+        # against the completion's own claim alone. Runs after containment
+        # (on the surviving candidates only) since the two checks are
+        # independent; order between them does not change the result.
+        for h in hypotheses:
+            h.authority = _resolve_source(
+                h.label, h.source, raw_request.text, context.blocks,
+            )
     except Exception:
         hypotheses = []
 
@@ -1109,12 +1292,27 @@ async def interpret_request(
             "trace_id": trace_id,
             "hypothesis_count": len(hypotheses),
             "labels": [h.label for h in hypotheses],
+            # ADR-KERNEL-06: parallel to labels, one resolved authority
+            # (or None) per hypothesis in the same order -- ".value" so
+            # the event payload carries plain strings, not enum instances.
+            "authorities": [
+                h.authority.value if h.authority is not None else None
+                for h in hypotheses
+            ],
         },
     )
 
-    selected = hypotheses[0] if hypotheses else None
+    # ADR-KERNEL-06 §8: selection, not just acceptance, is gated on a
+    # verified USER authority -- hypotheses (always non-empty; see
+    # generate_hypotheses) always has a candidate, but "a candidate
+    # exists" and "a candidate is operative" are no longer the same
+    # question. selected is therefore never None here (unlike the pre-
+    # ADR-KERNEL-06 `hypotheses[0] if hypotheses else None`, which was
+    # already unreachable given generate_hypotheses' own guarantee --
+    # this makes that guarantee explicit rather than re-deriving it).
+    selected, selection_gate = _select_operative_hypothesis(hypotheses)
     dimensions = IntentDimensions(
-        category=selected.label if selected else "novel",
+        category=selected.label,
         modality=_detect_modality(raw_request.text),
         complexity_estimate=_estimate_complexity(raw_request.text, len(hypotheses)),
     )
@@ -1123,7 +1321,7 @@ async def interpret_request(
         raw_request=raw_request.text,
         hypotheses=hypotheses,
         selected=selected,
-        confidence=selected.score if selected else 0.0,
+        confidence=selected.score,
         dimensions=dimensions,
         lifecycle_state=IntentLifecycle.INTERPRETED,
         detected_language=raw_request.detected_language,  # G2
@@ -1135,7 +1333,8 @@ async def interpret_request(
         payload={
             "trace_id": trace_id,
             "intent_id": intent.resource_id,
-            "selected_label": selected.label if selected else None,
+            "selected_label": selected.label,
+            "selection_gate": selection_gate,
             "confidence": intent.confidence,
         },
     )

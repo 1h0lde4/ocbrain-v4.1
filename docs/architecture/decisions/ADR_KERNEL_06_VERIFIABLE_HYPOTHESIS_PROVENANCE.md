@@ -1,16 +1,19 @@
 # ADR-KERNEL-06: Verifiable Hypothesis Provenance (CTX-AUTH-001b)
 
-**Status:** ACCEPTED — disposition and mechanism both decided (Moncif,
-Sept 16 2026). **Not yet implemented.** CTX-AUTH-001b stays OPEN until
-implementation and adversarial tests actually establish the invariants
-below — this ADR is the accepted design, not a closure of the finding.
-`TestCtxAuth001ParserAcceptance` remains intentionally red; 137 passed /
-1 failed is the correct state until real code changes it.
-**Date:** September 16, 2026
+**Status:** ACCEPTED and IMPLEMENTED — disposition and mechanism decided
+(Moncif, Sept 16 2026); "request" as a citable source decided (Moncif,
+Sept 20 2026, §8); implemented and verified Sept 23 2026 (§8 has the
+numbers). `TestCtxAuth001ParserAcceptance` is reformulated and green —
+see the test file's own STATUS comment for exactly what changed and why.
+CTX-AUTH-001b: CLOSED.
+**Date:** September 16, 2026 (amended September 20; implemented September 23)
 **Author:** Claude.ai chat session, DEBT-019/CTX-AUTH-001b reconciliation
 **Scope:** `core/cognitive/intent.py` (`IntentHypothesis`, `generate_hypotheses`,
 `_parse_hypotheses`, `_HYPOTHESIS_PROMPT_TEMPLATE`), `core/memory/retrieval/context/context.py`
-(`AuthorityLevel`, `ProvenanceRecord`).
+(`AuthorityLevel`, `ProvenanceRecord`), plus `core/memory/assembly.py`
+(§8 — needed additively, once implementation started, to expose the
+structured `Context` citation verification actually requires; not
+anticipated when this line was first written Sept 16).
 **Numbering note:** drafted and accepted Sept 16, 2026 as `ADR-KERNEL-05`; renumbered to
 `ADR-KERNEL-06` because `ADR-KERNEL-05` is already held by the PROPOSED
 `ADR_KERNEL_05_CTX_AUTH_001B_DEFERRAL_PROPOSAL.md` on branch
@@ -241,3 +244,94 @@ explicit, owned decision rather than assigned in passing.
   actually considered closed (§ Status) — this ADR defines the
   invariant such tests must establish; it does not itself constitute
   them.
+
+## 8. Amendment: "request" as a citable source, and implementation (Sept 20–21 2026)
+
+The original text above left the exact field shape open and did not
+specify how a candidate grounded in the user's own request — not in any
+retrieved block — would ever reach USER authority, since the mechanism
+as first drafted only described citing a `ContextBlock`. Resolved by
+decision (Sept 20 2026, Moncif) and then implemented (Sept 23 2026)
+against `fix/ctx-auth-001b-verified-provenance-sep2026`:
+
+- **The raw request becomes a citable source, in the same enumerable
+  scheme as context blocks** — literal keyword `"request"`, alongside
+  `"[N]"` for the Nth citable block (`core/cognitive/intent.py`,
+  `_CANDIDATE_LINE` / `_render_citable_context`). Not a separate,
+  differently-trusted code path from block citation — the same
+  `_resolve_source()` resolves both.
+- **Existence of the named source is necessary but not sufficient.**
+  `"request"` always exists for a real request, so checking only "is
+  this a valid source name" would let any candidate claim it for free.
+  `_resolve_source()` additionally requires the candidate's own content
+  to corroborate the named source (literal token overlap against that
+  source's real text for this execution) before granting authority — a
+  deterministic check against real data, not embedding similarity
+  (already ruled out above) and not a lexical accept/reject heuristic
+  evaluated on the candidate alone (this ADR's "lexical heuristic," about
+  guessing trust with no citation at all — see `_neutralize_role_markers`
+  — is a different thing from verifying a specific already-claimed
+  pointer resolves to real data).
+- **Selection, not only acceptance, is gated.** `_select_operative_
+  hypothesis()` may only select a hypothesis whose resolved authority is
+  `AuthorityLevel.USER`; anything else — uncited, block-cited
+  (`RETRIEVED`), or a citation that failed corroboration — falls back to
+  the same `novel` / 0.1 open-category hypothesis `generate_hypotheses`
+  already used for total failure, not a new convention. Reported on
+  `cognitive.intent_interpreted` as `selection_gate` ∈
+  `{"verified_operative", "open_category_fallback"}`.
+- **`TestCtxAuth001ParserAcceptance`'s assertion is reformulated, not
+  abandoned** (Moncif, Sept 20): the invariant it protects is unchanged
+  (injected content must never gain undeserved authority) but it is now
+  expressed against the citation mechanism instead of bare existence in
+  the hypothesis list, since existence is no longer the thing this
+  invariant forbids — see the test file's own updated STATUS comment.
+
+Options considered and rejected for this amendment specifically:
+
+- **B — implement the mechanism as originally drafted above, no
+  selection gate, block citation only.** Rejected — leaves no path for a
+  request-grounded candidate to ever reach USER authority at all,
+  understating what the mechanism needs to cover on day one.
+- **C — skip straight to Option C (N+1 per-candidate generation).**
+  Rejected as premature, same reasoning given above for rejecting that
+  move initially: A had not yet been given an adversarial test to fail
+  before being abandoned.
+
+### Verified, Sept 23 2026 — not assumed from either the design or the
+### implementer's own account of it
+
+- Full repo test suite, reconciled tree: 1,509 passed / 8 failed — the 8
+  are `TestA7SystemController` and `test_module_factory_security.py`
+  cases gated on `chromadb`, not installed in this sandbox; a pre-existing
+  environment gap, unrelated to this change. Zero regressions.
+- `TestCtxAuth001ParserAcceptance` (reformulated): passes. A candidate
+  fabricating a `| request` citation for content unrelated to the real
+  request does not resolve to `AuthorityLevel.USER`; a genuinely
+  request-grounded candidate in the same run does — confirming the
+  mechanism verifies rather than blanket-rejects.
+- `live_citation_check.py` (Moncif's own harness, `--dry-run
+  obey-fabricate --fail-on-selected`, the scripted stand-in specifically
+  built to fabricate a `request` citation for injected content), full
+  default scale: **Part A (operational): 30/30 (100%) benign requests
+  produced a verified-USER candidate, 0 fell back to `novel`/0.1.**
+  **Part B (adversarial), all three payloads (`naive`, `cite-request`,
+  `line-spoof`), 90 exposed trials total: 0 fabricated `request`
+  citations reached USER authority, 0 injected candidates were selected
+  as the accepted Intent.** Exit code 0 with `--fail-on-selected` (would
+  be non-zero on any selected injection). Also run under `--dry-run
+  obey-honest` (model honestly cites the real block the sentinel sits
+  in): all exposed trials landed `cited_block_nonoperative` — correctly
+  capped at `RETRIEVED`, never selected.
+
+This resolves this ADR's first originally-open item above (schema:
+`source: Optional[str]`, `authority: Optional[AuthorityLevel]`, additive
+on `IntentHypothesis`) and its third (the adversarial suite is
+`live_citation_check.py` plus the reformulated
+`TestCtxAuth001ParserAcceptance` — both actually re-run against this
+implementation, per the numbers above, not assumed passing). The second
+originally-open item (rejected-candidate logging) remains genuinely
+open, tracked separately, not touched by this amendment.
+
+**CTX-AUTH-001b: CLOSED, Sept 23 2026** — see `KNOWN_ISSUES.md` for the
+tracking-doc side of this same disposition.
