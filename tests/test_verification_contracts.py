@@ -611,17 +611,30 @@ class TestRubricLockStateProgression:
             source_requirements=(), context_basis="w", criteria=("c1",),
         )
 
+    def _matching_criteria(self):
+        # Matches _draft_rubric()'s criteria=("c1",) -- advance_to(VALIDATED)
+        # requires the actual Criterion objects, not just their ids (Phase 1
+        # finding, 22 Sept 2026: it used to accept lock-state ordering alone
+        # as proof validation ran).
+        return [
+            Criterion(
+                criterion_id="c1", rubric_id="r1", description="criterion c1",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+        ]
+
     def test_draft_to_validated_allowed(self):
-        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED)
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
         assert r.lock_state == RubricLockState.VALIDATED
 
     def test_validated_to_compiled_allowed(self):
-        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED).advance_to(RubricLockState.COMPILED)
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria()).advance_to(RubricLockState.COMPILED)
         assert r.lock_state == RubricLockState.COMPILED
 
     def test_compiled_to_locked_allowed(self):
         r = (self._draft_rubric()
-             .advance_to(RubricLockState.VALIDATED)
+             .advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
              .advance_to(RubricLockState.COMPILED)
              .advance_to(RubricLockState.LOCKED))
         assert r.lock_state == RubricLockState.LOCKED
@@ -636,7 +649,7 @@ class TestRubricLockStateProgression:
 
     def test_locked_is_terminal(self):
         locked = (self._draft_rubric()
-                  .advance_to(RubricLockState.VALIDATED)
+                  .advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
                   .advance_to(RubricLockState.COMPILED)
                   .advance_to(RubricLockState.LOCKED))
         with pytest.raises(RubricValidationError):
@@ -644,10 +657,58 @@ class TestRubricLockStateProgression:
 
     def test_advance_to_does_not_mutate_original(self):
         draft = self._draft_rubric()
-        validated = draft.advance_to(RubricLockState.VALIDATED)
+        validated = draft.advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
         assert draft.lock_state == RubricLockState.DRAFT
         assert validated.lock_state == RubricLockState.VALIDATED
         assert draft is not validated
+
+    def test_validated_without_criteria_rejected(self):
+        # The regression test for the Phase 1 F2 finding: VALIDATED must not
+        # be reachable without actually validating something.
+        with pytest.raises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.VALIDATED)
+
+    def test_validated_criteria_mismatch_rejected(self):
+        # A caller cannot certify VALIDATED against a criterion set that
+        # doesn't match what this Rubric actually declares.
+        wrong_criteria = [
+            Criterion(
+                criterion_id="not-c1", rubric_id="r1", description="wrong criterion",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+        ]
+        with pytest.raises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=wrong_criteria)
+
+    def test_validated_runs_real_dependency_validation(self):
+        # Proves the wiring is real, not just an argument being accepted:
+        # a criterion set with a genuine cycle must still fail here, not
+        # only when validate_dependency_graph() is called directly. Uses a
+        # two-node cycle (c1<->c2), not a self-loop -- CriterionDependency's
+        # own __post_init__ already rejects self-loops at construction, so
+        # only a multi-node cycle actually exercises the graph-level check.
+        # Declares both ids on the Rubric itself so the new id-match check
+        # above passes and the cycle detector is what actually fires.
+        two_criterion_rubric = Rubric(
+            rubric_id="r2", version="1.0.0", fingerprint="abc",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1", "c2"),
+        )
+        two_criteria = [
+            Criterion(
+                criterion_id=cid, rubric_id="r2", description=f"criterion {cid}",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+            for cid in ("c1", "c2")
+        ]
+        cyclic_deps = [
+            CriterionDependency(criterion_id="c1", depends_on_criterion_id="c2", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="c2", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES),
+        ]
+        with pytest.raises(CriterionDependencyCycleError):
+            two_criterion_rubric.advance_to(RubricLockState.VALIDATED, criteria=two_criteria, dependencies=cyclic_deps)
 
 
 class TestValidateDependencyGraph:

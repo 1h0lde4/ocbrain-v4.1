@@ -135,11 +135,14 @@ class Rubric:
     context_basis: str
     criteria: Tuple[CriterionId, ...]
     lock_state: RubricLockState = RubricLockState.DRAFT
-    # Placeholder for the future VerificationConstruct/ConstructValidity
-    # (mission row 47) -- a plain string until that type exists, matching
-    # policy.py's own established precedent for forward references to
-    # not-yet-built taxonomies.
-    construct_note: Optional[str] = None
+    # Forward reference to the future VerificationConstruct/ConstructValidity
+    # (mission row 47, still unbuilt) so Rubric never needs a breaking field
+    # migration once that type lands. Deliberately NOT the policy.py-style
+    # string-tag placeholder used elsewhere (Phase 1 finding, 22 Sept 2026):
+    # that pattern fits a namable tag (a method/dimension name), not a
+    # structured object a caller will eventually construct and pass in
+    # directly, which is what VerificationConstruct is architected as.
+    construct: Optional["VerificationConstruct"] = None
 
     def __post_init__(self) -> None:
         if not self.version or not self.version.strip():
@@ -156,7 +159,13 @@ class Rubric:
         target_index = _LOCK_STATE_ORDER.index(target)
         return target_index == current_index + 1
 
-    def advance_to(self, target: RubricLockState) -> "Rubric":
+    def advance_to(
+        self,
+        target: RubricLockState,
+        *,
+        criteria: Optional[Sequence[Criterion]] = None,
+        dependencies: Sequence[CriterionDependency] = (),
+    ) -> "Rubric":
         if not self.can_advance_to(target):
             raise RubricValidationError(
                 f"cannot advance Rubric {self.rubric_id!r} from "
@@ -164,6 +173,29 @@ class Rubric:
                 f"progression is strict single-step "
                 f"DRAFT->VALIDATED->COMPILED->LOCKED"
             )
+        if target is RubricLockState.VALIDATED:
+            # Phase 1 finding, 22 Sept 2026: the state-ordering check above
+            # used to be treated as sufficient proof that validation ran.
+            # It wasn't -- Rubric.criteria holds only CriterionId references
+            # (see module docstring), so this method cannot self-validate;
+            # the caller must supply the actual objects, or the transition
+            # is refused rather than silently trusted.
+            if criteria is None:
+                raise RubricValidationError(
+                    f"cannot advance Rubric {self.rubric_id!r} to VALIDATED "
+                    f"without the Criterion objects to validate against -- "
+                    f"pass criteria= (and dependencies= if any exist)"
+                )
+            supplied_ids = frozenset(c.criterion_id for c in criteria)
+            declared_ids = frozenset(self.criteria)
+            if supplied_ids != declared_ids:
+                raise RubricValidationError(
+                    f"Rubric {self.rubric_id!r} declares criteria "
+                    f"{sorted(declared_ids)!r} but was validated against "
+                    f"{sorted(supplied_ids)!r} -- these must match exactly, "
+                    f"or VALIDATED would certify the wrong criterion set"
+                )
+            validate_dependency_graph(criteria, dependencies)
         return dataclasses.replace(self, lock_state=target)
 
 

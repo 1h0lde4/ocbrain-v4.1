@@ -575,17 +575,30 @@ class TestRubricLockStateProgression(unittest.TestCase):
             source_requirements=(), context_basis="w", criteria=("c1",),
         )
 
+    def _matching_criteria(self):
+        # Matches _draft_rubric()'s criteria=("c1",) -- advance_to(VALIDATED)
+        # requires the actual Criterion objects, not just their ids (Phase 1
+        # finding, 22 Sept 2026: it used to accept lock-state ordering alone
+        # as proof validation ran).
+        return [
+            Criterion(
+                criterion_id="c1", rubric_id="r1", description="criterion c1",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+        ]
+
     def test_draft_to_validated_allowed(self):
-        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED)
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
         self.assertEqual(r.lock_state, RubricLockState.VALIDATED)
 
     def test_validated_to_compiled_allowed(self):
-        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED).advance_to(RubricLockState.COMPILED)
+        r = self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria()).advance_to(RubricLockState.COMPILED)
         self.assertEqual(r.lock_state, RubricLockState.COMPILED)
 
     def test_compiled_to_locked_allowed(self):
         r = (self._draft_rubric()
-             .advance_to(RubricLockState.VALIDATED)
+             .advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
              .advance_to(RubricLockState.COMPILED)
              .advance_to(RubricLockState.LOCKED))
         self.assertEqual(r.lock_state, RubricLockState.LOCKED)
@@ -600,7 +613,7 @@ class TestRubricLockStateProgression(unittest.TestCase):
 
     def test_locked_is_terminal(self):
         locked = (self._draft_rubric()
-                  .advance_to(RubricLockState.VALIDATED)
+                  .advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
                   .advance_to(RubricLockState.COMPILED)
                   .advance_to(RubricLockState.LOCKED))
         with self.assertRaises(RubricValidationError):
@@ -608,10 +621,46 @@ class TestRubricLockStateProgression(unittest.TestCase):
 
     def test_advance_to_does_not_mutate_original(self):
         draft = self._draft_rubric()
-        validated = draft.advance_to(RubricLockState.VALIDATED)
+        validated = draft.advance_to(RubricLockState.VALIDATED, criteria=self._matching_criteria())
         self.assertEqual(draft.lock_state, RubricLockState.DRAFT)
         self.assertEqual(validated.lock_state, RubricLockState.VALIDATED)
         self.assertIsNot(draft, validated)
+
+    def test_validated_without_criteria_rejected(self):
+        with self.assertRaises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.VALIDATED)
+
+    def test_validated_criteria_mismatch_rejected(self):
+        wrong_criteria = [
+            Criterion(
+                criterion_id="not-c1", rubric_id="r1", description="wrong criterion",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+        ]
+        with self.assertRaises(RubricValidationError):
+            self._draft_rubric().advance_to(RubricLockState.VALIDATED, criteria=wrong_criteria)
+
+    def test_validated_runs_real_dependency_validation(self):
+        two_criterion_rubric = Rubric(
+            rubric_id="r2", version="1.0.0", fingerprint="abc",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1", "c2"),
+        )
+        two_criteria = [
+            Criterion(
+                criterion_id=cid, rubric_id="r2", description=f"criterion {cid}",
+                applicability=CriterionApplicability(applies_unconditionally=True),
+                evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+            )
+            for cid in ("c1", "c2")
+        ]
+        cyclic_deps = [
+            CriterionDependency(criterion_id="c1", depends_on_criterion_id="c2", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="c2", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES),
+        ]
+        with self.assertRaises(CriterionDependencyCycleError):
+            two_criterion_rubric.advance_to(RubricLockState.VALIDATED, criteria=two_criteria, dependencies=cyclic_deps)
 
 
 class TestValidateDependencyGraph(unittest.TestCase):
