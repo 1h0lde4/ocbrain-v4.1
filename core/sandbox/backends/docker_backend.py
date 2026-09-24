@@ -316,6 +316,91 @@ def _lsm_active() -> bool:
     return False
 
 
+_SANDBOX_NETWORK_NAME = "ocbrain-sandbox-net"
+
+
+async def _ensure_sandbox_network() -> str:
+    """Addendum C2 / base prompt Phase 5. Creates (idempotently) the
+    shared, `--internal` Docker network every sandboxed container's
+    `allowed_hosts` traffic goes through, and returns its gateway IP —
+    a real address on the host once the network exists, reachable from
+    inside a container attached to it without any route to the
+    internet.
+
+    `--internal` is what gives "no default route out": Docker adds no
+    NAT/masquerade rule for an internal network, so a container on it
+    can reach the gateway (the host's own bridge interface — a direct
+    L2/L3 hop, not something NAT forwards onward) and nothing beyond
+    it. `enable_icc=false` additionally blocks sandbox containers from
+    reaching each other directly on the same bridge — the addendum's
+    "another reachable container acting as a bridge" concern — since
+    every sandbox created with `allowed_hosts` set lands on this one
+    shared network.
+
+    Verified directly (see reconciliation §14): a container on this
+    network reaches the gateway; reaches nothing else (`ENETUNREACH`);
+    cannot reach a sibling container on the same network (ICC).
+
+    Idempotent: "already exists" from `docker network create` is
+    treated as success, not an error — concurrent create() calls are
+    expected to race here.
+    """
+    inspect = await asyncio.create_subprocess_exec(
+        "docker",
+        "network",
+        "inspect",
+        _SANDBOX_NETWORK_NAME,
+        "--format",
+        "{{(index .IPAM.Config 0).Gateway}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await inspect.communicate()
+    if inspect.returncode == 0:
+        gateway = stdout.decode("utf-8", errors="replace").strip()
+        if gateway:
+            return gateway
+
+    create = await asyncio.create_subprocess_exec(
+        "docker",
+        "network",
+        "create",
+        "--internal",
+        "-o",
+        "com.docker.network.bridge.enable_icc=false",
+        _SANDBOX_NETWORK_NAME,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, create_stderr = await create.communicate()
+    if create.returncode != 0 and b"already exists" not in create_stderr:
+        raise DockerBackendError(
+            f"could not create {_SANDBOX_NETWORK_NAME!r}: "
+            f"{create_stderr.decode('utf-8', errors='replace').strip()}"
+        )
+
+    inspect2 = await asyncio.create_subprocess_exec(
+        "docker",
+        "network",
+        "inspect",
+        _SANDBOX_NETWORK_NAME,
+        "--format",
+        "{{(index .IPAM.Config 0).Gateway}}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout2, stderr2 = await inspect2.communicate()
+    if inspect2.returncode != 0:
+        raise DockerBackendError(
+            f"created {_SANDBOX_NETWORK_NAME!r} but could not inspect it: "
+            f"{stderr2.decode('utf-8', errors='replace').strip()}"
+        )
+    gateway = stdout2.decode("utf-8", errors="replace").strip()
+    if not gateway:
+        raise DockerBackendError(f"{_SANDBOX_NETWORK_NAME!r} has no gateway in its IPAM config")
+    return gateway
+
+
 # --------------------------------------------------------------------
 # Backend-private bookkeeping (mirrors NamespaceBackend's _RunState —
 # never one of the frozen public contracts; never leaves this file).
@@ -420,19 +505,12 @@ class DockerBackend(SandboxBackend):
             # proxy or policy mechanism. Wired for when NET_NAMESPACE +
             # NETWORK_ALLOWLIST are actually earned (A1) — AdmissionGate
             # rejects any request that would reach this branch today, so
-            # it has never executed.
-            proxy = AllowlistProxy(bind_ip="127.0.0.1", allowed_hosts=request.policy.allowed_hosts)
+            # it has never executed via the normal admission-gated path.
+            gateway_ip = await _ensure_sandbox_network()
+            proxy = AllowlistProxy(bind_ip=gateway_ip, allowed_hosts=request.policy.allowed_hosts)
             port = proxy.start()
-            proxy_url = f"http://127.0.0.1:{port}"
-            # TODO(host-verify): "bridge" is a placeholder. Phase 5 /
-            # C2 require the sandbox side to have NO route out except
-            # the proxy peer — NamespaceBackend's no-default-route veth
-            # pattern needs a genuine Docker-network equivalent
-            # (addendum's own Phase 5 §1: "isolated Docker network with
-            # no default route out"), not plain bridge mode. Left
-            # explicit rather than silently shipped as if it were
-            # already that isolated network.
-            network_mode = "bridge"
+            proxy_url = f"http://{gateway_ip}:{port}"
+            network_mode = _SANDBOX_NETWORK_NAME
 
         env = _build_container_env(request.env, proxy_url=proxy_url)
         args = _build_create_args(

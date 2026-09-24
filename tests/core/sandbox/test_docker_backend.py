@@ -578,3 +578,189 @@ async def test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state(tmp_pa
             "this test together rather than leaving them inconsistent: "
             f"{result.stdout!r}"
         )
+
+
+# ======================================================================
+# C2 — the network gate's real bypass paths, against the actual
+# isolated network _ensure_sandbox_network() builds (an --internal
+# Docker network, ICC disabled), not the "bridge" placeholder. Hits
+# real external hosts (example.com/example.org), same as this
+# repository's own test_net_proxy.py already does.
+# ======================================================================
+
+
+@pytest.fixture
+def net_backend():
+    image = os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+    return DockerBackend(image_ref=image)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_allowed_host_reaches_the_real_server_through_the_tunnel(net_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
+    request = SandboxRequest(command=("python3", "-c", """
+import urllib.request, urllib.error, ssl
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+try:
+    r = urllib.request.urlopen('https://example.com/', timeout=8, context=ctx)
+    print('OK', r.status)
+except urllib.error.HTTPError as e:
+    print('OK', e.code)  # reached the real server -- the tunnel worked, status is the server's own business
+except urllib.error.URLError as e:
+    print('TUNNEL_FAILED', e.reason)
+"""), policy=policy)
+    handle = await net_backend.create(request)
+    try:
+        result = await net_backend.run(handle, request)
+        assert result.stdout.strip().startswith("OK"), result.stdout + result.stderr
+    finally:
+        await net_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_disallowed_host_is_rejected_at_the_tunnel(net_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
+    request = SandboxRequest(command=("python3", "-c", """
+import urllib.request, urllib.error, ssl
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+try:
+    urllib.request.urlopen('https://example.org/', timeout=8, context=ctx)
+    print('BYPASS')
+except urllib.error.URLError as e:
+    print('REJECTED', e.reason)
+"""), policy=policy)
+    handle = await net_backend.create(request)
+    try:
+        result = await net_backend.run(handle, request)
+        assert result.stdout.strip().startswith("REJECTED"), result.stdout + result.stderr
+        assert "403" in result.stdout
+    finally:
+        await net_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_direct_connection_cannot_bypass_the_proxy(net_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
+    request = SandboxRequest(command=("python3", "-c", """
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+try:
+    s.connect(('93.184.215.14', 80))
+    print('BYPASS')
+except OSError as e:
+    print('BLOCKED', e)
+"""), policy=policy)
+    handle = await net_backend.create(request)
+    try:
+        result = await net_backend.run(handle, request)
+        assert result.stdout.strip().startswith("BLOCKED"), result.stdout + result.stderr
+    finally:
+        await net_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_docker_gateway_has_no_route_to_the_internet(net_backend, tmp_path):
+    # The gateway IS the proxy's own bind address (by design), but
+    # nothing else routes through it -- confirm a DIFFERENT port on the
+    # gateway (nothing listening there) fails the same way a real
+    # internet destination would, not by falling through to some
+    # forwarding path.
+    from core.sandbox.backends.docker_backend import _ensure_sandbox_network
+
+    gateway_ip = await _ensure_sandbox_network()
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
+    request = SandboxRequest(command=("python3", "-c", f"""
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(3)
+try:
+    s.connect(('{gateway_ip}', 65432))
+    print('unexpected: connected')
+except OSError as e:
+    print('correctly refused:', e)
+"""), policy=policy)
+    handle = await net_backend.create(request)
+    try:
+        result = await net_backend.run(handle, request)
+        assert "correctly refused" in result.stdout, result.stdout + result.stderr
+    finally:
+        await net_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_sibling_sandbox_container_is_unreachable(net_backend, tmp_path):
+    # "another reachable container acting as a bridge" -- two sandboxes
+    # on the shared internal network must not be able to reach each
+    # other directly (enable_icc=false on _ensure_sandbox_network()).
+    policy_a = SandboxPolicy(workspace_dir=str(tmp_path / "a"), allowed_hosts=("example.com",), timeout_sec=15)
+    policy_b = SandboxPolicy(workspace_dir=str(tmp_path / "b"), allowed_hosts=("example.com",), timeout_sec=15)
+    listener_req = SandboxRequest(command=("python3", "-c", """
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 9999)); s.listen(1)
+s.settimeout(6)
+try:
+    c, _ = s.accept()
+    print('BYPASS: sibling connected')
+except socket.timeout:
+    print('no connection arrived (expected)')
+"""), policy=policy_a)
+    listener_handle = await net_backend.create(listener_req)
+    listener_container_id = net_backend._handles[listener_handle.handle_id].container_id
+    import subprocess as _sp
+    _sp.run(["docker", "start", listener_container_id], check=True, capture_output=True)
+    import asyncio as _asyncio
+    await _asyncio.sleep(0.5)
+    insp = _sp.run(
+        ["docker", "inspect", listener_container_id, "--format",
+         "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"],
+        capture_output=True, text=True,
+    )
+    listener_ip = insp.stdout.strip()
+
+    other_backend = DockerBackend(image_ref=net_backend._image_ref)
+    connector_req = SandboxRequest(command=("python3", "-c", f"""
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(4)
+try:
+    s.connect(('{listener_ip}', 9999))
+    print('BYPASS: reached sibling')
+except OSError as e:
+    print('correctly blocked from sibling:', e)
+"""), policy=policy_b)
+    connector_handle = await other_backend.create(connector_req)
+    try:
+        result = await other_backend.run(connector_handle, connector_req)
+        assert "correctly blocked" in result.stdout, result.stdout + result.stderr
+    finally:
+        await other_backend.destroy(connector_handle)
+        # listener_handle was started manually (bypassing run()) purely to
+        # get it into RUNNING state for this probe -- destroy() still
+        # tears it down correctly regardless of how it got there.
+        await net_backend.destroy(listener_handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c2_env_cannot_redirect_the_enforced_proxy(net_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
+    request = SandboxRequest(
+        command=("python3", "-c", "import os; print(os.environ.get('HTTP_PROXY'))"),
+        policy=policy,
+        env={"HTTP_PROXY": "http://10.255.255.1:9"},
+    )
+    handle = await net_backend.create(request)
+    try:
+        result = await net_backend.run(handle, request)
+        assert "10.255.255.1" not in result.stdout
+        assert result.stdout.strip().startswith("http://")
+    finally:
+        await net_backend.destroy(handle)
