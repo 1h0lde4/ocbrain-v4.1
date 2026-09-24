@@ -774,6 +774,17 @@ class WorkflowRuntime:
             metadata=metadata,
             cancel_token=cancel_token,
             node_states=node_states,
+            # ADR-CAP-02: results of this node's direct, successfully
+            # completed predecessors -- the only data channel between
+            # nodes. Before this, a downstream node saw only the run's
+            # query and its own config, so a multi-step plan was a
+            # sequence of independent calls, not a pipeline.
+            upstream_results={
+                pid: node_results[pid]
+                for pid in definition.get_predecessors(node_id)
+                if node_results.get(pid) is not None
+                and node_results[pid].success
+            },
         )
 
         state.result = result
@@ -852,6 +863,7 @@ class WorkflowRuntime:
         metadata: Dict[str, Any],
         cancel_token: CancellationToken,
         node_states: Dict[str, WorkflowNodeState],
+        upstream_results: Optional[Dict[str, WorkerResult]] = None,
     ) -> WorkerResult:
         """Execute a single node with retry logic."""
         policy = node.retry_policy
@@ -880,6 +892,10 @@ class WorkflowRuntime:
                     "attempt": attempt + 1,
                     "attempt_id": state.attempt_id,
                     **metadata,
+                    # Set AFTER **metadata so run-level metadata cannot
+                    # spoof what "upstream" contains: the runtime alone
+                    # decides which predecessor results a node sees.
+                    "upstream_results": dict(upstream_results or {}),
                 },
                 governance_state={"recursion_depth": 0},
                 cancellation_token=cancel_token,

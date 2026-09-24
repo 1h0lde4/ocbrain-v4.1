@@ -40,7 +40,17 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+
+from core.capabilities.descriptors import (
+    ALL_STATUSES,
+    CapabilityStatus,
+    OperationSpec,
+    SUCCESS_STATUSES,
+    SIDE_EFFECT_VALUES,
+    SideEffect,
+    validate_operations,
+)
 
 
 class CapabilityType:
@@ -77,6 +87,20 @@ class CapabilityType:
     TOOL_INVOCATION = "tool_invocation"      # declared, not registered
     EXTERNAL_API = "external_api"            # declared, not registered
 
+    # Capability-foundation identities (ADR-CAP-01, PROPOSED). Semantic
+    # identities only -- implementation-, adapter-, model- and provider-
+    # neutral. Declared here like every other type; REGISTERED (contract +
+    # adapters) only by main.py when [capabilities] foundation_enabled is
+    # true (default false), so K4.2 discovery behavior is unchanged until
+    # the adoption decision in ADR-CAP-03 is made.
+    #
+    # FILE_READING is *semantic reading of an already-authorized artifact*.
+    # It is not FILE_ACCESS: FILE_ACCESS (above) stays the declared,
+    # unregistered ACCESS layer (Workspace §G.5/§I) and is not activated.
+    TEXT_GENERATION = "text_generation"            # produce/transform prose
+    STRUCTURED_REASONING = "structured_reasoning"  # structured analysis
+    FILE_READING = "file_reading"                  # artifact -> structured document
+
 
 @dataclass
 class CapabilityRequest:
@@ -92,6 +116,12 @@ class CapabilityRequest:
     payload: Dict[str, Any] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # ADR-CAP-01: the named mode of the capability to run (e.g.
+    # "summarize"). "" = the contract's default operation (or, for a
+    # legacy contract that declares no operations, the one implicit
+    # operation). Deliberately NOT called operation_id -- that name is
+    # already taken (ADR-K4.2-H-08 / ADR-KERNEL-01) for plan lineage.
+    operation: str = ""
 
 
 @dataclass
@@ -108,6 +138,36 @@ class CapabilityResult:
     adapter_used: str = ""
     duration_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # ADR-CAP-02 (additive): machine-readable outcome, see
+    # descriptors.CapabilityStatus. Empty = derived from ``success`` so
+    # every pre-existing construction site keeps working unchanged.
+    status: str = ""
+    # ADR-CAP-02 (additive): where this result came from. AdapterRuntime
+    # stamps the runtime-known facts (capability, operation, contract
+    # version, adapter identity/version, trace id) so an adapter cannot
+    # forget them; adapters add implementation facts (reader, model,
+    # provider, source references). Provenance is *evidence about
+    # origin*, never a verification verdict.
+    provenance: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            self.status = (CapabilityStatus.OK if self.success
+                           else CapabilityStatus.FAILED)
+        elif self.status not in ALL_STATUSES:
+            raise ValueError(f"unknown CapabilityResult.status {self.status!r}")
+        elif self.success != (self.status in SUCCESS_STATUSES):
+            raise ValueError(
+                f"CapabilityResult inconsistent: success={self.success} "
+                f"but status={self.status!r}")
+
+    @classmethod
+    def of(cls, status: str, *, output: Any = None, error: str = "",
+           **kwargs: Any) -> "CapabilityResult":
+        """Build a result whose ``success`` is derived from ``status`` so
+        the two can never disagree."""
+        return cls(success=status in SUCCESS_STATUSES, output=output,
+                   error=error, status=status, **kwargs)
 
 
 @dataclass
@@ -137,6 +197,43 @@ class CapabilityContract:
     required_resources: List[str] = field(default_factory=list)
     version: str = "1.0.0"
     is_general_purpose: bool = False
+    # ── ADR-CAP-01 / ADR-CAP-02 (additive; every default preserves the
+    # pre-existing behavior of a contract that sets none of them) ──────
+    # ``version`` above is the semver of THIS CONTRACT: a major bump means
+    # the semantics changed; adapters declare which major they implement.
+    # It is not an adapter, model or provider version.
+    operations: Tuple[OperationSpec, ...] = ()
+    default_operation: str = ""
+    # Descriptive only. Metadata is never enforcement; GovernanceKernel and
+    # the sandbox enforce (Workspace §G.2: AdapterRuntime is not the
+    # governance boundary).
+    side_effects: str = SideEffect.UNSPECIFIED
+
+    def operation_names(self) -> Tuple[str, ...]:
+        return tuple(op.name for op in self.operations)
+
+    def get_operation(self, name: str = "") -> Optional[OperationSpec]:
+        """Resolve an operation by name. ``""`` selects the default
+        (explicit ``default_operation``, else the first declared). None
+        when the contract declares no such operation."""
+        if not self.operations:
+            return None
+        wanted = name or self.default_operation or self.operations[0].name
+        for op in self.operations:
+            if op.name == wanted:
+                return op
+        return None
+
+    def structural_problems(self) -> List[str]:
+        """Validation problems in the additive descriptor fields (empty =
+        valid). Pre-existing fields are not re-validated here."""
+        problems = validate_operations(
+            self.capability_type, self.operations, self.default_operation)
+        if self.side_effects not in SIDE_EFFECT_VALUES:
+            problems.append(
+                f"{self.capability_type}: unknown side_effects "
+                f"{self.side_effects!r}")
+        return problems
 
 
 @runtime_checkable
@@ -181,6 +278,18 @@ class BaseAdapter:
     """
     adapter_name: str = "base"
     capability_type: str = ""
+    # ADR-CAP-02 optional identity/compatibility attributes. Not part of
+    # the Adapter Protocol (adding attributes there would break
+    # isinstance() for existing structural adapters); read defensively
+    # with getattr() by CapabilityRegistry / AdapterRuntime.
+    adapter_version: str = ""
+    # Contract major (or major.minor) this adapter implements; "" = not
+    # declared (legacy). A declared major that differs from the
+    # contract's is a registration error, so a contract-breaking change
+    # cannot be silently paired with an old implementation.
+    implements_contract: str = ""
+    # Operations this adapter implements; empty = all declared ones.
+    supported_operations: Tuple[str, ...] = ()
 
     def __init__(self):
         self.health_score = 100

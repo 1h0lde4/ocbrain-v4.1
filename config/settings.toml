@@ -10,6 +10,14 @@ web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
 
+[capabilities]
+# ADR-CAP-03 (PROPOSED). Registers TEXT_GENERATION, STRUCTURED_REASONING and
+# FILE_READING. Default false: with specific capabilities registered, K4.2's
+# lexical discovery can rank them above LLM_COMPLETION with a low score, which
+# ClarificationPolicy escalates (ADR-K4.2-H-13). Enable only after the
+# adoption gates in docs/architecture/decisions/ADR_CAP_03_*.md are met.
+foundation_enabled = false
+
 [runtime]
 use_k42_frontend = true
 max_recovery_attempts = 3

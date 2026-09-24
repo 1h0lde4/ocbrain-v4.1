@@ -55,12 +55,24 @@ ocbrain-v4.1-main/
 │   │
 │   ├── capabilities/                # K2.3 — Capability Runtime
 │   │   ├── capability.py            #   CapabilityType, Adapter Protocol, BaseAdapter
+│   │   ├── descriptors.py           #   Mission 1 (DRAFT): operations, status/lifecycle vocab — ADR-CAP-02
 │   │   ├── registry.py              #   CapabilityRegistry (metadata-only)
 │   │   ├── adapter_runtime.py       #   AdapterRuntime (execution, fallback)
-│   │   └── adapters/                #   Concrete adapters
-│   │       ├── model_router_adapter.py
-│   │       ├── ollama_adapter.py
-│   │       └── openai_compat_adapter.py
+│   │   ├── adapters/                #   Concrete adapters
+│   │   │   ├── model_router_adapter.py
+│   │   │   ├── ollama_adapter.py
+│   │   │   └── openai_compat_adapter.py
+│   │   └── foundation/              #   Mission 1 (DRAFT, gated off — ADR-CAP-01/02/03):
+│   │       │                        #   TEXT_GENERATION / STRUCTURED_REASONING / FILE_READING
+│   │       ├── contracts.py         #     the three CapabilityContract declarations
+│   │       ├── schemas.py           #     typed hand-off structures (Document/Block/Table/...)
+│   │       ├── file_reading.py      #     FILE_READING adapter (no path/URI input)
+│   │       ├── readers/             #     format sniffing + inline/isolated-subprocess parsers
+│   │       ├── models.py            #     TextModel port (bypasses ModelRouter's training-data capture)
+│   │       ├── prompts.py           #     versioned templates, TASK vs. nonce-fenced DATA channels
+│   │       ├── text_generation.py   #     TEXT_GENERATION adapter
+│   │       ├── structured_reasoning.py #  STRUCTURED_REASONING adapter
+│   │       └── wiring.py            #     register_foundation_capabilities()/_workers() — see main.py
 │   │
 │   ├── governance/                  # K2.4 — Governance
 │   │   ├── governance_kernel.py     #   GovernanceKernel + Recursion/Budget/Evolution governors
@@ -72,6 +84,9 @@ ocbrain-v4.1-main/
 │   ├── workers/                     # Cognitive Workers
 │   │   ├── base.py                  #   AbstractCognitiveWorker (template method)
 │   │   ├── planner.py               #   PlannerWorker (K2.2)
+│   │   ├── capability_executor.py   #   CapabilityExecutorWorker (bridges WorkflowNode -> LLM_COMPLETION)
+│   │   ├── capability_steps.py      #   Mission 1 (DRAFT): governed step workers for the three
+│   │   │                            #     foundation capabilities — see capabilities/foundation/
 │   │   └── memory_curator.py        #   MemoryCuratorWorker
 │   │
 │   ├── cognitive/                   # K4.2 — Cognitive Front-End (flat modules; added here Aug 2026 —
@@ -166,6 +181,7 @@ Reports in approximate chronological order:
 | K4.2-H2 Readiness & Implementation Plan | `docs/Bugs Hunt & fix reports/K4_2_H2_READINESS_AND_IMPLEMENTATION_PLAN.md` | D10 baseline capability + full four-packet (D3/D7/D11/D12) parallel-session plan |
 | K4.2-H2-D3 Completion Report | `docs/Bugs Hunt & fix reports/K4_2_H2_D3_COMPLETION_REPORT.md` | Capability Discrimination Acceptance Suite; the registration-order tie-break fix |
 | K4.2-H2-D11 Completion Report | `docs/Bugs Hunt & fix reports/K4_2_H2_D11_COMPLETION_REPORT.md` | Request Language Detection |
+| Capability Foundation Mission 1 Completion Report | `docs/Bugs Hunt & fix reports/CAPABILITY_FOUNDATION_MISSION1_COMPLETION_REPORT.md` | TEXT_GENERATION/STRUCTURED_REASONING/FILE_READING — DRAFT, unreviewed, unmerged, `feature/capability-foundation-mission1` |
 
 *(Note: this table has not been kept current since ~July 2026 — several K3/K4/K4.1/K4.1-L/K4.2 reports, including `K4_2_H1_COMPLETION_REPORT.md`, are missing between the row above and these two. Not backfilled here as it's outside this edit's scope; flagging for a dedicated catch-up pass.)*
 
