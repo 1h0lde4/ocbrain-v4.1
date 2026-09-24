@@ -67,12 +67,12 @@ Architecture:
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from core.memory.knowledge_entry import KnowledgeEntry
 from core.memory.unified_memory import UnifiedMemory, get_unified_memory
 from core.memory.retrieval.fusion import RetrievalFusionEngine
-from core.memory.retrieval.graphrag import GraphRAGPipeline
+from core.memory.retrieval.graphrag import EvidenceSet, GraphRAGPipeline
 from core.memory.retrieval.context import RetrievalContextBuilder, Context
 
 logger = logging.getLogger("ocbrain.memory.assembly")
@@ -109,6 +109,54 @@ class ContextAssemblyEngine:
         # it"). Not used by assemble_context() itself as of this session.
         self._fusion = RetrievalFusionEngine(memory)
 
+    async def _retrieve_and_build(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]] = None,
+    ) -> Tuple[EvidenceSet, Context]:
+        """Steps 1+3 of assemble_context()'s original body, factored out
+        so assemble() below can share them (CTX-AUTH-001b / ADR-KERNEL-06,
+        Sept 23 2026). assemble_context()'s own steps 2/4/5 — the
+        entries_by_id map and layer-grouped string rendering — are specific
+        to its Orchestrator/PlannerWorker callers and stay there unchanged;
+        this helper returns evidence_set alongside context only because
+        assemble_context() still needs the former for that rendering.
+        """
+        # 1. Retrieve via the canonical pipeline — one call to
+        #    UnifiedMemory.search() happens inside this (GraphRAGPipeline
+        #    Stage 2), plus graph expansion when a backend is registered.
+        evidence_set = await self._graphrag.retrieve(
+            query, limit=10, query_embedding=query_embedding,
+        )
+        # 3. Build the canonical Context — dedup, contradiction grouping,
+        #    token budgeting, provenance all happen here, once.
+        context: Context = self._context_builder.build(evidence_set)
+        return evidence_set, context
+
+    async def assemble(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]] = None,
+    ) -> Context:
+        """Structured counterpart to assemble_context() below: returns the
+        canonical Context (real ContextBlocks, each with a primary_entry_id
+        and a ProvenanceRecord carrying AuthorityLevel) instead of a
+        flattened string.
+
+        Added for the Intent Interpreter (core/cognitive/intent.py,
+        generate_hypotheses()), which needs individually citable,
+        individually verifiable blocks for ADR-KERNEL-06's citation
+        mechanism — a flattened string cannot support per-block citation
+        verification. assemble_context()'s string contract for its
+        existing callers (Orchestrator, PlannerWorker) is unchanged by
+        this method's existence; both now share _retrieve_and_build()
+        above rather than assemble_context() growing a second responsibility.
+        """
+        _evidence_set, context = await self._retrieve_and_build(
+            query, query_embedding,
+        )
+        return context
+
     async def assemble_context(
         self,
         query: str,
@@ -131,11 +179,8 @@ class ContextAssemblyEngine:
         Returns:
             Context string, or "" when memory returns no results.
         """
-        # 1. Retrieve via the canonical pipeline — one call to
-        #    UnifiedMemory.search() happens inside this (GraphRAGPipeline
-        #    Stage 2), plus graph expansion when a backend is registered.
-        evidence_set = await self._graphrag.retrieve(
-            query, limit=10, query_embedding=query_embedding,
+        evidence_set, context = await self._retrieve_and_build(
+            query, query_embedding,
         )
 
         # 2. Local entry_id -> KnowledgeEntry map, built from the evidence
@@ -145,10 +190,6 @@ class ContextAssemblyEngine:
         entries_by_id: Dict[str, KnowledgeEntry] = {
             item.entry_id: item.entry for item in evidence_set.items
         }
-
-        # 3. Build the canonical Context — dedup, contradiction grouping,
-        #    token budgeting, provenance all happen here, once.
-        context: Context = self._context_builder.build(evidence_set)
 
         # 4. Group blocks by their primary entry's layer (mirrors legacy
         #    tier grouping L1/L2/L3). Falls back to "l2" (semantic) for

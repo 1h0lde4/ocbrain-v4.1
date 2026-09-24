@@ -714,7 +714,7 @@ class Orchestrator:
                 with span("cognitive_memory_assembly"):
                     # Assemble optimized context from L1, L2, L3 tiers
                     memory_context = await context_assembler.assemble_context(query)
-                    self.context.set_long_term_memories_string(memory_context)
+                    self.context.set_long_term_memories_string(memory_context, scope=execution_id)
                     
                     # Phase 4: Record retrieval health
                     # (Simplified check: if context has content, it's a hit)

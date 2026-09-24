@@ -12,19 +12,22 @@ GraphRAG internals beyond the Evidence/EvidenceSet data types it consumes.
 Public API:
     RetrievalContextBuilder — the builder (build(evidence_set) -> Context)
     Context, ContextBlock, ContradictionGroup, ProvenanceRecord — the data model
+    AuthorityLevel — the security/instruction-following classification on
+                      ProvenanceRecord.authority (CTX-AUTH-001 / REM-004)
     DuplicateDetector, MinHashDuplicateDetector — pluggable consolidation
     TokenCounter, HeuristicTokenCounter — pluggable budgeting
 """
 
 from core.memory.retrieval.context.builder import RetrievalContextBuilder
 from core.memory.retrieval.context.context import (
-    Context, ContextBlock, ContradictionGroup, ProvenanceRecord,
+    AuthorityLevel, Context, ContextBlock, ContradictionGroup, ProvenanceRecord,
 )
 from core.memory.retrieval.context.duplicates import DuplicateDetector, MinHashDuplicateDetector
 from core.memory.retrieval.context.token_counter import HeuristicTokenCounter, TokenCounter
 
 __all__ = [
     "RetrievalContextBuilder",
+    "AuthorityLevel",
     "Context", "ContextBlock", "ContradictionGroup", "ProvenanceRecord",
     "DuplicateDetector", "MinHashDuplicateDetector",
     "TokenCounter", "HeuristicTokenCounter",
