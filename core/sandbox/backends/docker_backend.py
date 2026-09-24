@@ -254,6 +254,68 @@ def _sha256_of(path: str) -> str:
     return h.hexdigest()
 
 
+def _lsm_active() -> bool:
+    """Addendum A9/C3 — host precondition, not a mitigation this file can
+    implement itself.
+
+    Direct `socket(AF_VSOCK, ...)` is blocked by Docker's own default
+    seccomp profile. It is NOT the only way to ask the kernel for that
+    socket: the legacy 32-bit `socketcall(2)` compat entry point
+    (reachable from a 64-bit container via `int $0x80`) can still
+    create one. This was reproduced and verified directly (real socket,
+    confirmed via `/proc/self/fd` showing `socket:[inode]`, not a
+    plausible-looking return value) — see reconciliation doc §12/§13.
+
+    A custom seccomp profile removing "socketcall" from the allow-list
+    was tried here and does NOT close this: the profile genuinely loads
+    and enforces (confirmed by using the identical mechanism to block
+    an ordinary 64-bit syscall, `mkdir`, successfully) — it just does
+    not reach the IA32-compat path for this syscall specifically on
+    this host, for reasons not fully isolated (see §13's account of
+    what was and wasn't ruled out; it is not simply a missing
+    `architectures` declaration -- that was tried too). Root cause
+    aside, the empirical result is unambiguous: seccomp alone, via
+    Docker's `--security-opt seccomp=`, is not a reliable mitigation
+    for this specific bypass on this host, and this file does not ship
+    one that only *looks* like it works.
+
+    Upstream Docker's own fix for the equivalent AF_ALG case (and,
+    later, this exact AF_VSOCK case — moby/moby#53551, Engine 29.8.0)
+    is an LSM policy rule (AppArmor's `deny network alg`-style rule, or
+    an SELinux `vsock_socket` deny), specifically because an LSM hooks
+    `security_socket_create()` — which fires regardless of which
+    syscall ABI reached it — rather than filtering syscall arguments
+    the way seccomp/BPF does. That is the only mitigation this
+    investigation found to actually work, and it requires a real LSM.
+
+    This function is the resulting precondition: any future capability
+    claim whose safety depends on the AF_VSOCK bypass being closed
+    (there are none yet — see B2) MUST check this first, not merely
+    confirm the Docker version is new enough. It checks for AppArmor or
+    SELinux being active on the *host* at all -- it does NOT confirm
+    the specific deny rule is actually loaded in the profile a given
+    container runs under, which would need a real Phase-0 session to
+    verify against an actual deployment target. Treat a True return
+    here as "an LSM is present, worth checking further," not as "this
+    bypass is closed."
+    """
+    try:
+        with open("/sys/module/apparmor/parameters/enabled") as f:
+            if f.read().strip() == "Y":
+                return True
+    except OSError:
+        pass
+    try:
+        import subprocess as _subprocess
+
+        out = _subprocess.run(["getenforce"], capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip() in ("Enforcing", "Permissive"):
+            return True
+    except (OSError, FileNotFoundError):
+        pass
+    return False
+
+
 # --------------------------------------------------------------------
 # Backend-private bookkeeping (mirrors NamespaceBackend's _RunState —
 # never one of the frozen public contracts; never leaves this file).

