@@ -71,3 +71,13 @@ Checking the `tests` check the same way surfaced something real: `TestCtxAuth001
 **Verified, not assumed:** full suite re-run: `1514 passed, 1 xfailed, ... exit code 0`. Separately verified `strict=True`'s actual behavior — not just cited from memory — with a throwaway sandbox test outside the repo: a deliberately-passing `xfail(strict=True)` test reports `XPASS(strict)` as `FAILED`, exit code 1. Confirms the tripwire genuinely works: if CTX-AUTH-001b's provenance mechanism is ever implemented (or the test starts passing for any other reason), CI will fail until the marker is deliberately removed, not silently absorb the change.
 
 **Freeze status unaffected, exactly as instructed:** this is CI bookkeeping, not an architectural resolution. CTX-AUTH-001b/REM-004 remains exactly as open as before; ADR-KERNEL-06 remains accepted-not-implemented. CI now correctly distinguishes "environmental failure" from "intentional architectural tripwire" instead of conflating the second into the first's mechanism -- it does not resolve what the tripwire is tracking.
+
+---
+
+## Postscript: the xfail marker was superseded within the hour — CTX-AUTH-001b is actually implemented
+
+While the `xfail` fix above was being verified and pushed, `main` moved again (`5954e44` → `5d51bf3` → `fae9af9`/`46edae3` → `origin/main`) via a separate concurrent session's real implementation: `feat(CTX-AUTH-001b): implement ADR-KERNEL-06 verifiable hypothesis provenance`. Reconciling that in required real care, not just trusting another clean-looking merge: both sides had touched `tests/core/cognitive/test_intent_security.py`, and the auto-merge carried my `xfail` decorator onto a *different* method than the one I'd originally marked — `TestCtxAuth001ParserAcceptance` had been substantially reformulated around the new authority system, and git's line-based merge preserved "a decorator in roughly that position," not the semantic target. Caught by checking the actual post-merge file content directly, not by assuming the merge succeeded correctly because it reported no conflicts.
+
+The file's own updated module documentation settled the question: "`TestCtxAuth001ParserAcceptance`: reformulated (Moncif, Sept 20 2026 — 'not abandoned')... Do not mark it xfail (this repository has no xfail convention)." Removed the marker entirely. Full suite: **1,535 passed, 0 failed, 0 xfailed** — clean, with no special-casing needed anywhere.
+
+This is exactly the tripwire behaving as designed, not a wasted step: the marker existed to force explicit attention the moment the underlying gap closed, rather than silently going stale. It did its job within the hour. `DEBT-033`'s register entry updated to record the full arc, not just the intermediate state.

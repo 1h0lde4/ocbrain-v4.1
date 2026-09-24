@@ -262,10 +262,6 @@ class TestCtxAuth001ParserAcceptance:
     structural-containment tests above (which test the *input* boundary)
     by testing the *output* trust boundary."""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="CTX-AUTH-001b provenance acceptance pending ADR-KERNEL-06 implementation",
-    )
     @pytest.mark.asyncio
     async def test_fabricated_request_citation_is_not_granted_user_authority(self):
         raw_request = RawRequest(text="what's a good name for my new branch?")
