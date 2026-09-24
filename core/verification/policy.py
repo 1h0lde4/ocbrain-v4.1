@@ -56,7 +56,7 @@ class VerificationRequirements:
 
     required_dimensions is a set of dimension names (v2 section 11's
     dimension taxonomy is not yet built in code -- tracked as remaining
-    Phase C scope; plain strings here are a deliberate placeholder for
+    scope; plain strings here are a deliberate placeholder for
     that not-yet-existing enum, not a design decision to use strings
     permanently).
     """
@@ -108,7 +108,12 @@ class VerificationStrategy:
     "reference, don't embed" pattern for provenance (evidence.py).
     """
     selected_shape: VerificationShape
-    selected_methods: FrozenSet[str]  # v2 section 11 method names; VerificationMethod not yet built in code
+    selected_methods: FrozenSet[str]  # v2 section 11 method names -- still plain
+        # strings here rather than VerificationMethodId (method.py, built
+        # this session): changing this field's type is a decision about an
+        # existing, already-tested contract, left open rather than made as
+        # a side effect of an unrelated design (see the
+        # CompiledVerificationSpecification proposal's open questions)
     verifier_count: int
     derived_from_requirements: str  # opaque reference, not an embedded VerificationRequirements
     derived_from_policy: Optional[str] = None  # opaque reference; None if no policy applied
