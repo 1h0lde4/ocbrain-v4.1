@@ -31,6 +31,7 @@ VerificationStrategy directly.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, FrozenSet, Optional
@@ -59,12 +60,26 @@ class VerificationRequirements:
     scope; plain strings here are a deliberate placeholder for
     that not-yet-existing enum, not a design decision to use strings
     permanently).
+
+    requirements_id (added 22 Sept 2026, CompiledVerificationSpecification
+    design pass): this codebase already had a field expecting Requirements
+    to have stable identity -- VerificationStrategy.derived_from_requirements
+    (below) is an "opaque reference" with nothing principled to reference
+    until now. Auto-generated rather than caller-supplied, matching
+    CapabilityRequest.trace_id's own pattern (core/capabilities/
+    capability.py) -- a typical caller declaring requirements has no
+    reason to manage its own id namespace. No separate version field:
+    this object is frozen and immutable per-instance (unlike Rubric,
+    which explicitly progresses through lock states and is designed to
+    be revised pre-lock) -- a fresh id per construction already gives
+    identity and an implicit version marker together.
     """
     target_description: str
     required_dimensions: FrozenSet[str]
     shape: VerificationShape = VerificationShape.POINTWISE
     minimum_confidence: Optional[float] = None
     hard_stop_on_failure: bool = False
+    requirements_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __post_init__(self) -> None:
         if not self.target_description:
@@ -76,6 +91,8 @@ class VerificationRequirements:
                 f"VerificationRequirements.minimum_confidence must be in [0.0, 1.0], "
                 f"got {self.minimum_confidence}"
             )
+        if not self.requirements_id or not self.requirements_id.strip():
+            raise ValueError("VerificationRequirements.requirements_id must be non-empty")
 
 
 @dataclass(frozen=True)
@@ -115,8 +132,10 @@ class VerificationStrategy:
         # a side effect of an unrelated design (see the
         # CompiledVerificationSpecification proposal's open questions)
     verifier_count: int
-    derived_from_requirements: str  # opaque reference, not an embedded VerificationRequirements
-    derived_from_policy: Optional[str] = None  # opaque reference; None if no policy applied
+    derived_from_requirements: str  # opaque reference to
+        # VerificationRequirements.requirements_id (added 22 Sept 2026 --
+        # this field had nothing principled to point to before that)
+    derived_from_policy: Optional[str] = None  # opaque reference to VerificationPolicy.policy_id; None if no policy applied
 
     def __post_init__(self) -> None:
         if self.verifier_count < 1:

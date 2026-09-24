@@ -284,6 +284,15 @@ class TestRequirementsPolicyStrategyProfile:
         with pytest.raises(ValueError):
             self._requirements(minimum_confidence=1.5)
 
+    def test_requirements_id_auto_generated_and_unique(self):
+        r1, r2 = self._requirements(), self._requirements()
+        assert r1.requirements_id and r2.requirements_id
+        assert r1.requirements_id != r2.requirements_id
+
+    def test_explicit_empty_requirements_id_rejected(self):
+        with pytest.raises(ValueError):
+            self._requirements(requirements_id="")
+
     def test_policy_requires_id(self):
         with pytest.raises(ValueError):
             VerificationPolicy(policy_id="")
