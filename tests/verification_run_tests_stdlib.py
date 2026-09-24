@@ -45,6 +45,11 @@ from core.verification.claim import ClaimOrigin, Claim
 from core.verification.assumption import Assumption
 from core.verification.reference import ReferenceKind, Reference, GroundTruth
 from core.verification.oracle import Oracle
+from core.verification.method import (
+    InspectionClass, CostLatencyClass, MethodExecutionState, MethodDisposition,
+    VerificationCapability, VerificationMethod, VerificationMethodRequest,
+    VerificationMethodResult, BaseVerifierAdapter,
+)
 
 
 def basis(*components):
@@ -864,6 +869,143 @@ class TestOracle(unittest.TestCase):
     def test_empty_description_rejected(self):
         with self.assertRaises(ValueError):
             Oracle(oracle_id="o1", description="", is_executable=True, is_reproducible=True, is_validated=True)
+
+
+class TestVerificationCapability(unittest.TestCase):
+    def test_valid_construction(self):
+        cap = VerificationCapability(
+            capability_id="cap1", name="filesystem_observation",
+            inspection_class=InspectionClass.READ_ONLY_INSPECTION,
+            typical_evidence_directness=EvidenceDirectness.DIRECT,
+        )
+        self.assertEqual(cap.underlying_capability_types, ())
+
+    def test_empty_name_rejected(self):
+        with self.assertRaises(ValueError):
+            VerificationCapability(capability_id="cap1", name="", inspection_class=InspectionClass.READ_ONLY_INSPECTION, typical_evidence_directness=EvidenceDirectness.DIRECT)
+
+    def test_with_underlying_capability_types(self):
+        cap = VerificationCapability(
+            capability_id="cap1", name="filesystem_observation",
+            inspection_class=InspectionClass.READ_ONLY_INSPECTION,
+            typical_evidence_directness=EvidenceDirectness.DIRECT,
+            underlying_capability_types=("FILE_ACCESS",),
+        )
+        self.assertEqual(cap.underlying_capability_types, ("FILE_ACCESS",))
+
+
+class TestVerificationMethod(unittest.TestCase):
+    def _method(self, **overrides):
+        defaults = dict(
+            method_id="m1", method_type="deterministic_file_existence",
+            description="checks whether a file exists", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        defaults.update(overrides)
+        return VerificationMethod(**defaults)
+
+    def test_valid_construction(self):
+        m = self._method()
+        self.assertTrue(m.is_deterministic)
+        self.assertEqual(m.required_capabilities, ())
+
+    def test_empty_method_type_rejected(self):
+        with self.assertRaises(ValueError):
+            self._method(method_type="")
+
+    def test_empty_description_rejected(self):
+        with self.assertRaises(ValueError):
+            self._method(description="")
+
+    def test_empty_version_rejected(self):
+        with self.assertRaises(ValueError):
+            self._method(version="")
+
+    def test_external_access_without_capabilities_rejected(self):
+        with self.assertRaises(ValueError):
+            self._method(external_access_needed=True, required_capabilities=())
+
+    def test_external_access_with_capabilities_allowed(self):
+        m = self._method(external_access_needed=True, required_capabilities=("cap1",))
+        self.assertEqual(m.required_capabilities, ("cap1",))
+
+
+class TestVerificationMethodRequest(unittest.TestCase):
+    def _target(self):
+        fp = VerificationTargetFingerprint(content_hash="abc123", version="1")
+        return VerificationTargetSnapshot(target_id="t1", fingerprint=fp, captured_at=datetime.now(timezone.utc))
+
+    def test_valid_construction(self):
+        req = VerificationMethodRequest(method_id="m1", target=self._target(), criterion_id="c1")
+        self.assertEqual(req.payload, {})
+
+    def test_empty_method_id_rejected(self):
+        with self.assertRaises(ValueError):
+            VerificationMethodRequest(method_id="", target=self._target(), criterion_id="c1")
+
+
+class TestVerificationMethodResult(unittest.TestCase):
+    def test_executed_requires_disposition(self):
+        with self.assertRaises(ValueError):
+            VerificationMethodResult(execution_state=MethodExecutionState.EXECUTED, disposition=None)
+
+    def test_executed_conclusive_requires_observations(self):
+        with self.assertRaises(ValueError):
+            VerificationMethodResult(execution_state=MethodExecutionState.EXECUTED, disposition=MethodDisposition.CONCLUSIVE, observations=())
+
+    def test_executed_conclusive_with_observations_valid(self):
+        r = VerificationMethodResult(execution_state=MethodExecutionState.EXECUTED, disposition=MethodDisposition.CONCLUSIVE, observations=("obs1",))
+        self.assertEqual(r.disposition, MethodDisposition.CONCLUSIVE)
+
+    def test_executed_insufficient_without_observations_valid(self):
+        r = VerificationMethodResult(execution_state=MethodExecutionState.EXECUTED, disposition=MethodDisposition.INSUFFICIENT, observations=())
+        self.assertEqual(r.observations, ())
+
+    def test_not_run_with_disposition_rejected(self):
+        with self.assertRaises(ValueError):
+            VerificationMethodResult(execution_state=MethodExecutionState.NOT_RUN, disposition=MethodDisposition.CONCLUSIVE)
+
+    def test_not_run_with_observations_rejected(self):
+        with self.assertRaises(ValueError):
+            VerificationMethodResult(execution_state=MethodExecutionState.NOT_RUN, observations=("obs1",))
+
+    def test_execution_failed_is_clean(self):
+        r = VerificationMethodResult(execution_state=MethodExecutionState.EXECUTION_FAILED)
+        self.assertIsNone(r.disposition)
+        self.assertEqual(r.observations, ())
+
+    def test_unavailable_is_clean(self):
+        r = VerificationMethodResult(execution_state=MethodExecutionState.UNAVAILABLE)
+        self.assertEqual(r.execution_state, MethodExecutionState.UNAVAILABLE)
+
+
+class TestBaseVerifierAdapter(unittest.TestCase):
+    def test_initial_state_available(self):
+        a = BaseVerifierAdapter()
+        self.assertTrue(a.is_available())
+        self.assertEqual(a.health_score, 100)
+
+    def test_mark_failure_triggers_cooldown(self):
+        a = BaseVerifierAdapter()
+        a.mark_failure()
+        self.assertFalse(a.is_available())
+        self.assertEqual(a.health_score, 80)
+
+    def test_mark_success_resets_failures_and_raises_health(self):
+        a = BaseVerifierAdapter()
+        a.mark_failure()
+        a.mark_success()
+        self.assertEqual(a.consecutive_failures, 0)
+        self.assertEqual(a.health_score, 85)
+
+    def test_repeated_failures_extend_cooldown(self):
+        a = BaseVerifierAdapter()
+        a.mark_failure()
+        first_cooldown = a.cooldown_until
+        a.mark_failure()
+        self.assertGreater(a.cooldown_until, first_cooldown)
 
 
 if __name__ == "__main__":
