@@ -1,70 +1,29 @@
-# CompiledVerificationSpecification — Design Proposal (not yet implemented)
+# CompiledVerificationSpecification — Design Proposal (Revision 2, not yet implemented)
 
 **Date:** 22 September 2026
-**Status:** PROPOSED. Same discipline as the VerificationMethod checkpoint: design first, reviewed if needed, implemented only after. Nothing in `core/verification/` changes as a result of this document.
-**Grounding:** mission Sec10 (the field list this type must satisfy) and Sec9 (the requirement-gap gate compilation exists to enforce), read directly against every existing type it would reference: `policy.py` (`VerificationRequirements`/`Policy`/`Strategy`/`Profile`, read in full for this), `rubric.py` (`Rubric`/`Criterion`/`CriterionDependency`/`CriterionApplicability`), `obligation.py`, `inspection.py`, `method.py` (this session's own prior work), `target.py`.
+**Status:** PROPOSED, revised. Revision 1 named two prerequisites rather than resolving them. Both are now resolved: `VerificationRequirements` identity is implemented (`policy.py`, commit `af81965`), and criterion criticality placement is decided below, using the actual test raised against Revision 1 rather than picked arbitrarily. `VerificationStrategy.selected_methods` stays untouched, as directed. Still nothing in `compiled_specification.py` exists — this remains the checkpoint.
 
-## What "compile" actually does
+## Prerequisite 1: `VerificationRequirements` identity — resolved, implemented
 
-A pure function, not a stored-and-mutated object under construction: `compile(requirements, policy, profile, rubric, criteria, dependencies, obligations, inspection_plans, target, method_registry) -> Union[CompiledVerificationSpecification, CompilationFailure]`. Mission Sec10's own line is the test: "A specification that cannot be compiled into a satisfiable verification plan is not a valid executable verification. It is an unresolved specification" — so compilation either succeeds with a complete, internally-consistent artifact, or it fails explicitly with named reasons. No partial/degraded compiled spec; that is exactly the "unresolved specification" case Sec9 requires representing honestly rather than smoothing over.
+`requirements_id: str`, auto-generated (`uuid4`), added directly to `policy.py`. Closes a gap that was already latent in existing code, not a new concern invented for this proposal: `VerificationStrategy.derived_from_requirements` has been an "opaque reference" since round 2 with nothing principled to point at. No separate version field — `VerificationRequirements` is frozen and never revised post-construction (unlike `Rubric`, which explicitly progresses through lock states because it *is* meant to be iteratively refined pre-lock); a fresh id per instance already gives identity and an implicit version marker together. Full reasoning and the two new tests are in that commit, not repeated here.
 
-## Reference vs. embed, resolved per type, not by one blanket rule
+Consequence for this document: `CompiledVerificationSpecification` still embeds `VerificationRequirements` rather than referencing it by id — no registry exists yet to resolve a bare id against, so a reference alone would be unresolvable. But the embedded copy now carries `requirements_id`, so a receipt or audit record has something concrete to cite even without a registry. Embedding for practicality, explicit identity for citability — not a tradeoff between them.
 
-This module's own established convention is "reference, don't embed" (evidence.py's provenance chain, `Rubric.criteria: Tuple[CriterionId, ...]`), but applying it required actually checking whether each referenced type currently has an identity to reference — not all of them do:
+## Prerequisite 2: criterion criticality — resolved, on the compiled spec, not on `Criterion`
 
-| Input | Has an ID today? | Compiled spec holds |
-|---|---|---|
-| `Rubric`, `Criterion`, `CriterionDependency` | yes (`rubric_id`, `criterion_id`) | reference (id + the rubric's own `version`/`fingerprint`, already on `Rubric`) |
-| `VerificationObligation` | yes (`obligation_id`) | reference |
-| `InspectionPlan`/`InspectionStep` | yes | reference |
-| `VerificationMethod` | yes (`method_id`, built this session) | reference |
-| `VerificationTargetSnapshot` | yes (`target_id` + `fingerprint`) | reference |
-| `VerificationRequirements` | **no** — no id/version field exists on it today | embedded directly (it's small, and there is nothing to reference yet) |
-| `VerificationPolicy` | yes (`policy_id`) | reference |
-| `VerificationProfile` | has a `name` (an enum, not an opaque id) | reference by `name` |
+Resolved using the actual test posed against Revision 1: **whether `criterion_id` is supposed to have invariant meaning across specifications.** Checked, not assumed, against three sources:
 
-`VerificationRequirements` having no identity is a real gap, not a choice made here — mission Sec66 requires "no mixed-version VerificationRun," which presumes requirements have *some* stable identity to pin a run against. Embedding sidesteps needing one today; it does not fix the actual gap. Flagged in "Open questions," not silently patched by adding an id field to `policy.py` as a side effect of this document.
+1. **The frozen architecture never established criterion-level criticality.** Direct search of `v1.md`, `v2-frozen.md`, `v3-final.md`, and the Sept 7 reconciliation doc for "critical"/"non-compensable" found it used exactly twice, both times about something else: "criterion-*critical evidence*" (v1 §14 — which *evidence*, within establishing one criterion, is load-bearing) and "safety-*critical claims*" (v3 Part 1 §3, `VerificationPolicy`'s own worked example — claims, driving *policy*, not a property stored on a criterion). Mission §52's "critical criteria... non-compensable" language is newer than all four documents and hasn't been reconciled against them until now.
+2. **`VerificationPolicy` already models escalation this way.** Its own docstring example — "safety-critical claims always require multi-verifier composition" — is policy deciding how much rigor a given kind of claim needs, not the claim (or criterion) declaring its own importance. Criticality-for-aggregation is the same shape of decision: how much a failure matters is a judgment about *this verification effort's* assurance goal, which is exactly what `VerificationRequirements`/`VerificationPolicy`/`VerificationProfile` exist to carry, not what `Rubric`/`Criterion` exist to carry.
+3. **`Rubric` is built to be reusable, not single-use.** Its lock-state progression, versioning, and "reference, don't embed" convention are exactly the infrastructure you'd want if the same rubric (a security checklist, say) gets compiled against many different targets over time — under different profiles, different stakes, potentially different criticality each time. Baking criticality into `Criterion` would mean the *same* authorization check is permanently critical (or permanently not) everywhere it's ever used, which contradicts the reusability the rest of `rubric.py` was clearly designed for.
 
-## Compilation checks
+**Decision: `criterion_id` keeps invariant meaning (what the check *is* never changes); criticality is a property of the compiled spec, not the criterion.** `CompiledVerificationSpecification.critical_criterion_ids: FrozenSet[CriterionId]` — validated as a subset of the spec's own `criterion_ids`, so a critical id that isn't actually part of this spec is a construction error, not a silent inconsistency.
 
-Extends the admissibility check the VerificationMethod proposal already sketched (Revision 2 Sec2) from "one step" to "the whole spec":
+No change to `rubric.py`/`Criterion` — the question was whether touching Phase-1 code was warranted, and the answer that fell out of checking is no.
 
-```
-STATIC (compile-time):
-    every InspectionStep.method_reference resolves to a registered
-        VerificationMethod (already specified, VerificationMethod Rev.2)
-    every required VerificationCapability is registered
-        (not that its adapters are currently healthy -- runtime's job)
-    every Criterion's applicability/evidence_requirement is internally
-        consistent (rubric.py's own validate_dependency_graph(), reused
-        here, not reimplemented)
-    every Obligation's rubric_id resolves to the Rubric being compiled
-    Rubric.lock_state is COMPILED or LOCKED (DRAFT/VALIDATED cannot compile --
-        matches this session's own Phase 1 fix: VALIDATED itself now requires
-        real validation, and COMPILED is the next state up from it)
-    VerificationPolicy's constraints (minimum_shape_for, forbidden_methods)
-        are not violated by what Requirements/Strategy selected
-    target kind, if declared on any selected VerificationMethod, is
-        compatible with the actual target (provisional, same caveat as
-        VerificationMethod Rev.2 Sec9 -- no target-kind taxonomy exists yet)
+## Revised shape
 
-RESULT ON FAILURE:
-    CompilationFailure(reasons: Tuple[str, ...]) -- named, specific,
-    never a bare False. Each reason names which check failed and for
-    which id, matching mission Sec9's requirement-gap vocabulary
-    (missing / ambiguous / unrepresentable / incorrectly modeled).
-```
-
-## Critical/non-compensable criteria — a real gap, not resolved here
-
-Mission Sec52 requires non-compensable criteria (a critical check whose failure can't be averaged away). Checked directly: **`Criterion` has no criticality field today** (`criterion_id`, `rubric_id`, `description`, `applicability`, `evidence_requirement` — confirmed by direct re-read, nothing else). This isn't something `CompiledVerificationSpecification` can supply on its own two ways, each with a real tradeoff:
-
-- Add a field to `Criterion` itself (`rubric.py`) — criticality travels with the criterion's own definition, which is arguably where it belongs, but it's a change to already-tested, already-Phase-1-reconciled code, not something to fold into this proposal as a side effect.
-- Give `CompiledVerificationSpecification` its own `critical_criterion_ids: FrozenSet[CriterionId]`, decided at compile time rather than at criterion-authoring time — no change to `rubric.py`, but the same criterion could then be "critical" in one compiled spec and not another, which may or may not be the intended semantics.
-
-Not resolving this here on purpose — it's a decision about `Criterion`'s own design, not about compilation, and deserves the same explicit call-out VerificationMethod's `VerificationCapability` gap got rather than a default picked quietly.
-
-## Proposed shape
+Only the two prerequisite-related lines changed from Revision 1; everything else (compile-time/runtime split, reference-vs-embed table for the other inputs, `CompilationFailure`) carries over unchanged:
 
 ```
 identity.py addition:
@@ -79,44 +38,36 @@ compiled_specification.py (new):
         compiled_at: datetime
         target_id: TargetId
         target_fingerprint: VerificationTargetFingerprint
-        execution_identity: Optional[str]       # provisional -- no
-            # execution/attempt-id binding exists anywhere in
-            # core/verification/ yet (confirmed absent from every type
-            # built this session); Phase 13's job to wire for real
-        requirements: VerificationRequirements   # embedded -- see table above
+        execution_identity: Optional[str]        # still provisional, Phase 13's job
+        requirements: VerificationRequirements    # embedded; now carries requirements_id (prereq 1)
         policy_id: Optional[str]
         profile_name: Optional[VerificationProfileName]
+        strategy: VerificationStrategy            # embedded, same reasoning as requirements --
+                                                    # no registry to reference against either
         rubric_id: RubricId
         rubric_version: str
         rubric_fingerprint: str
         obligation_ids: Tuple[ObligationId, ...]
         criterion_ids: Tuple[CriterionId, ...]
+        critical_criterion_ids: FrozenSet[CriterionId]   # subset of criterion_ids (prereq 2)
         inspection_plan_ids: Tuple[InspectionPlanId, ...]
         method_ids: Tuple[VerificationMethodId, ...]
-        assurance_scope: str                     # mission Sec7.4: assurance is
-            # always scoped -- free text for now, same "not enough real
-            # examples yet" reasoning VerificationMethod Rev.2 gave payload
-        known_assumptions: Tuple[AssumptionId, ...]   # assumption.py, this session
+        assurance_scope: str
+        known_assumptions: Tuple[AssumptionId, ...]
 
-    def compile(requirements, policy, profile, rubric, criteria,
+    def compile(requirements, policy, profile, strategy, rubric, criteria,
                 dependencies, obligations, inspection_plans, target,
-                method_registry) -> Union[CompiledVerificationSpecification,
-                                           CompilationFailure]:
+                method_registry, critical_criterion_ids=frozenset()
+                ) -> Union[CompiledVerificationSpecification, CompilationFailure]:
         ...
 ```
 
-`critical_criterion_ids` deliberately not in the sketch above until the open question is settled.
+`critical_criterion_ids` is a `compile()` parameter, not derived automatically from anything — matching the decision above that criticality is asserted by whoever is compiling (informed by `VerificationPolicy`/`VerificationRequirements`), not inferred from the criteria themselves.
 
-## Also found: a stale comment, fixed separately from this design
+## No longer open
 
-`policy.py`'s own docstrings say `required_dimensions`/`selected_methods` are placeholders because "`VerificationMethod` not yet built in code" (lines 58-61, 111) -- no longer true as of this session's earlier work. This is a documentation fix, not a design decision, so it's committed on its own rather than bundled into this proposal's outcome.
-
-## Open questions (not decided here)
-
-1. Where does criticality/non-compensability live -- `Criterion` itself, or the compiled spec? (above)
-2. `VerificationRequirements` has no stable identity -- embed forever, or does `policy.py` eventually need an id/version field? Embedding works today; doesn't resolve mission Sec66 in general.
-3. Should `VerificationStrategy.selected_methods: FrozenSet[str]` (plain strings, predates `VerificationMethod`) become `FrozenSet[VerificationMethodId]` now that real ids exist? Out of scope for this document -- it's an existing, already-tested contract from round 2, not something to change as a side effect of designing something else.
+Both Revision 1 items are resolved above. Carried over from the original proposal, still open on its own terms: whether `VerificationStrategy.selected_methods: FrozenSet[str]` should become `FrozenSet[VerificationMethodId]` — untouched here, per direction, since changing an existing tested contract wasn't what either design pass was for.
 
 ## Next step
 
-If the shape above (minus the two open items) is confirmed, implementation is `identity.py` + `compiled_specification.py` + the `compile()` function + tests on both runners. Not started.
+`identity.py` addition, then `compiled_specification.py`, then tests on both runners, matching the same sequence `VerificationMethod` followed. Not started.
