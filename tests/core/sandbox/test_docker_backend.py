@@ -34,6 +34,7 @@ Two tiers here, gated differently on purpose:
     attempted blind here (checklist B1: capabilities/passes are
     reported honestly, not assumed).
 """
+import asyncio
 import os
 import shutil
 import tempfile
@@ -47,7 +48,7 @@ from core.sandbox.backends.docker_backend import (
     _build_container_env,
     _build_create_args,
 )
-from core.sandbox.contracts import SandboxPolicy, SandboxRequest, TerminationReason
+from core.sandbox.contracts import SandboxPolicy, SandboxRequest, SandboxState, TerminationReason
 
 
 def _docker_available() -> bool:
@@ -764,3 +765,93 @@ async def test_c2_env_cannot_redirect_the_enforced_proxy(net_backend, tmp_path):
         assert result.stdout.strip().startswith("http://")
     finally:
         await net_backend.destroy(handle)
+
+
+# ======================================================================
+# D11 -- the checklist's actual race pairs, run for real rather than
+# reasoned about: run()+cancel(), run()+destroy(), cancel()+destroy(),
+# repeated cancel()/destroy(), inspect() mid-transition. No per-handle
+# lock exists (see reconciliation doc); these confirm what asyncio's
+# single-threaded event loop's own atomicity does and doesn't cover,
+# rather than assuming either way.
+# ======================================================================
+
+
+@pytest.fixture
+def conc_backend():
+    image = os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+    return DockerBackend(image_ref=image)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_run_plus_cancel_concurrently(conc_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30)
+    request = SandboxRequest(command=("sleep", "20"), policy=policy)
+    handle = await conc_backend.create(request)
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await asyncio.sleep(1.0)
+    await conc_backend.cancel(handle)
+    result = await run_task
+    assert result.termination_reason == TerminationReason.CANCELLED
+    await conc_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_run_plus_destroy_concurrently_no_hang_no_orphan(conc_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30)
+    request = SandboxRequest(command=("sleep", "20"), policy=policy)
+    handle = await conc_backend.create(request)
+    container_id = conc_backend._handles[handle.handle_id].container_id
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await asyncio.sleep(0.5)
+    await conc_backend.destroy(handle)  # must not raise
+    result = await asyncio.wait_for(run_task, timeout=10)  # must not hang
+    assert result.termination_reason == TerminationReason.ERROR
+    check = subprocess.run(["docker", "ps", "-aq", "--filter", f"id={container_id}"], capture_output=True, text=True)
+    assert check.stdout.strip() == ""  # no orphan left behind
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_cancel_plus_destroy_concurrently(conc_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30)
+    request = SandboxRequest(command=("sleep", "20"), policy=policy)
+    handle = await conc_backend.create(request)
+    container_id = conc_backend._handles[handle.handle_id].container_id
+    subprocess.run(["docker", "start", container_id], check=True, capture_output=True)
+    results = await asyncio.gather(
+        conc_backend.cancel(handle), conc_backend.destroy(handle), return_exceptions=True
+    )
+    assert all(r is None for r in results), results  # neither raised
+    check = subprocess.run(["docker", "ps", "-aq", "--filter", f"id={container_id}"], capture_output=True, text=True)
+    assert check.stdout.strip() == ""
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_repeated_cancel_and_destroy_including_after_destroy(conc_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30)
+    request = SandboxRequest(command=("sleep", "20"), policy=policy)
+    handle = await conc_backend.create(request)
+    await conc_backend.cancel(handle)
+    await conc_backend.cancel(handle)  # repeated cancel
+    await conc_backend.destroy(handle)
+    await conc_backend.cancel(handle)  # cancel after destroy -- must not raise
+    await conc_backend.destroy(handle)  # double destroy -- must not raise
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_inspect_mid_run_does_not_block_or_mutate(conc_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=15)
+    request = SandboxRequest(command=("sleep", "6"), policy=policy)
+    handle = await conc_backend.create(request)
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await asyncio.sleep(1.0)
+    states = [await conc_backend.inspect(handle) for _ in range(3)]
+    assert states == [SandboxState.RUNNING] * 3
+    result = await run_task
+    assert result.termination_reason == TerminationReason.COMPLETED
+    await conc_backend.destroy(handle)
