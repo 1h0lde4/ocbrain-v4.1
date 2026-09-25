@@ -944,6 +944,14 @@ async def discover_capabilities(
             continue
         if not registry.get_adapters(capability_type):
             continue
+        # ADR-CAP-02: a DISABLED / RETIRED capability is not a candidate.
+        # DEPRECATED stays discoverable (flagged in the evidence below).
+        # getattr keeps registry test doubles without lifecycle support
+        # working; a registry that never had set_lifecycle() called
+        # reports every capability ACTIVE, so this is inert by default.
+        discoverable = getattr(registry, "is_discoverable", None)
+        if discoverable is not None and not discoverable(capability_type):
+            continue
 
         score = _capability_match_score(request, contract)
         is_general = contract.is_general_purpose
@@ -967,6 +975,14 @@ async def discover_capabilities(
                 "lexical_score": round(score, 4),
                 "specificity_tier": _classify_specificity_tier(score, is_general),
                 "general_fallback": is_general,
+                # ADR-CAP-02 (additive): the structured metadata a future
+                # selector would consult, recorded so the discovery path
+                # is reproducible. Not used for ranking here -- ranking is
+                # unchanged (K4.2-H1 D2/D4 frozen).
+                "contract_version": contract.version,
+                "operations": list(getattr(contract, "operation_names", lambda: ())()),
+                "lifecycle": (registry.get_lifecycle(capability_type).state
+                              if hasattr(registry, "get_lifecycle") else "active"),
             },
         ))
 
@@ -1003,7 +1019,11 @@ async def discover_capabilities(
             "candidates": [
                 {"capability_type": m.capability_type,
                  "score": round(m.relevance_score, 3),
-                 "is_general_purpose": m.is_general_purpose}
+                 "is_general_purpose": m.is_general_purpose,
+                 # ADR-CAP-02 (additive) observability fields:
+                 "contract_version": m.evidence.get("contract_version", ""),
+                 "operations": m.evidence.get("operations", []),
+                 "lifecycle": m.evidence.get("lifecycle", "active")}
                 for m in scored
             ],
         },

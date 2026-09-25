@@ -149,6 +149,18 @@ class WorkflowDefinition:
         """Return node IDs of all successors of the given node."""
         return [e.to_node for e in self.edges if e.from_node == node_id]
 
+    def get_predecessors(self, node_id: str) -> List[str]:
+        """Return node IDs of all direct predecessors of the given node,
+        in edge order, without duplicates (ADR-CAP-02: the runtime hands a
+        node the results of its *direct* predecessors only -- never
+        sibling or unrelated nodes -- so data flow follows the declared
+        DAG and stays replayable)."""
+        seen: List[str] = []
+        for e in self.edges:
+            if e.to_node == node_id and e.from_node not in seen:
+                seen.append(e.from_node)
+        return seen
+
     def validate(self) -> List[str]:
         """Validate the workflow definition. Returns list of errors (empty = valid)."""
         errors = []

@@ -286,6 +286,18 @@ async def main():
     capability_registry.register_adapter(
         CapabilityType.LLM_COMPLETION, OpenAICompatAdapter())
 
+    # ADR-CAP-01/02/03 (PROPOSED): capability foundation (TEXT_GENERATION,
+    # STRUCTURED_REASONING, FILE_READING). OFF by default: registering specific
+    # capabilities changes K4.2 discovery and ClarificationPolicy behavior
+    # (ADR-K4.2-H-13), so enabling is an explicit decision, not a side effect
+    # of merging. See docs/architecture/CAPABILITY_FOUNDATION.md.
+    from core.config import config as _capability_config
+    foundation_enabled = bool(
+        _capability_config.get("capabilities.foundation_enabled", False))
+    if foundation_enabled:
+        from core.capabilities.foundation.wiring import register_foundation_capabilities
+        register_foundation_capabilities(capability_registry)
+
     adapter_runtime = AdapterRuntime(
         registry=capability_registry,
         resource_manager=resource_manager,
@@ -346,6 +358,9 @@ async def main():
     worker_registry.register(CapabilityExecutorWorker, constructor_kwargs={
         "adapter_runtime": adapter_runtime,
     })
+    if foundation_enabled:
+        from core.capabilities.foundation.wiring import register_foundation_workers
+        register_foundation_workers(worker_registry, adapter_runtime)
     log.info(f"WorkerRegistry ready ({worker_registry.list_types()})")
 
     execution_runtime = ExecutionRuntime(
