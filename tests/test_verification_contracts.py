@@ -51,6 +51,9 @@ from core.verification.method import (
     VerificationCapability, VerificationMethod, VerificationMethodRequest,
     VerificationMethodResult, BaseVerifierAdapter,
 )
+from core.verification.compiled_specification import (
+    compile as compile_spec, CompiledVerificationSpecification, CompilationFailure,
+)
 
 
 def _basis(*components):
@@ -1063,3 +1066,260 @@ class TestBaseVerifierAdapter:
         first_cooldown = a.cooldown_until
         a.mark_failure()
         assert a.cooldown_until > first_cooldown
+
+
+class TestCompileVerificationSpecification:
+    def _scenario(self, **overrides):
+        criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="criterion c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        rubric = (Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        ).advance_to(RubricLockState.VALIDATED, criteria=[criterion])
+          .advance_to(RubricLockState.COMPILED))
+        obligation = VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="obligation desc", source_reference="req-1", rubric_id="r1",
+        )
+        method = VerificationMethod(
+            method_id="m1", method_type="deterministic_file_existence",
+            description="checks file existence", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        step = InspectionStep(step_id="s1", plan_id="p1", method_reference="m1", description="step desc")
+        plan = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1",))
+        requirements = VerificationRequirements(target_description="check the file", required_dimensions=frozenset({"correctness"}))
+        strategy = VerificationStrategy(
+            selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}),
+            verifier_count=1, derived_from_requirements=requirements.requirements_id,
+        )
+        fp = VerificationTargetFingerprint(content_hash="abc", version="1")
+        target = VerificationTargetSnapshot(target_id="t1", fingerprint=fp, captured_at=datetime.now(timezone.utc))
+
+        defaults = dict(
+            requirements=requirements, strategy=strategy, rubric=rubric, criteria=[criterion],
+            dependencies=[], obligations=[obligation], inspection_plans=[plan], inspection_steps=[step],
+            target=target, method_registry={"m1": method}, capability_registry={},
+            assurance_scope="unit test scope",
+        )
+        defaults.update(overrides)
+        return defaults
+
+    def test_successful_compilation(self):
+        result = compile_spec(**self._scenario())
+        assert isinstance(result, CompiledVerificationSpecification)
+        assert result.method_ids == ("m1",)
+        assert result.criterion_ids == ("c1",)
+        assert result.rubric_id == "r1"
+
+    def test_wrong_lock_state_rejected(self):
+        scenario = self._scenario()
+        draft_rubric = Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        )
+        scenario["rubric"] = draft_rubric
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("lock_state" in r for r in result.reasons)
+
+    def test_criterion_mismatch_rejected(self):
+        scenario = self._scenario()
+        other_criterion = Criterion(
+            criterion_id="not-c1", rubric_id="r1", description="wrong",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        scenario["criteria"] = [other_criterion]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("must match exactly" in r for r in result.reasons)
+
+    def test_dependency_cycle_rejected(self):
+        scenario = self._scenario()
+        c2 = Criterion(
+            criterion_id="c2", rubric_id="r1", description="c2",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        rubric_with_c2 = Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1", "c2"),
+        ).advance_to(RubricLockState.VALIDATED, criteria=[scenario["criteria"][0], c2]).advance_to(RubricLockState.COMPILED)
+        cyclic_deps = [
+            CriterionDependency(criterion_id="c1", depends_on_criterion_id="c2", dependency_type=CriterionDependencyType.REQUIRES),
+            CriterionDependency(criterion_id="c2", depends_on_criterion_id="c1", dependency_type=CriterionDependencyType.REQUIRES),
+        ]
+        scenario["rubric"] = rubric_with_c2
+        scenario["criteria"] = [scenario["criteria"][0], c2]
+        scenario["dependencies"] = cyclic_deps
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("dependency graph invalid" in r for r in result.reasons)
+
+    def test_obligation_wrong_rubric_rejected(self):
+        scenario = self._scenario()
+        scenario["obligations"] = [VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="d", source_reference="r", rubric_id="different-rubric",
+        )]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("not the rubric being compiled" in r for r in result.reasons)
+
+    def test_obligation_with_no_rubric_allowed(self):
+        scenario = self._scenario()
+        scenario["obligations"] = [VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="d", source_reference="r", rubric_id=None,
+        )]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    def test_unresolvable_method_reference_rejected(self):
+        scenario = self._scenario()
+        scenario["method_registry"] = {}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("not in the method registry" in r for r in result.reasons)
+
+    def test_missing_inspection_step_rejected(self):
+        scenario = self._scenario()
+        scenario["inspection_steps"] = []
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("was not supplied" in r for r in result.reasons)
+
+    def test_missing_capability_rejected(self):
+        scenario = self._scenario()
+        method_needing_cap = VerificationMethod(
+            method_id="m1", method_type="tool_backed_filesystem",
+            description="needs filesystem access", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=True, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.FAST,
+            required_capabilities=("cap1",),
+        )
+        scenario["method_registry"] = {"m1": method_needing_cap}
+        scenario["capability_registry"] = {}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("capability" in r and "cap1" in r for r in result.reasons)
+
+    def test_capability_satisfied_allowed(self):
+        scenario = self._scenario()
+        method_needing_cap = VerificationMethod(
+            method_id="m1", method_type="tool_backed_filesystem",
+            description="needs filesystem access", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=True, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.FAST,
+            required_capabilities=("cap1",),
+        )
+        capability = VerificationCapability(
+            capability_id="cap1", name="filesystem_observation",
+            inspection_class=InspectionClass.READ_ONLY_INSPECTION,
+            typical_evidence_directness=EvidenceDirectness.DIRECT,
+        )
+        scenario["method_registry"] = {"m1": method_needing_cap}
+        scenario["capability_registry"] = {"cap1": capability}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    def test_policy_shape_violation_rejected(self):
+        scenario = self._scenario()
+        scenario["policy"] = VerificationPolicy(
+            policy_id="pol1",
+            minimum_shape_for={"correctness": VerificationShape.PAIRWISE},
+        )
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("policy requires shape" in r for r in result.reasons)
+
+    def test_policy_forbidden_method_rejected(self):
+        scenario = self._scenario()
+        scenario["policy"] = VerificationPolicy(policy_id="pol1", forbidden_methods=frozenset({"m1"}))
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("forbidden methods" in r for r in result.reasons)
+
+    def test_critical_criterion_not_in_set_rejected(self):
+        scenario = self._scenario()
+        scenario["critical_criterion_ids"] = frozenset({"not-a-real-criterion"})
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("not among the criteria being compiled" in r for r in result.reasons)
+
+    def test_critical_criterion_in_set_allowed(self):
+        scenario = self._scenario()
+        scenario["critical_criterion_ids"] = frozenset({"c1"})
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompiledVerificationSpecification)
+        assert result.critical_criterion_ids == frozenset({"c1"})
+
+    def test_multiple_failures_collected_together(self):
+        scenario = self._scenario()
+        draft_rubric = Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        )
+        scenario["rubric"] = draft_rubric
+        scenario["method_registry"] = {}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert len(result.reasons) >= 2
+
+    def test_empty_spec_id_rejected_on_direct_construction(self):
+        with pytest.raises(ValueError):
+            CompiledVerificationSpecification(
+                spec_id="", compiled_at=datetime.now(timezone.utc), target_id="t1",
+                target_fingerprint=VerificationTargetFingerprint(content_hash="a", version="1"),
+                requirements=VerificationRequirements(target_description="x", required_dimensions=frozenset({"d"})),
+                strategy=VerificationStrategy(selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}), verifier_count=1, derived_from_requirements="req1"),
+                rubric_id="r1", rubric_version="1.0.0", rubric_fingerprint="fp1",
+                obligation_ids=(), criterion_ids=("c1",), critical_criterion_ids=frozenset(),
+                inspection_plan_ids=(), method_ids=(), assurance_scope="scope",
+            )
+
+    def test_empty_assurance_scope_rejected(self):
+        with pytest.raises(ValueError):
+            CompiledVerificationSpecification(
+                spec_id="spec1", compiled_at=datetime.now(timezone.utc), target_id="t1",
+                target_fingerprint=VerificationTargetFingerprint(content_hash="a", version="1"),
+                requirements=VerificationRequirements(target_description="x", required_dimensions=frozenset({"d"})),
+                strategy=VerificationStrategy(selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}), verifier_count=1, derived_from_requirements="req1"),
+                rubric_id="r1", rubric_version="1.0.0", rubric_fingerprint="fp1",
+                obligation_ids=(), criterion_ids=("c1",), critical_criterion_ids=frozenset(),
+                inspection_plan_ids=(), method_ids=(), assurance_scope="",
+            )
+
+    def test_critical_superset_rejected_on_direct_construction(self):
+        with pytest.raises(ValueError):
+            CompiledVerificationSpecification(
+                spec_id="spec1", compiled_at=datetime.now(timezone.utc), target_id="t1",
+                target_fingerprint=VerificationTargetFingerprint(content_hash="a", version="1"),
+                requirements=VerificationRequirements(target_description="x", required_dimensions=frozenset({"d"})),
+                strategy=VerificationStrategy(selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}), verifier_count=1, derived_from_requirements="req1"),
+                rubric_id="r1", rubric_version="1.0.0", rubric_fingerprint="fp1",
+                obligation_ids=(), criterion_ids=("c1",), critical_criterion_ids=frozenset({"not-c1"}),
+                inspection_plan_ids=(), method_ids=(), assurance_scope="scope",
+            )
+
+
+class TestCompilationFailure:
+    def test_empty_reasons_rejected(self):
+        with pytest.raises(ValueError):
+            CompilationFailure(reasons=())
+
+    def test_valid_construction(self):
+        f = CompilationFailure(reasons=("something went wrong",))
+        assert len(f.reasons) == 1
