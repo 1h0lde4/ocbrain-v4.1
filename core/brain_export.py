@@ -38,6 +38,26 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     from core.config import config
     from core.brain_version import brain_version_manager
 
+    # SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): module_name
+    # reaches this function directly from an HTTP request body
+    # (ExportRequest.module_name -- both interface/api.py's and
+    # core/brain_api.py's /export routers call this same function) with
+    # zero validation before this fix. It is used below to build mod_dir,
+    # weights_src, kb_src, eval_src, raw_dir and output_path -- a
+    # module_name like "../../../etc" or "../../../home/user/.ssh" lets
+    # export read (and hand back inside the returned bundle) arbitrary
+    # directories outside modules/, and a module_name containing "/" lets
+    # output_path escape EXPORTS entirely. import_module() below already
+    # applies this exact check to this exact field for the same reason
+    # (as does module_factory.create()) -- kept consistent rather than
+    # inventing a second convention. Regression coverage:
+    # tests/test_brain_export_security.py.
+    if not module_name.isidentifier():
+        raise ValueError(
+            f"Invalid module_name: {module_name!r}. "
+            f"Use only letters, digits, underscores."
+        )
+
     mod_dir = MODULES / module_name
     if not mod_dir.exists():
         raise ValueError(f"Module '{module_name}' not found.")

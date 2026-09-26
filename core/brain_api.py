@@ -13,6 +13,10 @@ from pydantic import BaseModel
 from typing import Optional, AsyncGenerator
 import asyncio
 import json
+import logging
+import uuid
+
+log = logging.getLogger(__name__)
 
 BRAIN_API_VERSION = "2.1.0"
 
@@ -176,4 +180,13 @@ async def _stream_query(orchestrator, query: str) -> AsyncGenerator[str, None]:
             await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        # SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): str(e)
+        # can contain filesystem paths, internal component names, or other
+        # implementation detail -- must not reach the SSE client. See
+        # interface/api.py's _log_and_redact for the sibling fix; this file
+        # doesn't import from interface/, so the same few lines are kept
+        # local rather than introducing a cross-package dependency for one
+        # helper.
+        error_id = str(uuid.uuid4())
+        log.error("Brain API streaming query failed; error_id=%s", error_id, exc_info=e)
+        yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
