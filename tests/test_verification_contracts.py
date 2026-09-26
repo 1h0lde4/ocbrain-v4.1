@@ -1106,7 +1106,7 @@ class TestCompileVerificationSpecification:
             requirements=requirements, strategy=strategy, rubric=rubric, criteria=[criterion],
             dependencies=[], obligations=[obligation], inspection_plans=[plan], inspection_steps=[step],
             target=target, method_registry={"m1": method}, capability_registry={},
-            assurance_scope="unit test scope",
+            authorization_registry={}, assurance_scope="unit test scope",
         )
         defaults.update(overrides)
         return defaults
@@ -1214,6 +1214,52 @@ class TestCompileVerificationSpecification:
         assert isinstance(result, CompilationFailure)
         assert any("capability" in r and "cap1" in r for r in result.reasons)
 
+    def test_capability_registered_but_not_authorized_rejected(self):
+        scenario = self._scenario()
+        method_needing_cap = VerificationMethod(
+            method_id="m1", method_type="tool_backed_filesystem",
+            description="needs filesystem access", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=True, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.FAST,
+            required_capabilities=("cap1",),
+        )
+        capability = VerificationCapability(
+            capability_id="cap1", name="filesystem_observation",
+            inspection_class=InspectionClass.READ_ONLY_INSPECTION,
+            typical_evidence_directness=EvidenceDirectness.DIRECT,
+        )
+        scenario["method_registry"] = {"m1": method_needing_cap}
+        scenario["capability_registry"] = {"cap1": capability}
+        scenario["authorization_registry"] = {}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("no authorized InspectionAuthorization" in r for r in result.reasons)
+
+    def test_capability_explicitly_unauthorized_rejected(self):
+        scenario = self._scenario()
+        method_needing_cap = VerificationMethod(
+            method_id="m1", method_type="tool_backed_filesystem",
+            description="needs filesystem access", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=True, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.FAST,
+            required_capabilities=("cap1",),
+        )
+        capability = VerificationCapability(
+            capability_id="cap1", name="filesystem_observation",
+            inspection_class=InspectionClass.READ_ONLY_INSPECTION,
+            typical_evidence_directness=EvidenceDirectness.DIRECT,
+        )
+        scenario["method_registry"] = {"m1": method_needing_cap}
+        scenario["capability_registry"] = {"cap1": capability}
+        scenario["authorization_registry"] = {
+            "filesystem_observation": InspectionAuthorization(surface="filesystem_observation", authorized=False, reason="pending review"),
+        }
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("no authorized InspectionAuthorization" in r for r in result.reasons)
+
     def test_capability_satisfied_allowed(self):
         scenario = self._scenario()
         method_needing_cap = VerificationMethod(
@@ -1231,6 +1277,61 @@ class TestCompileVerificationSpecification:
         )
         scenario["method_registry"] = {"m1": method_needing_cap}
         scenario["capability_registry"] = {"cap1": capability}
+        scenario["authorization_registry"] = {
+            "filesystem_observation": InspectionAuthorization(surface="filesystem_observation", authorized=True, authorized_by="governance"),
+        }
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    def test_orphaned_criterion_rejected(self):
+        scenario = self._scenario()
+        scenario["inspection_plans"] = []
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("no inspection plan targeting them" in r for r in result.reasons)
+
+    def test_plan_references_unknown_obligation_rejected(self):
+        scenario = self._scenario()
+        scenario["inspection_plans"] = [InspectionPlan(plan_id="p1", obligation_id="not-o1", criterion_id="c1", steps=("s1",))]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("not supplied to compile()" in r and "not-o1" in r for r in result.reasons)
+
+    def test_plan_references_unknown_criterion_rejected(self):
+        scenario = self._scenario()
+        scenario["inspection_plans"] = [InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="not-c1", steps=("s1",))]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("not among the criteria being compiled" in r for r in result.reasons)
+
+    def test_evidence_directness_mismatch_rejected(self):
+        scenario = self._scenario()
+        strict_criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="criterion c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1, required_directness=EvidenceDirectness.DIRECT),
+        )
+        scenario["criteria"] = [strict_criterion]
+        indirect_method = VerificationMethod(
+            method_id="m1", method_type="evidence_backed_semantic",
+            description="produces indirect evidence", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.INDIRECT,
+            external_access_needed=False, is_deterministic=False,
+            cost_latency_class=CostLatencyClass.MODERATE,
+        )
+        scenario["method_registry"] = {"m1": indirect_method}
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("requires evidence directness" in r for r in result.reasons)
+
+    def test_evidence_directness_match_allowed(self):
+        scenario = self._scenario()
+        strict_criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="criterion c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1, required_directness=EvidenceDirectness.DIRECT),
+        )
+        scenario["criteria"] = [strict_criterion]
         result = compile_spec(**scenario)
         assert isinstance(result, CompiledVerificationSpecification)
 

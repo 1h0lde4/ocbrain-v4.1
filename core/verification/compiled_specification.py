@@ -19,6 +19,24 @@ VerificationMethod are referenced by id (all have one); Requirements and
 Strategy are embedded (neither has a registry to resolve a reference
 against yet, though Requirements now at least carries its own
 requirements_id for citation -- see policy.py).
+
+Authorization (the missing Phase-3 contract -- mission Sec12/Sec33):
+InspectionAuthorization has existed in epistemic.py since round 1 but
+was never wired into the specification/inspection layer. compile() now
+checks it: every VerificationCapability a resolved method requires must
+have an authorized=True InspectionAuthorization for that capability's
+surface, checked for every required capability regardless of
+inspection_class -- mission Sec21 says verification gains no special
+execution authority "because it is only verifying," which this reads as
+applying to read-only inspection too, not only active probes.
+
+Also checks the specification graph is actually connected, not just
+that individual edges resolve: every InspectionPlan's obligation_id and
+criterion_id must reference something actually supplied (reverse checks
+the original implementation didn't have), and every compiled criterion
+must be the target of at least one InspectionPlan -- otherwise a
+criterion could compile successfully while having no path to ever being
+verified.
 """
 from __future__ import annotations
 
@@ -27,6 +45,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, FrozenSet, Mapping, Optional, Sequence, Tuple, Union
 
+from .epistemic import InspectionAuthorization
 from .identity import (
     AssumptionId,
     CompiledVerificationSpecificationId,
@@ -137,6 +156,7 @@ def compile(
     target: VerificationTargetSnapshot,
     method_registry: Mapping[VerificationMethodId, VerificationMethod],
     capability_registry: Mapping[VerificationCapabilityId, VerificationCapability],
+    authorization_registry: Mapping[str, InspectionAuthorization],
     assurance_scope: str,
     policy: Optional[VerificationPolicy] = None,
     profile_name: Optional[VerificationProfileName] = None,
@@ -195,10 +215,38 @@ def compile(
     # Every inspection step's method_reference must resolve, and every
     # capability that method requires must be registered (not that its
     # adapters are currently healthy -- that's runtime's question, not
-    # compile-time's; see the design doc's compile-time/runtime split).
+    # compile-time's; see the design doc's compile-time/runtime split)
+    # AND authorized for the required surface (mission Sec12/Sec33: a
+    # surface being technically accessible -- registered -- is not the
+    # same fact as it being authorized; both are checked, separately).
+    #
+    # Also checks the graph is actually connected, not just that
+    # individual edges resolve: every InspectionPlan must reference an
+    # obligation and a criterion that were actually supplied (reverse
+    # checks the original implementation didn't have), and every
+    # criterion must be the target of at least one plan -- a criterion
+    # with no inspection path can never be verified, and would
+    # otherwise compile silently.
+    obligation_ids_supplied = frozenset(o.obligation_id for o in obligations)
+    criteria_by_id = {c.criterion_id: c for c in criteria}
     step_by_id = {step.step_id: step for step in inspection_steps}
     method_ids_used: set = set()
+    criteria_with_plans: set = set()
     for plan in inspection_plans:
+        if plan.obligation_id not in obligation_ids_supplied:
+            reasons.append(
+                f"inspection plan {plan.plan_id!r} references obligation "
+                f"{plan.obligation_id!r}, which was not supplied to compile()"
+            )
+        if plan.criterion_id not in supplied_criterion_ids:
+            reasons.append(
+                f"inspection plan {plan.plan_id!r} references criterion "
+                f"{plan.criterion_id!r}, which is not among the criteria "
+                f"being compiled"
+            )
+        else:
+            criteria_with_plans.add(plan.criterion_id)
+        target_criterion = criteria_by_id.get(plan.criterion_id)
         for step_id in plan.steps:
             step = step_by_id.get(step_id)
             if step is None:
@@ -216,13 +264,47 @@ def compile(
                 )
                 continue
             method_ids_used.add(method.method_id)
+            # Evidence-directness match: exact, not "at least as direct"
+            # -- EvidenceDirectness (evidence.py) documents no ranking
+            # between DIRECT/INDIRECT/DERIVED/MODEL_INTERPRETATION (no
+            # IntEnum, no comparison operators), so assuming one would
+            # be inventing an ordering the type itself doesn't assert.
+            if (target_criterion is not None
+                    and target_criterion.evidence_requirement.required_directness is not None
+                    and method.produces_evidence_directness != target_criterion.evidence_requirement.required_directness):
+                reasons.append(
+                    f"criterion {plan.criterion_id!r} requires evidence "
+                    f"directness {target_criterion.evidence_requirement.required_directness.value!r}, "
+                    f"but method {method.method_id!r} (via step "
+                    f"{step.step_id!r}) produces "
+                    f"{method.produces_evidence_directness.value!r}"
+                )
             for capability_id in method.required_capabilities:
-                if capability_id not in capability_registry:
+                capability = capability_registry.get(capability_id)
+                if capability is None:
                     reasons.append(
                         f"method {method.method_id!r} requires capability "
                         f"{capability_id!r}, which is not in the "
                         f"capability registry"
                     )
+                    continue
+                authorization = authorization_registry.get(capability.name)
+                if authorization is None or not authorization.authorized:
+                    reasons.append(
+                        f"method {method.method_id!r} requires capability "
+                        f"{capability_id!r} (surface {capability.name!r}), "
+                        f"which has no authorized InspectionAuthorization -- "
+                        f"technical registration is not authorization "
+                        f"(mission Sec12/Sec33)"
+                    )
+
+    unreachable_criteria = supplied_criterion_ids - criteria_with_plans
+    if unreachable_criteria:
+        reasons.append(
+            f"criteria {sorted(unreachable_criteria)!r} have no inspection "
+            f"plan targeting them -- a criterion with no inspection path "
+            f"can never be verified"
+        )
 
     # Policy constraints -- never relaxed by what requirements/strategy
     # asked for, only tightened (v3 Part 1 Sec3).
