@@ -81,6 +81,20 @@ Scope note preserved from the original entry, not discarded now that this is res
 
 ---
 
+## Known Vulnerabilities (Unpatched Dependencies)
+
+Externally-disclosed vulnerabilities in third-party dependencies — not this project's own code, and nothing here is fixable by changing OCBrain's code. Distinct from Active Technical Debt above and from the deferred/roadmap sections below: every entry here is marked UNRESOLVABLE pending an upstream patch, not deferred by choice and not an accepted architectural risk.
+
+| CVE | Package | Severity | Description | Exposure in this codebase | Status |
+|---|---|---|---|---|---|
+| CVE-2026-45833 | `chromadb` (pinned `>=0.4.0,<1.0`) | Critical (CVSS v4 9.3, GHSA-36p7-vc44-83pf) | Authenticated code injection via a malicious model repository with `trust_remote_code=True`, requires `UPDATE_COLLECTION` permission on a running ChromaDB server. Affects `>=0.4.17`; no patched version exists as of recording. | Not reachable as used. `chromadb.PersistentClient` is the only client construction anywhere — confirmed by a repo-wide search for `HttpClient`/`chromadb.server`/`chroma run`/`CHROMA_HTTP` across `.py`/`.yml`/`.toml`/`Dockerfile*` (zero matches): no ChromaDB server ever runs. `modules/embedding_fn.py`'s only chromadb-facing call is `SentenceTransformerEmbeddingFunction(model_name=...)`, with `model_name` drawn from a hardcoded 5-entry dict (`_MODEL_MAP`) with a hardcoded default fallback — no `trust_remote_code`, no externally-influenced model-repository string anywhere in that file or `modules/base.py`. | **UNRESOLVABLE** — waiting for a patched release to upgrade to. |
+| CVE-2026-45830 | `chromadb` (pinned `>=0.4.0,<1.0`) | High (CVSS v3.1 8.8, GHSA-2wm9-hf6c-p5cr) | Lack of authorization validation lets any authenticated user read/write/update/delete any tenant's collection data, regardless of tenant. Affects `>=0.4.17`; confirmed via OSV.dev and GitLab Advisory Database, citing NVD/Red Hat/GHSA directly. No patched version. | Same reasoning as above — this is entirely a server-mode, multi-tenant authorization flaw; embedded `PersistentClient` use has no server, no authenticated-user concept, and no tenants for it to apply to. | **UNRESOLVABLE** — waiting for a patched release. |
+| CVE-2026-45831 | `chromadb` (pinned `>=0.4.0,<1.0`) | High | `SimpleRBACAuthorizationProvider` does not check which tenant, database, or collection a permission applies to. Same disclosure batch as the two above; confirmed via secondary sources referencing that batch, not independently verified against a primary advisory database at time of recording. No patched version. | Same reasoning as above — no server, so no RBAC provider is ever instantiated. | **UNRESOLVABLE** — waiting for a patched release. |
+
+None of the three are currently reachable, given this codebase's exclusive use of `chromadb.PersistentClient` (embedded, no network listener, no auth/tenant/RBAC concept) and the absence of `trust_remote_code` or externally-influenced model-repository input anywhere in `modules/embedding_fn.py`. That is a statement about current usage, not a fix — the vulnerable code ships with the installed package regardless of whether this codebase's own usage happens to route around it. Re-check this table if `chromadb.HttpClient`, `chromadb.server`, or any networked ChromaDB deployment is ever introduced, or if `embedding_fn.py`'s model-selection logic changes to accept caller-supplied model names instead of the current hardcoded map. Recorded 22 Sept 2026 — surfaced via GitHub Dependabot on this session's pushes to `feature/verification-critic-evidence-phase-c`, investigated and confirmed directly; not part of the Verification milestone this branch otherwise tracks, and not owned by this workstream.
+
+---
+
 ## Deliberately Deferred Architecture
 
 Items explicitly scoped out with architectural justification. These are NOT debt — they are intentional phase boundaries.
