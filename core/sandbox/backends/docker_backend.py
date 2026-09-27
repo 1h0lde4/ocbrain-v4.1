@@ -13,46 +13,55 @@ Architecture references:
         (frozen — per-item file/symbol/invariant/test/forbidden-shortcut
         mapping of the addendum; not yet committed to this repo either)
 
-STATUS — written with no Docker daemon reachable (2026-09-21 session).
-Mirrors NamespaceBackend's own honesty about its build environment: that
-module's docstring records that `docker`/`runc`/`podman` were all
-verified absent when it was written. The same is true here, still.
-Concretely, in the container this file was authored in: no `docker`
-binary, no daemon socket, no route to any image registry (registry
-domains are outside this environment's network egress allowlist).
+STATUS — history, then current state. This file was first written
+(2026-09-21) with no Docker daemon reachable at all — every method
+existed only to satisfy the interface, `capabilities` was `frozenset()`,
+and "implemented" explicitly did not mean "verified" anywhere in it. A
+later session in the same kind of environment installed `docker.io`
+(Ubuntu's own package; Docker's own repo isn't reachable either) and
+got a real daemon running, which changed what was possible: reconciliation
+§§11-16 record, in order, real Phase 0 host inventory, A3/D-lifecycle
+verification against a live daemon, the A9 seccomp-bypass finding (real,
+reproducible, NOT mitigated — see `_lsm_active()` below), C2's full
+network-isolation implementation and bypass testing, D11's concurrency
+races, and finally the three remaining capability-evidence gaps
+(NO_NEW_PRIVS/CGROUP_PIDS/FILESYSTEM_JAIL) closed with real adversarial
+tests against the running container. `_CAPS` below now reflects that —
+nine of the twelve `SandboxCapability` values, each with its own
+adversarial runtime evidence, not a Docker configuration knob assumed
+to imply one. Read `_CAPS`'s own comment before trusting any individual
+claim; read reconciliation §16 for the full evidence trail.
 
-What that means for this file, precisely (do not read past this list
-without it — it governs every method below):
-  - `capabilities` below is `frozenset()` and MUST STAY that way until
-    Phases 0-5 of the base prompt actually pass on a real host with a
-    real daemon (addendum B2). AdmissionGate.check_admission() already
-    makes this self-enforcing: with an empty capability set, EVERY
-    request is rejected before any backend method below is ever
-    reached (it requires FILESYSTEM_JAIL/CGROUP_MEMORY/CGROUP_PIDS
-    unconditionally — see core/sandbox/admission.py). Nothing in this
-    file adds a redundant guard on top of that; AdmissionGate is
-    already the single, existing gate (addendum B3).
-  - create()/run()/cancel()/destroy()/inspect() below are written to
-    the letter of the base prompt + addendum + checklist, but NONE of
-    them has ever been executed against a live daemon. "Implemented"
-    is not "verified" anywhere in this file — see reconciliation §10
-    for the honest, itemized accounting of what that does and doesn't
-    cover.
-  - Two small pure functions, `_build_container_env` (A4) and
-    `_build_create_args` (A6/D2/D3/D4/D12 — plus proves A5's decision
-    structurally), need no Docker daemon at all and ARE exercised by
-    real, passing tests in tests/core/sandbox/test_docker_backend.py.
-    Everything else in that test file that needs a live container is
-    individually skipped in this environment — see that file's own
-    docstring for why the skip is per-test, not whole-file.
+One consequence worth stating plainly, since it's a real behavior
+change and not just a documentation update: `AdmissionGate.
+check_admission()` requires `FILESYSTEM_JAIL`/`CGROUP_MEMORY`/
+`CGROUP_PIDS` unconditionally, and `NET_NAMESPACE`/`NETWORK_ALLOWLIST`
+when `allowed_hosts` is set — all five are now claimed, so a realistic
+`SandboxRequest` is, for the first time, actually admitted through the
+normal admission-gated path rather than rejected before any method
+below is ever reached. That boundary is itself tested (reconciliation
+§16), not just asserted here.
+
+Still genuinely open, not silently treated as closed: A1/A2/A6's
+runtime halves are covered, but A9 (the socketcall(2)/AF_VSOCK seccomp
+bypass) was investigated and NOT mitigated — this host has no AppArmor
+or SELinux, and the seccomp-only mitigation this session tried does
+not work (see `_lsm_active()`'s own docstring for the full account).
+`SECCOMP` is deliberately absent from `_CAPS` for exactly that reason.
+C2's network isolation is real and tested, but Phase 5's remaining
+adversarial depth (beyond what §14 covers) and C3's 32-bit-compat
+regression question (moot without an attempted fix) remain
+unaddressed. `USER_NAMESPACE` is absent because this daemon has no
+userns-remap configured — claiming it would misrepresent the host, not
+just this code.
 
 Scope discipline (addendum B4 / base prompt Definition of Done): this
 file, its own small private helpers, tests/core/sandbox/
 test_docker_backend.py, and additive-only SandboxCapability entries in
-contracts.py (none added by this session — see B2 above) are the whole
-authorized surface. SandboxBackend, NamespaceBackend, _ns_init.py,
-_seccomp.py, and _net_proxy.py are read from (imported, in
-_net_proxy's case — addendum B3) but never modified.
+contracts.py (none added — every value `_CAPS` claims below already
+existed) are the whole authorized surface. SandboxBackend,
+NamespaceBackend, _ns_init.py, _seccomp.py, and _net_proxy.py are read
+from (imported, in _net_proxy's case — addendum B3) but never modified.
 """
 from __future__ import annotations
 
@@ -78,11 +87,65 @@ from core.sandbox.contracts import (
     TerminationReason,
 )
 
-# Addendum B2: starts empty, stays empty until Phase 0-5 gates pass on a
-# real host. See module docstring — this is not a placeholder to fill in
-# casually; each value requires its own passing gate, individually, per
-# the checklist.
-_CAPS = RuntimeCapabilities(backend_name="docker", supported=frozenset())
+# Addendum B2: each value here requires its own passing gate,
+# individually — not Docker configuration knobs, demonstrated security
+# properties. As of reconciliation §16, nine of the twelve
+# SandboxCapability values have real, adversarial, runtime evidence
+# (see that section for the full account; this comment is the
+# short form):
+#   MOUNT_NAMESPACE, PID_NAMESPACE, UTS_NAMESPACE  -- §12 (A2): a host
+#       mount made after the container starts is invisible inside it;
+#       a real host PID can't be signaled or seen; the container's
+#       hostname is independent and can't be changed from inside.
+#   NET_NAMESPACE, NETWORK_ALLOWLIST -- §14 (C2): an allowed host
+#       reaches the real internet through the tunnel; a disallowed
+#       host is rejected at the tunnel; a direct connection bypassing
+#       the proxy has no route; the gateway offers no alternate route;
+#       a sibling sandbox container is unreachable; request.env can't
+#       redirect the enforced proxy.
+#   CGROUP_MEMORY -- §12 (C1): a real OOM kill is distinguishable from
+#       an ordinary SIGKILL via State.OOMKilled, not inferred from the
+#       exit code.
+#   NO_NEW_PRIVS -- §16: /proc/self/status on the running container
+#       itself (the base prompt's actual Phase 2 method), not just the
+#       create request's HostConfig.
+#   CGROUP_PIDS -- §16: a bounded process-creation burst reaches the
+#       configured ceiling, further creation fails, the container
+#       stays exec-able while still under pressure, destroy() is
+#       clean, no host-side process leak.
+#   FILESYSTEM_JAIL -- §16: the actual attack surface, not just
+#       ReadonlyRootfs=true — workspace write succeeds; root
+#       filesystem write, an unrelated path, a `..` traversal, and a
+#       symlink pointing out of the workspace are all denied
+#       (EROFS); the workspace remains writable afterward.
+#
+# Deliberately NOT claimed:
+#   USER_NAMESPACE -- no userns-remap configured on this daemon (§11);
+#       claiming it would misrepresent the host, not just this code.
+#   SECCOMP -- claiming it would imply protection against the
+#       specific CVE-2026-31431 bypass this session found and did NOT
+#       close (§13); B1's own rule is exactly that SECCOMP must never
+#       be claimed to imply that.
+#   NETWORK_DENY_DEFAULT -- admission.py never actually consults it
+#       (checked directly before adding anything here), and the
+#       addendum's own D12 test for a new claim is a demonstrated
+#       cross-backend need, not "Docker can also do this."
+_CAPS = RuntimeCapabilities(
+    backend_name="docker",
+    supported=frozenset(
+        {
+            SandboxCapability.MOUNT_NAMESPACE,
+            SandboxCapability.PID_NAMESPACE,
+            SandboxCapability.UTS_NAMESPACE,
+            SandboxCapability.NET_NAMESPACE,
+            SandboxCapability.NETWORK_ALLOWLIST,
+            SandboxCapability.CGROUP_MEMORY,
+            SandboxCapability.NO_NEW_PRIVS,
+            SandboxCapability.CGROUP_PIDS,
+            SandboxCapability.FILESYSTEM_JAIL,
+        }
+    ),
+)
 
 
 def _check_a1_paired_capability_invariant(caps: RuntimeCapabilities) -> None:
@@ -196,8 +259,8 @@ def _build_create_args(
     `--pid=host`, `--ipc=host`, `--uts=host`, `--network=host`,
     `--cap-add`, `--device`, any Docker/container-runtime socket mount.
     `network_mode` defaults to `"none"` — the caller must explicitly ask
-    for anything else, and today (capabilities empty) nothing calls this
-    with anything else.
+    for anything else; `create()` only does so when `allowed_hosts` is
+    set (see `_ensure_sandbox_network()`).
     D3 — image root filesystem stays read-only (`--read-only`); the
     workspace bind mount is the one explicit writable path.
     D2 — each `read_only_paths` entry becomes its own `:ro` bind at the
@@ -418,9 +481,11 @@ class _DockerRunState:
 
 
 class DockerBackend(SandboxBackend):
-    """Docker-daemon SandboxBackend. See module docstring before editing
-    or trusting anything below it — capabilities is empty and every
-    method is unverified against a live daemon."""
+    """Docker-daemon SandboxBackend. See the module docstring and
+    `_CAPS`'s own comment before trusting any individual capability
+    claim — nine of twelve are backed by real adversarial evidence,
+    three are deliberately absent, and A9's seccomp bypass is real and
+    unmitigated (`_lsm_active()`)."""
 
     def __init__(self, image_ref: str | None = None) -> None:
         """`image_ref` is backend-private configuration (addendum A3),
@@ -448,14 +513,16 @@ class DockerBackend(SandboxBackend):
         an immutable digest via `docker inspect`, once, and caches it —
         checklist A3's own test is "two create() calls resolve to the
         identical digest". Requires the image to already carry
-        RepoDigests locally (i.e. pulled from a registry, not only
-        locally built) — a real constraint this backend imposes
-        deliberately rather than silently resolving to something
-        floating; documented here since it has never been exercised
-        against a real registry in this session.
+        RepoDigests locally — verified this way in reconciliation §11:
+        `docker import` (used there in place of a registry pull, none
+        being reachable in that environment) populates RepoDigests for
+        a locally-tagged image too, contrary to what this docstring
+        originally assumed. `docker build`'s RepoDigests behavior
+        remains untested — this constraint stays documented rather
+        than silently resolved to something floating for that path.
 
-        UNVERIFIED beyond argument construction: never run against a
-        real daemon.
+        Verified: resolves correctly and caches (identical digest on a
+        second call) against a real daemon — reconciliation §11.
         """
         if self._resolved_digest is not None:
             return self._resolved_digest
@@ -487,10 +554,13 @@ class DockerBackend(SandboxBackend):
     # -- SandboxBackend interface -----------------------------------
 
     async def create(self, request: SandboxRequest) -> SandboxHandle:
-        """UNVERIFIED. See module docstring. Also: AdmissionGate rejects
-        every request before this is ever reached today (capabilities is
-        empty) — this method exists to satisfy the interface and encode
-        the addendum's requirements, not because it is reachable yet."""
+        """Verified against a real daemon (reconciliation §§11, 14, 16):
+        full create()/run()/inspect()/destroy() lifecycle, real network
+        isolation when `allowed_hosts` is set, and — for a request
+        requiring FILESYSTEM_JAIL/CGROUP_MEMORY/CGROUP_PIDS (and
+        NET_NAMESPACE/NETWORK_ALLOWLIST when networked) — actually
+        reachable through AdmissionGate now that `_CAPS` claims all
+        five. See the module docstring for what's still open (A9)."""
         handle_id = f"docker-{uuid.uuid4().hex[:12]}"
         container_name = f"ocbrain-sandbox-{handle_id}"
         os.makedirs(request.policy.workspace_dir, exist_ok=True)
@@ -502,10 +572,11 @@ class DockerBackend(SandboxBackend):
         network_mode = "none"
         if request.policy.allowed_hosts:
             # Addendum B3: the EXISTING AllowlistProxy, never a parallel
-            # proxy or policy mechanism. Wired for when NET_NAMESPACE +
-            # NETWORK_ALLOWLIST are actually earned (A1) — AdmissionGate
-            # rejects any request that would reach this branch today, so
-            # it has never executed via the normal admission-gated path.
+            # proxy or policy mechanism. NET_NAMESPACE + NETWORK_ALLOWLIST
+            # are now both in _CAPS (A1's paired-claim invariant holds),
+            # so this branch is reachable through the normal
+            # admission-gated path — see reconciliation §14 for the full
+            # bypass-path verification this got before being claimed.
             gateway_ip = await _ensure_sandbox_network()
             proxy = AllowlistProxy(bind_ip=gateway_ip, allowed_hosts=request.policy.allowed_hosts)
             port = proxy.start()
@@ -552,7 +623,9 @@ class DockerBackend(SandboxBackend):
         )
 
     async def run(self, handle: SandboxHandle, request: SandboxRequest) -> SandboxResult:
-        """UNVERIFIED. See module docstring."""
+        """Verified end to end against a real daemon — echo/exit-code,
+        timeout, real HTTPS traffic through the network-isolation path,
+        and the D11 concurrency races (reconciliation §§11, 14, 15)."""
         state = self._handles.get(handle.handle_id)
         if state is None:
             raise DockerBackendError(
@@ -606,13 +679,14 @@ class DockerBackend(SandboxBackend):
         )
 
     async def cancel(self, handle: SandboxHandle) -> None:
-        """Addendum D7. UNVERIFIED against a real process tree — never
-        run. `docker kill` signals PID 1 in the container; Docker's own
-        cgroup teardown is relied on to reach descendants. This is
-        exactly what the checklist warns NOT to trust without a direct
-        parent/child/grandchild test against a live daemon — that test
-        is written in tests/core/sandbox/test_docker_backend.py, marked
-        needing a real daemon, and has never run."""
+        """Addendum D7. `docker kill` signals PID 1 in the container;
+        Docker's own cgroup teardown reaches descendants. Verified
+        directly against a real parent/child/grandchild process tree
+        (reconciliation §11) — the checklist's specific concern (a
+        descendant surviving because only the top-level PID was
+        signaled) does not reproduce. Also exercised concurrently with
+        run() and destroy() (D11, §15) — see this class's docstring
+        before assuming anything beyond what those sections cover."""
         state = self._handles.get(handle.handle_id)
         if state is None:
             return
@@ -620,9 +694,12 @@ class DockerBackend(SandboxBackend):
         await self._kill_container(state.container_id)
 
     async def destroy(self, handle: SandboxHandle) -> None:
-        """UNVERIFIED. Idempotent by construction: a missing handle or an
+        """Idempotent by construction: a missing handle or an
         already-gone container are both treated as already-clean
-        (checklist D6/D10's double-destroy requirement), not errors."""
+        (checklist D6/D10's double-destroy requirement), not errors.
+        Verified against a real daemon, including concurrently with
+        run() and cancel() (D11, §15) — no orphaned containers in any
+        of those runs."""
         state = self._handles.pop(handle.handle_id, None)
         if state is None:
             return
@@ -688,9 +765,11 @@ class DockerBackend(SandboxBackend):
         (SIGKILL) is produced by a genuine OOM kill AND by an ordinary
         cancel()/timeout kill, and the two are not distinguishable from
         the exit code alone (checklist's explicit forbidden shortcut:
-        `if exit_code == 137: return RESOURCE_EXCEEDED`). UNVERIFIED:
-        never exercised against a real OOM event or a real concurrent
-        cancel() race."""
+        `if exit_code == 137: return RESOURCE_EXCEEDED`). Verified
+        directly, independent of pytest (reconciliation §12): a real
+        OOM gives OOMKilled=true/ExitCode=137; an ordinary SIGKILL gives
+        OOMKilled=false/ExitCode=137 — same exit code, opposite flag,
+        confirming exit code alone genuinely cannot carry this."""
         if await self._inspect_oom_killed(state.container_id):
             return TerminationReason.RESOURCE_EXCEEDED
         if state.cancel_requested:
@@ -705,10 +784,13 @@ class DockerBackend(SandboxBackend):
         container-reported file list, and rejects (does not follow) any
         entry whose resolved real path escapes the copied root, so a
         symlink written inside the sandbox can't point the collector at
-        an arbitrary host path. UNVERIFIED: `docker cp`'s own behavior
-        here has never been exercised against a real daemon; this is
-        this backend's best-effort defense, not a confirmed-safe
-        result."""
+        an arbitrary host path. `docker cp`'s own behavior here is
+        exercised in every real test run in reconciliation §§11-16;
+        the symlink-escape rejection specifically is this backend's
+        own defense (not yet adversarially targeted with a symlink
+        crafted to defeat `os.path.realpath`'s specific resolution
+        order — recorded here as the honest remaining scope, not
+        claimed as fully adversarially hardened)."""
         tmp_root = tempfile.mkdtemp(prefix="ocbrain-docker-artifacts-")
         try:
             proc = await asyncio.create_subprocess_exec(

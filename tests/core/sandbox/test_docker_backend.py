@@ -80,21 +80,74 @@ _COMMON_ARGS = dict(
 # ======================================================================
 
 
-def test_capabilities_start_empty():
-    # Addendum B2 — no gate has passed in an environment with no daemon
-    # at all, so this is frozenset(), not NamespaceBackend's full set.
+def test_capabilities_reflect_exactly_the_evidence_backed_set():
+    # Reconciliation §16: nine values, each with its own adversarial
+    # runtime evidence — not "whatever Docker configuration implies".
+    from core.sandbox.contracts import SandboxCapability
+
     backend = DockerBackend(image_ref="example/image:tag")
-    assert backend.capabilities.supported == frozenset()
+    expected = frozenset(
+        {
+            SandboxCapability.MOUNT_NAMESPACE,
+            SandboxCapability.PID_NAMESPACE,
+            SandboxCapability.UTS_NAMESPACE,
+            SandboxCapability.NET_NAMESPACE,
+            SandboxCapability.NETWORK_ALLOWLIST,
+            SandboxCapability.CGROUP_MEMORY,
+            SandboxCapability.NO_NEW_PRIVS,
+            SandboxCapability.CGROUP_PIDS,
+            SandboxCapability.FILESYSTEM_JAIL,
+        }
+    )
+    assert backend.capabilities.supported == expected
+    # Deliberately absent, each for a stated reason (see _CAPS's own
+    # comment): USER_NAMESPACE (no userns-remap on this daemon),
+    # SECCOMP (A9's bypass is real and unmitigated), NETWORK_DENY_DEFAULT
+    # (admission.py never actually consults it).
+    for absent in (
+        SandboxCapability.USER_NAMESPACE,
+        SandboxCapability.SECCOMP,
+        SandboxCapability.NETWORK_DENY_DEFAULT,
+    ):
+        assert absent not in backend.capabilities.supported
 
 
-def test_empty_capabilities_means_admission_gate_rejects_everything():
-    # Direct, worth-asserting-explicitly consequence of B2: DockerBackend
-    # is categorically inadmissible for any real request today, by the
-    # EXISTING AdmissionGate (addendum B3) — not a guard this file adds.
+def test_admission_boundary_admits_a_realistic_request_now():
+    # What used to be test_empty_capabilities_means_admission_gate_
+    # rejects_everything, updated because the premise changed: capabilities
+    # is no longer empty, so this is the opposite claim, checked against
+    # the real, unmodified check_admission() (addendum B3) — not
+    # reimplemented here.
     backend = DockerBackend(image_ref="example/image:tag")
     policy = SandboxPolicy(workspace_dir="/tmp/whatever")
     request = SandboxRequest(command=("echo", "hi"), policy=policy)
     decision = check_admission(request, backend.capabilities)
+    assert decision.allowed is True
+
+
+def test_admission_boundary_admits_a_networked_request_now():
+    backend = DockerBackend(image_ref="example/image:tag")
+    policy = SandboxPolicy(workspace_dir="/tmp/whatever", allowed_hosts=("example.com",))
+    request = SandboxRequest(command=("echo", "hi"), policy=policy)
+    decision = check_admission(request, backend.capabilities)
+    assert decision.allowed is True
+
+
+def test_admission_boundary_rejects_when_a_required_capability_is_missing():
+    # The negative half of the same boundary: an otherwise-identical
+    # capability set missing just CGROUP_PIDS must still be rejected —
+    # proves the admitted cases above aren't admitted unconditionally.
+    from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability
+
+    incomplete = RuntimeCapabilities(
+        backend_name="docker",
+        supported=frozenset(
+            {SandboxCapability.FILESYSTEM_JAIL, SandboxCapability.CGROUP_MEMORY}
+        ),
+    )
+    policy = SandboxPolicy(workspace_dir="/tmp/whatever")
+    request = SandboxRequest(command=("echo", "hi"), policy=policy)
+    decision = check_admission(request, incomplete)
     assert decision.allowed is False
 
 
@@ -193,21 +246,25 @@ def test_create_args_names_and_labels_for_cleanup():
     assert "ocbrain.sandbox=true" in args
 
 
-def test_no_new_sandbox_capability_claimed_yet():
-    # D12 / B2 together: this session added zero SandboxCapability
-    # values to contracts.py (none of the addendum's gates passed).
+def test_no_new_contracts_py_enum_members_added():
+    # D12: every value _CAPS claims already existed in SandboxCapability
+    # before this work — the claimed set grew, but no new enum member
+    # was added to earn it (checked against the live enum, not a
+    # hardcoded copy of it).
     from core.sandbox.contracts import SandboxCapability
 
     backend = DockerBackend(image_ref="example/image:tag")
     assert backend.capabilities.supported.issubset(set(SandboxCapability))
-    assert len(backend.capabilities.supported) == 0
+    assert len(backend.capabilities.supported) == 9
 
 
 def test_a1_network_allowlist_requires_net_namespace_currently_holds():
-    # A1 — current _CAPS is empty, so the paired-claim invariant holds
-    # trivially. Real value is test_a1_invariant_actually_fires_when_violated
-    # below: a fail-closed check that's never observed firing isn't
-    # actually verified.
+    # A1 — both NET_NAMESPACE and NETWORK_ALLOWLIST are now genuinely
+    # claimed together (reconciliation §16), so this is no longer the
+    # trivial empty-set case. Real value is
+    # test_a1_invariant_actually_fires_when_violated below: a
+    # fail-closed check that's never observed firing isn't actually
+    # verified.
     from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
 
     backend = DockerBackend(image_ref="example/image:tag")
@@ -855,3 +912,112 @@ async def test_d11_inspect_mid_run_does_not_block_or_mutate(conc_backend, tmp_pa
     result = await run_task
     assert result.termination_reason == TerminationReason.COMPLETED
     await conc_backend.destroy(handle)
+
+
+# ======================================================================
+# Closing the three remaining capability-evidence gaps before _CAPS
+# claims anything: NO_NEW_PRIVS (runtime, not just the create request),
+# CGROUP_PIDS (adversarial, bounded so a failure can't consume real
+# host resources), FILESYSTEM_JAIL (the actual attack surface, not just
+# ReadonlyRootfs=true).
+# ======================================================================
+
+
+@pytest.fixture
+def cap_backend():
+    image = os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+    return DockerBackend(image_ref=image)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_no_new_privs_runtime_proc_status(cap_backend, tmp_path):
+    # The base prompt's own Phase 2 method: /proc/self/status on the
+    # RUNNING container, not HostConfig.SecurityOpt on the request.
+    policy = SandboxPolicy(workspace_dir=str(tmp_path))
+    request = SandboxRequest(command=("sh", "-c", "grep NoNewPrivs /proc/self/status"), policy=policy)
+    handle = await cap_backend.create(request)
+    try:
+        result = await cap_backend.run(handle, request)
+        assert result.stdout.strip() == "NoNewPrivs:\t1"
+    finally:
+        await cap_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_cgroup_pids_enforced_and_container_stays_controllable(cap_backend, tmp_path):
+    # Deliberately low ceiling -- a failure here can't consume real
+    # host resources. Proves: burst reaches the ceiling, further
+    # creation fails, the container is still exec-able WHILE still
+    # under pressure (not just before or after), and destroy() is
+    # clean with no host-side leak.
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), max_pids=8, timeout_sec=20)
+    script = (
+        "import subprocess, time\n"
+        "spawned = 0\n"
+        "for i in range(200):\n"
+        "    try:\n"
+        "        subprocess.Popen(['sleep', '15'])\n"
+        "        spawned += 1\n"
+        "    except OSError:\n"
+        "        break\n"
+        "print('spawned:', spawned)\n"
+        "time.sleep(4)\n"
+    )
+    request = SandboxRequest(command=("python3", "-c", script), policy=policy)
+    handle = await cap_backend.create(request)
+    container_id = cap_backend._handles[handle.handle_id].container_id
+    run_task = asyncio.ensure_future(cap_backend.run(handle, request))
+    await asyncio.sleep(2.0)
+    probe = subprocess.run(
+        ["docker", "exec", container_id, "echo", "still-controllable"], capture_output=True, text=True
+    )
+    assert probe.returncode == 0
+    assert "still-controllable" in probe.stdout
+    result = await run_task
+    # max_pids=8 includes PID 1 itself, so at most 7 children succeed
+    assert "spawned: 7" in result.stdout, result.stdout
+    await cap_backend.destroy(handle)
+    leftover = subprocess.run(["pgrep", "-f", "sleep 15"], capture_output=True, text=True)
+    assert leftover.stdout.strip() == ""  # no host-side leak
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_filesystem_jail_full_attack_surface(cap_backend, tmp_path):
+    policy = SandboxPolicy(workspace_dir=str(tmp_path))
+    script = r"""
+import os, errno
+results = {}
+def attempt(label, fn):
+    try:
+        fn(); results[label] = 'OK'
+    except OSError as e:
+        results[label] = errno.errorcode.get(e.errno, e.errno)
+
+attempt('workspace', lambda: open('/workspace/ok.txt', 'w').write('hi'))
+attempt('root_etc', lambda: open('/etc/should-fail.txt', 'w').write('x'))
+attempt('other_path', lambda: open('/usr/should-fail.txt', 'w').write('x'))
+attempt('traversal', lambda: open('/workspace/../etc/passwd', 'w').write('x'))
+os.symlink('/etc/passwd', '/workspace/evil_link')
+attempt('symlink_escape', lambda: open('/workspace/evil_link', 'w').write('x'))
+attempt('workspace_after', lambda: open('/workspace/ok2.txt', 'w').write('still fine'))
+import json
+print(json.dumps(results))
+"""
+    request = SandboxRequest(command=("python3", "-c", script), policy=policy)
+    handle = await cap_backend.create(request)
+    try:
+        result = await cap_backend.run(handle, request)
+        import json
+
+        r = json.loads(result.stdout.strip())
+        assert r["workspace"] == "OK"
+        assert r["root_etc"] == "EROFS"
+        assert r["other_path"] == "EROFS"
+        assert r["traversal"] == "EROFS"
+        assert r["symlink_escape"] == "EROFS"
+        assert r["workspace_after"] == "OK"
+    finally:
+        await cap_backend.destroy(handle)
