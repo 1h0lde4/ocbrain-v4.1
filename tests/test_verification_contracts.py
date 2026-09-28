@@ -17,6 +17,9 @@ from core.verification.epistemic import (
 from core.verification.evidence import (
     EvidenceSource, EvidenceItem, EvidenceDirectness, EvidenceStatus,
     CircularEvidenceError, check_not_circular,
+    ProvenanceCompleteness, EvidenceReference, EvidenceObservation,
+    TransformationType, EvidenceTransformation, EvidenceBundle,
+    MinimumSufficientEvidence,
 )
 from core.verification.verdict import (
     VerificationVerdict, VerificationExecutionFailure, VerificationResult,
