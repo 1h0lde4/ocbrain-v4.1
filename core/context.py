@@ -2,6 +2,39 @@
 core/context.py — V2.1: WAL journal mode + in-memory context cache.
 WAL mode: 3-5× faster concurrent reads.
 Memory cache: format_for_prompt() returns cached string for same session turn.
+
+CTX-SCOPE-001 invariant: ContextMemory is execution-scoped for every live
+execution path. Shared storage (this one SQLite file) and shared process
+infrastructure (this one singleton instance, its in-memory caches) do not
+imply shared execution visibility -- every method that reads or writes
+turns, entities, or long-term-memory content takes a `scope` parameter,
+and a caller passing a real scope only ever sees or affects that scope's
+own data. `scope` is a direct projection of the caller's own authoritative
+execution identity (execution_id, threaded down from interface/api.py
+through WorkflowRuntime's metadata propagation to each worker's
+ExecutionContext.metadata) -- it is never itself an authorization
+credential: this module grants no elevated trust for merely knowing a
+scope string, and cannot validate whether a caller is entitled to present
+a given one (that is interface/api.py's authentication layer, tracked
+separately as DEBT-025, not this module's concern).
+
+scope="" (save()'s default) and scope=None (last_n()/format_for_prompt()'s
+default, meaning "no filter -- see every scope's turns") are both
+intentional, documented legacy/compatibility behavior for callers that
+haven't opted into scoping, not silent fallback gaps -- see
+tests/test_context_scope_security.py's own module docstring and
+ADR-CTX-01 for the full rationale, including why long-term-memory content
+folds None to "" instead (a single current value that gets replaced, not
+a log that can be meaningfully unioned across scopes the way turns can).
+
+Proof: tests/test_context_scope_security.py (mechanism + every confirmed-
+live production caller, end-to-end) and
+tests/test_ctx_scope_001_packet_b_lifecycle_and_concurrency.py
+(concurrency, cross-process, checkpoint/resume, TOCTOU, fail-closed,
+normalization, direct-storage-bypass, and the decisive real-production-
+chain test). `entities`/get_entity() is the one deliberate exception:
+no scope column, tracked and left unscoped since its only caller
+(modules/*.py) is confirmed dead code.
 """
 import json
 import logging
@@ -66,7 +99,7 @@ class ContextMemory:
         self._long_term_memories_by_scope: dict[str, list[dict]] = {}
         self._long_term_memories_string_by_scope: dict[str, str] = {}
 
-    def set_long_term_memories(self, memories: list[dict], scope: str = ""):
+    def set_long_term_memories(self, memories: list[dict], *, scope: str = ""):
         """CTX-SCOPE-001: stored under `scope` (default '' -- save()'s own
         legacy/shared bucket), not a single process-global list. See
         set_long_term_memories_string()'s docstring for the full
@@ -117,7 +150,7 @@ class ContextMemory:
             self._conn.commit()
 
     def save(self, query: str, modules_used: list[str], answer: str,
-             entities: Optional[dict] = None, scope: str = ""):
+             entities: Optional[dict] = None, *, scope: str = ""):
         """CTX-SCOPE-001: `scope` identifies which caller/task/session this
         turn belongs to, so a caller with a genuinely different scope can
         be excluded from it at read time (see last_n()/format_for_prompt()).
@@ -152,7 +185,7 @@ class ContextMemory:
             self._prompt_cache.clear()
             self._prompt_cache_turn = turn_id
 
-    def last_n(self, n: int = 10, scope: Optional[str] = None) -> list[Turn]:
+    def last_n(self, n: int = 10, *, scope: Optional[str] = None) -> list[Turn]:
         """scope=None (default): unfiltered, matching every prior release's
         behavior exactly -- not a security boundary on its own. Pass an
         explicit scope to restrict results to turns saved with that same
@@ -184,7 +217,7 @@ class ContextMemory:
             )
             return [r[0] for r in cur.fetchall()]
 
-    def boost_module(self, module_name: str, recent_turns: int = 3,
+    def boost_module(self, module_name: str, recent_turns: int = 3, *,
                       scope: Optional[str] = None) -> float:
         """CTX-SCOPE-001: scope=None matches last_n()/format_for_prompt()'s
         own convention -- unfiltered, exact prior behavior for any caller
@@ -198,7 +231,7 @@ class ContextMemory:
                 return 0.1
         return 0.0
 
-    def set_long_term_memories_string(self, context_string: str, scope: str = ""):
+    def set_long_term_memories_string(self, context_string: str, *, scope: str = ""):
         """Sets the pre-formatted long-term memory string (Phase 5).
 
         CTX-SCOPE-001: the stored value is associated with `scope`
@@ -219,7 +252,7 @@ class ContextMemory:
         self._turns_cache_dirty = True
         self._prompt_cache.clear()
 
-    def format_for_prompt(self, n: int = 5, scope: Optional[str] = None) -> str:
+    def format_for_prompt(self, n: int = 5, *, scope: Optional[str] = None) -> str:
         """
         V2.1: cached — returns the same string until a new turn is saved.
         Avoids a DB round-trip on every query in the same session.
