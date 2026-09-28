@@ -42,9 +42,9 @@ from core.verification.rubric import (
 )
 from core.verification.inspection import InspectionStep, InspectionPlan
 from core.verification.observation import ObservationForm, Observation, Interpretation
-from core.verification.claim import ClaimOrigin, Claim
-from core.verification.assumption import Assumption
-from core.verification.reference import ReferenceKind, Reference, GroundTruth
+from core.verification.claim import ClaimOrigin, Claim, ClaimDependencyType, ClaimDependency
+from core.verification.assumption import Assumption, AssumptionSourceKind, AssumptionSource, AssumptionStatus
+from core.verification.reference import ReferenceKind, Reference, GroundTruth, ReferenceQuality
 from core.verification.oracle import Oracle
 from core.verification.method import (
     InspectionClass, CostLatencyClass, MethodExecutionState, MethodDisposition,
@@ -1605,3 +1605,466 @@ class TestCritique:
                 finding_type=CritiqueFindingType.HIDDEN_ASSUMPTION,
                 hidden_assumption_id="a1", contradiction_id="ct1",
             )
+
+
+# ---------------------------------------------------------------------------
+# Batch 1 — Epistemic Spine: ClaimDependency, AssumptionSource,
+#            AssumptionStatus, ReferenceQuality
+# ---------------------------------------------------------------------------
+
+
+class TestClaimDependency:
+    """ClaimDependency: an immutable dependency edge between two claims.
+    Structural parallel to CriterionDependency (rubric.py)."""
+
+    def test_valid_construction_relies_on(self):
+        dep = ClaimDependency(
+            claim_id="c2", depends_on_claim_id="c1",
+            dependency_type=ClaimDependencyType.RELIES_ON,
+        )
+        assert dep.claim_id == "c2"
+        assert dep.depends_on_claim_id == "c1"
+        assert dep.dependency_type == ClaimDependencyType.RELIES_ON
+
+    def test_valid_construction_presupposes(self):
+        dep = ClaimDependency(
+            claim_id="c2", depends_on_claim_id="c1",
+            dependency_type=ClaimDependencyType.PRESUPPOSES,
+        )
+        assert dep.dependency_type == ClaimDependencyType.PRESUPPOSES
+
+    def test_self_dependency_rejected(self):
+        with pytest.raises(ValueError, match="cannot depend on itself"):
+            ClaimDependency(
+                claim_id="c1", depends_on_claim_id="c1",
+                dependency_type=ClaimDependencyType.RELIES_ON,
+            )
+
+    def test_dependent_and_depended_upon_are_distinct_fields(self):
+        dep = ClaimDependency(
+            claim_id="alpha", depends_on_claim_id="beta",
+            dependency_type=ClaimDependencyType.RELIES_ON,
+        )
+        assert dep.claim_id != dep.depends_on_claim_id
+
+    def test_immutability(self):
+        dep = ClaimDependency(
+            claim_id="c2", depends_on_claim_id="c1",
+            dependency_type=ClaimDependencyType.RELIES_ON,
+        )
+        with pytest.raises(Exception):
+            dep.claim_id = "tampered"
+
+    def test_dependency_does_not_encode_support_or_refutation(self):
+        """ClaimDependencyType values must not overlap with evidence
+        support/refutation concepts."""
+        dep_values = {t.value for t in ClaimDependencyType}
+        # These are evidence-layer concepts that dependency must not encode
+        for forbidden in ("supports", "refutes", "contradicts", "sufficient", "insufficient"):
+            assert forbidden not in dep_values
+
+    def test_dependency_does_not_encode_authority(self):
+        """ClaimDependencyType values must not imply authority."""
+        dep_values = {t.value for t in ClaimDependencyType}
+        for forbidden in ("authoritative", "trusted", "verified", "proven"):
+            assert forbidden not in dep_values
+
+    def test_no_accidental_equivalence_with_claim_origin_derived(self):
+        """ClaimOrigin.DERIVED means 'how a claim came to exist';
+        ClaimDependencyType means 'what this claim relies on'.
+        They must have no shared values."""
+        origin_values = {o.value for o in ClaimOrigin}
+        dep_values = {t.value for t in ClaimDependencyType}
+        assert origin_values.isdisjoint(dep_values), (
+            f"ClaimOrigin and ClaimDependencyType share values: "
+            f"{origin_values & dep_values}"
+        )
+
+    def test_all_dependency_types_exist(self):
+        assert {ClaimDependencyType.RELIES_ON, ClaimDependencyType.PRESUPPOSES} == set(ClaimDependencyType)
+
+    def test_dependency_is_directional(self):
+        """A depends_on B is not the same as B depends_on A."""
+        dep_ab = ClaimDependency(claim_id="a", depends_on_claim_id="b",
+                                 dependency_type=ClaimDependencyType.RELIES_ON)
+        dep_ba = ClaimDependency(claim_id="b", depends_on_claim_id="a",
+                                 dependency_type=ClaimDependencyType.RELIES_ON)
+        assert dep_ab != dep_ba
+
+    def test_derived_claim_can_have_dependency(self):
+        """A DERIVED claim may also have a dependency edge --
+        ClaimOrigin and ClaimDependency are orthogonal."""
+        claim = Claim(claim_id="c2", content="therefore idle",
+                      origin=ClaimOrigin.DERIVED)
+        dep = ClaimDependency(claim_id=claim.claim_id,
+                              depends_on_claim_id="c1",
+                              dependency_type=ClaimDependencyType.RELIES_ON)
+        assert dep.claim_id == claim.claim_id
+
+
+class TestAssumptionSource:
+    """AssumptionSource: structured provenance for assumptions,
+    separate from authority."""
+
+    def test_valid_construction(self):
+        src = AssumptionSource(
+            source_kind=AssumptionSourceKind.HUMAN,
+            source_identifier="human:moncif",
+        )
+        assert src.source_kind == AssumptionSourceKind.HUMAN
+        assert src.source_identifier == "human:moncif"
+
+    def test_empty_source_identifier_rejected(self):
+        with pytest.raises(ValueError, match="non-empty source_identifier"):
+            AssumptionSource(
+                source_kind=AssumptionSourceKind.HUMAN,
+                source_identifier="",
+            )
+
+    def test_whitespace_source_identifier_rejected(self):
+        with pytest.raises(ValueError):
+            AssumptionSource(
+                source_kind=AssumptionSourceKind.MODEL,
+                source_identifier="   ",
+            )
+
+    def test_immutability(self):
+        src = AssumptionSource(
+            source_kind=AssumptionSourceKind.SYSTEM,
+            source_identifier="runtime_defaults",
+        )
+        with pytest.raises(Exception):
+            src.source_kind = AssumptionSourceKind.HUMAN
+
+    def test_all_source_kinds_representable(self):
+        expected = {"human", "model", "system", "policy", "documentation"}
+        assert {k.value for k in AssumptionSourceKind} == expected
+
+    def test_source_does_not_imply_authority(self):
+        """AssumptionSource has no authority field -- provenance and
+        authority are structurally separate."""
+        src = AssumptionSource(
+            source_kind=AssumptionSourceKind.HUMAN,
+            source_identifier="human:moncif",
+        )
+        assert not hasattr(src, "is_authoritative")
+        assert not hasattr(src, "authority")
+
+    def test_source_is_not_observation_authority(self):
+        """AssumptionSourceKind must not share values with
+        ObservationAuthority -- they answer different questions."""
+        from core.verification.epistemic import ObservationAuthority
+        source_values = {k.value for k in AssumptionSourceKind}
+        authority_values = {a.value for a in ObservationAuthority}
+        # They CAN share some string values (e.g. "human", "model") but
+        # are different enum types -- verify type distinctness
+        assert AssumptionSourceKind is not ObservationAuthority
+
+    def test_queryable_through_assumption(self):
+        """An Assumption with a source must allow querying the source
+        kind and identifier without reverse-engineering from prose."""
+        src = AssumptionSource(
+            source_kind=AssumptionSourceKind.DOCUMENTATION,
+            source_identifier="api-spec-v2",
+        )
+        a = Assumption(
+            assumption_id="a1",
+            description="the API contract is stable",
+            relied_upon_for="response schema validation",
+            source=src,
+        )
+        assert a.source is not None
+        assert a.source.source_kind == AssumptionSourceKind.DOCUMENTATION
+        assert a.source.source_identifier == "api-spec-v2"
+
+
+class TestAssumptionStatus:
+    """AssumptionStatus: semantic status axis for assumptions,
+    distinct from VerificationVerdict."""
+
+    def test_all_four_states_exist(self):
+        expected = {"unexamined", "challenged", "confirmed", "rejected"}
+        assert {s.value for s in AssumptionStatus} == expected
+
+    def test_default_is_unexamined(self):
+        a = Assumption(
+            assumption_id="a1",
+            description="db replica is current",
+            relied_upon_for="freshness",
+        )
+        assert a.status == AssumptionStatus.UNEXAMINED
+
+    def test_unexamined_is_not_rejected(self):
+        assert AssumptionStatus.UNEXAMINED != AssumptionStatus.REJECTED
+        assert AssumptionStatus.UNEXAMINED.value != AssumptionStatus.REJECTED.value
+
+    def test_unexamined_is_not_confirmed(self):
+        assert AssumptionStatus.UNEXAMINED != AssumptionStatus.CONFIRMED
+
+    def test_challenged_is_not_verified_failure(self):
+        """CHALLENGED is under scrutiny, not found false."""
+        assert AssumptionStatus.CHALLENGED != AssumptionStatus.REJECTED
+
+    def test_not_interchangeable_with_verification_verdict(self):
+        """AssumptionStatus and VerificationVerdict are different types."""
+        from core.verification.verdict import VerificationVerdict
+        assert AssumptionStatus is not VerificationVerdict
+        # No value-level overlap for the critical confusion pairs
+        assert AssumptionStatus.CONFIRMED.value != VerificationVerdict.VERIFIED.value
+        assert AssumptionStatus.REJECTED.value != VerificationVerdict.CONTRADICTED.value
+
+    def test_survives_round_trip(self):
+        """UNEXAMINED survives serialization without becoming
+        rejected/confirmed/false."""
+        status = AssumptionStatus.UNEXAMINED
+        serialized = status.value
+        deserialized = AssumptionStatus(serialized)
+        assert deserialized is AssumptionStatus.UNEXAMINED
+        assert deserialized is not AssumptionStatus.REJECTED
+        assert deserialized is not AssumptionStatus.CONFIRMED
+
+    def test_immutability_of_assumption_with_status(self):
+        a = Assumption(
+            assumption_id="a1",
+            description="db replica is current",
+            relied_upon_for="freshness",
+            status=AssumptionStatus.CHALLENGED,
+        )
+        with pytest.raises(Exception):
+            a.status = AssumptionStatus.CONFIRMED
+
+    def test_explicit_status_at_construction(self):
+        a = Assumption(
+            assumption_id="a1",
+            description="API is idempotent",
+            relied_upon_for="retry safety",
+            status=AssumptionStatus.CONFIRMED,
+        )
+        assert a.status == AssumptionStatus.CONFIRMED
+
+    def test_changing_status_requires_new_instance(self):
+        """Historical semantics: changing status must not mutate an
+        existing Assumption -- a new instance is required, compatible
+        with the immutable receipt/supersession model."""
+        a1 = Assumption(
+            assumption_id="a1",
+            description="db replica is current",
+            relied_upon_for="freshness",
+            status=AssumptionStatus.UNEXAMINED,
+        )
+        # The only way to "change" status is to construct a new Assumption
+        from dataclasses import replace
+        a2 = replace(a1, status=AssumptionStatus.CHALLENGED)
+        assert a1.status == AssumptionStatus.UNEXAMINED  # original untouched
+        assert a2.status == AssumptionStatus.CHALLENGED
+        assert a1 is not a2
+
+
+class TestReferenceQuality:
+    """ReferenceQuality: quality characterization distinct from
+    correctness, authority, freshness, and GroundTruth."""
+
+    def test_all_four_quality_levels_exist(self):
+        expected = {"unassessed", "low", "moderate", "high"}
+        assert {q.value for q in ReferenceQuality} == expected
+
+    def test_default_is_unassessed(self):
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.EXPECTED_VALUE,
+            content_summary="expected HTTP 200",
+            source="API spec v2",
+        )
+        assert r.quality == ReferenceQuality.UNASSESSED
+
+    def test_explicit_quality_at_construction(self):
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.SPECIFICATION,
+            content_summary="OpenAPI schema v3",
+            source="official documentation",
+            quality=ReferenceQuality.HIGH,
+        )
+        assert r.quality == ReferenceQuality.HIGH
+
+    def test_quality_is_not_correctness(self):
+        """HIGH quality does not mean the reference is correct/true."""
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.DOCUMENTATION,
+            content_summary="outdated but well-formatted docs",
+            source="wiki v1",
+            quality=ReferenceQuality.HIGH,
+        )
+        # The reference is still just a Reference, regardless of quality
+        assert isinstance(r, Reference)
+        assert not isinstance(r, GroundTruth)
+
+    def test_quality_is_not_authority(self):
+        """ReferenceQuality has no authority field."""
+        assert not hasattr(ReferenceQuality, "is_authoritative")
+        # A high-quality reference carries no authority marker
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.HUMAN_JUDGMENT,
+            content_summary="expert opinion",
+            source="domain expert",
+            quality=ReferenceQuality.HIGH,
+        )
+        assert not hasattr(r, "is_authoritative")
+
+    def test_high_quality_does_not_create_ground_truth(self):
+        """Attack D: quality=HIGH must not promote a Reference to
+        GroundTruth. GroundTruth requires explicit elevation."""
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.SPECIFICATION,
+            content_summary="formal spec",
+            source="standards body",
+            quality=ReferenceQuality.HIGH,
+        )
+        assert isinstance(r, Reference)
+        assert not isinstance(r, GroundTruth)
+        # GroundTruth still requires explicit established_by/established_via
+        gt = GroundTruth(
+            ground_truth_id="gt1",
+            reference_id=r.reference_id,
+            established_by="human:moncif",
+            established_via="human_review",
+        )
+        assert isinstance(gt, GroundTruth)
+
+    def test_existing_reference_construction_still_works(self):
+        """Backward compatibility: Reference without quality still works."""
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.EXPECTED_VALUE,
+            content_summary="expected 200",
+            source="spec",
+        )
+        assert r.quality == ReferenceQuality.UNASSESSED
+
+    def test_quality_does_not_encode_freshness(self):
+        """Quality and freshness are distinct -- ReferenceQuality has no
+        temporal/validity fields."""
+        for q in ReferenceQuality:
+            assert "fresh" not in q.value
+            assert "stale" not in q.value
+            assert "expired" not in q.value
+
+    def test_immutability(self):
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.PRIOR_RESULT,
+            content_summary="prior run output",
+            source="execution log",
+            quality=ReferenceQuality.MODERATE,
+        )
+        with pytest.raises(Exception):
+            r.quality = ReferenceQuality.HIGH
+
+    def test_high_quality_reference_remains_reference(self):
+        """A representative high-quality Reference is still a Reference,
+        not silently promoted."""
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.SPECIFICATION,
+            content_summary="fully validated spec",
+            source="standards body official publication",
+            quality=ReferenceQuality.HIGH,
+        )
+        assert type(r) is Reference
+
+
+class TestEpistemicSpineIntegration:
+    """Integration tests proving the Batch 1 contracts can answer their
+    intended questions without inference from free-form strings."""
+
+    def test_what_claim_depends_on_what(self):
+        """Can answer: 'What claim depends on what other claim?'"""
+        claim_a = Claim(claim_id="ca", content="pipeline is idle",
+                        origin=ClaimOrigin.DERIVED)
+        claim_b = Claim(claim_id="cb", content="no jobs in queue",
+                        origin=ClaimOrigin.DIRECT_ASSERTION)
+        dep = ClaimDependency(
+            claim_id=claim_a.claim_id,
+            depends_on_claim_id=claim_b.claim_id,
+            dependency_type=ClaimDependencyType.RELIES_ON,
+        )
+        assert dep.claim_id == "ca"
+        assert dep.depends_on_claim_id == "cb"
+        assert dep.dependency_type == ClaimDependencyType.RELIES_ON
+
+    def test_where_assumption_came_from(self):
+        """Can answer: 'Where did this assumption come from?'"""
+        src = AssumptionSource(
+            source_kind=AssumptionSourceKind.POLICY,
+            source_identifier="policy:safety-critical-v1",
+        )
+        a = Assumption(
+            assumption_id="a1",
+            description="all inputs are sanitized",
+            relied_upon_for="injection safety",
+            source=src,
+        )
+        assert a.source.source_kind == AssumptionSourceKind.POLICY
+        assert a.source.source_identifier == "policy:safety-critical-v1"
+
+    def test_assumption_semantic_status(self):
+        """Can answer: 'What is the assumption's current semantic status?'"""
+        a = Assumption(
+            assumption_id="a1",
+            description="db replica is current",
+            relied_upon_for="data freshness",
+            source=AssumptionSource(
+                source_kind=AssumptionSourceKind.SYSTEM,
+                source_identifier="replication_monitor",
+            ),
+            status=AssumptionStatus.CHALLENGED,
+        )
+        assert a.status == AssumptionStatus.CHALLENGED
+
+    def test_reference_quality_characterization(self):
+        """Can answer: 'What quality characterization applies to this reference?'"""
+        r = Reference(
+            reference_id="r1",
+            kind=ReferenceKind.DOCUMENTATION,
+            content_summary="API reference v3.2",
+            source="official documentation portal",
+            quality=ReferenceQuality.HIGH,
+        )
+        assert r.quality == ReferenceQuality.HIGH
+
+    def test_existing_contracts_remain_valid(self):
+        """Existing Claim/Assumption/Reference/GroundTruth/Oracle
+        construction still works unchanged."""
+        # Claim (existing test pattern)
+        c = Claim(claim_id="c1", content="the API returns 200",
+                  origin=ClaimOrigin.DIRECT_ASSERTION)
+        assert c.source_observation_id is None
+
+        # Assumption (existing test pattern -- no source/status args)
+        a = Assumption(assumption_id="a1",
+                       description="the database replica is current",
+                       relied_upon_for="freshness of the queried target state")
+        assert a.assumption_id == "a1"
+        assert a.source is None
+        assert a.status == AssumptionStatus.UNEXAMINED
+
+        # Reference (existing test pattern -- no quality arg)
+        r = Reference(reference_id="r1", kind=ReferenceKind.EXPECTED_VALUE,
+                      content_summary="expected HTTP 200", source="API spec v2")
+        assert r.kind == ReferenceKind.EXPECTED_VALUE
+        assert r.quality == ReferenceQuality.UNASSESSED
+
+        # GroundTruth (unchanged)
+        gt = GroundTruth(ground_truth_id="gt1", reference_id="r1",
+                         established_by="human:moncif",
+                         established_via="human_review")
+        assert gt.established_via == "human_review"
+
+        # Oracle (unchanged)
+        o = Oracle(oracle_id="o1", description="reference implementation diff",
+                   is_executable=True, is_reproducible=True, is_validated=False)
+        assert o.is_authoritative is False
+

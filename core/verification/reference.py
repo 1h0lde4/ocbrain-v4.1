@@ -30,6 +30,47 @@ class ReferenceKind(str, Enum):
     HUMAN_JUDGMENT = "human_judgment"
 
 
+class ReferenceQuality(str, Enum):
+    """Quality characterization of a Reference -- NOT correctness,
+    authority, freshness, GroundTruth status, or any other epistemic
+    property.
+
+    IMPLEMENTATION JUDGMENT: the frozen architecture (v2 §49) names
+    ReferenceQuality as a required type but does not prescribe a
+    closed quality vocabulary.  The following four values represent
+    the smallest defensible set:
+
+    - UNASSESSED: quality has not been evaluated.  The absence of a
+      quality assessment must not be treated as LOW or HIGH.
+
+    - LOW: the reference has known quality concerns (e.g. outdated
+      documentation, unverified model output, incomplete specification).
+
+    - MODERATE: the reference meets basic quality expectations but has
+      not been rigorously validated.
+
+    - HIGH: the reference has been validated for accuracy, completeness,
+      and relevance within its stated scope.
+
+    Critical non-implications:
+      - HIGH quality does NOT mean the reference is correct/true.
+      - HIGH quality does NOT promote a Reference to GroundTruth.
+      - HIGH quality does NOT override temporal validity, authority,
+        integrity, scope, independence, or directness in conflict
+        resolution (v2 conflict-resolution semantics treat quality as
+        only one consideration among several).
+      - Quality is NOT freshness (temporal validity is separate).
+      - Quality is NOT authority (authority is separate).
+
+    There is deliberately NO numeric score -- quality is categorical
+    to prevent silent ordering assumptions.
+    """
+    UNASSESSED = "unassessed"
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+
 @dataclass(frozen=True)
 class Reference:
     """
@@ -38,11 +79,16 @@ class Reference:
     automatically Ground Truth." Promotion to GroundTruth (below) is a
     separate, explicit act with its own provenance, never implicit in
     a Reference's own fields.
+
+    quality: defaults to UNASSESSED -- the only safe default, since
+    the absence of quality assessment must not be silently treated
+    as any particular quality level.
     """
     reference_id: ReferenceId
     kind: ReferenceKind
     content_summary: str
     source: str  # where this reference actually came from
+    quality: ReferenceQuality = ReferenceQuality.UNASSESSED
 
     def __post_init__(self) -> None:
         if not self.content_summary or not self.content_summary.strip():

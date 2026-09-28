@@ -44,7 +44,7 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 10 | `CriterionResult` | ❌ | — | Should reuse `VerificationResult`'s shape (verdict/assurance/confidence), scoped to one criterion — not a fifth parallel result type |
 | 11 | `CompiledVerificationSpecification` | ❌ | — | The output of Rubric lock/compile (§9, §16 satisfiability) |
 | 12 | `Claim` | ❌ | — | Phase 3 |
-| 13 | `ClaimDependency` | ❌ | — | Phase 3 |
+| 13 | `ClaimDependency` | ✅ | `claim.py` | Batch 1: `ClaimDependencyType` (RELIES_ON/PRESUPPOSES), immutable edge with self-dep guard. Reconciled against `ClaimOrigin`/`derived_from`/`caused_by` — non-overlapping |
 | 14 | `InspectionPlan` | ❌ | — | **This phase's primary deliverable** — see §5 below re: its Method dependency |
 | 15 | `InspectionStep` | ❌ | — | **This phase's primary deliverable** |
 | 16 | `EvidenceSource` | ✅ | `evidence.py` | |
@@ -75,11 +75,11 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 41 | `VerificationBudget` | ❌ | — | Blocked on `DEBT-007` (BudgetGovernor counters unwired) per v2's own risk table §48 — not this phase's job to unblock |
 | 42 | `EscalationRequest` | ❌ | — | Phase 9 |
 | 43 | `AdjudicationRecord` | ❌ | — | Phase 9 |
-| 44 | `Assumption` / `AssumptionSource` / `AssumptionStatus` | ❌ | — | Phase 3 |
+| 44 | `Assumption` / `AssumptionSource` / `AssumptionStatus` | ✅ | `assumption.py` | Batch 1: `AssumptionSourceKind` (5 values) + `AssumptionSource` (structured provenance, no authority inference) + `AssumptionStatus` (UNEXAMINED/CHALLENGED/CONFIRMED/REJECTED — distinct from `VerificationVerdict`). `Assumption.source` optional, `Assumption.status` defaults to UNEXAMINED |
 | 45 | `ObservationAuthority` | ✅ | `epistemic.py` | |
 | 46 | `InspectionAuthorization` | ✅ | `epistemic.py` | `VerificationAssurance.__post_init__` refuses to construct over an unauthorized surface — enforced, not documented |
 | 47 | `VerificationConstruct` / `ConstructValidity` | ❌ | — | Needed alongside Rubric (row 5) — v2 §9's sharpest addition, don't let Rubric ship without it |
-| 48 | `Reference` / `GroundTruth` / `Oracle` / `ReferenceQuality` | ❌ | — | Phase 3 — see §6 (eval-lab boundary) before building `Oracle` specifically |
+| 48 | `Reference` / `GroundTruth` / `Oracle` / `ReferenceQuality` | ✅ | `reference.py`, `oracle.py` | `Reference`/`GroundTruth`/`Oracle` already implemented. Batch 1: `ReferenceQuality` (UNASSESSED/LOW/MODERATE/HIGH) added to `Reference` as default-UNASSESSED field. Quality ≠ correctness ≠ authority ≠ GroundTruth |
 | 49 | `MinimumSufficientEvidence` | ❌ | — | |
 | 50 | `BlindVerificationContext` | ❌ | — | `shape.py`'s own docstring already flags this as the order-bias mitigation it deliberately didn't build |
 | 51 | `PolicyPrecedence` | ❌ | — | `policy.py`'s own docstring already flags this as the thing `VerificationPolicy` is "the input to," not yet built |
@@ -90,7 +90,7 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 56 | `EvidenceRetention` / `ReceiptRetention` / `SourceRetention` | ✅ | `retention.py` | Three genuinely independent types confirmed (not one parametrized class) |
 | 57 | `ControlType` / `ControlCase` | ✅ | `control.py` | `expected_abstention` structurally forbidden on POSITIVE/NEGATIVE cases — enforced, matches G-0001's own lesson |
 
-**Built: 16 of 57 listed rows fully ✅ (two more ◐ partially/architecturally-satisfied).** This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
+**Built: 19 of 57 listed rows fully ✅ (two more ◐ partially/architecturally-satisfied).** Batch 1 (epistemic spine completion) added rows 13, 44, 48. This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
 
 ---
 
