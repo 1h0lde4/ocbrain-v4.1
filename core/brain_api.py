@@ -7,7 +7,7 @@ Versions:
   v1 — initial API (V1 of ocbrain)
   v2 — adds streaming, events, distillation, export/import (this file)
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, AsyncGenerator
@@ -128,6 +128,12 @@ def register(app, orchestrator_ref: dict):
 
     @router.post("/distill")
     async def distill(req: DistillRequest):
+        # Same guard as interface/api.py's /distill; distill_topic and
+        # _save_pairs also enforce it, this just turns it into a clean 400.
+        if not req.module_name.isidentifier():
+            raise HTTPException(
+                400, "Invalid module_name: use only letters, digits, underscores."
+            )
         from learning.distiller import distill_topic
         result = await distill_topic(
             req.module_name, req.topic,

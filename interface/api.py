@@ -461,6 +461,10 @@ async def train_module(module_name: str):
 
 @app.post("/distill")
 async def distill(req: DistillRequest):
+    if not req.module_name.isidentifier():
+        raise HTTPException(
+            400, "Invalid module_name: use only letters, digits, underscores."
+        )
     from learning.distiller import distill_topic
     n = await distill_topic(req.module_name, req.topic, req.num_pairs)
     return {"status": "done", "pairs_generated": n}
