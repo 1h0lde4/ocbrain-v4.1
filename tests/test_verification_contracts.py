@@ -31,7 +31,7 @@ from core.verification.policy import (
     VerificationStrategy, VerificationProfile,
 )
 from core.verification.target import VerificationTargetFingerprint, VerificationTargetSnapshot
-from core.verification.dimension import StateVerification, TransitionVerification, InvariantVerification
+from core.verification.dimension import VerificationDimension, StateVerification, TransitionVerification, InvariantVerification
 from core.verification.retention import RetentionRule, EvidenceRetention, ReceiptRetention, SourceRetention
 from core.verification.control import ControlType, ControlCase
 from core.verification.obligation import DerivationSource, VerificationObligation
@@ -54,6 +54,8 @@ from core.verification.method import (
 from core.verification.compiled_specification import (
     compile as compile_spec, CompiledVerificationSpecification, CompilationFailure,
 )
+from core.verification.finding import FindingDisposition, VerificationFinding
+from core.verification.critique import CritiqueFindingType, Contradiction, CounterArgument, Critique
 
 
 def _basis(*components):
@@ -1424,3 +1426,182 @@ class TestCompilationFailure:
     def test_valid_construction(self):
         f = CompilationFailure(reasons=("something went wrong",))
         assert len(f.reasons) == 1
+
+
+class TestVerificationDimension:
+    def test_has_exactly_the_ten_mission_sec16_values(self):
+        expected = {
+            "process", "outcome", "correctness", "completeness", "groundedness",
+            "compliance", "safety", "state", "transition", "invariant",
+        }
+        assert {d.value for d in VerificationDimension} == expected
+
+    def test_is_a_closed_enum_not_open_ended(self):
+        # Unlike VerificationMethodType (plain string constants, open by
+        # design), dimensions are a fixed taxonomy -- an unknown value
+        # must be rejected, not silently accepted.
+        with pytest.raises(ValueError):
+            VerificationDimension("not-a-real-dimension")
+
+
+class TestVerificationFinding:
+    def _finding(self, **overrides):
+        defaults = dict(
+            finding_id="f1", criterion_id="c1", method_id="m1",
+            dimension=VerificationDimension.CORRECTNESS,
+            disposition=FindingDisposition.SUPPORTS,
+            observation_ids=("obs1",),
+        )
+        defaults.update(overrides)
+        return VerificationFinding(**defaults)
+
+    def test_valid_construction(self):
+        f = self._finding()
+        assert f.disposition == FindingDisposition.SUPPORTS
+
+    def test_empty_observation_ids_rejected(self):
+        with pytest.raises(ValueError):
+            self._finding(observation_ids=())
+
+    def test_inconclusive_finding_still_requires_an_observation(self):
+        # INCONCLUSIVE means "observed something, doesn't resolve either
+        # way" -- not "observed nothing", which is a method-execution
+        # state (NOT_RUN/BLOCKED/...) upstream of this type entirely.
+        with pytest.raises(ValueError):
+            self._finding(disposition=FindingDisposition.INCONCLUSIVE, observation_ids=())
+
+    def test_method_and_dimension_are_independent_classifications(self):
+        # v2-frozen.md Sec11: "a single dimension can be checked by
+        # multiple methods, and a single method can serve multiple
+        # dimensions" -- two independent axes, not a hierarchy.
+        same_method_different_dimensions = [
+            self._finding(method_id="m1", dimension=d)
+            for d in (VerificationDimension.CORRECTNESS, VerificationDimension.SAFETY)
+        ]
+        same_dimension_different_methods = [
+            self._finding(method_id=m, dimension=VerificationDimension.CORRECTNESS)
+            for m in ("m1", "m2")
+        ]
+        assert len({f.dimension for f in same_method_different_dimensions}) == 2
+        assert len({f.method_id for f in same_dimension_different_methods}) == 2
+
+    def test_finding_disposition_distinct_from_method_disposition(self):
+        # The exact conflation VerificationMethod Revision 1 got wrong
+        # and Revision 2 fixed -- kept as two separate enums on purpose.
+        assert {d.value for d in FindingDisposition} == {"supports", "refutes", "inconclusive"}
+        assert {d.value for d in MethodDisposition} == {"conclusive", "inconclusive", "insufficient"}
+        assert FindingDisposition is not MethodDisposition
+
+
+class TestContradiction:
+    def test_valid_construction(self):
+        c = Contradiction(contradiction_id="ct1", first_claim_id="cl1", second_claim_id="cl2", description="cl1 says X, cl2 says not-X")
+        assert c.first_claim_id != c.second_claim_id
+
+    def test_same_claim_on_both_sides_rejected(self):
+        with pytest.raises(ValueError):
+            Contradiction(contradiction_id="ct1", first_claim_id="cl1", second_claim_id="cl1", description="self-contradiction")
+
+    def test_empty_description_rejected(self):
+        with pytest.raises(ValueError):
+            Contradiction(contradiction_id="ct1", first_claim_id="cl1", second_claim_id="cl2", description="")
+
+
+class TestCounterArgument:
+    def test_valid_without_observations(self):
+        ca = CounterArgument(counter_argument_id="ca1", target_claim_id="cl1", alternative_explanation="the test passed because of a cached result")
+        assert ca.supporting_observation_ids == ()
+
+    def test_valid_with_observations(self):
+        ca = CounterArgument(
+            counter_argument_id="ca1", target_claim_id="cl1",
+            alternative_explanation="the test passed because of a cached result",
+            supporting_observation_ids=("obs1", "obs2"),
+        )
+        assert len(ca.supporting_observation_ids) == 2
+
+    def test_empty_alternative_explanation_rejected(self):
+        with pytest.raises(ValueError):
+            CounterArgument(counter_argument_id="ca1", target_claim_id="cl1", alternative_explanation="")
+
+
+class TestCritiqueFindingType:
+    def test_has_exactly_the_nine_v1_sec18_values(self):
+        expected = {
+            "unsupported_claim", "missing_evidence", "hidden_assumption", "logic_gap",
+            "contradiction", "scope_violation", "false_completion", "wrong_attribution",
+            "possible_counterexample",
+        }
+        assert {t.value for t in CritiqueFindingType} == expected
+
+
+class TestCritique:
+    # The six finding types with no dedicated structured reference.
+    _PLAIN_TYPES = (
+        CritiqueFindingType.UNSUPPORTED_CLAIM, CritiqueFindingType.MISSING_EVIDENCE,
+        CritiqueFindingType.LOGIC_GAP, CritiqueFindingType.SCOPE_VIOLATION,
+        CritiqueFindingType.FALSE_COMPLETION, CritiqueFindingType.WRONG_ATTRIBUTION,
+    )
+
+    def _critique(self, **overrides):
+        defaults = dict(
+            critique_id="cr1", finding_type=CritiqueFindingType.UNSUPPORTED_CLAIM,
+            target_claim_id="cl1", description="no evidence offered for this claim",
+        )
+        defaults.update(overrides)
+        return Critique(**defaults)
+
+    def test_plain_types_valid_with_no_references(self):
+        for finding_type in self._PLAIN_TYPES:
+            c = self._critique(finding_type=finding_type)
+            assert c.contradiction_id is None
+            assert c.counter_argument_id is None
+            assert c.hidden_assumption_id is None
+
+    def test_empty_description_rejected(self):
+        with pytest.raises(ValueError):
+            self._critique(description="")
+
+    def test_contradiction_type_requires_contradiction_id(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.CONTRADICTION)
+
+    def test_contradiction_type_with_id_valid(self):
+        c = self._critique(finding_type=CritiqueFindingType.CONTRADICTION, contradiction_id="ct1")
+        assert c.contradiction_id == "ct1"
+
+    def test_counterexample_type_requires_counter_argument_id(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.POSSIBLE_COUNTEREXAMPLE)
+
+    def test_counterexample_type_with_id_valid(self):
+        c = self._critique(finding_type=CritiqueFindingType.POSSIBLE_COUNTEREXAMPLE, counter_argument_id="ca1")
+        assert c.counter_argument_id == "ca1"
+
+    def test_hidden_assumption_type_requires_hidden_assumption_id(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.HIDDEN_ASSUMPTION)
+
+    def test_hidden_assumption_type_with_id_valid(self):
+        c = self._critique(finding_type=CritiqueFindingType.HIDDEN_ASSUMPTION, hidden_assumption_id="a1")
+        assert c.hidden_assumption_id == "a1"
+
+    def test_contradiction_id_rejected_for_wrong_type(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.LOGIC_GAP, contradiction_id="ct1")
+
+    def test_counter_argument_id_rejected_for_wrong_type(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.LOGIC_GAP, counter_argument_id="ca1")
+
+    def test_hidden_assumption_id_rejected_for_wrong_type(self):
+        with pytest.raises(ValueError):
+            self._critique(finding_type=CritiqueFindingType.LOGIC_GAP, hidden_assumption_id="a1")
+
+    def test_references_cannot_cross_between_types(self):
+        # A HIDDEN_ASSUMPTION critique may not also carry a contradiction_id.
+        with pytest.raises(ValueError):
+            self._critique(
+                finding_type=CritiqueFindingType.HIDDEN_ASSUMPTION,
+                hidden_assumption_id="a1", contradiction_id="ct1",
+            )

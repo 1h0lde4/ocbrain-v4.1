@@ -8,20 +8,39 @@ taxonomy v2 section 11 describes.
   - TransitionVerification: "did action A correctly change S1 -> S2"
   - InvariantVerification: "did constraint X remain true throughout"
 
-v2 section 11's VerificationDimension/VerificationMethod are not yet
-built in code (tracked as remaining Phase C scope, not this file's job).
-These three types are self-contained descriptors of WHAT is being
-checked -- ready to attach to that taxonomy once it exists, rather than
-waiting on it. They add precision to "outcome" and "process" without
-introducing new top-level concepts (v3's own framing): none of the
-three is a new kind of verdict or evidence, only a more specific shape
-of check.
+VerificationDimension (added 22 Sept 2026, Finding/Critique design pass):
+the ten-value taxonomy these three subtypes attach to -- mission Sec16's
+own list, taken directly rather than re-derived. A closed Enum, not
+plain string constants like method.py's VerificationMethodType: methods
+are deliberately open-ended (new verification techniques can always be
+invented), but mission Sec16 gives a specific, finite list here, not an
+extensible category. These three subtypes add precision to
+STATE/TRANSITION/INVARIANT without introducing new top-level concepts
+(v3's own framing): none of the three is a new kind of verdict or
+evidence, only a more specific shape of check.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Optional
+
+
+class VerificationDimension(str, Enum):
+    """Mission Sec16: methods describe HOW, dimensions describe WHAT.
+    Orthogonal to VerificationMethod by design (v2-frozen.md Sec11) --
+    classified independently on a VerificationFinding, never nested."""
+    PROCESS = "process"
+    OUTCOME = "outcome"
+    CORRECTNESS = "correctness"
+    COMPLETENESS = "completeness"
+    GROUNDEDNESS = "groundedness"
+    COMPLIANCE = "compliance"
+    SAFETY = "safety"
+    STATE = "state"
+    TRANSITION = "transition"
+    INVARIANT = "invariant"
 
 
 @dataclass(frozen=True)
