@@ -38,6 +38,26 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     from core.config import config
     from core.brain_version import brain_version_manager
 
+    # SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): module_name
+    # reaches this function directly from an HTTP request body
+    # (ExportRequest.module_name -- both interface/api.py's and
+    # core/brain_api.py's /export routers call this same function) with
+    # zero validation before this fix. It is used below to build mod_dir,
+    # weights_src, kb_src, eval_src, raw_dir and output_path -- a
+    # module_name like "../../../etc" or "../../../home/user/.ssh" lets
+    # export read (and hand back inside the returned bundle) arbitrary
+    # directories outside modules/, and a module_name containing "/" lets
+    # output_path escape EXPORTS entirely. import_module() below already
+    # applies this exact check to this exact field for the same reason
+    # (as does module_factory.create()) -- kept consistent rather than
+    # inventing a second convention. Regression coverage:
+    # tests/test_brain_export_security.py.
+    if not module_name.isidentifier():
+        raise ValueError(
+            f"Invalid module_name: {module_name!r}. "
+            f"Use only letters, digits, underscores."
+        )
+
     mod_dir = MODULES / module_name
     if not mod_dir.exists():
         raise ValueError(f"Module '{module_name}' not found.")
@@ -115,6 +135,36 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     return output_path
 
 
+def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract zf into dest, refusing any member whose path would resolve
+    outside dest.
+
+    SECURITY (CodeQL py/path-injection; CTX-EXPORT-001, KNOWN_ISSUES.md
+    DEBT-019 -- the zip-slip half, distinct from the module_name checks
+    elsewhere in this file): zipfile.ZipFile.extractall() does not
+    validate member paths on its own. A crafted .ocbrain bundle with an
+    entry named e.g. "../../../etc/cron.d/evil" (or an absolute path)
+    would let extraction write outside dest. bundle_path is a file
+    import_module() has no reason to trust -- it reaches this function
+    from the same HTTP /import surface as module_name -- and this runs
+    before any other validation in import_module(), since the
+    manifest_name/module_name checks downstream all assume extraction
+    into tmp_path was itself safe. Symlink members whose *target* (not
+    path) escapes dest are not handled here -- a narrower, separate
+    concern from the path-traversal-on-extraction issue CodeQL flagged;
+    left for its own disposition rather than silently claimed as covered.
+    """
+    dest = dest.resolve()
+    for member in zf.infolist():
+        target = (dest / member.filename).resolve()
+        if not target.is_relative_to(dest):
+            raise ValueError(
+                f"Refusing to extract {member.filename!r} from bundle: "
+                f"resolves outside the extraction directory."
+            )
+    zf.extractall(dest)
+
+
 def import_module(bundle_path: Path, overwrite: bool = False) -> str:
     """
     Import a .ocbrain bundle.
@@ -130,7 +180,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
 
         # Extract bundle
         with zipfile.ZipFile(bundle_path, "r") as zf:
-            zf.extractall(tmp_path)
+            _safe_extractall(zf, tmp_path)
 
         # Read manifest
         manifest_path = tmp_path / "manifest.json"
@@ -139,6 +189,22 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
         manifest = json.loads(manifest_path.read_text())
 
         name    = manifest["module_name"]
+
+        # SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): name comes
+        # directly from an attacker-controlled manifest.json and is used
+        # below to build a filesystem path that gets shutil.rmtree()'d.
+        # Without this check, a module_name like "../../etc" points that
+        # deletion at an arbitrary directory outside modules/ entirely --
+        # proven empirically against a sandboxed decoy before this fix
+        # existed. Same validation module_factory.create() already applies
+        # to this exact field for the same reason, kept consistent rather
+        # than inventing a second convention.
+        if not name.isidentifier():
+            raise ValueError(
+                f"Invalid module_name in manifest.json: {name!r}. "
+                f"Use only letters, digits, underscores."
+            )
+
         mod_dir = MODULES / name
 
         if mod_dir.exists() and not overwrite:

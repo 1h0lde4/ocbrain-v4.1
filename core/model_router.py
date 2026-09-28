@@ -121,7 +121,7 @@ class ModelRouter:
     def __init__(self):
         self._recent_scores: dict[str, list[float]] = {}
 
-    async def route(self, module_name: str, subtask: str, context) -> RouteResult:
+    async def route(self, module_name: str, subtask: str, context, scope: str = "") -> RouteResult:
         state = config.get_module_state(module_name)
         stage = state.get("stage", "bootstrap")
         t0 = time.monotonic()
@@ -153,6 +153,7 @@ class ModelRouter:
             answer, outcome = await self._call_monitored_streaming(
                 stream_fn, module_name, subtask, context,
                 model_label=model_label, estimated_output_tokens=estimated_tokens,
+                scope=scope,
             )
             await _maybe_await(self._record_training_pair(module_name, subtask, answer))
             count = self._increment_query_count(module_name)
@@ -165,7 +166,7 @@ class ModelRouter:
             )
 
         if stage == "bootstrap":
-            answer = await self._call_external(module_name, subtask, context)
+            answer = await self._call_external(module_name, subtask, context, scope)
             await _maybe_await(self._record_training_pair(module_name, subtask, answer))
             count = self._increment_query_count(module_name)
             self._maybe_promote(module_name, count=count)
@@ -177,11 +178,11 @@ class ModelRouter:
 
         if stage == "shadow":
             ext_task = asyncio.create_task(
-                self._call_external(module_name, subtask, context),
+                self._call_external(module_name, subtask, context, scope),
                 name=f"{module_name}:external",
             )
             own_task = asyncio.create_task(
-                self._call_own_model(module_name, subtask, context),
+                self._call_own_model(module_name, subtask, context, scope),
                 name=f"{module_name}:shadow",
             )
             try:
@@ -207,7 +208,7 @@ class ModelRouter:
                 latency_ms=int((time.monotonic() - t0) * 1000),
             )
 
-        answer = await self._call_own_model(module_name, subtask, context)
+        answer = await self._call_own_model(module_name, subtask, context, scope)
         count = self._increment_query_count(module_name)
         score = await self._spot_check(module_name, subtask, answer)
         if score is not None:
@@ -221,7 +222,7 @@ class ModelRouter:
         )
 
     async def stream_route(
-        self, module_name: str, subtask: str, context
+        self, module_name: str, subtask: str, context, scope: str = ""
     ) -> AsyncGenerator[str, None]:
         """
         Streaming entry point used by the SSE endpoint and voice output.
@@ -230,9 +231,9 @@ class ModelRouter:
         stage = state.get("stage", "bootstrap")
 
         if stage == "native":
-            gen = self._stream_own(module_name, subtask, context)
+            gen = self._stream_own(module_name, subtask, context, scope)
         else:
-            gen = self._stream_external(module_name, subtask, context)
+            gen = self._stream_external(module_name, subtask, context, scope)
 
         full: list[str] = []
         async for token in gen:
@@ -248,22 +249,22 @@ class ModelRouter:
         self._maybe_promote(module_name, count=count)
 
     async def _stream_external(
-        self, module_name: str, subtask: str, context
+        self, module_name: str, subtask: str, context, scope: str = ""
     ) -> AsyncGenerator[str, None]:
         state = config.get_module_state(module_name)
         model = state.get("bootstrap_model", "mistral")
         host = config.get("global.ollama_host") or "http://localhost:11434"
-        prompt = self._build_prompt(subtask, context)
+        prompt = self._build_prompt(subtask, context, scope)
         async for token in self._ollama_stream(host, model, prompt):
             yield token
 
     async def _stream_own(
-        self, module_name: str, subtask: str, context
+        self, module_name: str, subtask: str, context, scope: str = ""
     ) -> AsyncGenerator[str, None]:
         state = config.get_module_state(module_name)
         model = state.get("own_model_tag") or state.get("bootstrap_model", "mistral")
         host = config.get("global.ollama_host") or "http://localhost:11434"
-        prompt = self._build_prompt(subtask, context)
+        prompt = self._build_prompt(subtask, context, scope)
         async for token in self._ollama_stream(host, model, prompt):
             yield token
 
@@ -310,21 +311,26 @@ class ModelRouter:
             parts.append(token)
         return "".join(parts)
 
-    def _build_prompt(self, subtask: str, context) -> str:
-        ctx_str = context.format_for_prompt(5) if context else ""
+    def _build_prompt(self, subtask: str, context, scope: str = "") -> str:
+        # CTX-SCOPE-001: scope isolates one caller's retrieved conversation
+        # history from another's. Empty string (the default) preserves the
+        # pre-fix unfiltered/shared behavior exactly -- this is opt-in, not
+        # a new mandatory boundary (see tests/test_context_scope_security.py
+        # ::test_no_scope_supplied_preserves_legacy_shared_behavior).
+        ctx_str = context.format_for_prompt(5, scope=scope) if context else ""
         if ctx_str:
             return f"{ctx_str}\n\nUser: {subtask}\nAssistant:"
         return f"User: {subtask}\nAssistant:"
 
-    async def _call_external(self, module_name: str, subtask: str, context) -> str:
+    async def _call_external(self, module_name: str, subtask: str, context, scope: str = "") -> str:
         providers = resolve_provider(module_name)
-        return await generate_with_fallback(providers, self._build_prompt(subtask, context))
+        return await generate_with_fallback(providers, self._build_prompt(subtask, context, scope))
 
-    async def _call_own_model(self, module_name: str, subtask: str, context) -> str:
+    async def _call_own_model(self, module_name: str, subtask: str, context, scope: str = "") -> str:
         state = config.get_module_state(module_name)
         model = state.get("own_model_tag") or state.get("bootstrap_model", "mistral")
         provider = OllamaProvider(model=model)
-        return await generate_with_fallback([provider], self._build_prompt(subtask, context))
+        return await generate_with_fallback([provider], self._build_prompt(subtask, context, scope))
 
     async def _call_monitored_streaming(
         self,
@@ -335,6 +341,7 @@ class ModelRouter:
         *,
         model_label: str,
         estimated_output_tokens: Optional[int],
+        scope: str = "",
     ) -> Tuple[str, ExecutionOutcome]:
         """Drains an existing streaming generator (_stream_external /
         _stream_own, themselves unmodified) under ExecutionBudget +
@@ -366,7 +373,7 @@ class ModelRouter:
         async def _consume() -> None:
             nonlocal provider_failure
             try:
-                async for piece in stream_fn(module_name, subtask, context):
+                async for piece in stream_fn(module_name, subtask, context, scope=scope):
                     chunks.append(piece)
                     if piece.strip():
                         monitor.report_progress(units=len(piece))

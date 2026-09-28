@@ -9,16 +9,42 @@ progresses.
 **Baseline commit:** `fc5e354`. Last updated alongside the
 reconciliation document itself.
 
+**Update (branch-consolidation pass, Sept 2026):** `fix/context-security-findings-sep2026`
+was reconciled against this register — file-level diff and empirical
+before/after test verification, not the branch's own audit report taken
+at face value. See the Tier 1/Tier 3 notes and the new Resolved section
+below for what actually changed and what didn't.
+
 ---
 
 ## Tier 1 — Must fix before Context Compiler adoption
 
 | ID | Item | Why this tier | Action | Test |
 |---|---|---|---|---|
-| REM-001 | CTX-CACHE-001: `cached_generate()`'s compression-before-hash collision | Live, unconditional, no adversarial precondition — the only Tier 1 item that's a live bug today rather than an architectural gap | Hash the full prompt, or hash-then-compress instead of compress-then-hash | `tests/test_prompt_cache_security.py::TestCtxCache001Collision` (currently red) |
-| REM-002 | CTX-AUTH-001: no delimiter/authority framing at Intent Hypothesis prompt construction | Root cause (Gap 1) is definitionally in scope for Context Compiler; shipping new infra around a known hole compounds it | Structural delimiting + explicit untrusted-data framing at serialization, as part of the `LLMContext` materialization design | `tests/core/cognitive/test_intent_security.py` (2 tests, currently red) |
+| REM-002 | CTX-AUTH-001: no delimiter/authority framing at Intent Hypothesis prompt construction | Root cause (Gap 1) is definitionally in scope for Context Compiler; shipping new infra around a known hole compounds it | Structural delimiting + explicit untrusted-data framing at serialization, as part of the `LLMContext` materialization design | `tests/core/cognitive/test_intent_security.py` (2 tests) — **1 of 2 now green, see note below** |
 | REM-003 | Gap 1: structured `Context` discarded before any consumer | The single most consequential architecture gap; everything else in Section 5 is downstream of this one point | Design (Exit Criterion 2) before implementation | — |
 | REM-004 | Gap 2: no authority taxonomy | Required for REM-002/003 to be meaningful, not a separable nice-to-have | Draft schema (Exit Criterion 3) | — |
+| REM-006 | CTX-SCOPE-001: cross-execution leakage through shared `ContextMemory` | A live default-pipeline cross-execution leak is a Kernel-level defect regardless of Context Compiler's timeline, same standard REM-002/003 were judged by | Wiring is done (see status note below); the full adversarial/concurrency/lifecycle proof suite (mission doc §8-34) is the remaining action | `tests/test_context_scope_security.py`, `tests/test_planner_worker.py::TestCtxScope001PlannerCallerWiring`, `tests/test_model_router.py`, `tests/test_api_context_scope.py` |
+
+**REM-006 status note (Sept 16-17, 2026 re-audit — moved back from the Resolved table below, where the Sept 12-13 caller-wiring pass had placed it; that move was premature, not wrong about what that pass itself did):** the mechanism and every call site the Sept 7 Context Isolation Caller Audit named live are correctly wired -- `core/workers/planner.py:218`, `core/model_router.py:314` (both `_dispatch_module()` branches), `interface/api.py:381` and its direct `stream_route()` call -- proven in `tests/test_planner_worker.py::TestCtxScope001PlannerCallerWiring`, `tests/test_model_router.py`, `tests/test_api_context_scope.py`. A follow-up re-audit this session, done rather than assumed unnecessary once "resolved" had already been recorded, found two further live gaps outside that pass's own scope: `ContextMemory.set_long_term_memories_string()`/`set_long_term_memories()` had no scope mechanism at all -- a single process-global field injected into every caller's prompt unconditionally, live via `PlannerWorker`, the same worker already confirmed live for the `:218` write (see `docs/architecture/decisions/ADR_CTX_01_LONG_TERM_MEMORY_SCOPE_STORAGE.md` for why this needed scope-keyed storage, not a threaded parameter); and `core/classifier.py:45`'s `boost_module()` call, which the original audit's row 9 classified dormant (traced to `classifier_v3.classify()`, a different function in a different module) but is actually live via `interface/api.py:304`. Both now fixed and proven in `tests/test_context_scope_security.py`. `core/workers/capability_executor.py:121` remains the one deliberate, unchanged, non-blocking fragility (safe by accident, not by design -- audit row #6). Full suite: 1,512 passed / 1 failed (pre-existing, unrelated). **Still not marking REM-006 resolved** -- wiring is now genuinely complete across both passes, but the full adversarial/concurrency/cross-process/lifecycle proof suite (mission doc §8-34) hasn't been attempted for either pass's wiring, and this item shouldn't move to Resolved again before that exists and passes.
+
+**REM-002 status note (Sept 15, 2026 freeze-classification pass, supersedes the branch-consolidation note below on verification method, not on conclusion):** Both `TestCtxAuth001StructuralContainment` and `TestCtxAuth001ParserAcceptance` were executed directly against current `main` rather than taken on the prior note's word. Result: **001a (structural) CLOSED** — `_neutralize_structural_tokens()` confirmed passing by execution. **001b (parser/authority acceptance) OPEN** — confirmed failing by execution; `_parse_hypotheses()` accepted an injection-shaped line as an ordinary, undifferentiated `IntentHypothesis`, reproducing the exact acceptance-indistinguishability this item's Action column's "authority framing" half was meant to prevent. Whole-repo grep (`main` and every branch, including `security/freeze-reconciliation-sep2026`, checked and ruled out as stale — 35 commits behind, no new content) confirms no `AuthorityLevel` type or equivalent exists anywhere; REM-004's status of `—` is therefore not just undocumented but structurally certain to be undocumented, since nothing has been built for it to document. **Explicit decision this pass: not closing 001b with a stopgap authority field bolted onto `IntentHypothesis`** — REM-002's own dependency on REM-004 ("required... to be meaningful, not a separable nice-to-have") is a statement about what a real fix requires, and a field added only to satisfy the test's assertion would not supply it. **Not marking REM-002 resolved.** Sequence going forward: whether REM-004 itself should be treated as Kernel v1.0-blocking (as distinct from Context-Compiler-blocking, which this tier already establishes) is Moncif's call, not resolved by this note.
+
+*(Prior branch-consolidation note, kept for history, not superseded on its facts:)* `fix/context-security-findings-sep2026`
+landed a partial mitigation — `core/cognitive/intent.py`'s prompt assembly now
+structurally neutralizes tokens that could forge a second `Request:` section
+(`TestCtxAuth001StructuralContainment`, verified passing). This is only the
+structural-delimiting half of this item's own Action column; the
+authority-framing half is not addressed, and this row's own dependency on
+REM-004 ("required... to be meaningful, not a separable nice-to-have") is
+therefore still unmet. A second, distinct component of the same original
+CTX-AUTH-001 finding (per `CURRENT_STATE.md`'s own definition, which already
+named both halves) — the hypothesis *parser* accepting an injection-shaped
+completion line regardless of prompt containment — remains fully unaddressed
+and is still red (`TestCtxAuth001ParserAcceptance`). Whether this partial mitigation is sufficient to de-prioritize
+the remaining work pending Context Compiler, or whether the authority-taxonomy
+and parser-side work should move up, is Moncif's call — this note documents
+what changed, not what it means for the tier.
 
 ## Tier 2 — Must fix before Kernel/C-MoE integration
 
@@ -30,12 +56,17 @@ reconciliation document itself.
 
 | ID | Item | Owning subsystem | Action | Test |
 |---|---|---|---|---|
-| REM-006 | CTX-SCOPE-001: `ContextMemory` has no scope parameter anywhere | `core/context.py` | Thread a scope parameter through `save()`/`last_n()`/`format_for_prompt()` and the `turns` schema | `tests/test_context_scope_security.py` (currently red) |
-| REM-007 | CTX-DELETE-001: `delete()` returns `True` even when L1 storage deletion silently fails | `core/memory/unified_memory.py` | Either add `return False` in the step-7 except block, or correct the docstring and require callers to independently verify | `tests/test_unified_memory.py::TestUnifiedMemoryDelete` (currently red) |
 | REM-008 | CTX-EXPORT-001: `import_module()` has no content/signature validation, `overwrite=True` fully replaces a module's knowledge base | `core/brain_export.py` | Add checksum/signature verification on the bundle; restrict `bundle_path` to an expected directory; consider requiring explicit confirmation beyond a boolean flag for `overwrite=True` | None yet — recommended as a follow-up addition to this register |
 | REM-009 | `core/runtime/efficiency.py`'s `PromptCache`/`cost_aware_call` — dead code, zero live callers | `core/runtime/` | Remove, or wire in and reconcile with `core/prompt/cache.py` rather than leaving two parallel implementations (same pattern as the already-tracked DEBT-016) | — |
 | REM-010 | Stale `core/orchestrator.py` comment claiming `OrchestrationGovernor`/`AgentGovernor`/`ConversationGuardrails` don't exist | `core/orchestrator.py` | Update the comment; mechanical, not a judgment call | — |
 | REM-011 | `KNOWN_ISSUES.md`'s DEBT-013 self-contradiction (active-table row vs. separately-placed resolved note) and `DEBT-017`'s misplacement outside the main table | `KNOWN_ISSUES.md` | Mechanical doc-sync fix, flagged early in this research track, never yet applied | — |
+
+## Resolved
+
+| ID | Item | Resolution |
+|---|---|---|
+| REM-001 | CTX-CACHE-001 | `cached_generate()` now hashes the full prompt instead of the lossily-compressed one. `TestCtxCache001Collision` passes. Landed via selective port from `fix/context-security-findings-sep2026` (branch-consolidation pass, Sept 2026). |
+| REM-007 | CTX-DELETE-001 | `UnifiedMemory.delete()` now propagates the real L1 deletion outcome instead of an unconditional `True`. `TestUnifiedMemoryDelete::test_delete_returns_false_when_l1_storage_deletion_fails` passes. Landed via the same selective port. |
 
 ## Tier 4 — Deferred research (not yet evidence-backed enough to prioritize further)
 

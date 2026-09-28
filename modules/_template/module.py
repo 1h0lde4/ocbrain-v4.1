@@ -2,6 +2,12 @@
 modules/_template/module.py — Template for custom user-created modules.
 Copied and substituted by module_factory.py.
 Placeholders: {{NAME}}, {{DESC}}
+
+SECURITY (RCE-001, KNOWN_ISSUES.md DEBT-021): these placeholders are NOT
+pre-quoted. module_factory.py substitutes repr(value) for each one, which
+always produces a complete, syntactically valid Python literal for any
+input string -- do not reintroduce surrounding quotes here, and do not
+substitute anything other than repr() output into this file.
 """
 import time
 import httpx
@@ -10,8 +16,8 @@ from core.config import config
 
 
 class Module(BaseModule):
-    name = "{{NAME}}"
-    desc = "{{DESC}}"
+    name = {{NAME}}
+    desc = {{DESC}}
 
     async def run(self, task: str, context) -> ModuleResult:
         t0     = time.monotonic()

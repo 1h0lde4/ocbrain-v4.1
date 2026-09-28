@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Python dependencies declared in requirements.txt.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions used in .github/workflows/*.yml. Actions are now pinned
+  # by commit SHA (see DEBT-035) with the version as a trailing comment;
+  # Dependabot is the mechanism that proposes updates to those pins when a
+  # new release exists, since a SHA pin does not update itself the way a
+  # mutable tag (e.g. @v4) implicitly would.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10

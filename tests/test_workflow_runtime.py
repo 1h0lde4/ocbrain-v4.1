@@ -520,6 +520,40 @@ class TestWorkflowRuntimeCheckpointResume:
     """DEBT-003 / ADR-KERNEL-03: WorkflowRuntime checkpoint/resume."""
 
     @pytest.mark.asyncio
+    async def test_resume_with_inconsistent_completed_state_and_no_result_fails_closed(self):
+        """Regression test for a 2026-09-13 hardening (adopted from an
+        independent parallel DEBT-020 implementation, compared against
+        this one and applied on its own merits): a checkpoint claiming a
+        node is COMPLETED but carrying no result -- not producible by
+        this codebase's own _save_checkpoint today, but constructible by
+        hand, e.g. a malformed checkpoint from an external write -- must
+        not report the workflow as successful. Before this fix,
+        `last_result is None` fell through to `success=True`; a workflow
+        the Kernel cannot even account for is not evidence of success."""
+        CountingNodeWorker.reset()
+        runtime = _make_workflow_runtime(CountingNodeWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-inconsistent",
+            nodes=[WorkflowNode(node_id="a", worker_type="CountingNodeWorker")],
+            entry_node="a",
+        )
+        instance_id = "sim-inconsistent-checkpoint"
+        # Hand-construct the inconsistency directly rather than going
+        # through _save_checkpoint (which always sets state.result
+        # together with a COMPLETED/FAILED status transition, and so
+        # cannot produce this shape on its own) -- this models an
+        # external or malformed checkpoint write, not a bug in
+        # _save_checkpoint itself.
+        await runtime._save_checkpoint(instance_id, "w-inconsistent", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED, result=None),
+        })
+
+        result = await runtime.resume(d, instance_id, query="hi")
+
+        assert result.success is False
+        assert CountingNodeWorker.invocations == []  # never re-invoked either -- status said COMPLETED
+
+    @pytest.mark.asyncio
     async def test_checkpoint_written_after_each_node_completes(self):
         CountingNodeWorker.reset()
         runtime = _make_workflow_runtime(CountingNodeWorker)

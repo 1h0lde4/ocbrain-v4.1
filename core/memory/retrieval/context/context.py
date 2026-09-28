@@ -18,7 +18,30 @@ today, so populating this field now would be inventing data.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
+
+
+class AuthorityLevel(Enum):
+    """CTX-AUTH-001 / REM-004 — the authority taxonomy the remediation
+    register (docs/reports/context-compiler-remediation-register.md,
+    REM-004) names as a prerequisite for REM-002/REM-003 to be
+    meaningful. Distinct from ProvenanceRecord.trust_score: trust_score
+    is a quality/reliability signal about the CONTENT (how corroborated,
+    how confident); AuthorityLevel is a security/instruction-following
+    signal about the ROLE this material may play (whether it may ever be
+    treated as the operative request). A block can be high-trust_score
+    and still RETRIEVED -- trust in the information is not authority to
+    instruct. Values are a closed set on purpose (context-authority-
+    threat-model.md's "at minimum" list); do not add a value whose
+    membership could be inferred from content rather than assigned by a
+    trusted application-controlled call site.
+    """
+    SYSTEM = "system"        # Application/kernel-authored instruction.
+    USER = "user"            # The current turn's actual human instruction.
+    RETRIEVED = "retrieved"  # Memory/context/RAG-sourced material.
+    EXTERNAL = "external"    # Web, tool output, other external material.
+    GENERATED = "generated"  # Model-generated intermediate content.
 
 
 @dataclass
@@ -36,6 +59,13 @@ class ProvenanceRecord:
     graph_path: List[Dict[str, str]] = field(default_factory=list)   # [{"relation", "node_id"}, ...]
     seed_entry_id: Optional[str] = None
     verification_history: Optional[List[Any]] = None   # reserved — Session 5.9, intentionally unimplemented
+    # CTX-AUTH-001 / REM-004: assigned exactly once, by the trusted
+    # construction site (RetrievalContextBuilder._to_block), never
+    # derived from entry/evidence content. Defaults to the least-
+    # privileged value so any future construction site that forgets to
+    # set this explicitly fails closed rather than silently trusted
+    # (mission-doc §7: missing authority must not be promoted).
+    authority: AuthorityLevel = AuthorityLevel.RETRIEVED
 
 
 @dataclass

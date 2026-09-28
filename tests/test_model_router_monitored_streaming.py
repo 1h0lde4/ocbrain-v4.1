@@ -15,17 +15,17 @@ class _FakeContext:
         self.cancellation_token = CancellationToken()
         self.metadata = {}
 
-    def format_for_prompt(self, n):
+    def format_for_prompt(self, n, scope=None):
         return ""
 
 
-async def _healthy_stream(module_name, subtask, context):
+async def _healthy_stream(module_name, subtask, context, scope: str = ""):
     for word in ["Once ", "upon ", "a ", "time, ", "a ", "brave ", "knight..."]:
         await asyncio.sleep(0.01)
         yield word
 
 
-async def _hung_stream(module_name, subtask, context):
+async def _hung_stream(module_name, subtask, context, scope: str = ""):
     """Yields once, then never again -- a genuinely stalled provider, not a
     slow-but-eventually-responsive one. This is exactly the shape that a
     cooperative is_cancelled check between chunks cannot interrupt; only
@@ -35,7 +35,7 @@ async def _hung_stream(module_name, subtask, context):
     yield "unreachable"  # pragma: no cover
 
 
-async def _erroring_stream(module_name, subtask, context):
+async def _erroring_stream(module_name, subtask, context, scope: str = ""):
     yield "Star"
     raise ConnectionError("provider connection dropped")
 
@@ -140,7 +140,7 @@ async def test_route_short_request_never_touches_monitored_path(monkeypatch):
 
     router._call_monitored_streaming = _spy
 
-    async def _fake_external(module_name, subtask, ctx):
+    async def _fake_external(module_name, subtask, ctx, scope: str = ""):
         return "Hi there!"
 
     router._call_external = _fake_external

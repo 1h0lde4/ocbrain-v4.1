@@ -24,6 +24,24 @@ from core.module_factory import create as factory_create
 
 log = logging.getLogger(__name__)
 
+
+def _log_and_redact(context: str, error: Exception) -> str:
+    """Log the real exception server-side; return an opaque id safe to
+    send to a client.
+
+    SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): every
+    exception handler that can reach an HTTP response or SSE event body
+    must go through this function instead of putting str(error) or
+    traceback.format_exc() directly in that payload -- exception text can
+    contain filesystem paths, internal component names, config values, or
+    other implementation detail that must not reach the caller. Regression
+    coverage: tests/test_api_error_disclosure.py.
+    """
+    error_id = str(uuid.uuid4())
+    log.error("%s failed; error_id=%s", context, error_id, exc_info=error)
+    return error_id
+
+
 app = FastAPI(
     title="OCBrain",
     version="2.1.0",
@@ -182,17 +200,12 @@ async def query(req: QueryRequest):
         )
 
     except Exception as e:
-        import logging
-        import traceback
-        err_msg = f"{type(e).__name__}: {e}"
-        logging.getLogger("ocbrain").error(
-            f"POST /query failed: {err_msg}\n{traceback.format_exc()}"
-        )
+        error_id = _log_and_redact("POST /query", e)
         return QueryResponse(
             success=False,
             answer="I encountered an internal error. Check logs for details.",
-            error=err_msg,
-            meta={"traceback": traceback.format_exc() if config.get("global.debug") else None}
+            error="internal_error",
+            meta={"error_id": error_id}
         )
 
 
@@ -300,8 +313,14 @@ async def _stream_response(
                                     current_action="Receiving model output")
 
     # Parse + classify (fast — typically < 10ms)
+    # CTX-SCOPE-001: classifier.label() forwards scope into
+    # ContextMemory.boost_module() -- confirmed live (this call site is
+    # the actual reachable caller; the prior Context Isolation Caller
+    # Audit's row 9 attributed core/classifier.py:45 to a dormant
+    # Legacy-Bridge-only classify(), which is a different function in a
+    # different module, core/classifier_v3.py).
     parsed = parser.parse(query)
-    labels = await classifier.label(parsed, orchestrator.context)
+    labels = await classifier.label(parsed, orchestrator.context, scope=execution_id)
     tasks  = decomposer.build(parsed, labels)
 
     # For single-module queries: stream tokens directly
@@ -311,8 +330,12 @@ async def _stream_response(
         collected   = []
 
         try:
+            # CTX-SCOPE-001: this call bypasses PlannerWorker entirely (the
+            # single-module streaming fast path), so it needs its own scope
+            # wiring rather than inheriting PlannerWorker's -- found during
+            # this fix's own verification, not in the original audit's list.
             async for token in model_router.stream_route(
-                module_name, task.subtask, orchestrator.context
+                module_name, task.subtask, orchestrator.context, scope=execution_id
             ):
                 collected.append(token)
                 if monitor is not None and len(collected) % 32 == 0:
@@ -332,6 +355,7 @@ async def _stream_response(
                 )
             yield "data: [DONE]\n\n"
         except Exception as error:
+            error_id = _log_and_redact("Streaming query (single-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
@@ -340,12 +364,14 @@ async def _stream_response(
                     payload={"execution_id": execution_id, "node_id": node_id,
                              "status": "failed"},
                 )
-            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
 
         # Save full collected answer to context (non-blocking)
         asyncio.create_task(
-            _save_context_background(orchestrator, query, [module_name], "".join(collected))
+            _save_context_background(
+                orchestrator, query, [module_name], "".join(collected), execution_id
+            )
         )
 
     else:
@@ -353,10 +379,11 @@ async def _stream_response(
         try:
             answer = await orchestrator.handle(query, execution_id=execution_id)
         except Exception as error:
+            error_id = _log_and_redact("Streaming query (multi-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
-            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
             return
         if monitor is not None:
@@ -374,11 +401,18 @@ async def _stream_response(
 
 
 async def _save_context_background(
-    orchestrator: Orchestrator, query: str, modules: list[str], answer: str
+    orchestrator: Orchestrator, query: str, modules: list[str], answer: str,
+    execution_id: str = "",
 ):
-    """Fire-and-forget context save after streaming completes."""
+    """Fire-and-forget context save after streaming completes.
+
+    CTX-SCOPE-001: scope=execution_id matches the same identifier
+    Orchestrator.handle() itself already uses for its own context.save()
+    calls (core/orchestrator.py) -- this is the streaming sibling of that
+    same write, previously the one unscoped path.
+    """
     try:
-        orchestrator.context.save(query, modules, answer)
+        orchestrator.context.save(query, modules, answer, scope=execution_id)
     except Exception:
         pass
 

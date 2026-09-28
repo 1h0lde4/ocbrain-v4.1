@@ -48,6 +48,8 @@ data/evals/*.results.json
 
 # Secrets / keys
 .env
+*.env
+github.env
 *.key
 *.pem
 secrets.toml
