@@ -145,8 +145,10 @@ def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
     components from member names before extracting (see
     ZipFile._extract_member), so a member named "../../evil" lands inside
     dest under a sanitized name instead of escaping -- checked
-    empirically on Python 3.12.3, where plain extractall() left nothing
-    outside dest. What this helper adds is strictness: it rejects the
+    empirically on Python 3.12.3 (plain extractall() left nothing outside
+    dest), and the same filter is in the CPython 3.11 and 3.13 sources, i.e.
+    across the project's supported range (>=3.11). What this helper adds is
+    strictness: it rejects the
     whole bundle when any member name tries to leave dest, rather than
     silently rewriting the name, and it does so before anything is
     extracted. CodeQL (py/path-injection) still flags the extractall()

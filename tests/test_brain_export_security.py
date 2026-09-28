@@ -164,7 +164,7 @@ class TestZipSlipExtraction:
     extracted. They do NOT demonstrate a vulnerability that plain
     extractall() had -- CPython's zipfile already drops '..' and absolute
     components from member names (verified on Python 3.12.3: nothing
-    escaped), so the original write-up of this as an exploitable
+    escaped; the same filter is in the 3.11 and 3.13 sources), so the original write-up of this as an exploitable
     arbitrary-file-write was wrong. This is defense-in-depth.
     """
 
