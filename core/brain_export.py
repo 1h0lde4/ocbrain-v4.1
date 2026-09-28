@@ -135,6 +135,36 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     return output_path
 
 
+def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract zf into dest, refusing any member whose path would resolve
+    outside dest.
+
+    SECURITY (CodeQL py/path-injection; CTX-EXPORT-001, KNOWN_ISSUES.md
+    DEBT-019 -- the zip-slip half, distinct from the module_name checks
+    elsewhere in this file): zipfile.ZipFile.extractall() does not
+    validate member paths on its own. A crafted .ocbrain bundle with an
+    entry named e.g. "../../../etc/cron.d/evil" (or an absolute path)
+    would let extraction write outside dest. bundle_path is a file
+    import_module() has no reason to trust -- it reaches this function
+    from the same HTTP /import surface as module_name -- and this runs
+    before any other validation in import_module(), since the
+    manifest_name/module_name checks downstream all assume extraction
+    into tmp_path was itself safe. Symlink members whose *target* (not
+    path) escapes dest are not handled here -- a narrower, separate
+    concern from the path-traversal-on-extraction issue CodeQL flagged;
+    left for its own disposition rather than silently claimed as covered.
+    """
+    dest = dest.resolve()
+    for member in zf.infolist():
+        target = (dest / member.filename).resolve()
+        if not target.is_relative_to(dest):
+            raise ValueError(
+                f"Refusing to extract {member.filename!r} from bundle: "
+                f"resolves outside the extraction directory."
+            )
+    zf.extractall(dest)
+
+
 def import_module(bundle_path: Path, overwrite: bool = False) -> str:
     """
     Import a .ocbrain bundle.
@@ -150,7 +180,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
 
         # Extract bundle
         with zipfile.ZipFile(bundle_path, "r") as zf:
-            zf.extractall(tmp_path)
+            _safe_extractall(zf, tmp_path)
 
         # Read manifest
         manifest_path = tmp_path / "manifest.json"
