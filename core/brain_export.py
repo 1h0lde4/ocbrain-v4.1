@@ -140,20 +140,19 @@ def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
     """Extract zf into dest, refusing any member whose path would resolve
     outside dest.
 
-    SECURITY (CodeQL py/path-injection; CTX-EXPORT-001, KNOWN_ISSUES.md
-    DEBT-019 -- the zip-slip half, distinct from the module_name checks
-    elsewhere in this file): zipfile.ZipFile.extractall() does not
-    validate member paths on its own. A crafted .ocbrain bundle with an
-    entry named e.g. "../../../etc/cron.d/evil" (or an absolute path)
-    would let extraction write outside dest. bundle_path is a file
-    import_module() has no reason to trust -- it reaches this function
-    from the same HTTP /import surface as module_name -- and this runs
-    before any other validation in import_module(), since the
-    manifest_name/module_name checks downstream all assume extraction
-    into tmp_path was itself safe. Symlink members whose *target* (not
-    path) escapes dest are not handled here -- a narrower, separate
-    concern from the path-traversal-on-extraction issue CodeQL flagged;
-    left for its own disposition rather than silently claimed as covered.
+    This is defense-in-depth, not the fix for an exploitable write.
+    CPython's zipfile already drops '..', '.', empty and drive/absolute
+    components from member names before extracting (see
+    ZipFile._extract_member), so a member named "../../evil" lands inside
+    dest under a sanitized name instead of escaping -- checked
+    empirically on Python 3.12.3, where plain extractall() left nothing
+    outside dest. What this helper adds is strictness: it rejects the
+    whole bundle when any member name tries to leave dest, rather than
+    silently rewriting the name, and it does so before anything is
+    extracted. CodeQL (py/path-injection) still flags the extractall()
+    call below; treat that as an open scanner finding, not proof of an
+    exploitable write. Symlink members are not created by extractall(),
+    so their targets are not a concern here.
     """
     dest = dest.resolve()
     for member in zf.infolist():
