@@ -1428,6 +1428,188 @@ class TestCompilationFailure:
         assert len(f.reasons) == 1
 
 
+class TestCompiledSpecificationHardening:
+    """Hardening fixes for CompiledVerificationSpecification: duplicate
+    ID detection, step.plan_id validation, strategy↔method consistency,
+    and compile() non-purity acknowledgment."""
+
+    def _scenario(self, **overrides):
+        """Reusable valid scenario — same as TestCompileVerificationSpecification."""
+        criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="criterion c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        rubric = (Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        ).advance_to(RubricLockState.VALIDATED, criteria=[criterion])
+          .advance_to(RubricLockState.COMPILED))
+        obligation = VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="obligation desc", source_reference="req-1", rubric_id="r1",
+        )
+        method = VerificationMethod(
+            method_id="m1", method_type="deterministic_file_existence",
+            description="checks file existence", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        step = InspectionStep(step_id="s1", plan_id="p1", method_reference="m1", description="step desc")
+        plan = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1",))
+        requirements = VerificationRequirements(target_description="check the file", required_dimensions=frozenset({"correctness"}))
+        strategy = VerificationStrategy(
+            selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}),
+            verifier_count=1, derived_from_requirements=requirements.requirements_id,
+        )
+        fp = VerificationTargetFingerprint(content_hash="abc", version="1")
+        target = VerificationTargetSnapshot(target_id="t1", fingerprint=fp, captured_at=datetime.now(timezone.utc))
+
+        defaults = dict(
+            requirements=requirements, strategy=strategy, rubric=rubric, criteria=[criterion],
+            dependencies=[], obligations=[obligation], inspection_plans=[plan], inspection_steps=[step],
+            target=target, method_registry={"m1": method}, capability_registry={},
+            authorization_registry={}, assurance_scope="unit test scope",
+        )
+        defaults.update(overrides)
+        return defaults
+
+    # ---- Fix 1: Duplicate ID detection --------------------------------
+
+    def test_duplicate_criterion_ids_rejected(self):
+        scenario = self._scenario()
+        dup_criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="duplicate c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        scenario["criteria"] = [scenario["criteria"][0], dup_criterion]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("duplicate criterion id" in r and "'c1'" in r for r in result.reasons)
+
+    def test_duplicate_obligation_ids_rejected(self):
+        scenario = self._scenario()
+        dup_obligation = VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.CONSTRAINT,
+            description="duplicate obligation", source_reference="req-2", rubric_id="r1",
+        )
+        scenario["obligations"] = [scenario["obligations"][0], dup_obligation]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("duplicate obligation id" in r and "'o1'" in r for r in result.reasons)
+
+    def test_duplicate_inspection_plan_ids_rejected(self):
+        scenario = self._scenario()
+        dup_plan = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1",))
+        scenario["inspection_plans"] = [scenario["inspection_plans"][0], dup_plan]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("duplicate inspection_plan id" in r and "'p1'" in r for r in result.reasons)
+
+    def test_duplicate_inspection_step_ids_rejected(self):
+        scenario = self._scenario()
+        dup_step = InspectionStep(step_id="s1", plan_id="p1", method_reference="m1", description="duplicate step")
+        scenario["inspection_steps"] = [scenario["inspection_steps"][0], dup_step]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("duplicate inspection_step id" in r and "'s1'" in r for r in result.reasons)
+
+    # ---- Fix 2: InspectionStep.plan_id validation ---------------------
+
+    def test_step_plan_id_not_in_supplied_plans_rejected(self):
+        """A step that claims to belong to a plan not supplied to compile()
+        must be rejected — the forward (plan→step) traversal would not
+        catch this because it traverses plan.steps, not step.plan_id."""
+        scenario = self._scenario()
+        orphan_step = InspectionStep(
+            step_id="s1", plan_id="phantom-plan",
+            method_reference="m1", description="step claiming wrong plan",
+        )
+        scenario["inspection_steps"] = [orphan_step]
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any(
+            "plan_id=" in r and "'phantom-plan'" in r
+            and "not among the supplied" in r
+            for r in result.reasons
+        )
+
+    def test_step_plan_id_matching_supplied_plan_accepted(self):
+        """When step.plan_id matches a supplied plan, no plan_id error."""
+        result = compile_spec(**self._scenario())
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    # ---- Fix 3: Strategy ↔ method consistency -------------------------
+
+    def test_step_uses_undeclared_method_rejected(self):
+        """A step referencing a method not in strategy.selected_methods
+        is undeclared method use."""
+        scenario = self._scenario()
+        # Strategy says "m1", step says "m2" (undeclared)
+        step_m2 = InspectionStep(step_id="s1", plan_id="p1",
+                                 method_reference="m2", description="uses m2")
+        method_m2 = VerificationMethod(
+            method_id="m2", method_type="semantic_check",
+            description="semantic check", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        scenario["inspection_steps"] = [step_m2]
+        scenario["method_registry"] = {"m2": method_m2}
+        # strategy still selects {"m1"}, but step references "m2"
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("undeclared method use" in r for r in result.reasons)
+
+    def test_strategy_declares_unused_method_rejected(self):
+        """A strategy that selects a method no step references is
+        silent omission."""
+        scenario = self._scenario()
+        # Strategy selects {"m1", "m_never_used"}, only m1 is referenced
+        scenario["strategy"] = VerificationStrategy(
+            selected_shape=VerificationShape.POINTWISE,
+            selected_methods=frozenset({"m1", "m_never_used"}),
+            verifier_count=1,
+            derived_from_requirements=scenario["requirements"].requirements_id,
+        )
+        result = compile_spec(**scenario)
+        assert isinstance(result, CompilationFailure)
+        assert any("silent omission" in r and "'m_never_used'" in r
+                    for r in result.reasons)
+
+    def test_strategy_and_steps_in_perfect_agreement_accepted(self):
+        """When strategy.selected_methods matches exactly what steps
+        reference, no consistency error."""
+        result = compile_spec(**self._scenario())
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    # ---- Fix 4: compile() non-purity ---------------------------------
+
+    def test_compile_creates_different_ids_each_call(self):
+        """compile() is NOT pure: each successful call creates a fresh
+        UUID, so two calls with identical inputs produce different spec_ids."""
+        scenario = self._scenario()
+        result1 = compile_spec(**scenario)
+        result2 = compile_spec(**scenario)
+        assert isinstance(result1, CompiledVerificationSpecification)
+        assert isinstance(result2, CompiledVerificationSpecification)
+        assert result1.spec_id != result2.spec_id
+
+    def test_compile_creates_timestamps(self):
+        """compile() captures compiled_at timestamps — these are runtime
+        side effects, confirming non-purity."""
+        result = compile_spec(**self._scenario())
+        assert isinstance(result, CompiledVerificationSpecification)
+        assert result.compiled_at is not None
+        # It should be a recent UTC timestamp
+        from datetime import timezone
+        assert result.compiled_at.tzinfo == timezone.utc
+
+
 class TestVerificationDimension:
     def test_has_exactly_the_ten_mission_sec16_values(self):
         expected = {

@@ -6,8 +6,12 @@ docs/architecture/verification-critic-evidence-system-compiledverificationspecif
 identity and criterion criticality placement -- were resolved first).
 See that document for the reasoning; this module doesn't re-derive it.
 
-compile() is a pure function, matching mission Sec10's own test: "A
-specification that cannot be compiled into a satisfiable verification
+compile() is deterministic in its validation semantics -- same inputs
+yield the same pass/fail decisions and the same failure reasons -- but
+is NOT a pure function: it creates a fresh UUID (spec_id) and captures
+a timestamp (compiled_at) on every successful call.  The validation
+logic itself uses no hidden state.  Matching mission Sec10's own test:
+"A specification that cannot be compiled into a satisfiable verification
 plan is not a valid executable verification. It is an unresolved
 specification." It either returns a complete, internally-consistent
 CompiledVerificationSpecification, or a CompilationFailure naming every
@@ -164,10 +168,49 @@ def compile(
     known_assumptions: Tuple[AssumptionId, ...] = (),
     execution_identity: Optional[str] = None,
 ) -> Union[CompiledVerificationSpecification, CompilationFailure]:
-    """Pure function: same inputs, same output, no hidden state. Collects
-    every failing check rather than stopping at the first, so a caller
+    """Deterministic validation, non-pure execution: same inputs yield the
+    same pass/fail decisions and failure reasons, but successful compilation
+    creates a fresh UUID (spec_id) and timestamp (compiled_at) on every call.
+    Collects every failing check rather than stopping at the first, so a caller
     gets the complete picture in one pass rather than one error at a time."""
     reasons: list = []
+
+    # ---- Fix 1: Duplicate ID detection --------------------------------
+    # Reject duplicate IDs deterministically instead of allowing dict/set
+    # construction to silently hide collisions.  Checked before any
+    # dict/frozenset construction so collisions are always surfaced.
+    def _check_duplicates(items, id_attr: str, label: str) -> None:
+        seen: dict = {}
+        for item in items:
+            item_id = getattr(item, id_attr)
+            if item_id in seen:
+                reasons.append(
+                    f"duplicate {label} id {item_id!r}: supplied more than "
+                    f"once -- dict/set construction would silently hide "
+                    f"one copy"
+                )
+            else:
+                seen[item_id] = item
+
+    _check_duplicates(criteria, "criterion_id", "criterion")
+    _check_duplicates(obligations, "obligation_id", "obligation")
+    _check_duplicates(inspection_plans, "plan_id", "inspection_plan")
+    _check_duplicates(inspection_steps, "step_id", "inspection_step")
+
+    # ---- Fix 2: InspectionStep.plan_id validation ---------------------
+    # Every InspectionStep declares which plan it belongs to; that plan
+    # must actually be among the supplied inspection plans.  Without this
+    # check, a step could claim membership in a plan that was never
+    # supplied, and the graph traversal above (plan → step lookup) would
+    # not catch it because it traverses plan.steps, not step.plan_id.
+    supplied_plan_ids = frozenset(p.plan_id for p in inspection_plans)
+    for step in inspection_steps:
+        if step.plan_id not in supplied_plan_ids:
+            reasons.append(
+                f"inspection step {step.step_id!r} declares plan_id="
+                f"{step.plan_id!r}, which is not among the supplied "
+                f"inspection plans"
+            )
 
     # Rubric.lock_state -- matches this session's own Phase 1 fix:
     # VALIDATED is now only reachable with real validation behind it, and
@@ -305,6 +348,43 @@ def compile(
             f"plan targeting them -- a criterion with no inspection path "
             f"can never be verified"
         )
+
+    # ---- Fix 3: Strategy ↔ method consistency -------------------------
+    # The strategy declares which methods it selected; the inspection
+    # steps reference methods via method_reference.  These must match:
+    # - Methods in strategy.selected_methods but not used by any step
+    #   = silent omission (strategy promises capability it never uses).
+    # - Methods used by steps but not in strategy.selected_methods
+    #   = undeclared use (steps use methods the strategy didn't select).
+    # Neither is valid.  method_ids_used was populated during the
+    # plan→step→method traversal above.
+    #
+    # Note: strategy.selected_methods contains method_type strings
+    # (matching VerificationMethod.method_type, not method_id), while
+    # method_ids_used contains method_ids.  We need to compare via the
+    # method_reference strings actually used by steps, which are the
+    # method_type identifiers that strategy.selected_methods declares.
+    methods_referenced_by_steps = frozenset(
+        step.method_reference for step in inspection_steps
+    )
+    strategy_declared = frozenset(strategy.selected_methods)
+
+    undeclared_methods = methods_referenced_by_steps - strategy_declared
+    if undeclared_methods:
+        reasons.append(
+            f"inspection steps reference methods "
+            f"{sorted(undeclared_methods)!r} that are not among "
+            f"strategy.selected_methods {sorted(strategy_declared)!r} "
+            f"-- undeclared method use"
+        )
+    unused_strategy_methods = strategy_declared - methods_referenced_by_steps
+    if unused_strategy_methods:
+        reasons.append(
+            f"strategy.selected_methods declares "
+            f"{sorted(unused_strategy_methods)!r} but no inspection step "
+            f"references them -- silent omission"
+        )
+
 
     # Policy constraints -- never relaxed by what requirements/strategy
     # asked for, only tightened (v3 Part 1 Sec3).

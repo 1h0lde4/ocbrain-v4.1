@@ -1380,6 +1380,138 @@ class TestCompilationFailure(unittest.TestCase):
         self.assertEqual(len(f.reasons), 1)
 
 
+class TestCompiledSpecificationHardening(unittest.TestCase):
+    def _scenario(self, **overrides):
+        criterion = Criterion(
+            criterion_id="c1", rubric_id="r1", description="criterion c1",
+            applicability=CriterionApplicability(applies_unconditionally=True),
+            evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+        )
+        rubric = (Rubric(
+            rubric_id="r1", version="1.0.0", fingerprint="fp1",
+            created_from="x", created_by="y", derived_from="z",
+            source_requirements=(), context_basis="w", criteria=("c1",),
+        ).advance_to(RubricLockState.VALIDATED, criteria=[criterion])
+          .advance_to(RubricLockState.COMPILED))
+        obligation = VerificationObligation(
+            obligation_id="o1", derivation_source=DerivationSource.EXPLICIT_USER_REQUIREMENT,
+            description="obligation desc", source_reference="req-1", rubric_id="r1",
+        )
+        method = VerificationMethod(
+            method_id="m1", method_type="deterministic_file_existence",
+            description="checks file existence", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        step = InspectionStep(step_id="s1", plan_id="p1", method_reference="m1", description="step desc")
+        plan = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1",))
+        requirements = VerificationRequirements(target_description="check the file", required_dimensions=frozenset({"correctness"}))
+        strategy = VerificationStrategy(
+            selected_shape=VerificationShape.POINTWISE, selected_methods=frozenset({"m1"}),
+            verifier_count=1, derived_from_requirements=requirements.requirements_id,
+        )
+        fp = VerificationTargetFingerprint(content_hash="abc", version="1")
+        target = VerificationTargetSnapshot(target_id="t1", fingerprint=fp, captured_at=datetime.now(timezone.utc))
+        defaults = dict(
+            requirements=requirements, strategy=strategy, rubric=rubric, criteria=[criterion],
+            dependencies=[], obligations=[obligation], inspection_plans=[plan], inspection_steps=[step],
+            target=target, method_registry={"m1": method}, capability_registry={},
+            authorization_registry={}, assurance_scope="unit test scope",
+        )
+        defaults.update(overrides)
+        return defaults
+
+    def test_duplicate_criterion_ids_rejected(self):
+        scenario = self._scenario()
+        dup = Criterion(criterion_id="c1", rubric_id="r1", description="dup",
+                        applicability=CriterionApplicability(applies_unconditionally=True),
+                        evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1))
+        scenario["criteria"] = [scenario["criteria"][0], dup]
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("duplicate criterion id" in r for r in result.reasons))
+
+    def test_duplicate_obligation_ids_rejected(self):
+        scenario = self._scenario()
+        dup = VerificationObligation(obligation_id="o1", derivation_source=DerivationSource.CONSTRAINT,
+                                     description="dup", source_reference="r2", rubric_id="r1")
+        scenario["obligations"] = [scenario["obligations"][0], dup]
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("duplicate obligation id" in r for r in result.reasons))
+
+    def test_duplicate_inspection_plan_ids_rejected(self):
+        scenario = self._scenario()
+        dup = InspectionPlan(plan_id="p1", obligation_id="o1", criterion_id="c1", steps=("s1",))
+        scenario["inspection_plans"] = [scenario["inspection_plans"][0], dup]
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("duplicate inspection_plan id" in r for r in result.reasons))
+
+    def test_duplicate_inspection_step_ids_rejected(self):
+        scenario = self._scenario()
+        dup = InspectionStep(step_id="s1", plan_id="p1", method_reference="m1", description="dup")
+        scenario["inspection_steps"] = [scenario["inspection_steps"][0], dup]
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("duplicate inspection_step id" in r for r in result.reasons))
+
+    def test_step_plan_id_not_in_supplied_plans_rejected(self):
+        scenario = self._scenario()
+        orphan = InspectionStep(step_id="s1", plan_id="phantom", method_reference="m1", description="orphan")
+        scenario["inspection_steps"] = [orphan]
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("plan_id=" in r and "'phantom'" in r for r in result.reasons))
+
+    def test_step_plan_id_matching_supplied_plan_accepted(self):
+        result = compile_spec(**self._scenario())
+        self.assertIsInstance(result, CompiledVerificationSpecification)
+
+    def test_step_uses_undeclared_method_rejected(self):
+        scenario = self._scenario()
+        step_m2 = InspectionStep(step_id="s1", plan_id="p1", method_reference="m2", description="uses m2")
+        method_m2 = VerificationMethod(method_id="m2", method_type="semantic_check",
+                                       description="x", version="1.0.0",
+                                       produces_evidence_directness=EvidenceDirectness.DIRECT,
+                                       external_access_needed=False, is_deterministic=True,
+                                       cost_latency_class=CostLatencyClass.INSTANT)
+        scenario["inspection_steps"] = [step_m2]
+        scenario["method_registry"] = {"m2": method_m2}
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("undeclared method use" in r for r in result.reasons))
+
+    def test_strategy_declares_unused_method_rejected(self):
+        scenario = self._scenario()
+        scenario["strategy"] = VerificationStrategy(
+            selected_shape=VerificationShape.POINTWISE,
+            selected_methods=frozenset({"m1", "m_never_used"}),
+            verifier_count=1, derived_from_requirements=scenario["requirements"].requirements_id)
+        result = compile_spec(**scenario)
+        self.assertIsInstance(result, CompilationFailure)
+        self.assertTrue(any("silent omission" in r for r in result.reasons))
+
+    def test_strategy_and_steps_in_perfect_agreement_accepted(self):
+        result = compile_spec(**self._scenario())
+        self.assertIsInstance(result, CompiledVerificationSpecification)
+
+    def test_compile_creates_different_ids_each_call(self):
+        scenario = self._scenario()
+        r1 = compile_spec(**scenario)
+        r2 = compile_spec(**scenario)
+        self.assertIsInstance(r1, CompiledVerificationSpecification)
+        self.assertIsInstance(r2, CompiledVerificationSpecification)
+        self.assertNotEqual(r1.spec_id, r2.spec_id)
+
+    def test_compile_creates_timestamps(self):
+        result = compile_spec(**self._scenario())
+        self.assertIsInstance(result, CompiledVerificationSpecification)
+        self.assertIsNotNone(result.compiled_at)
+        self.assertEqual(result.compiled_at.tzinfo, timezone.utc)
+
+
 class TestVerificationDimension(unittest.TestCase):
     def test_has_exactly_the_ten_mission_sec16_values(self):
         expected = {
