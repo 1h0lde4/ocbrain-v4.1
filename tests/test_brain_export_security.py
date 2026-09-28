@@ -154,3 +154,81 @@ class TestExportModuleNameValidation:
 
         with pytest.raises(ValueError, match="not found"):
             be.export_module("finance_helper")
+
+
+class TestZipSlipExtraction:
+    """import_module()'s zip-extraction step (CodeQL py/path-injection,
+    core/brain_export.py) -- the zip-slip half of CTX-EXPORT-001, distinct
+    from the module_name checks covered above. zipfile.ZipFile.extractall()
+    does not itself validate member paths; a crafted .ocbrain bundle
+    containing an entry like "../../victim_area/evil.txt" could write
+    outside the extraction directory before manifest.json is even read.
+    Found while reconciling this session's export_module() fix against
+    the repo's full open Code Scanning alert list -- not named in the
+    originating write-up, and more severe than what that write-up
+    described (write, not just read).
+    """
+
+    def _malicious_bundle(self, path: Path) -> Path:
+        with zipfile.ZipFile(path, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({
+                "format": "ocbrain/1.0",
+                "module_name": "finance_helper",
+                "stage": "bootstrap",
+                "base_model": "mistral",
+            }))
+            zf.writestr("../victim_area/evil.txt", "must never be written")
+        return path
+
+    def test_malicious_entry_rejected_before_manifest_is_read(self, tmp_path):
+        """A zip member shaped like a path escape must be rejected during
+        extraction itself -- proven against a decoy directory outside the
+        extraction root, and proven fail-closed: since _safe_extractall
+        validates every member before extracting any of them, a bundle
+        can't smuggle a traversal entry past review by pairing it with an
+        otherwise well-formed manifest.json in the same archive."""
+        decoy = tmp_path / "victim_area"
+        decoy.mkdir()
+        bundle = self._malicious_bundle(tmp_path / "evil.ocbrain")
+
+        dest = tmp_path / "extract_here"
+        dest.mkdir()
+
+        with zipfile.ZipFile(bundle, "r") as zf:
+            with pytest.raises(ValueError, match="resolves outside"):
+                be._safe_extractall(zf, dest)
+
+        assert not (decoy / "evil.txt").exists()
+        assert not any(dest.iterdir())  # nothing partial extracted either
+
+    def test_legitimate_bundle_still_extracts(self, tmp_path):
+        """The fix must not interfere with normal, well-formed bundles."""
+        bundle = tmp_path / "legit.ocbrain"
+        with zipfile.ZipFile(bundle, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({"module_name": "finance_helper"}))
+            zf.writestr("module/weights/model.bin", b"fake weights")
+
+        dest = tmp_path / "extract_here"
+        dest.mkdir()
+
+        with zipfile.ZipFile(bundle, "r") as zf:
+            be._safe_extractall(zf, dest)
+
+        assert (dest / "manifest.json").exists()
+        assert (dest / "module" / "weights" / "model.bin").exists()
+
+    def test_import_module_rejects_malicious_bundle_end_to_end(self, tmp_path, monkeypatch):
+        """Same property, exercised through the real import_module() call
+        site rather than the helper in isolation."""
+        fake_repo = tmp_path / "fake_repo"
+        (fake_repo / "modules").mkdir(parents=True)
+        monkeypatch.setattr(be, "MODULES", fake_repo / "modules")
+
+        decoy = tmp_path / "victim_area"
+        decoy.mkdir()
+        bundle = self._malicious_bundle(tmp_path / "evil.ocbrain")
+
+        with pytest.raises(ValueError):
+            be.import_module(bundle)
+
+        assert not (decoy / "evil.txt").exists()
