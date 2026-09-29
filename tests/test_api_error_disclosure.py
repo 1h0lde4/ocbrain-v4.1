@@ -153,3 +153,86 @@ async def test_brain_api_stream_query_redacts_exception(caplog):
     # rendered record text (message + traceback), unlike
     # record.getMessage() which is the format string alone.
     assert "/data/ocbrain/secrets.db" in caplog.text
+
+
+# ── Remaining flows found via CodeQL's own source-to-sink paths ─────────
+#
+# After the fixes above merged, CodeQL still reported interface/api.py's
+# StreamingResponse sink and the /debug `return report` as open
+# py/stack-trace-exposure alerts. The SARIF code flows showed why: the
+# exception text reached those sinks by two routes the earlier pass
+# missed -- core/model_router.py's _ollama_stream yielded
+# f"[Error: {e}]" as an ordinary stream token (forwarded verbatim by
+# _stream_response), and /debug put str(e) into its returned report.
+
+@pytest.mark.asyncio
+async def test_model_router_stream_error_token_redacts_exception(monkeypatch, caplog):
+    import re
+    import core.model_router as mr
+
+    class ExplodingClient:
+        def __init__(self, *a, **kw):
+            raise RuntimeError(
+                "connect failed to http://10.0.0.5:11434 password=hunter2"
+            )
+
+    monkeypatch.setattr(mr.httpx, "AsyncClient", ExplodingClient)
+
+    tokens = []
+    with caplog.at_level(logging.ERROR, logger="core.model_router"):
+        async for tok in mr.model_router._ollama_stream(
+            "http://localhost:11434", "mistral", "hi"
+        ):
+            tokens.append(tok)
+
+    joined = "".join(tokens)
+    assert "hunter2" not in joined
+    assert "10.0.0.5" not in joined
+    assert joined.startswith("[Error:")
+
+    # The caller gets an id it can quote; the same id ties the log line
+    # (which still carries the real detail) to that token.
+    ref = re.search(r"ref ([0-9a-f-]{36})", joined)
+    assert ref, joined
+    uuid.UUID(ref.group(1))
+    assert ref.group(1) in caplog.text
+    assert "hunter2" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_debug_endpoint_redacts_exception_text(monkeypatch, caplog):
+    import httpx
+
+    class BrokenModule:
+        def health(self):
+            raise RuntimeError("sqlite3: unable to open /opt/ocbrain/private.db")
+
+    monkeypatch.setattr(
+        api_module,
+        "_orchestrator",
+        SimpleNamespace(modules={"broken_mod": BrokenModule()}),
+    )
+
+    class ExplodingClient:
+        def __init__(self, *a, **kw):
+            raise RuntimeError("Cannot connect to 10.9.9.9:11434 token=sk-zzz")
+
+    monkeypatch.setattr(httpx, "AsyncClient", ExplodingClient)
+
+    with caplog.at_level(logging.ERROR, logger="interface.api"):
+        report = await api_module.debug()
+
+    dumped = json.dumps(report)
+    assert "private.db" not in dumped
+    assert "sk-zzz" not in dumped
+    assert "10.9.9.9" not in dumped
+
+    # Still useful for diagnosing: the exception class survives, and the
+    # id points at the server log line that has the full detail.
+    assert report["modules"]["broken_mod"]["error"] == "RuntimeError"
+    assert report["ollama"]["status"] == "UNREACHABLE"
+    assert report["ollama"]["error"] == "RuntimeError"
+    uuid.UUID(report["ollama"]["error_id"])
+    uuid.UUID(report["modules"]["broken_mod"]["error_id"])
+    assert "private.db" in caplog.text
+    assert "sk-zzz" in caplog.text
