@@ -27,12 +27,13 @@ network-isolation implementation and bypass testing, D11's concurrency
 races, and finally the three remaining capability-evidence gaps
 (NO_NEW_PRIVS/CGROUP_PIDS/FILESYSTEM_JAIL) closed with real adversarial
 tests against the running container. `_CAPS` below reflects that, as
-amended by reconciliation §17 — eight of the twelve `SandboxCapability`
+amended by reconciliation §17 — seven of the twelve `SandboxCapability`
 values, each with its own adversarial runtime evidence, not a Docker
 configuration knob assumed to imply one. `NETWORK_ALLOWLIST`, claimed as
 of §16, was WITHDRAWN in §17: a concurrent A/B test showed one sandbox
 can obtain egress through another sandbox's proxy on the shared
-gateway, so per-sandbox egress enforcement is not demonstrated. Read
+gateway, so per-sandbox egress enforcement is not demonstrated. `NET_NAMESPACE`
+was withdrawn too (§17.8): it has no direct test of its own. Read
 `_CAPS`'s own comment before trusting any individual claim; read
 reconciliation §16 and §17 for the full evidence trail.
 
@@ -42,8 +43,8 @@ check_admission()` requires `FILESYSTEM_JAIL`/`CGROUP_MEMORY`/
 `CGROUP_PIDS` unconditionally, so a realistic non-networked
 `SandboxRequest` is admitted through the normal admission-gated path.
 A request that sets `allowed_hosts` additionally requires
-`NET_NAMESPACE` and `NETWORK_ALLOWLIST`; with the latter withdrawn
-(§17) such a request is REJECTED at admission again. Both directions
+`NET_NAMESPACE` and `NETWORK_ALLOWLIST`; with both withdrawn
+(§17, §17.8) such a request is REJECTED at admission again. Both directions
 of that boundary are tested, not just asserted here.
 
 Still genuinely open, not silently treated as closed: A1/A2/A6's
@@ -94,7 +95,7 @@ from core.sandbox.contracts import (
 
 # Addendum B2: each value here requires its own passing gate,
 # individually — not Docker configuration knobs, demonstrated security
-# properties. As of reconciliation §17, eight of the twelve
+# properties. As of reconciliation §17, seven of the twelve
 # SandboxCapability values have real, adversarial, runtime evidence
 # (see that section for the full account; this comment is the
 # short form):
@@ -102,13 +103,6 @@ from core.sandbox.contracts import (
 #       mount made after the container starts is invisible inside it;
 #       a real host PID can't be signaled or seen; the container's
 #       hostname is independent and can't be changed from inside.
-#   NET_NAMESPACE -- a separate network namespace is how Docker builds
-#       every container; NO test here isolates that property directly.
-#       Its earlier citation of the §14 C2 set is withdrawn: those tests
-#       exercise egress paths, not namespace separation, and C2 is FAIL
-#       per §17. Do NOT read this claim as evidence of network
-#       isolation: §17 shows one sandbox can reach and use another's
-#       egress proxy through the shared gateway.
 #   CGROUP_MEMORY -- §12 (C1): a real OOM kill is distinguishable from
 #       an ordinary SIGKILL via State.OOMKilled, not inferred from the
 #       exit code.
@@ -132,6 +126,15 @@ from core.sandbox.contracts import (
 #       permits, by connecting to A's proxy on the shared gateway.
 #       Per-sandbox egress enforcement is not demonstrated. Re-earn it
 #       only with a concurrent A/B regression test that passes.
+#   NET_NAMESPACE -- WITHDRAWN (§17.8). Docker does build a separate
+#       network namespace per container, and nothing here changes that:
+#       this withdraws the CLAIM, not the implementation. It has no
+#       direct committed test (its only cited evidence was the C2 set,
+#       which tests egress paths, not namespace separation). Re-earn it
+#       only with a test that the sandbox's netns differs from the
+#       host's AND that concurrently created sandboxes have distinct
+#       netns. Passing that re-earns NET_NAMESPACE alone: it does not
+#       resurrect NETWORK_ALLOWLIST or C2 (DEBT-038 stays open).
 #   USER_NAMESPACE -- no userns-remap configured on this daemon (§11);
 #       claiming it would misrepresent the host, not just this code.
 #   SECCOMP -- claiming it would imply protection against the
@@ -149,7 +152,6 @@ _CAPS = RuntimeCapabilities(
             SandboxCapability.MOUNT_NAMESPACE,
             SandboxCapability.PID_NAMESPACE,
             SandboxCapability.UTS_NAMESPACE,
-            SandboxCapability.NET_NAMESPACE,
             SandboxCapability.CGROUP_MEMORY,
             SandboxCapability.NO_NEW_PRIVS,
             SandboxCapability.CGROUP_PIDS,
@@ -494,10 +496,10 @@ class _DockerRunState:
 class DockerBackend(SandboxBackend):
     """Docker-daemon SandboxBackend. See the module docstring and
     `_CAPS`'s own comment before trusting any individual capability
-    claim — eight of twelve are backed by real adversarial evidence,
-    three were never earned, one (NETWORK_ALLOWLIST) was withdrawn in
-    §17, and A9's seccomp bypass is real and unmitigated
-    (`_lsm_active()`)."""
+    claim — seven of twelve are backed by real adversarial evidence,
+    three were never earned, two (NETWORK_ALLOWLIST, NET_NAMESPACE)
+    were withdrawn in §17, and A9's seccomp bypass is real and
+    unmitigated (`_lsm_active()`)."""
 
     def __init__(self, image_ref: str | None = None) -> None:
         """`image_ref` is backend-private configuration (addendum A3),

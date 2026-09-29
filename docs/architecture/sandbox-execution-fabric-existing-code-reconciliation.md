@@ -299,8 +299,8 @@ Two results, deliberately kept separate: a lifecycle defect class that is now fi
 |---|---|---|
 | D10 | **Closed** (scope in §17.1) | Network-object lifecycle explicitly undecided |
 | C2 | **FAIL** | The observed behavior contradicts the intended per-sandbox isolation property; §14's results stand only for the paths it tested |
-| `NETWORK_ALLOWLIST` | **Withdrawn** | Removed from `_CAPS` (now 8 of 12). `check_admission()` again rejects a request that sets `allowed_hosts`. Re-earn only with a passing concurrent A/B test |
-| `NET_NAMESPACE` | Retained, **not evidence of network isolation** | It was cited on the C2 set, which tests egress paths, not namespace separation. No committed test isolates it. Scratch check only: container netns inode `4026532214` vs host `4026531833` (different). Under addendum B2 it still lacks a gate of its own — flagged for a decision, not silently kept |
+| `NETWORK_ALLOWLIST` | **Withdrawn** | Removed from `_CAPS` (8 of 12 at this point; 7 of 12 after §17.8). `check_admission()` again rejects a request that sets `allowed_hosts`. Re-earn only with a passing concurrent A/B test |
+| `NET_NAMESPACE` | **Withdrawn** (§17.8) | Claim/evidence withdrawal only: implementation unchanged, no direct committed test yet |
 | A1 | Mechanism retained | The import-time paired-claim invariant is unchanged and still tested (it fires when violated); it holds trivially again |
 | Sandbox-security closeout | **Not issued** | No overall closeout may say the network-isolation claims passed |
 
@@ -383,3 +383,23 @@ Output observed (September 29 2026, Docker 29.1.3, the `docker import`-built tes
 2 B's OWN proxy -> example.org  (in B's allowlist)    : HTTP/1.1 200 Connection Established
 3 A's proxy     -> example.com  (in A's allowlist only): HTTP/1.1 200 Connection Established
 ```
+
+### 17.8 Amendment (same day): `NET_NAMESPACE` withdrawn
+
+`NET_NAMESPACE` is removed from the asserted capability set; `_CAPS` is now **7 of 12** (`MOUNT_NAMESPACE`, `PID_NAMESPACE`, `UTS_NAMESPACE`, `CGROUP_MEMORY`, `NO_NEW_PRIVS`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`). Under addendum B2 a capability needs a gate of its own, and none exists: its only cited evidence was the C2 set, which tests egress paths rather than namespace separation. The scratch observation that a container's netns inode differs from the host's is useful but is not a committed test, so it does not earn the claim.
+
+This is a **claim/evidence withdrawal, not a statement that Docker failed to create a network namespace.** The implementation is unchanged.
+
+The three statuses are kept distinct:
+
+| Item | Status |
+|---|---|
+| `NET_NAMESPACE` | Implementation fact awaiting a direct gate |
+| `NETWORK_ALLOWLIST` | Withdrawn: observed behavior contradicts the claimed invariant (§17.2) |
+| C2 | FAIL pending a network-boundary redesign and regression proof |
+
+**Future gate (not added in this change):** at minimum, (a) a sandbox's network namespace is distinct from the host's, and (b) concurrently created sandboxes have pairwise-distinct network namespaces.
+
+**Separation rule:** passing that gate re-earns `NET_NAMESPACE` *only*. It does not resurrect `NETWORK_ALLOWLIST` or C2, and DEBT-038 stays open. (A1's existing paired-claim invariant already makes `NET_NAMESPACE` a *prerequisite* for ever claiming `NETWORK_ALLOWLIST` again; necessary is not sufficient.)
+
+**Effects:** `check_admission()` still rejects any request that sets `allowed_hosts`, now on the `NET_NAMESPACE` check first. Tests changed only where the contract changed: the capability-set test (8 → 7, `NET_NAMESPACE` added to the deliberately-absent list) and its count assertion. No test was deleted or weakened.

@@ -86,9 +86,10 @@ _COMMON_ARGS = dict(
 
 
 def test_capabilities_reflect_exactly_the_evidence_backed_set():
-    # Reconciliation §17: eight values, each with its own adversarial
+    # Reconciliation §17: seven values, each with its own adversarial
     # runtime evidence — not "whatever Docker configuration implies".
-    # (NETWORK_ALLOWLIST was claimed as of §16 and withdrawn in §17.)
+    # (NETWORK_ALLOWLIST and NET_NAMESPACE were claimed as of §16 and
+    # withdrawn in §17 / §17.8.)
     from core.sandbox.contracts import SandboxCapability
 
     backend = DockerBackend(image_ref="example/image:tag")
@@ -97,7 +98,6 @@ def test_capabilities_reflect_exactly_the_evidence_backed_set():
             SandboxCapability.MOUNT_NAMESPACE,
             SandboxCapability.PID_NAMESPACE,
             SandboxCapability.UTS_NAMESPACE,
-            SandboxCapability.NET_NAMESPACE,
             SandboxCapability.CGROUP_MEMORY,
             SandboxCapability.NO_NEW_PRIVS,
             SandboxCapability.CGROUP_PIDS,
@@ -109,12 +109,15 @@ def test_capabilities_reflect_exactly_the_evidence_backed_set():
     # comment): USER_NAMESPACE (no userns-remap on this daemon),
     # SECCOMP (A9's bypass is real and unmitigated), NETWORK_DENY_DEFAULT
     # (admission.py never actually consults it), NETWORK_ALLOWLIST
-    # (WITHDRAWN, §17: one sandbox can use another's egress proxy).
+    # (WITHDRAWN, §17: one sandbox can use another's egress proxy),
+    # NET_NAMESPACE (WITHDRAWN, §17.8: no direct committed test yet;
+    # a claim withdrawal only -- the implementation is unchanged).
     for absent in (
         SandboxCapability.USER_NAMESPACE,
         SandboxCapability.SECCOMP,
         SandboxCapability.NETWORK_DENY_DEFAULT,
         SandboxCapability.NETWORK_ALLOWLIST,
+        SandboxCapability.NET_NAMESPACE,
     ):
         assert absent not in backend.capabilities.supported
 
@@ -268,7 +271,7 @@ def test_no_new_contracts_py_enum_members_added():
 
     backend = DockerBackend(image_ref="example/image:tag")
     assert backend.capabilities.supported.issubset(set(SandboxCapability))
-    assert len(backend.capabilities.supported) == 8
+    assert len(backend.capabilities.supported) == 7
 
 
 def test_a1_network_allowlist_requires_net_namespace_currently_holds():
