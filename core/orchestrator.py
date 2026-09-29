@@ -325,6 +325,10 @@ class Orchestrator:
                     # story") spends no capability discovery, compilation or
                     # generation call. The detector (cognitive layer) owns the
                     # meaning of the score; the governor applies the threshold.
+                    # PLACEMENT IS UNRESOLVED (ADR-KERNEL-07 D-5): K4.2 records "no
+                    # dedicated clarification gate" (clarification is evaluated at Plan
+                    # Compilation); this pre-plan block is a dedicated gate and
+                    # contradicts that decision until it is superseded or relocated.
                     # Flag-gated, default off: with the flag off none of this runs.
                     if self._creative_anchor_gate_enabled:
                         from core.cognitive.content_anchor import (
@@ -335,7 +339,9 @@ class Orchestrator:
                             query, goal_id=goal.resource_id,
                             event_stream=self._event_stream,
                             governance=self._governance)
-                        if anchor.status != ContentAnchorStatus.ANCHORED:
+                        if anchor.status not in (
+                                ContentAnchorStatus.ANCHORED,
+                                ContentAnchorStatus.ABSTAINED):
                             await self._emit_event(
                                 "orchestrator.clarification_requested", {
                                     "interaction_id": interaction_id,

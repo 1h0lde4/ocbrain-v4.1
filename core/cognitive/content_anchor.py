@@ -39,6 +39,11 @@ else is `in_scope=False` -> anchored (fail-open). In scope, the detector
 counts content-bearing tokens left after removing form specification (verb,
 artifact noun, numbers, length words), pronouns, articles and filler.
 
+SCOPE OF SLICE 1: detect -> ask -> stop. It does NOT preserve the task, merge
+the user's answer, or re-evaluate. IntentLifecycle.CLARIFICATION_PENDING and
+CLARIFIED remain unreached; their existence as enum values does not mean a
+clarification lifecycle is live.
+
 State: none. Slice 1 keeps no attempt state across turns (ADR-KERNEL-07 D-3),
 therefore it implements NO bounded-retry semantics: a resubmitted request is
 a fresh request. This validates detection and short-circuiting only -- not a
@@ -88,9 +93,23 @@ class ContentAnchorPolicy:
 
 @dataclass(frozen=True)
 class ContentAnchorAssessment:
-    """Pure result of detect_creative_content_anchors(). No governance, no I/O."""
+    """Pure result of detect_creative_content_anchors(). No governance, no I/O.
 
-    score: float                      # in [0, 1]; 1.0 when out of scope (fail-open)
+    MEANING OF ``score`` -- read this before using it. It is a coarse,
+    detector-specific *presence indicator* for content-bearing tokens in the
+    request text: min(1, content_token_count / 2). It is NOT a probability that
+    the request is sufficient, NOT a measure of how well-specified it is, and
+    NOT comparable across detectors or detector versions (the emitted event
+    carries detector name + version for exactly that reason). 1.0 means only
+    "at least two content tokens, or the user delegated the choice". A future
+    intent-sufficiency model must not consume this number as if it were one.
+
+    ``score is None`` means this detector ABSTAINED: the request is outside
+    its scope, so no judgment was made. That is different from "known to be
+    sufficient" and must never be treated as such.
+    """
+
+    score: Optional[float]            # in [0, 1]; None => this detector ABSTAINED (out of scope)
     in_scope: bool                    # False -> not a request this gate judges
     delegated: bool                   # user explicitly delegated the choice
     artifact: Optional[str]           # canonical artifact kind, when in scope
@@ -99,7 +118,8 @@ class ContentAnchorAssessment:
 
 
 class ContentAnchorStatus(str, Enum):
-    ANCHORED = "anchored"                      # passes (or out of scope)
+    ANCHORED = "anchored"                      # in scope, has an anchor (or delegated)
+    ABSTAINED = "abstained"                    # out of scope: NO judgment made, not "sufficient"
     ANCHOR_MISSING = "anchor_missing"          # ask the user
     GOVERNANCE_BLOCKED = "governance_blocked"  # non-clarification denial
 
@@ -172,8 +192,9 @@ _NUMERIC = re.compile(r"\d+\w*")
 def detect_creative_content_anchors(raw_text: str) -> ContentAnchorAssessment:
     """Deterministic, side-effect-free content-anchor detection.
 
-    Fail-open by construction: anything not recognized as an open-ended
-    creative-composition request is ``in_scope=False`` with score 1.0.
+    Anything not recognized as an open-ended creative-composition request is
+    ``in_scope=False`` with ``score=None``: the detector ABSTAINS (makes no
+    judgment). Callers proceed, but abstention is not a sufficiency verdict.
     """
     text = raw_text or ""
     tokens = _TOKEN.findall(text.lower())
@@ -187,7 +208,7 @@ def detect_creative_content_anchors(raw_text: str) -> ContentAnchorAssessment:
 
     if artifact is None or not has_verb:
         return ContentAnchorAssessment(
-            score=1.0, in_scope=False, delegated=False, artifact=None,
+            score=None, in_scope=False, delegated=False, artifact=None,
             missing=(), content_token_count=0,
         )
 
@@ -244,7 +265,8 @@ async def evaluate_creative_content_anchors(
 
     Ownership: the detector (this module) decides what the score means; the
     OrchestrationGovernor only applies the threshold and returns
-    APPROVE / ESCALATE. Stateless: no attempt count is read or kept.
+    APPROVE / ESCALATE. Out-of-scope requests ABSTAIN (no governance call).
+    Stateless: no attempt count is read or kept.
     """
     event_stream = event_stream or get_event_stream()
     governance = governance or get_governance_kernel()
@@ -252,6 +274,31 @@ async def evaluate_creative_content_anchors(
     trace_id = get_trace_id()
 
     assessment = detect_creative_content_anchors(raw_text)
+
+    if not assessment.in_scope:
+        # Abstain: nothing to decide, so no governance action is fabricated.
+        # An event is still emitted so replay shows the detector ran and
+        # declined (Law 2), without claiming the request is sufficient.
+        await event_stream.append(
+            event_type="cognitive.content_anchor_evaluated",
+            source=_DETECTOR_ID,
+            payload={
+                "trace_id": trace_id,
+                "goal_id": goal_id,
+                "detector": DETECTOR_NAME,
+                "detector_version": DETECTOR_VERSION,
+                "score": None,
+                "in_scope": False,
+                "delegated": False,
+                "artifact": None,
+                "missing": [],
+                "verdict": None,
+                "status": ContentAnchorStatus.ABSTAINED.value,
+                "governor": None,
+            },
+        )
+        return ContentAnchorResult(
+            status=ContentAnchorStatus.ABSTAINED, assessment=assessment)
 
     action = GovernanceAction(
         action_type=CONTENT_ANCHOR_ACTION_TYPE,

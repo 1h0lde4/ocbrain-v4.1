@@ -88,9 +88,12 @@ never carries `confidence` and the general_purpose_only exemption cannot
 apply to it. ESCALATE below threshold only; no attempt bound (no attempt
 state exists in slice 1); still no rule-registration API, no new governor,
 no cognitive-layer type imported. Absent key -> this rule is inert.
-NOTE (ADR-KERNEL-07 D-5, open): DRIFT-10 describes governance as sitting
-"at the compilation boundary only"; this pre-plan evaluation is in tension
-with that statement and awaits an explicit decision.
+NOTE (ADR-KERNEL-07 D-5, open): the K4.2 authoritative document records "no
+dedicated clarification gate" (clarification is evaluated here, at Plan
+Compilation); the slice-1 caller evaluates this rule PRE-plan, which
+contradicts that decision until it is superseded or the call is relocated.
+(DRIFT-10's "compilation boundary only" wording is a derived rule, not the
+source authority.)
 
 Default policy: permissive. All worker types are authorized unless
 explicitly denied at construction — matching the permissive-default risk

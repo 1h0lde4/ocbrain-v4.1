@@ -110,10 +110,11 @@ class TestAssessment:
         "write a function to parse json",
         "",
     ])
-    def test_out_of_scope_is_fail_open(self, text):
+    def test_out_of_scope_abstains_and_makes_no_judgment(self, text):
         a = detect_creative_content_anchors(text)
         assert not a.in_scope
-        assert a.score == 1.0
+        # None, not 1.0: abstention must never be representable as "sufficient".
+        assert a.score is None
         assert a.missing == ()
 
     def test_none_input_is_safe(self):
@@ -295,12 +296,35 @@ class TestEvaluator:
         assert res.status == ContentAnchorStatus.ANCHORED
 
     @pytest.mark.asyncio
-    async def test_out_of_scope_request_is_sufficient(self):
+    async def test_out_of_scope_abstains_without_a_governance_action(self):
+        events = MockEventStream()
+        kernel = MagicMock()
+        kernel.evaluate_action = MagicMock(return_value=GovernanceResult())
         res = await evaluate_creative_content_anchors(
-            "book a flight to Tokyo next week",
-            event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == ContentAnchorStatus.ANCHORED
-        assert res.assessment.in_scope is False
+            "book a flight to Tokyo next week", goal_id="g-9",
+            event_stream=events, governance=kernel)
+        assert res.status == ContentAnchorStatus.ABSTAINED
+        assert res.status != ContentAnchorStatus.ANCHORED   # not "sufficient"
+        assert res.governance_result is None and res.question is None
+        kernel.evaluate_action.assert_not_called()          # nothing to decide
+        # Replay still shows the detector ran and declined.
+        assert len(events.events) == 1
+        p = events.events[0]["payload"]
+        assert p["status"] == "abstained" and p["score"] is None
+        assert p["verdict"] is None and p["governor"] is None
+        assert p["in_scope"] is False and p["detector_version"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_abstention_is_distinct_from_anchored_in_the_record(self):
+        ev_abs, ev_anc = MockEventStream(), MockEventStream()
+        await evaluate_creative_content_anchors(
+            "summarize this article", event_stream=ev_abs,
+            governance=GovernanceKernel())
+        await evaluate_creative_content_anchors(
+            "write a poem about autumn", event_stream=ev_anc,
+            governance=GovernanceKernel())
+        assert ev_abs.events[0]["payload"]["status"] == "abstained"
+        assert ev_anc.events[0]["payload"]["status"] == "anchored"
 
     @pytest.mark.asyncio
     async def test_evaluation_is_stateless_and_repeatable(self):
@@ -426,6 +450,13 @@ class TestOrchestrator:
             except Exception:
                 pass
         assert plan_mock.call_count >= 1
+        payloads = [c.kwargs.get("payload") for c in
+                    orch._event_stream.append.call_args_list
+                    if c.kwargs.get("event_type") == "cognitive.content_anchor_evaluated"]
+        assert payloads and payloads[0]["status"] == "abstained"
+        emitted = [c.kwargs.get("event_type") or c.args[0]
+                   for c in orch._event_stream.append.call_args_list]
+        assert "orchestrator.clarification_requested" not in emitted
 
     @pytest.mark.asyncio
     async def test_default_constructor_leaves_gate_off(self):
