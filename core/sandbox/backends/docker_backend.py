@@ -26,21 +26,25 @@ reproducible, NOT mitigated — see `_lsm_active()` below), C2's full
 network-isolation implementation and bypass testing, D11's concurrency
 races, and finally the three remaining capability-evidence gaps
 (NO_NEW_PRIVS/CGROUP_PIDS/FILESYSTEM_JAIL) closed with real adversarial
-tests against the running container. `_CAPS` below now reflects that —
-nine of the twelve `SandboxCapability` values, each with its own
-adversarial runtime evidence, not a Docker configuration knob assumed
-to imply one. Read `_CAPS`'s own comment before trusting any individual
-claim; read reconciliation §16 for the full evidence trail.
+tests against the running container. `_CAPS` below reflects that, as
+amended by reconciliation §17 — eight of the twelve `SandboxCapability`
+values, each with its own adversarial runtime evidence, not a Docker
+configuration knob assumed to imply one. `NETWORK_ALLOWLIST`, claimed as
+of §16, was WITHDRAWN in §17: a concurrent A/B test showed one sandbox
+can obtain egress through another sandbox's proxy on the shared
+gateway, so per-sandbox egress enforcement is not demonstrated. Read
+`_CAPS`'s own comment before trusting any individual claim; read
+reconciliation §16 and §17 for the full evidence trail.
 
 One consequence worth stating plainly, since it's a real behavior
 change and not just a documentation update: `AdmissionGate.
 check_admission()` requires `FILESYSTEM_JAIL`/`CGROUP_MEMORY`/
-`CGROUP_PIDS` unconditionally, and `NET_NAMESPACE`/`NETWORK_ALLOWLIST`
-when `allowed_hosts` is set — all five are now claimed, so a realistic
-`SandboxRequest` is, for the first time, actually admitted through the
-normal admission-gated path rather than rejected before any method
-below is ever reached. That boundary is itself tested (reconciliation
-§16), not just asserted here.
+`CGROUP_PIDS` unconditionally, so a realistic non-networked
+`SandboxRequest` is admitted through the normal admission-gated path.
+A request that sets `allowed_hosts` additionally requires
+`NET_NAMESPACE` and `NETWORK_ALLOWLIST`; with the latter withdrawn
+(§17) such a request is REJECTED at admission again. Both directions
+of that boundary are tested, not just asserted here.
 
 Still genuinely open, not silently treated as closed: A1/A2/A6's
 runtime halves are covered, but A9 (the socketcall(2)/AF_VSOCK seccomp
@@ -66,6 +70,7 @@ from (imported, in _net_proxy's case — addendum B3) but never modified.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import os
 import shutil
@@ -89,7 +94,7 @@ from core.sandbox.contracts import (
 
 # Addendum B2: each value here requires its own passing gate,
 # individually — not Docker configuration knobs, demonstrated security
-# properties. As of reconciliation §16, nine of the twelve
+# properties. As of reconciliation §17, eight of the twelve
 # SandboxCapability values have real, adversarial, runtime evidence
 # (see that section for the full account; this comment is the
 # short form):
@@ -97,12 +102,13 @@ from core.sandbox.contracts import (
 #       mount made after the container starts is invisible inside it;
 #       a real host PID can't be signaled or seen; the container's
 #       hostname is independent and can't be changed from inside.
-#   NET_NAMESPACE, NETWORK_ALLOWLIST -- §14 (C2): an allowed host
-#       reaches the real internet through the tunnel; a disallowed
-#       host is rejected at the tunnel; a direct connection bypassing
-#       the proxy has no route; the gateway offers no alternate route;
-#       a sibling sandbox container is unreachable; request.env can't
-#       redirect the enforced proxy.
+#   NET_NAMESPACE -- a separate network namespace is how Docker builds
+#       every container; NO test here isolates that property directly.
+#       Its earlier citation of the §14 C2 set is withdrawn: those tests
+#       exercise egress paths, not namespace separation, and C2 is FAIL
+#       per §17. Do NOT read this claim as evidence of network
+#       isolation: §17 shows one sandbox can reach and use another's
+#       egress proxy through the shared gateway.
 #   CGROUP_MEMORY -- §12 (C1): a real OOM kill is distinguishable from
 #       an ordinary SIGKILL via State.OOMKilled, not inferred from the
 #       exit code.
@@ -120,6 +126,12 @@ from core.sandbox.contracts import (
 #       (EROFS); the workspace remains writable afterward.
 #
 # Deliberately NOT claimed:
+#   NETWORK_ALLOWLIST -- WITHDRAWN (it was claimed as of §16). §17:
+#       with two concurrent sandboxes holding different allowlists,
+#       sandbox B obtained a tunnel to a host only A's allowlist
+#       permits, by connecting to A's proxy on the shared gateway.
+#       Per-sandbox egress enforcement is not demonstrated. Re-earn it
+#       only with a concurrent A/B regression test that passes.
 #   USER_NAMESPACE -- no userns-remap configured on this daemon (§11);
 #       claiming it would misrepresent the host, not just this code.
 #   SECCOMP -- claiming it would imply protection against the
@@ -138,7 +150,6 @@ _CAPS = RuntimeCapabilities(
             SandboxCapability.PID_NAMESPACE,
             SandboxCapability.UTS_NAMESPACE,
             SandboxCapability.NET_NAMESPACE,
-            SandboxCapability.NETWORK_ALLOWLIST,
             SandboxCapability.CGROUP_MEMORY,
             SandboxCapability.NO_NEW_PRIVS,
             SandboxCapability.CGROUP_PIDS,
@@ -483,9 +494,10 @@ class _DockerRunState:
 class DockerBackend(SandboxBackend):
     """Docker-daemon SandboxBackend. See the module docstring and
     `_CAPS`'s own comment before trusting any individual capability
-    claim — nine of twelve are backed by real adversarial evidence,
-    three are deliberately absent, and A9's seccomp bypass is real and
-    unmitigated (`_lsm_active()`)."""
+    claim — eight of twelve are backed by real adversarial evidence,
+    three were never earned, one (NETWORK_ALLOWLIST) was withdrawn in
+    §17, and A9's seccomp bypass is real and unmitigated
+    (`_lsm_active()`)."""
 
     def __init__(self, image_ref: str | None = None) -> None:
         """`image_ref` is backend-private configuration (addendum A3),
@@ -554,64 +566,91 @@ class DockerBackend(SandboxBackend):
     # -- SandboxBackend interface -----------------------------------
 
     async def create(self, request: SandboxRequest) -> SandboxHandle:
-        """Verified against a real daemon (reconciliation §§11, 14, 16):
-        full create()/run()/inspect()/destroy() lifecycle, real network
-        isolation when `allowed_hosts` is set, and — for a request
-        requiring FILESYSTEM_JAIL/CGROUP_MEMORY/CGROUP_PIDS (and
-        NET_NAMESPACE/NETWORK_ALLOWLIST when networked) — actually
-        reachable through AdmissionGate now that `_CAPS` claims all
-        five. See the module docstring for what's still open (A9)."""
+        """Verified against a real daemon (reconciliation §§11, 14, 16, 17):
+        the full create()/run()/inspect()/destroy() lifecycle and
+        failure-path cleanup (D10). A request with `allowed_hosts` is
+        NOT admitted through AdmissionGate — NETWORK_ALLOWLIST is
+        withdrawn (§17: one sandbox can use another's egress proxy) —
+        so calling create() directly with `allowed_hosts` bypasses that
+        gate and runs a network path whose per-sandbox enforcement is
+        not demonstrated. See the module docstring for what's still
+        open (A9)."""
         handle_id = f"docker-{uuid.uuid4().hex[:12]}"
         container_name = f"ocbrain-sandbox-{handle_id}"
-        os.makedirs(request.policy.workspace_dir, exist_ok=True)
-
-        image_digest = await self._resolve_image_digest()
-
+        workspace_dir = request.policy.workspace_dir
+        # Only a directory THIS call creates may be removed if create()
+        # fails; a caller-owned, pre-existing workspace is never touched.
+        workspace_created_here = not os.path.exists(workspace_dir)
         proxy: AllowlistProxy | None = None
-        proxy_url: str | None = None
-        network_mode = "none"
-        if request.policy.allowed_hosts:
-            # Addendum B3: the EXISTING AllowlistProxy, never a parallel
-            # proxy or policy mechanism. NET_NAMESPACE + NETWORK_ALLOWLIST
-            # are now both in _CAPS (A1's paired-claim invariant holds),
-            # so this branch is reachable through the normal
-            # admission-gated path — see reconciliation §14 for the full
-            # bypass-path verification this got before being claimed.
-            gateway_ip = await _ensure_sandbox_network()
-            proxy = AllowlistProxy(bind_ip=gateway_ip, allowed_hosts=request.policy.allowed_hosts)
-            port = proxy.start()
-            proxy_url = f"http://{gateway_ip}:{port}"
-            network_mode = _SANDBOX_NETWORK_NAME
 
-        env = _build_container_env(request.env, proxy_url=proxy_url)
-        args = _build_create_args(
-            container_name=container_name,
-            image_digest=image_digest,
-            command=request.command,
-            env=env,
-            workspace_dir=request.policy.workspace_dir,
-            read_only_paths=request.policy.read_only_paths,
-            memory_limit_mb=request.policy.memory_limit_mb,
-            max_pids=request.policy.max_pids,
-            network_mode=network_mode,
-        )
+        # D10 invariant: every resource acquired below is either cleaned
+        # immediately (the except branch) or, on success, retained in a
+        # handle that stays destroyable (`self._handles`). Never neither.
+        try:
+            os.makedirs(workspace_dir, exist_ok=True)
 
-        proc = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            if proxy is not None:
-                proxy.stop()
-            raise DockerBackendError(
-                f"docker create failed: {stderr.decode('utf-8', errors='replace').strip()}"
+            image_digest = await self._resolve_image_digest()
+
+            proxy_url: str | None = None
+            network_mode = "none"
+            if request.policy.allowed_hosts:
+                # Addendum B3: the EXISTING AllowlistProxy, never a parallel
+                # proxy or policy mechanism. NETWORK_ALLOWLIST is WITHDRAWN
+                # from _CAPS (reconciliation §17), so AdmissionGate does not
+                # admit requests that reach this branch; it stays reachable
+                # only by calling create() directly. Every sandbox's proxy
+                # binds the one shared gateway, so per-sandbox egress
+                # enforcement is NOT demonstrated under concurrency (§17).
+                gateway_ip = await _ensure_sandbox_network()
+                proxy = AllowlistProxy(bind_ip=gateway_ip, allowed_hosts=request.policy.allowed_hosts)
+                port = proxy.start()
+                proxy_url = f"http://{gateway_ip}:{port}"
+                network_mode = _SANDBOX_NETWORK_NAME
+
+            env = _build_container_env(request.env, proxy_url=proxy_url)
+            args = _build_create_args(
+                container_name=container_name,
+                image_digest=image_digest,
+                command=request.command,
+                env=env,
+                workspace_dir=workspace_dir,
+                read_only_paths=request.policy.read_only_paths,
+                memory_limit_mb=request.policy.memory_limit_mb,
+                max_pids=request.policy.max_pids,
+                network_mode=network_mode,
             )
-        container_id = stdout.decode("utf-8", errors="replace").strip()
+
+            proc = await asyncio.create_subprocess_exec(
+                *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            try:
+                stdout, stderr = await proc.communicate()
+            except BaseException:
+                # Cancelled or failed mid-create: don't leave the docker
+                # client running (it could still finish creating the
+                # container after the cleanup below has looked for it).
+                if proc.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()
+                    await proc.wait()
+                raise
+            if proc.returncode != 0:
+                raise DockerBackendError(
+                    f"docker create failed: {stderr.decode('utf-8', errors='replace').strip()}"
+                )
+            container_id = stdout.decode("utf-8", errors="replace").strip()
+        except BaseException:
+            await self._abort_create(
+                container_name=container_name,
+                proxy=proxy,
+                created_workspace=workspace_dir if workspace_created_here else None,
+            )
+            raise
 
         self._handles[handle_id] = _DockerRunState(
             container_id=container_id,
             container_name=container_name,
-            workspace_dir=request.policy.workspace_dir,
+            workspace_dir=workspace_dir,
             state=SandboxState.PROVISIONING,
             proxy=proxy,
         )
@@ -694,26 +733,41 @@ class DockerBackend(SandboxBackend):
         await self._kill_container(state.container_id)
 
     async def destroy(self, handle: SandboxHandle) -> None:
-        """Idempotent by construction: a missing handle or an
-        already-gone container are both treated as already-clean
-        (checklist D6/D10's double-destroy requirement), not errors.
+        """Idempotent: an unknown handle, or a container that is already
+        gone, is already-clean and is not an error (checklist D6/D10's
+        double-destroy requirement).
+
+        D10: "already gone" is CONFIRMED (a label query that succeeds and
+        finds nothing), never inferred from `docker rm` having been
+        called or having exited. If removal cannot be confirmed -- the
+        daemon or CLI failed -- the handle is RETAINED, so a later
+        destroy() can finish the job, and DockerBackendError is raised;
+        the container is never silently dropped from bookkeeping while it
+        may still exist. The host-side proxy listener is stopped either
+        way (it depends on nothing in the daemon), and the workspace is
+        removed only once the container is confirmed gone.
+
         Verified against a real daemon, including concurrently with
-        run() and cancel() (D11, §15) — no orphaned containers in any
-        of those runs."""
+        run() and cancel() (D11, §15), and under injected CLI failure
+        (D10 tests -- simulated at the CLI-call boundary, so evidence
+        about this backend's cleanup logic, not about daemon behavior)."""
         state = self._handles.pop(handle.handle_id, None)
         if state is None:
             return
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "rm",
-            "-f",
-            state.container_id,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await proc.wait()
-        if state.proxy is not None:
-            state.proxy.stop()
+        try:
+            gone = await self._remove_container(state.container_name)
+            if state.proxy is not None:
+                state.proxy.stop()
+                state.proxy = None
+        except BaseException:
+            self._handles[handle.handle_id] = state  # still destroyable
+            raise
+        if not gone:
+            self._handles[handle.handle_id] = state
+            raise DockerBackendError(
+                f"could not confirm removal of container {state.container_name!r}; "
+                "the handle is retained -- call destroy() again once docker is reachable"
+            )
         shutil.rmtree(state.workspace_dir, ignore_errors=True)
 
     async def inspect(self, handle: SandboxHandle) -> SandboxState:
@@ -725,6 +779,65 @@ class DockerBackend(SandboxBackend):
         return state.state if state else SandboxState.PENDING
 
     # -- private helpers ---------------------------------------------
+
+    async def _container_ids_for(self, container_name: str) -> list[str] | None:
+        """Ids of every container, in ANY state, carrying this run's
+        `ocbrain.container_name` label (D4). Returns None -- not [] --
+        when that could not be determined, so "nothing there" and "could
+        not look" are never confused (D10)."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "ps",
+                "-a",
+                "-q",
+                "--no-trunc",
+                "--filter",
+                f"label=ocbrain.container_name={container_name}",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _stderr = await proc.communicate()
+        except OSError:
+            return None
+        if proc.returncode != 0:
+            return None
+        return stdout.decode("utf-8", errors="replace").split()
+
+    async def _remove_container(self, container_name: str) -> bool:
+        """Removes the container by its backend-private name (which is
+        known before any docker call, so this works even when create()
+        was interrupted before an id came back) and returns True iff its
+        absence is CONFIRMED afterwards. `docker rm`'s own exit status is
+        deliberately not what decides that."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "rm",
+                "-f",
+                container_name,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+        except OSError:
+            pass  # not a decision point: confirmation below settles it
+        return await self._container_ids_for(container_name) == []
+
+    async def _abort_create(
+        self, *, container_name: str, proxy: AllowlistProxy | None, created_workspace: str | None
+    ) -> None:
+        """Best-effort unwind of a create() that failed part-way (D10).
+        Residual limit, stated rather than hidden: if the daemon is
+        unreachable during this unwind itself, a container that was
+        already created cannot be confirmed removed and has no handle to
+        retain it in -- it stays enumerable through the
+        `ocbrain.sandbox=true` label, which is what D4 put it there for."""
+        if proxy is not None:
+            proxy.stop()
+        await self._remove_container(container_name)
+        if created_workspace is not None:
+            shutil.rmtree(created_workspace, ignore_errors=True)
 
     async def _kill_container(self, container_id: str) -> None:
         proc = await asyncio.create_subprocess_exec(
