@@ -44,10 +44,11 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     # core/brain_api.py's /export routers call this same function) with
     # zero validation before this fix. It is used below to build mod_dir,
     # weights_src, kb_src, eval_src, raw_dir and output_path -- a
-    # module_name like "../../../etc" or "../../../home/user/.ssh" lets
-    # export read (and hand back inside the returned bundle) arbitrary
-    # directories outside modules/, and a module_name containing "/" lets
-    # output_path escape EXPORTS entirely. import_module() below already
+    # module_name like "../../../somewhere" lets export read *.json files
+    # (eval_src, raw_dir.glob) and the fixed-name weights/active and
+    # knowledge.db subpaths from outside modules/ and data/ and hand them
+    # back inside the returned bundle, and a module_name containing "/" or
+    # ".." lets output_path escape EXPORTS entirely. import_module() below already
     # applies this exact check to this exact field for the same reason
     # (as does module_factory.create()) -- kept consistent rather than
     # inventing a second convention. Regression coverage:
@@ -139,20 +140,21 @@ def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
     """Extract zf into dest, refusing any member whose path would resolve
     outside dest.
 
-    SECURITY (CodeQL py/path-injection; CTX-EXPORT-001, KNOWN_ISSUES.md
-    DEBT-019 -- the zip-slip half, distinct from the module_name checks
-    elsewhere in this file): zipfile.ZipFile.extractall() does not
-    validate member paths on its own. A crafted .ocbrain bundle with an
-    entry named e.g. "../../../etc/cron.d/evil" (or an absolute path)
-    would let extraction write outside dest. bundle_path is a file
-    import_module() has no reason to trust -- it reaches this function
-    from the same HTTP /import surface as module_name -- and this runs
-    before any other validation in import_module(), since the
-    manifest_name/module_name checks downstream all assume extraction
-    into tmp_path was itself safe. Symlink members whose *target* (not
-    path) escapes dest are not handled here -- a narrower, separate
-    concern from the path-traversal-on-extraction issue CodeQL flagged;
-    left for its own disposition rather than silently claimed as covered.
+    This is defense-in-depth, not the fix for an exploitable write.
+    CPython's zipfile already drops '..', '.', empty and drive/absolute
+    components from member names before extracting (see
+    ZipFile._extract_member), so a member named "../../evil" lands inside
+    dest under a sanitized name instead of escaping -- checked
+    empirically on Python 3.12.3 (plain extractall() left nothing outside
+    dest), and the same filter is in the CPython 3.11 and 3.13 sources, i.e.
+    across the project's supported range (>=3.11). What this helper adds is
+    strictness: it rejects the
+    whole bundle when any member name tries to leave dest, rather than
+    silently rewriting the name, and it does so before anything is
+    extracted. CodeQL (py/path-injection) still flags the extractall()
+    call below; treat that as an open scanner finding, not proof of an
+    exploitable write. Symlink members are not created by extractall(),
+    so their targets are not a concern here.
     """
     dest = dest.resolve()
     for member in zf.infolist():

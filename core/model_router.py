@@ -13,6 +13,7 @@ import logging
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -301,8 +302,19 @@ class ModelRouter:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.error("[model_router] stream error (%s): %s", model, e)
-            yield f"[Error: {e}]"
+            # SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): this
+            # token is forwarded verbatim to the SSE client by
+            # interface/api.py's _stream_response, so exception text here
+            # (transport errors carry host/URL detail) reached the caller
+            # in-band. Full detail stays in the server log, tagged with an
+            # opaque id the caller can quote. Keeps the "[Error: ...]"
+            # shape so anything reading the stream still sees an error token.
+            error_id = str(uuid.uuid4())
+            log.error(
+                "[model_router] stream error (%s); error_id=%s",
+                model, error_id, exc_info=e,
+            )
+            yield f"[Error: model request failed (ref {error_id})]"
 
     @staticmethod
     async def _collect(gen: AsyncGenerator[str, None]) -> str:
