@@ -246,3 +246,140 @@ Every docstring and comment in `docker_backend.py` that said `UNVERIFIED`, descr
 Test changes, recorded per the testing-discipline rule that existing tests change only when the frozen contract's expected behavior actually changes, with the reason stated: three tests whose entire premise was "capabilities is empty" (`test_capabilities_start_empty`, `test_empty_capabilities_means_admission_gate_rejects_everything`, `test_no_new_sandbox_capability_claimed_yet`) were rewritten, not deleted, to assert the new true state instead — the premise changed, not the standard. Two genuinely new tests were added alongside them for the admission boundary's other two cases (a networked request; a deliberately-incomplete capability set).
 
 44/44 tests in this file now; full `core/sandbox` regression: 103 passed, 0 failed. mypy clean on both files. This is the actual completion point: **the backend's declared security capabilities are backed by adversarial runtime evidence, and the admission layer enforces those claims** — not merely "DockerBackend is implemented." The A9 finding stays exactly as `_lsm_active()` and its regression test already record it — real, unmitigated, permanently represented — regardless of anything above; nothing in this section touches it.
+
+
+## 17. D10 remediated; C2 downgraded to FAIL and `NETWORK_ALLOWLIST` withdrawn after a cross-sandbox egress finding (update, September 29 2026)
+
+Two results, deliberately kept separate: a lifecycle defect class that is now fixed and verified (D10), and a stronger, unrelated isolation failure that is *not* fixed and is recorded here as its own finding.
+
+### 17.1 D10 — remediated
+
+§15/§16 recorded D10 as passing on the strength of container-orphan checks after the D11 race pairs. The checklist's D10 requires one test per failure point (creation, network setup, start, execution, timeout, cancellation, external disappearance, daemon/API failure), each asserting no leftover labeled resource, and names "testing only the happy-path `destroy()`" as the forbidden shortcut. A fresh audit found the earlier evidence too thin for that, and found real defects behind it, reproduced against the unmodified code:
+
+1. **Proxy listener leak.** `create()` called `proxy.start()` before spawning `docker create`; only a *nonzero exit* stopped it. If the spawn itself raised, the listener stayed alive and accepting connections with no handle anywhere that could stop it.
+2. **Workspace leak.** A failed `create()` left behind the workspace directory it had just made (nonzero `docker create`, and network-setup failure).
+3. **Handle dropped before removal was confirmed.** `destroy()` popped the handle first and ignored `docker rm`'s outcome, so an unspawnable or failing `rm` orphaned the container, the proxy and the workspace with no handle left to retry from.
+4. **Container with no handle.** A container genuinely created before a failure or cancellation could not be found again. This one was not shown in the red run (the proxy check fires first there); it is established by mutation M2 below.
+
+**Fix** (`docker_backend.py` only): every resource acquired in `create()` is now either cleaned immediately or retained in a destroyable handle. The container is removed by its backend-private name and *absence is confirmed* by a label query — a `None` (could not look) is never confused with `[]` (nothing there). A workspace is removed only if that call created it; a pre-existing caller-owned one is never touched. `destroy()` retains the handle and raises `DockerBackendError` when removal cannot be confirmed, stops the host-side proxy regardless, and removes the workspace only once the container is confirmed gone.
+
+**Behavior change to note:** `destroy()` can now raise (`DockerBackendError`) where it used to return silently, and a second call retries.
+
+**Evidence.**
+
+- Red, tests against the *unmodified* source: 6 of 16 failed, each for the intended reason (workspace leak ×2, live proxy listener ×3, raw `FileNotFoundError` with the handle already dropped); 10 passed, i.e. timeout, cancellation, external removal (mid-run and before run), execution failure, start failure, run-start failure and artifact-copy cleanup were already correct. A first red run was mostly noise because of a test-helper off-by-one (`_docker_cmd` never matched, so the injector never fired); it was fixed and the red phase redone.
+- Green: all D10 tests pass. Every injecting test asserts the injection actually fired (`.hits`), so none passes vacuously.
+- Mutation checks, each breaking one mechanism in a throwaway copy and restoring it byte-identical: M1 (`_abort_create` skips `proxy.stop()`) caught by 4 tests; M2 (skips by-label removal) caught by the 2 after-container tests; M3 (unconditional workspace removal) caught by the pre-existing-workspace guard; M4 (drops the handle when unconfirmed) and M5 (fake "confirmed gone") each caught by the daemon-unreachable test; M6 (`destroy()` skips `proxy.stop()`) caught by 9 tests.
+- Final state after this section's other changes (§17.3): DockerBackend file 59/59; full `core/sandbox` 118/118 (the previously flaky `test_net_proxy` test happened to pass this run — intermittency is unresolved, not fixed); mypy clean on both files; after the run 0 containers, 0 endpoints on the shared network, 0 artifact temp dirs.
+
+**Honesty note.** The failures are *simulated at the CLI-call boundary* (`asyncio.create_subprocess_exec` patched for specific `docker` invocations). They exercise this backend's own cleanup invariant; they are not evidence about how Docker or its daemon behaves when it actually fails.
+
+**Scope of the D10 closure.** Closed for: containers, proxy listeners, workspace (host bind source), artifact temp directories, and per-sandbox endpoints on the shared network. **Not decided here:** the lifecycle of the shared network *object* itself (persist vs remove). The frozen documents are silent, and §17.2 makes it a question for the network redesign, so no contract is encoded either way; an earlier draft of this remediation encoded "shared network = persistent infrastructure" and was reverted before it entered the baseline.
+
+### 17.2 Finding: one sandbox can use another sandbox's egress proxy (proposed `DEBT-038`)
+
+- **Observed:** with two concurrent sandboxes holding different allowlists, sandbox B obtained a tunnel to a host that only A's allowlist permits, by connecting to A's proxy on the shared gateway.
+- **Expected:** a sandbox's outbound policy is enforced independently of its siblings (invariant in §17.4).
+- **Evidence** (reproduction attached verbatim in §17.7): A allows `example.com`; B allows `example.org`.
+
+| Probe, from inside B | Result |
+|---|---|
+| B's own proxy → `example.com` (not in B's allowlist) | `403 Forbidden` (control: B's policy works) |
+| B's own proxy → `example.org` (in B's allowlist) | `200 Connection Established` (control: upstream egress works, so a 200 is meaningful) |
+| **A's proxy → `example.com` (in A's allowlist only)** | **`200 Connection Established`** |
+
+- **Likely mechanism (hypothesis from reading the code, consistent with the result, not separately verified):** every sandbox's `AllowlistProxy` binds the one shared network's gateway IP; the gateway is reachable from every container on that network; the proxy does not identify which sandbox is calling; `enable_icc=false` constrains container-to-container traffic, not container-to-gateway traffic.
+- **Caveats, stated rather than hidden:** in the reproduction B was *given* A's port through `request.env`. Discovering it by scanning the gateway is expected to be feasible (an ephemeral port on a local bridge) but was **not demonstrated**. Requires two concurrent networked sandboxes. Only `CONNECT` tunnelling was tried. Single-sandbox behavior is unaffected as far as §14 tested it. Whether an `AF_VSOCK` socket (A9) offers an additional way out is untested.
+- **Severity:** not formally assigned (the project's audit method defines none for this finding). It is blocking for the `NETWORK_ALLOWLIST` claim.
+- **Why §14/C2 missed it:** the C2 bullets covered a raw connection bypassing the proxy, the gateway as a route *beyond* the host, a sibling *container* as a relay (ICC), and `request.env` overrides. A sibling's *proxy* was never a tested path.
+
+### 17.3 Dispositions
+
+| Item | Status | Note |
+|---|---|---|
+| D10 | **Closed** (scope in §17.1) | Network-object lifecycle explicitly undecided |
+| C2 | **FAIL** | The observed behavior contradicts the intended per-sandbox isolation property; §14's results stand only for the paths it tested |
+| `NETWORK_ALLOWLIST` | **Withdrawn** | Removed from `_CAPS` (now 8 of 12). `check_admission()` again rejects a request that sets `allowed_hosts`. Re-earn only with a passing concurrent A/B test |
+| `NET_NAMESPACE` | Retained, **not evidence of network isolation** | It was cited on the C2 set, which tests egress paths, not namespace separation. No committed test isolates it. Scratch check only: container netns inode `4026532214` vs host `4026531833` (different). Under addendum B2 it still lacks a gate of its own — flagged for a decision, not silently kept |
+| A1 | Mechanism retained | The import-time paired-claim invariant is unchanged and still tested (it fires when violated); it holds trivially again |
+| Sandbox-security closeout | **Not issued** | No overall closeout may say the network-isolation claims passed |
+
+Direct callers that bypass admission and call `create()` with `allowed_hosts` still reach the network path; `create()` was deliberately not given a backend-local refusal (no second policy surface, addendum B3). Admission, driven by `_CAPS`, is the guard.
+
+**Test changes, recorded per the testing-discipline rule** (existing tests change only where the frozen contract's expected result changes, with the reason stated): the capability-set test drops `NETWORK_ALLOWLIST` and lists it among the deliberately absent; the claimed-count assertion moves 9 → 8; the networked-request admission test's expectation flips from *admitted* to *rejected* (the contract changed: the claim was withdrawn); the A1 comment no longer says both claims are held. One D10 test — the one that encoded the reverted persistence decision — was deleted; that is removing an assertion of a contract we chose not to adopt, not weakening a check of existing behavior. Everything else about D10 coverage is unchanged.
+
+### 17.4 Invariant for the network-redesign workstream
+
+> A sandbox must not be able to reach or use another sandbox's egress proxy, directly or indirectly, and its outbound policy must be enforced independently of sibling sandboxes.
+
+That workstream may legitimately modify `_net_proxy.py` and the network topology. A per-sandbox network/proxy binding is one plausible direction, not a decision; the redesign should be worked from the invariant, not from an assumed implementation. Its regression gate is a **concurrent A/B test with deliberately different allowlists**, of the shape in §17.7, that must show B cannot obtain A's egress.
+
+### 17.5 Separate follow-ups (not conflated with §17.2)
+
+- After a failed `docker start` spawn, `run()` leaves the handle's state at `RUNNING` although nothing started (D6/D8 bookkeeping; the handle remains destroyable).
+- Create-unwind residual: if the daemon is unreachable during the unwind itself, an already-created container cannot be confirmed removed and has no handle; it stays enumerable by the `ocbrain.sandbox=true` label.
+- Test hygiene: a D10 test that fails midway can leave containers behind (a finalizer removing containers created during the test would prevent it).
+- The test module's docstring still says every daemon-gated test is skipped; that has not been true for some time.
+- `test_net_proxy.py` remains intermittently flaky (`test_plain_http_to_allowed_host_is_forwarded`, and earlier a different assertion). Together with the plain-HTTP 403 seen in the C2 work, the plain-HTTP path of `_net_proxy.py` has two separate unexplained behaviors; neither has been diagnosed.
+- `handoff.md` §5 is stale on D10 (now closed with new evidence), C2 (PASS → FAIL) and `NETWORK_ALLOWLIST` (withdrawn).
+
+### 17.6 Proposed `KNOWN_ISSUES.md` entry (not applied — outside this workstream's file boundary)
+
+> **DEBT-038 (proposed; next free id after DEBT-037 on this checkout) — cross-sandbox egress via a sibling's proxy.** DockerBackend's sandboxes share one network whose gateway hosts every sandbox's `AllowlistProxy`; sandbox B was observed tunnelling to a host permitted only by sandbox A's allowlist (reconciliation §17.2). `NETWORK_ALLOWLIST` withdrawn from `DockerBackend._CAPS`; C2 FAIL. Fix needs a network/proxy redesign (may touch `_net_proxy.py`); regression gate is a concurrent A/B test with different allowlists.
+
+### 17.7 Reproduction (verbatim scratch script, not part of the test suite) and its output
+
+```python
+"""Scratch probe (NOT in the repo): can sandbox B (allowlist {example.org}) use
+sandbox A's proxy (allowlist {example.com}) via the shared gateway?"""
+import asyncio, sys, shutil
+sys.path.insert(0, "/home/claude/ocbrain-v4.1")
+from core.sandbox.backends.docker_backend import DockerBackend
+from core.sandbox.contracts import SandboxPolicy, SandboxRequest
+
+B_SCRIPT = r'''
+import os, socket, urllib.parse
+def connect_via(host, port, target):
+    try:
+        s = socket.create_connection((host, port), timeout=8)
+        s.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+        s.settimeout(12)
+        line = s.recv(300).split(b"\r\n")[0]; s.close(); return line.decode()
+    except Exception as e:
+        return "ERR " + repr(e)
+own = urllib.parse.urlparse(os.environ["HTTPS_PROXY"])
+a_port = int(os.environ["A_PORT"])
+print("1 B's OWN proxy -> example.com  (NOT in B's allowlist):", connect_via(own.hostname, own.port, "example.com:443"))
+print("2 B's OWN proxy -> example.org  (in B's allowlist)    :", connect_via(own.hostname, own.port, "example.org:443"))
+print("3 A's proxy     -> example.com  (in A's allowlist only):", connect_via(own.hostname, a_port, "example.com:443"))
+'''
+
+async def main():
+    be = DockerBackend(image_ref="ocbrain-test/base:local")
+    for d in ("/tmp/xsb-A", "/tmp/xsb-B"): shutil.rmtree(d, ignore_errors=True)
+    reqA = SandboxRequest(command=("sleep", "40"), policy=SandboxPolicy(workspace_dir="/tmp/xsb-A", allowed_hosts=("example.com",), timeout_sec=60))
+    hA = await be.create(reqA)
+    runA = asyncio.ensure_future(be.run(hA, reqA))
+    await asyncio.sleep(1.5)
+    a_port = be._handles[hA.handle_id].proxy.port
+    reqB = SandboxRequest(command=("python3", "-c", B_SCRIPT), env={"A_PORT": str(a_port)},
+                          policy=SandboxPolicy(workspace_dir="/tmp/xsb-B", allowed_hosts=("example.org",), timeout_sec=60))
+    hB = await be.create(reqB)
+    resB = await be.run(hB, reqB)
+    print(f"[A's proxy port = {a_port}]")
+    print(resB.stdout.strip() or "(no stdout)")
+    if resB.stderr.strip(): print("stderr:", resB.stderr.strip()[:300])
+    await be.cancel(hA); await runA
+    await be.destroy(hA); await be.destroy(hB)
+
+asyncio.run(main())
+```
+
+Output observed (September 29 2026, Docker 29.1.3, the `docker import`-built test image):
+
+```
+[A's proxy port = 45573]
+1 B's OWN proxy -> example.com  (NOT in B's allowlist): HTTP/1.1 403 Forbidden
+2 B's OWN proxy -> example.org  (in B's allowlist)    : HTTP/1.1 200 Connection Established
+3 A's proxy     -> example.com  (in A's allowlist only): HTTP/1.1 200 Connection Established
+```
