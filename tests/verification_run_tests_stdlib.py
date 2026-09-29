@@ -1469,32 +1469,43 @@ class TestCompiledSpecificationHardening(unittest.TestCase):
         result = compile_spec(**self._scenario())
         self.assertIsInstance(result, CompiledVerificationSpecification)
 
-    def test_step_uses_undeclared_method_rejected(self):
+    def _distinct_id_and_type_scenario(self, selected_methods):
         scenario = self._scenario()
-        step_m2 = InspectionStep(step_id="s1", plan_id="p1", method_reference="m2", description="uses m2")
-        method_m2 = VerificationMethod(method_id="m2", method_type="semantic_check",
-                                       description="x", version="1.0.0",
-                                       produces_evidence_directness=EvidenceDirectness.DIRECT,
-                                       external_access_needed=False, is_deterministic=True,
-                                       cost_latency_class=CostLatencyClass.INSTANT)
-        scenario["inspection_steps"] = [step_m2]
-        scenario["method_registry"] = {"m2": method_m2}
-        result = compile_spec(**scenario)
-        self.assertIsInstance(result, CompilationFailure)
-        self.assertTrue(any("undeclared method use" in r for r in result.reasons))
-
-    def test_strategy_declares_unused_method_rejected(self):
-        scenario = self._scenario()
+        method = VerificationMethod(
+            method_id="method-uuid-1", method_type="deterministic_file_existence",
+            description="checks file existence", version="1.0.0",
+            produces_evidence_directness=EvidenceDirectness.DIRECT,
+            external_access_needed=False, is_deterministic=True,
+            cost_latency_class=CostLatencyClass.INSTANT,
+        )
+        self.assertNotEqual(method.method_id, method.method_type)
+        scenario["inspection_steps"] = [InspectionStep(
+            step_id="s1", plan_id="p1", method_reference="method-uuid-1",
+            description="step desc",
+        )]
+        scenario["method_registry"] = {"method-uuid-1": method}
         scenario["strategy"] = VerificationStrategy(
             selected_shape=VerificationShape.POINTWISE,
-            selected_methods=frozenset({"m1", "m_never_used"}),
-            verifier_count=1, derived_from_requirements=scenario["requirements"].requirements_id)
-        result = compile_spec(**scenario)
-        self.assertIsInstance(result, CompilationFailure)
-        self.assertTrue(any("silent omission" in r for r in result.reasons))
+            selected_methods=frozenset(selected_methods),
+            verifier_count=1,
+            derived_from_requirements=scenario["requirements"].requirements_id,
+        )
+        return scenario
 
-    def test_strategy_and_steps_in_perfect_agreement_accepted(self):
-        result = compile_spec(**self._scenario())
+    def test_compiles_when_selected_methods_holds_method_type_not_id(self):
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"deterministic_file_existence"}))
+        self.assertIsInstance(result, CompiledVerificationSpecification)
+        self.assertEqual(result.method_ids, ("method-uuid-1",))
+
+    def test_compiles_when_selected_methods_holds_method_id(self):
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"method-uuid-1"}))
+        self.assertIsInstance(result, CompiledVerificationSpecification)
+
+    def test_compile_imposes_no_strategy_to_step_method_relation(self):
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"deterministic_file_existence", "never_used_method"}))
         self.assertIsInstance(result, CompiledVerificationSpecification)
 
     def test_compile_creates_different_ids_each_call(self):

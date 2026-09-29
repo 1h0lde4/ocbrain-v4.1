@@ -204,11 +204,11 @@ def compile(
     # supplied, and the graph traversal above (plan → step lookup) would
     # not catch it because it traverses plan.steps, not step.plan_id.
     supplied_plan_ids = frozenset(p.plan_id for p in inspection_plans)
-    for step in inspection_steps:
-        if step.plan_id not in supplied_plan_ids:
+    for declared_step in inspection_steps:
+        if declared_step.plan_id not in supplied_plan_ids:
             reasons.append(
-                f"inspection step {step.step_id!r} declares plan_id="
-                f"{step.plan_id!r}, which is not among the supplied "
+                f"inspection step {declared_step.step_id!r} declares plan_id="
+                f"{declared_step.plan_id!r}, which is not among the supplied "
                 f"inspection plans"
             )
 
@@ -298,7 +298,10 @@ def compile(
                     f"{step_id!r}, which was not supplied to compile()"
                 )
                 continue
-            method = method_registry.get(step.method_reference)
+            # method_registry is keyed by VerificationMethodId (see the
+            # compile() signature); the wrap is a runtime no-op that only
+            # tells the type-checker what the lookup already assumes.
+            method = method_registry.get(VerificationMethodId(step.method_reference))
             if method is None:
                 reasons.append(
                     f"inspection step {step.step_id!r} references method "
@@ -348,43 +351,6 @@ def compile(
             f"plan targeting them -- a criterion with no inspection path "
             f"can never be verified"
         )
-
-    # ---- Fix 3: Strategy ↔ method consistency -------------------------
-    # The strategy declares which methods it selected; the inspection
-    # steps reference methods via method_reference.  These must match:
-    # - Methods in strategy.selected_methods but not used by any step
-    #   = silent omission (strategy promises capability it never uses).
-    # - Methods used by steps but not in strategy.selected_methods
-    #   = undeclared use (steps use methods the strategy didn't select).
-    # Neither is valid.  method_ids_used was populated during the
-    # plan→step→method traversal above.
-    #
-    # Note: strategy.selected_methods contains method_type strings
-    # (matching VerificationMethod.method_type, not method_id), while
-    # method_ids_used contains method_ids.  We need to compare via the
-    # method_reference strings actually used by steps, which are the
-    # method_type identifiers that strategy.selected_methods declares.
-    methods_referenced_by_steps = frozenset(
-        step.method_reference for step in inspection_steps
-    )
-    strategy_declared = frozenset(strategy.selected_methods)
-
-    undeclared_methods = methods_referenced_by_steps - strategy_declared
-    if undeclared_methods:
-        reasons.append(
-            f"inspection steps reference methods "
-            f"{sorted(undeclared_methods)!r} that are not among "
-            f"strategy.selected_methods {sorted(strategy_declared)!r} "
-            f"-- undeclared method use"
-        )
-    unused_strategy_methods = strategy_declared - methods_referenced_by_steps
-    if unused_strategy_methods:
-        reasons.append(
-            f"strategy.selected_methods declares "
-            f"{sorted(unused_strategy_methods)!r} but no inspection step "
-            f"references them -- silent omission"
-        )
-
 
     # Policy constraints -- never relaxed by what requirements/strategy
     # asked for, only tightened (v3 Part 1 Sec3).

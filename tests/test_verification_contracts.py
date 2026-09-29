@@ -1433,8 +1433,10 @@ class TestCompilationFailure:
 
 class TestCompiledSpecificationHardening:
     """Hardening fixes for CompiledVerificationSpecification: duplicate
-    ID detection, step.plan_id validation, strategy↔method consistency,
-    and compile() non-purity acknowledgment."""
+    ID detection, step.plan_id validation, and compile() non-purity
+    acknowledgment.  (A strategy<->method consistency check added in
+    c09f924 was removed: selected_methods and method_reference are not the
+    same vocabulary -- see the method_id != method_type regression tests.)"""
 
     def _scenario(self, **overrides):
         """Reusable valid scenario — same as TestCompileVerificationSpecification."""
@@ -1545,49 +1547,55 @@ class TestCompiledSpecificationHardening:
         result = compile_spec(**self._scenario())
         assert isinstance(result, CompiledVerificationSpecification)
 
-    # ---- Fix 3: Strategy ↔ method consistency -------------------------
+    # ---- Regression: method_id != method_type ---------------------------
+    # c09f924 briefly compared strategy.selected_methods (method names /
+    # types, per policy.py) against InspectionStep.method_reference (a
+    # registry key, i.e. a method identifier).  Those are different
+    # vocabularies; the fixtures used "m1" for both, which hid it.  The
+    # representation is deliberately still open (compile design proposal),
+    # so compile() must NOT enforce any relation between them.
 
-    def test_step_uses_undeclared_method_rejected(self):
-        """A step referencing a method not in strategy.selected_methods
-        is undeclared method use."""
+    def _distinct_id_and_type_scenario(self, selected_methods):
         scenario = self._scenario()
-        # Strategy says "m1", step says "m2" (undeclared)
-        step_m2 = InspectionStep(step_id="s1", plan_id="p1",
-                                 method_reference="m2", description="uses m2")
-        method_m2 = VerificationMethod(
-            method_id="m2", method_type="semantic_check",
-            description="semantic check", version="1.0.0",
+        method = VerificationMethod(
+            method_id="method-uuid-1", method_type="deterministic_file_existence",
+            description="checks file existence", version="1.0.0",
             produces_evidence_directness=EvidenceDirectness.DIRECT,
             external_access_needed=False, is_deterministic=True,
             cost_latency_class=CostLatencyClass.INSTANT,
         )
-        scenario["inspection_steps"] = [step_m2]
-        scenario["method_registry"] = {"m2": method_m2}
-        # strategy still selects {"m1"}, but step references "m2"
-        result = compile_spec(**scenario)
-        assert isinstance(result, CompilationFailure)
-        assert any("undeclared method use" in r for r in result.reasons)
-
-    def test_strategy_declares_unused_method_rejected(self):
-        """A strategy that selects a method no step references is
-        silent omission."""
-        scenario = self._scenario()
-        # Strategy selects {"m1", "m_never_used"}, only m1 is referenced
+        assert method.method_id != method.method_type
+        scenario["inspection_steps"] = [InspectionStep(
+            step_id="s1", plan_id="p1", method_reference="method-uuid-1",
+            description="step desc",
+        )]
+        scenario["method_registry"] = {"method-uuid-1": method}
         scenario["strategy"] = VerificationStrategy(
             selected_shape=VerificationShape.POINTWISE,
-            selected_methods=frozenset({"m1", "m_never_used"}),
+            selected_methods=frozenset(selected_methods),
             verifier_count=1,
             derived_from_requirements=scenario["requirements"].requirements_id,
         )
-        result = compile_spec(**scenario)
-        assert isinstance(result, CompilationFailure)
-        assert any("silent omission" in r and "'m_never_used'" in r
-                    for r in result.reasons)
+        return scenario
 
-    def test_strategy_and_steps_in_perfect_agreement_accepted(self):
-        """When strategy.selected_methods matches exactly what steps
-        reference, no consistency error."""
-        result = compile_spec(**self._scenario())
+    def test_compiles_when_selected_methods_holds_method_type_not_id(self):
+        # policy.py documents selected_methods as method names/types.
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"deterministic_file_existence"}))
+        assert isinstance(result, CompiledVerificationSpecification)
+        assert result.method_ids == ("method-uuid-1",)
+
+    def test_compiles_when_selected_methods_holds_method_id(self):
+        # The representation is open: neither choice is rejected here.
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"method-uuid-1"}))
+        assert isinstance(result, CompiledVerificationSpecification)
+
+    def test_compile_imposes_no_strategy_to_step_method_relation(self):
+        # Unused selected method and unselected used method: still no
+        # strategy<->step consistency rule at this layer.
+        result = compile_spec(**self._distinct_id_and_type_scenario(
+            {"deterministic_file_existence", "never_used_method"}))
         assert isinstance(result, CompiledVerificationSpecification)
 
     # ---- Fix 4: compile() non-purity ---------------------------------
