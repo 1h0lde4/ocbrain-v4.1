@@ -49,10 +49,10 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 15 | `InspectionStep` | ❌ | — | **This phase's primary deliverable** |
 | 16 | `EvidenceSource` | ✅ | `evidence.py` | |
 | 17 | `EvidenceItem` | ✅ | `evidence.py` | Circular-evidence check (`check_not_circular`) tested and confirmed structural, not a judgment call |
-| 18 | `EvidenceReference` | ❌ | — | Phase 4 |
-| 19 | `EvidenceObservation` | ❌ | — | Phase 4 |
-| 20 | `EvidenceTransformation` | ❌ | — | Phase 4 — transformation-safety rule (v2 §14: derived evidence can't inherit stronger directness) has nowhere to live yet |
-| 21 | `EvidenceBundle` | ❌ | — | Phase 4 |
+| 18 | `EvidenceReference` | ◐ | `evidence.py` | Phase 4 WIP, tests exist for what it enforces: exact source (reuses `EvidenceSource`) + non-empty locator + claim/criterion binding, `verify_against(item)` drift check. No payload field. NOT enforced: that a locator is genuinely *exact*. v1 §15 metadata (scope, validity window, relevance, specificity, integrity, correlation_group, independence_level, sensitivity) not carried — open decision |
+| 19 | `EvidenceObservation` | ◐ | `evidence.py` | Phase 4 WIP: binds evidence→`Observation` by id + provenance completeness; carries no authority of its own; `verify_against` rejects an `Interpretation` |
+| 20 | `EvidenceTransformation` | ◐ | `evidence.py` | Phase 4 WIP: lineage + categorical rules only (no ordinal on `EvidenceDirectness`): no upgrade into DIRECT, MODEL_INTERPRETATION permanent (v1 §16), provenance never silently COMPLETE. Authority/integrity/certainty NOT enforced (no fields). DIRECT→DIRECT via non-model transformation deliberately left to higher layers |
+| 21 | `EvidenceBundle` | ◐ | `evidence.py` | Phase 4 WIP: immutable tuple of `EvidenceItem`s (all six statuses preserved, no filtering), applies `check_not_circular` for a bound claim; membership implies no support/verdict |
 | 22 | `VerificationMethod` | ❌ | — | Phase 5. `policy.py`/`dimension.py` already use string placeholders for method names in anticipation (see §4) |
 | 23 | `VerificationCapability` | ❌ | — | Phase 5 |
 | 24 | `VerificationObservation` | ❌ | — | Phase 4. Distinct from the three dimension refinements already built (row 27) |
@@ -80,7 +80,7 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 46 | `InspectionAuthorization` | ✅ | `epistemic.py` | `VerificationAssurance.__post_init__` refuses to construct over an unauthorized surface — enforced, not documented |
 | 47 | `VerificationConstruct` / `ConstructValidity` | ❌ | — | Needed alongside Rubric (row 5) — v2 §9's sharpest addition, don't let Rubric ship without it |
 | 48 | `Reference` / `GroundTruth` / `Oracle` / `ReferenceQuality` | ✅ | `reference.py`, `oracle.py` | `Reference`/`GroundTruth`/`Oracle` already implemented. Batch 1: `ReferenceQuality` (UNASSESSED/LOW/MODERATE/HIGH) added to `Reference` as default-UNASSESSED field. Quality ≠ correctness ≠ authority ≠ GroundTruth |
-| 49 | `MinimumSufficientEvidence` | ❌ | — | |
+| 49 | `MinimumSufficientEvidence` | ◐ | `evidence.py` | Phase 4 WIP: declarative set of evidence ids required to reconstruct a claim/criterion decision + pure `verify_against(bundle)` containment check. Status-blind; not the count floor (`CriterionEvidenceRequirement`). Layout is IMPLEMENTATION JUDGMENT (v2 §44 names the purpose only); privacy/cost dimensions not represented yet |
 | 50 | `BlindVerificationContext` | ❌ | — | `shape.py`'s own docstring already flags this as the order-bias mitigation it deliberately didn't build |
 | 51 | `PolicyPrecedence` | ❌ | — | `policy.py`'s own docstring already flags this as the thing `VerificationPolicy` is "the input to," not yet built |
 | 52 | `VerificationBasis` (composable set) | ✅ | `epistemic.py` | `FrozenSet[BasisComponent]`, rejects empty, tested |
@@ -90,7 +90,7 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 56 | `EvidenceRetention` / `ReceiptRetention` / `SourceRetention` | ✅ | `retention.py` | Three genuinely independent types confirmed (not one parametrized class) |
 | 57 | `ControlType` / `ControlCase` | ✅ | `control.py` | `expected_abstention` structurally forbidden on POSITIVE/NEGATIVE cases — enforced, matches G-0001's own lesson |
 
-**Built: 19 of 57 listed rows fully ✅ (two more ◐ partially/architecturally-satisfied).** Batch 1 (epistemic spine completion) added rows 13, 44, 48. This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
+**Built: 19 of 57 listed rows fully ✅ (seven more ◐: two partially/architecturally-satisfied, plus five Phase 4 evidence contracts — rows 18–21 and 49 — that are work in progress, reconciled but NOT complete).** Batch 1 (epistemic spine completion) added rows 13, 44, 48. This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
 
 ---
 

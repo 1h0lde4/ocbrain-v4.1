@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from dataclasses import FrozenInstanceError, fields as dataclass_fields
 from datetime import datetime, timezone
 
 # Portable repo-root insertion, matching tests/conftest.py's own technique —
@@ -16,6 +17,9 @@ from core.verification.epistemic import (
 from core.verification.evidence import (
     EvidenceSource, EvidenceItem, EvidenceDirectness, EvidenceStatus,
     CircularEvidenceError, check_not_circular,
+    ProvenanceCompleteness, EvidenceReference, EvidenceObservation,
+    TransformationType, EvidenceTransformation, EvidenceBundle,
+    MinimumSufficientEvidence, EvidenceBindingError,
 )
 from core.verification.verdict import (
     VerificationVerdict, VerificationExecutionFailure, VerificationResult,
@@ -2062,6 +2066,433 @@ class TestEpistemicSpineIntegration(unittest.TestCase):
         o = Oracle(oracle_id="o1", description="reference implementation diff",
                    is_executable=True, is_reproducible=True, is_validated=False)
         self.assertFalse(o.is_authoritative)
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 evidence contracts (WORK IN PROGRESS, not complete) -- tests only
+# for behavior the contracts actually implement.  What they deliberately do
+# NOT enforce is listed in core/verification/evidence.py "Enforcement
+# boundary"; nothing below claims otherwise.
+# ---------------------------------------------------------------------------
+
+_EV_NOW = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+
+
+def _ev_source():
+    return EvidenceSource("tool_result", "s1", "runtime")
+
+
+def _ev_item(eid="e1", directness=EvidenceDirectness.DIRECT,
+             status=EvidenceStatus.SUFFICIENT, supports=(), restatement=False,
+             locator="L10-L12", source=None):
+    return EvidenceItem(
+        evidence_id=eid, source=source or _ev_source(), locator=locator,
+        directness=directness, status=status, observed_at=_EV_NOW,
+        retrieved_at=_EV_NOW, content_summary="short summary",
+        supports_claim_ids=supports, is_restatement_of_claim=restatement,
+    )
+
+
+def _ev_observation(oid="o1", authority=ObservationAuthority.RUNTIME):
+    return Observation(
+        observation_id=oid, authority=authority, form=ObservationForm.TEXTUAL,
+        content_summary="captured output", observed_at=_EV_NOW, locator="L1",
+    )
+
+
+def _ev_reference(**over):
+    kwargs = dict(evidence_id="e1", source=_ev_source(), locator="L10-L12",
+                  provenance=ProvenanceCompleteness.COMPLETE, claim_id="c1")
+    kwargs.update(over)
+    return EvidenceReference(**kwargs)
+
+
+def _ev_transformation(**over):
+    kwargs = dict(
+        source_evidence_id="e1", source_directness=EvidenceDirectness.DIRECT,
+        source_provenance=ProvenanceCompleteness.COMPLETE,
+        transformation_type=TransformationType.SUMMARY,
+        transformation_version="1.0.0", transformation_producer="summarizer",
+        result_evidence_id="e2", result_directness=EvidenceDirectness.DERIVED,
+        result_provenance=ProvenanceCompleteness.COMPLETE,
+    )
+    kwargs.update(over)
+    return EvidenceTransformation(**kwargs)
+
+
+class TestEvidenceReference(unittest.TestCase):
+    def test_preserves_exact_source_locator_and_binding(self):
+        ref = _ev_reference(criterion_id="crit1")
+        self.assertEqual(ref.evidence_id, "e1")
+        self.assertEqual(ref.source, _ev_source())
+        self.assertEqual(ref.locator, "L10-L12")
+        self.assertEqual(ref.claim_id, "c1")
+        self.assertEqual(ref.criterion_id, "crit1")
+
+    def test_claim_only_and_criterion_only_bindings_are_valid(self):
+        self.assertIsNone(_ev_reference(claim_id="c1", criterion_id=None).criterion_id)
+        self.assertIsNone(_ev_reference(claim_id=None, criterion_id="crit1").claim_id)
+
+    def test_is_immutable(self):
+        ref = _ev_reference()
+        with self.assertRaises(FrozenInstanceError):
+            ref.locator = "elsewhere"
+
+    def test_blank_locator_rejected(self):
+        for bad in ("", "   "):
+            with self.assertRaises(ValueError):
+                _ev_reference(locator=bad)
+
+    def test_blank_source_identity_rejected(self):
+        for bad_source in (EvidenceSource("", "s1", "runtime"),
+                           EvidenceSource("tool_result", " ", "runtime"),
+                           EvidenceSource("tool_result", "s1", "")):
+            with self.assertRaises(ValueError):
+                _ev_reference(source=bad_source)
+
+    def test_unbound_reference_rejected(self):
+        # Claim -> Evidence chain needs a claim and/or criterion at one end.
+        with self.assertRaises(ValueError):
+            _ev_reference(claim_id=None, criterion_id=None)
+
+    def test_has_no_payload_channel(self):
+        # Content/directness/status stay on EvidenceItem (single source of truth).
+        self.assertEqual({f.name for f in dataclass_fields(EvidenceReference)}, {"evidence_id", "source", "locator", "provenance", "claim_id", "criterion_id"})
+        with self.assertRaises(TypeError):
+            _ev_reference(content_summary="x" * 100000)
+
+    def test_all_four_provenance_states_preserved(self):
+        self.assertEqual(len(list(ProvenanceCompleteness)), 4)
+        for state in ProvenanceCompleteness:
+            self.assertEqual(_ev_reference(provenance=state).provenance, state)
+
+    def test_verify_against_accepts_the_matching_item(self):
+        self.assertIsNone(_ev_reference().verify_against(_ev_item()))
+
+    def test_verify_against_rejects_drifted_id(self):
+        with self.assertRaises(EvidenceBindingError):
+            _ev_reference().verify_against(_ev_item(eid="e2"))
+
+    def test_verify_against_rejects_drifted_source(self):
+        other = EvidenceSource("tool_result", "OTHER", "runtime")
+        with self.assertRaises(EvidenceBindingError):
+            _ev_reference().verify_against(_ev_item(source=other))
+
+    def test_verify_against_rejects_drifted_locator(self):
+        with self.assertRaises(EvidenceBindingError):
+            _ev_reference().verify_against(_ev_item(locator="L99"))
+
+    def test_verify_against_says_nothing_about_support(self):
+        item = _ev_item(status=EvidenceStatus.CONTRADICTORY, supports=())
+        self.assertIsNone(_ev_reference(claim_id="c1").verify_against(item))
+
+
+class TestEvidenceObservation(unittest.TestCase):
+    def _link(self, **over):
+        kwargs = dict(evidence_id="e1", observation_id="o1",
+                      provenance=ProvenanceCompleteness.COMPLETE)
+        kwargs.update(over)
+        return EvidenceObservation(**kwargs)
+
+    def test_binds_evidence_to_observation_by_id(self):
+        link = self._link(provenance=ProvenanceCompleteness.PARTIAL)
+        self.assertEqual(link.evidence_id, "e1")
+        self.assertEqual(link.observation_id, "o1")
+        self.assertEqual(link.provenance, ProvenanceCompleteness.PARTIAL)
+
+    def test_is_immutable(self):
+        link = self._link()
+        with self.assertRaises(FrozenInstanceError):
+            link.observation_id = "o2"
+
+    def test_blank_ids_rejected(self):
+        for bad in ("", "  "):
+            with self.assertRaises(ValueError):
+                self._link(evidence_id=bad)
+            with self.assertRaises(ValueError):
+                self._link(observation_id=bad)
+
+    def test_defines_no_authority_of_its_own(self):
+        self.assertEqual({f.name for f in dataclass_fields(EvidenceObservation)}, {"evidence_id", "observation_id", "provenance"})
+        with self.assertRaises(TypeError):
+            self._link(authority=ObservationAuthority.RUNTIME)
+
+    def test_verify_against_matching_observation_is_authority_independent(self):
+        link = self._link()
+        for authority in ObservationAuthority:
+            self.assertIsNone(link.verify_against(_ev_observation(authority=authority)))
+
+    def test_verify_against_rejects_another_observation(self):
+        with self.assertRaises(EvidenceBindingError):
+            self._link().verify_against(_ev_observation(oid="o2"))
+
+    def test_an_interpretation_is_not_evidence_provenance(self):
+        # Observation -> Interpretation -> Claim is not Observation -> Evidence.
+        reading = Interpretation(observation_id="o1", meaning="file exists",
+                                 interpreted_by="deterministic_rule")
+        with self.assertRaises(TypeError):
+            self._link().verify_against(reading)
+
+    def test_all_four_provenance_states_preserved(self):
+        for state in ProvenanceCompleteness:
+            self.assertEqual(self._link(provenance=state).provenance, state)
+
+
+class TestEvidenceTransformation(unittest.TestCase):
+    def test_lineage_is_fully_reconstructable(self):
+        tx = _ev_transformation(transformation_type=TransformationType.OCR)
+        self.assertEqual(tx.source_evidence_id, "e1")
+        self.assertEqual(tx.transformation_type, TransformationType.OCR)
+        self.assertEqual(tx.transformation_version, "1.0.0")
+        self.assertEqual(tx.transformation_producer, "summarizer")
+        self.assertEqual(tx.result_evidence_id, "e2")
+
+    def test_is_immutable(self):
+        tx = _ev_transformation()
+        with self.assertRaises(FrozenInstanceError):
+            tx.result_directness = EvidenceDirectness.DIRECT
+
+    def test_incomplete_lineage_rejected(self):
+        for bad in ("", "  "):
+            with self.assertRaises(ValueError):
+                _ev_transformation(transformation_version=bad)
+            with self.assertRaises(ValueError):
+                _ev_transformation(transformation_producer=bad)
+
+    def test_source_and_result_must_be_distinct(self):
+        with self.assertRaises(ValueError):
+            _ev_transformation(source_evidence_id="e1", result_evidence_id="e1")
+
+    def test_non_direct_source_can_never_yield_direct(self):
+        for source in (EvidenceDirectness.INDIRECT, EvidenceDirectness.DERIVED,
+                       EvidenceDirectness.MODEL_INTERPRETATION):
+            for ttype in TransformationType:
+                with self.assertRaises(ValueError):
+                    _ev_transformation(source_directness=source, transformation_type=ttype,
+                                       result_directness=EvidenceDirectness.DIRECT)
+
+    def test_model_interpretation_source_is_permanent(self):
+        model = EvidenceDirectness.MODEL_INTERPRETATION
+        for ttype in TransformationType:
+            for result in EvidenceDirectness:
+                if result == model:
+                    tx = _ev_transformation(source_directness=model, transformation_type=ttype,
+                                            result_directness=result)
+                    self.assertEqual(tx.result_directness, model)
+                else:
+                    with self.assertRaises(ValueError):
+                        _ev_transformation(source_directness=model, transformation_type=ttype,
+                                           result_directness=result)
+
+    def test_model_interpretation_transformation_of_direct_source_stays_model(self):
+        model = EvidenceDirectness.MODEL_INTERPRETATION
+        for result in EvidenceDirectness:
+            if result == model:
+                tx = _ev_transformation(transformation_type=TransformationType.MODEL_INTERPRETATION,
+                                        result_directness=result)
+                self.assertEqual(tx.result_directness, model)
+            else:
+                with self.assertRaises(ValueError):
+                    _ev_transformation(transformation_type=TransformationType.MODEL_INTERPRETATION,
+                                       result_directness=result)
+
+    def test_incomplete_provenance_never_silently_becomes_complete(self):
+        for source in (ProvenanceCompleteness.PARTIAL, ProvenanceCompleteness.UNKNOWN,
+                       ProvenanceCompleteness.BROKEN):
+            with self.assertRaises(ValueError):
+                _ev_transformation(source_provenance=source,
+                                   result_provenance=ProvenanceCompleteness.COMPLETE)
+        kept = _ev_transformation(source_provenance=ProvenanceCompleteness.BROKEN,
+                                  result_provenance=ProvenanceCompleteness.BROKEN)
+        self.assertEqual(kept.result_provenance, ProvenanceCompleteness.BROKEN)
+        weakened = _ev_transformation(result_provenance=ProvenanceCompleteness.UNKNOWN)
+        self.assertEqual(weakened.result_provenance, ProvenanceCompleteness.UNKNOWN)
+
+    def test_direct_to_direct_via_non_model_transformation_is_left_to_higher_layers(self):
+        # Documented boundary, not a claim of enforcement: the frozen
+        # architecture gives no categorical per-type table for what a
+        # redaction/normalization "justifies", so this record accepts it.
+        for ttype in TransformationType:
+            if ttype == TransformationType.MODEL_INTERPRETATION:
+                continue
+            tx = _ev_transformation(transformation_type=ttype,
+                                    result_directness=EvidenceDirectness.DIRECT)
+            self.assertEqual(tx.result_directness, EvidenceDirectness.DIRECT)
+
+    def test_verify_against_accepts_items_matching_the_record(self):
+        tx = _ev_transformation()
+        source = _ev_item("e1", directness=EvidenceDirectness.DIRECT)
+        result = _ev_item("e2", directness=EvidenceDirectness.DERIVED)
+        self.assertIsNone(tx.verify_against(source, result))
+
+    def test_verify_against_catches_a_record_that_misstates_source_directness(self):
+        # The record alone looks safe (DIRECT -> DERIVED); the real source
+        # item is a model interpretation being laundered.
+        tx = _ev_transformation(source_directness=EvidenceDirectness.DIRECT,
+                                result_directness=EvidenceDirectness.DERIVED)
+        real_source = _ev_item("e1", directness=EvidenceDirectness.MODEL_INTERPRETATION)
+        result = _ev_item("e2", directness=EvidenceDirectness.DERIVED)
+        with self.assertRaises(EvidenceBindingError):
+            tx.verify_against(real_source, result)
+
+    def test_verify_against_catches_a_record_that_misstates_result_directness(self):
+        tx = _ev_transformation(result_directness=EvidenceDirectness.DERIVED)
+        source = _ev_item("e1", directness=EvidenceDirectness.DIRECT)
+        real_result = _ev_item("e2", directness=EvidenceDirectness.DIRECT)
+        with self.assertRaises(EvidenceBindingError):
+            tx.verify_against(source, real_result)
+
+    def test_verify_against_rejects_wrong_ids(self):
+        tx = _ev_transformation()
+        good_source = _ev_item("e1", directness=EvidenceDirectness.DIRECT)
+        good_result = _ev_item("e2", directness=EvidenceDirectness.DERIVED)
+        with self.assertRaises(EvidenceBindingError):
+            tx.verify_against(_ev_item("eX", directness=EvidenceDirectness.DIRECT), good_result)
+        with self.assertRaises(EvidenceBindingError):
+            tx.verify_against(good_source, _ev_item("eX", directness=EvidenceDirectness.DERIVED))
+
+
+class TestEvidenceBundle(unittest.TestCase):
+    def test_preserves_every_evidence_status_in_order_without_filtering(self):
+        items = tuple(_ev_item("e%d" % n, status=state) for n, state in enumerate(EvidenceStatus))
+        bundle = EvidenceBundle(items=items, claim_id="c1")
+        self.assertEqual(len(bundle.items), 6)
+        self.assertEqual(tuple(i.status for i in bundle.items), tuple(EvidenceStatus))
+        self.assertEqual(bundle.evidence_ids, tuple(i.evidence_id for i in items))
+        for kept, original in zip(bundle.items, items):
+            self.assertIs(kept, original)
+
+    def test_contradictory_only_bundle_is_not_resolved(self):
+        bundle = EvidenceBundle(items=(_ev_item(status=EvidenceStatus.CONTRADICTORY),), claim_id="c1")
+        self.assertEqual(bundle.items[0].status, EvidenceStatus.CONTRADICTORY)
+
+    def test_membership_implies_no_support(self):
+        unrelated = _ev_item("e1", supports=())
+        elsewhere = _ev_item("e2", supports=("c9",))
+        bundle = EvidenceBundle(items=(unrelated, elsewhere), claim_id="c1")
+        self.assertNotIn("c1", bundle.items[0].supports_claim_ids)
+        self.assertNotIn("c1", bundle.items[1].supports_claim_ids)
+
+    def test_is_immutable(self):
+        bundle = EvidenceBundle(items=(_ev_item(),), claim_id="c1")
+        with self.assertRaises(FrozenInstanceError):
+            bundle.claim_id = "c2"
+        with self.assertRaises(AttributeError):
+            bundle.items.append(_ev_item("e2"))
+
+    def test_mutable_container_rejected(self):
+        with self.assertRaises(TypeError):
+            EvidenceBundle(items=[_ev_item()], claim_id="c1")
+
+    def test_empty_bundle_rejected(self):
+        # Missing evidence is not representable as an empty bundle.
+        with self.assertRaises(ValueError):
+            EvidenceBundle(items=(), claim_id="c1")
+
+    def test_duplicate_evidence_ids_rejected(self):
+        with self.assertRaises(ValueError):
+            EvidenceBundle(items=(_ev_item("e1"), _ev_item("e1")), claim_id="c1")
+
+    def test_unbound_bundle_rejected(self):
+        with self.assertRaises(ValueError):
+            EvidenceBundle(items=(_ev_item(),))
+
+    def test_criterion_only_binding_is_valid(self):
+        self.assertEqual(EvidenceBundle(items=(_ev_item(),), criterion_id="crit1").criterion_id, "crit1")
+
+    def test_non_evidence_item_members_rejected(self):
+        with self.assertRaises(TypeError):
+            EvidenceBundle(items=(_ev_reference(),), claim_id="c1")
+
+    def test_restatement_of_bound_claim_cannot_enter_the_bundle(self):
+        circular = _ev_item("e1", supports=("c1",), restatement=True)
+        with self.assertRaises(CircularEvidenceError):
+            EvidenceBundle(items=(circular,), claim_id="c1")
+
+    def test_restatement_of_a_different_claim_is_not_circular_for_this_claim(self):
+        other = _ev_item("e1", supports=("c1",), restatement=True)
+        self.assertEqual(EvidenceBundle(items=(other,), claim_id="c2").claim_id, "c2")
+
+
+class TestMinimumSufficientEvidence(unittest.TestCase):
+    def _bundle(self):
+        return EvidenceBundle(items=(
+            _ev_item("e1", status=EvidenceStatus.SUFFICIENT),
+            _ev_item("e2", status=EvidenceStatus.CONTRADICTORY),
+            _ev_item("e3", status=EvidenceStatus.INSUFFICIENT),
+        ), claim_id="c1", criterion_id="crit1")
+
+    def test_declares_required_evidence_for_a_decision(self):
+        mse = MinimumSufficientEvidence(required_evidence_ids=("e1", "e2"), claim_id="c1")
+        self.assertEqual(mse.required_evidence_ids, ("e1", "e2"))
+        self.assertEqual(mse.claim_id, "c1")
+
+    def test_is_immutable_and_rejects_mutable_container(self):
+        mse = MinimumSufficientEvidence(required_evidence_ids=("e1",), claim_id="c1")
+        with self.assertRaises(FrozenInstanceError):
+            mse.claim_id = "c2"
+        with self.assertRaises(TypeError):
+            MinimumSufficientEvidence(required_evidence_ids=["e1"], claim_id="c1")
+
+    def test_invalid_declarations_rejected(self):
+        with self.assertRaises(ValueError):
+            MinimumSufficientEvidence(required_evidence_ids=(), claim_id="c1")
+        with self.assertRaises(ValueError):
+            MinimumSufficientEvidence(required_evidence_ids=("e1", "e1"), claim_id="c1")
+        with self.assertRaises(ValueError):
+            MinimumSufficientEvidence(required_evidence_ids=("e1", " "), claim_id="c1")
+        with self.assertRaises(ValueError):
+            MinimumSufficientEvidence(required_evidence_ids=("e1",))
+
+    def test_does_not_duplicate_the_criterion_evidence_floor(self):
+        mse_fields = {f.name for f in dataclass_fields(MinimumSufficientEvidence)}
+        self.assertEqual(mse_fields, {"required_evidence_ids", "claim_id", "criterion_id"})
+        self.assertFalse((mse_fields & {f.name for f in dataclass_fields(CriterionEvidenceRequirement)}))
+
+    def test_verify_against_accepts_a_bundle_that_retains_everything_required(self):
+        mse = MinimumSufficientEvidence(required_evidence_ids=("e1", "e2"), claim_id="c1")
+        self.assertIsNone(mse.verify_against(self._bundle()))
+
+    def test_requirement_is_status_blind_and_not_a_sufficiency_judgment(self):
+        # Reconstructing the decision needs the CONTRADICTORY and INSUFFICIENT
+        # items too; "required for audit" is not EvidenceStatus.SUFFICIENT.
+        mse = MinimumSufficientEvidence(required_evidence_ids=("e2", "e3"), claim_id="c1")
+        self.assertIsNone(mse.verify_against(self._bundle()))
+        statuses = tuple(i.status for i in self._bundle().items)
+        self.assertEqual(statuses, (EvidenceStatus.SUFFICIENT, EvidenceStatus.CONTRADICTORY, EvidenceStatus.INSUFFICIENT))
+
+    def test_verify_against_rejects_a_bundle_missing_required_evidence(self):
+        mse = MinimumSufficientEvidence(required_evidence_ids=("e1", "e404"), claim_id="c1")
+        with self.assertRaises(EvidenceBindingError):
+            mse.verify_against(self._bundle())
+
+    def test_verify_against_rejects_a_bundle_for_another_claim_or_criterion(self):
+        with self.assertRaises(EvidenceBindingError):
+            MinimumSufficientEvidence(required_evidence_ids=("e1",), claim_id="c2").verify_against(self._bundle())
+        with self.assertRaises(EvidenceBindingError):
+            MinimumSufficientEvidence(required_evidence_ids=("e1",), criterion_id="crit2").verify_against(self._bundle())
+
+
+class TestEvidenceChainReconstruction(unittest.TestCase):
+    def test_claim_to_observation_chain_is_reconstructable_from_structured_records(self):
+        # Claim C7 -> Evidence E14 -> Source S2 -> Locator L9 -> Observation O4
+        item = _ev_item("e14", locator="L9")
+        reference = _ev_reference(evidence_id="e14", locator="L9", claim_id="c7")
+        link = EvidenceObservation(evidence_id="e14", observation_id="o4",
+                                   provenance=ProvenanceCompleteness.COMPLETE)
+        observation = _ev_observation("o4", ObservationAuthority.RUNTIME)
+        bundle = EvidenceBundle(items=(item,), claim_id="c7")
+
+        self.assertIsNone(reference.verify_against(item))
+        self.assertIsNone(link.verify_against(observation))
+        self.assertEqual(reference.claim_id, "c7")
+        self.assertIn(reference.evidence_id, bundle.evidence_ids)
+        self.assertEqual(reference.source, item.source)
+        self.assertEqual(reference.locator, item.locator)
+        self.assertEqual(link.evidence_id, reference.evidence_id)
+        self.assertEqual(link.observation_id, observation.observation_id)
+        self.assertEqual(observation.authority, ObservationAuthority.RUNTIME)
 
 
 if __name__ == "__main__":

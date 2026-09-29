@@ -5,13 +5,32 @@ restatement of its own claim must be structurally rejected -- this is
 a property of the claim/evidence graph, checked mechanically, not an
 LLM judgment call.
 
-Extended with Phase 4 contracts (v2 §13, §14, §44):
+Extended with Phase 4 contracts (v2 §13, §14, §44) -- WORK IN PROGRESS,
+reconciled but NOT complete (see "Enforcement boundary" below):
   - ProvenanceCompleteness: COMPLETE / PARTIAL / UNKNOWN / BROKEN
-  - EvidenceReference: exact source + locator binding for evidence
-  - EvidenceObservation: binds evidence to an existing Observation
-  - EvidenceTransformation: reconstructable lineage with safety rule
-  - EvidenceBundle: immutable collection preserving all evidence states
-  - MinimumSufficientEvidence: declarative retention requirement
+  - EvidenceReference: exact source + locator + claim/criterion binding
+  - EvidenceObservation: binds evidence to an existing Observation by id
+  - EvidenceTransformation: reconstructable lineage + categorical safety rules
+  - EvidenceBundle: immutable collection that preserves every EvidenceItem
+  - MinimumSufficientEvidence: declarative retention/auditability requirement
+
+Enforcement boundary
+--------------------
+These contracts enforce only what their own fields can observe. They do
+NOT enforce, and no comment in this module should be read as enforcing:
+
+  * authority, integrity or certainty of evidence (no such fields here;
+    authority lives on Observation, integrity/certainty are assessment-layer);
+  * scope, validity window, relevance, specificity, correlation_group,
+    independence_level, sensitivity classification (v1 §15 metadata with no
+    vocabulary in the frozen architecture; NOT carried by these contracts --
+    an open decision, see the implementation report);
+  * observation absence (NOT_OBSERVED / OBSERVED_ABSENT / ...) -- a later
+    coverage-batch contract; nothing here models "no evidence" as evidence;
+  * that a locator is genuinely *exact* -- only that it is non-empty.
+
+EvidenceDirectness is categorical, never ordinal: no comparison below asks
+whether one value is "stronger" than another.
 """
 from __future__ import annotations
 
@@ -21,6 +40,7 @@ from enum import Enum
 from typing import Optional, Tuple
 
 from .identity import ClaimId, CriterionId, EvidenceId, ObservationId
+from .observation import Observation
 
 
 class EvidenceDirectness(str, Enum):
@@ -94,73 +114,132 @@ class ProvenanceCompleteness(str, Enum):
     BROKEN = "broken"
 
 
+class EvidenceBindingError(ValueError):
+    """Raised when a binding record disagrees with the concrete object it
+    claims to describe (mismatched id, source, locator, directness, ...)."""
+
+
+def _require_text(value: str, what: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{what} must be a non-empty string")
+
+
+def _require_binding(
+    claim_id: Optional[ClaimId], criterion_id: Optional[CriterionId], owner: str
+) -> None:
+    if claim_id is None and criterion_id is None:
+        raise ValueError(
+            f"{owner} must be bound to a claim_id and/or a criterion_id -- "
+            f"evidence that is not bound to anything is a citation, not a binding"
+        )
+    if claim_id is not None:
+        _require_text(claim_id, f"{owner}.claim_id")
+    if criterion_id is not None:
+        _require_text(criterion_id, f"{owner}.criterion_id")
+
+
+def _require_unique_tuple(values: object, what: str) -> None:
+    if not isinstance(values, tuple):
+        raise TypeError(
+            f"{what} must be a tuple (immutable); got {type(values).__name__}"
+        )
+    if not values:
+        raise ValueError(f"{what} must not be empty")
+
+
 @dataclass(frozen=True)
 class EvidenceReference:
-    """Exact source + locator binding for a piece of evidence (v2 §13,
-    §14).  Provides the link from evidence back to its source and the
-    exact location within that source.  Vague citation strings or
-    'somewhere in the output' references are invalid.
+    """Binds a claim and/or criterion to one piece of evidence with the
+    exact source and locator (v1 §16: ``Claim -> Evidence -> Source ->
+    Locator``, never ``Claim -> Source``).
 
-    Preserves criterion binding when the evidence is used for a
-    specific criterion.  Does NOT carry raw payloads -- follows the
-    existing EvidenceItem boundary (content_summary, not raw content).
+    It reuses EvidenceSource rather than re-declaring it, and carries NO
+    content/summary field, so it cannot become a channel for raw payloads.
+    The evidence's own metadata (directness, status, timestamps, summary)
+    stays on EvidenceItem, the single source of truth; call
+    ``verify_against(item)`` to prove this record does not drift from it.
 
-    Not independently addressable -- no EvidenceReferenceId.  This is
-    a binding record, not a registry entity."""
+    Enforced: non-empty locator and source identity; a claim and/or
+    criterion binding.  NOT enforced (cannot be, structurally): that the
+    locator is *exact* -- 'somewhere in the output' is a non-empty string.
+    Exactness is the producer's obligation; this record makes the missing
+    binding, not a vague one, the thing that is rejected.
+
+    Not independently addressable -- no EvidenceReferenceId."""
     evidence_id: EvidenceId
     source: EvidenceSource
     locator: str
-    content_summary: str
     provenance: ProvenanceCompleteness
-    criterion_id: Optional[CriterionId] = None
     claim_id: Optional[ClaimId] = None
-    scope: str = ""
-    correlation_group: str = ""
-    independence_level: str = ""
-    sensitivity_classification: str = ""
+    criterion_id: Optional[CriterionId] = None
 
     def __post_init__(self) -> None:
-        if not self.locator or not self.locator.strip():
-            raise ValueError(
-                "EvidenceReference requires a non-empty locator -- exact "
-                "source + locator binding is required; vague citations or "
-                "'somewhere in the output' references are invalid"
+        _require_text(self.evidence_id, "EvidenceReference.evidence_id")
+        _require_text(self.locator, "EvidenceReference.locator")
+        _require_text(self.source.source_type, "EvidenceReference.source.source_type")
+        _require_text(self.source.source_id, "EvidenceReference.source.source_id")
+        _require_text(self.source.producer, "EvidenceReference.source.producer")
+        _require_binding(self.claim_id, self.criterion_id, "EvidenceReference")
+
+    def verify_against(self, item: EvidenceItem) -> None:
+        """Raise EvidenceBindingError unless ``item`` is the evidence this
+        reference points at (same id, source and locator).  Pure: no
+        registry, the caller supplies the item.  Says nothing about
+        whether the item supports or refutes anything."""
+        if item.evidence_id != self.evidence_id:
+            raise EvidenceBindingError(
+                f"reference points at evidence {self.evidence_id!r}, "
+                f"got item {item.evidence_id!r}"
             )
-        if not self.content_summary or not self.content_summary.strip():
-            raise ValueError(
-                "EvidenceReference requires a non-empty content_summary -- "
-                "raw payloads don't belong here, but an empty summary is "
-                "indistinguishable from missing evidence"
+        if item.source != self.source:
+            raise EvidenceBindingError(
+                f"reference source {self.source!r} does not match "
+                f"evidence {item.evidence_id!r} source {item.source!r}"
+            )
+        if item.locator != self.locator:
+            raise EvidenceBindingError(
+                f"reference locator {self.locator!r} does not match "
+                f"evidence {item.evidence_id!r} locator {item.locator!r}"
             )
 
 
 @dataclass(frozen=True)
 class EvidenceObservation:
-    """Binds evidence to an existing Observation (v2 §13).  Preserves
-    the observation's existing authority/provenance -- does NOT create a
-    second ObservationAuthority model or duplicate Observation semantics.
+    """Binds evidence to an existing Observation by id
+    (``Evidence -> ... -> Observation``, v1 §16).
 
-    The observation_id must reference a real Observation; validation of
-    that reference depends on a later execution/registry layer.  This
-    contract records the binding explicitly rather than inventing
-    registry infrastructure.
+    Deliberately carries NO authority, timestamp or directness of its
+    own: the Observation's ObservationAuthority stays the single
+    authority model, and the evidence's directness/timestamps stay on
+    EvidenceItem.  This record only says *which* observation the
+    evidence rests on and how completely that link is traceable.
 
-    Not independently addressable -- no EvidenceObservationId.  This is
-    a binding record."""
+    Only an Observation can be bound.  An Interpretation is a semantic
+    reading of an Observation, not evidence (Observation -> Interpretation
+    -> Claim vs Observation -> Evidence): ``verify_against`` rejects it.
+
+    Not independently addressable -- no EvidenceObservationId."""
     evidence_id: EvidenceId
     observation_id: ObservationId
-    observed_at: datetime
-    retrieved_at: datetime
-    directness: EvidenceDirectness
-    relevance: str
     provenance: ProvenanceCompleteness
 
     def __post_init__(self) -> None:
-        if not self.relevance or not self.relevance.strip():
-            raise ValueError(
-                "EvidenceObservation requires a non-empty relevance -- "
-                "the relationship between the observation and the evidence "
-                "must be stated, not left implicit"
+        _require_text(self.evidence_id, "EvidenceObservation.evidence_id")
+        _require_text(self.observation_id, "EvidenceObservation.observation_id")
+
+    def verify_against(self, observation: Observation) -> None:
+        """Raise unless ``observation`` is the Observation this record
+        binds.  Pure: no registry, the caller supplies the object."""
+        if not isinstance(observation, Observation):
+            raise TypeError(
+                f"only an Observation can be bound as evidence provenance; "
+                f"got {type(observation).__name__} (an Interpretation is "
+                f"not evidence)"
+            )
+        if observation.observation_id != self.observation_id:
+            raise EvidenceBindingError(
+                f"record binds observation {self.observation_id!r}, "
+                f"got {observation.observation_id!r}"
             )
 
 
@@ -168,8 +247,8 @@ class TransformationType(str, Enum):
     """Categories of evidence transformation (IMPLEMENTATION JUDGMENT).
     The architecture names examples (summarized, translated, normalized,
     OCR'd, extracted, parsed, redacted) but does not prescribe a closed
-    vocabulary.  These are the minimal categories needed to represent
-    the architecture's named examples."""
+    vocabulary.  MODEL_INTERPRETATION is added because v1 §16 names model
+    summaries explicitly."""
     SUMMARY = "summary"
     TRANSLATION = "translation"
     NORMALIZATION = "normalization"
@@ -182,139 +261,219 @@ class TransformationType(str, Enum):
 
 @dataclass(frozen=True)
 class EvidenceTransformation:
-    """Reconstructable lineage for derived evidence (v2 §14).
+    """Reconstructable lineage for derived evidence (v2 §14):
+    ``source evidence -> type -> version -> producer -> derived evidence``.
 
-    Every derived evidence object retains its source evidence,
-    transformation type, transformation version, and transformation
-    producer.  The resulting directness must not be stronger than the
-    source directness -- a normalization step doesn't get to make
-    derived evidence look more direct than it is.
+    Enforced, using only categorical rules (no ordering of
+    EvidenceDirectness is assumed anywhere):
 
-    NOT independently addressable -- no TransformationId.  This is a
-    lineage record, not a registry entity.
+      1. Lineage is complete: non-empty version and producer; source and
+         derived evidence are distinct.
+      2. Directness is never upgraded *into* DIRECT (v1 §16, v2 §14): a
+         non-DIRECT source cannot yield a DIRECT result.
+      3. MODEL_INTERPRETATION is permanent (v1 §16: "permanently reads
+         MODEL_INTERPRETATION, never silently upgraded"): a
+         MODEL_INTERPRETATION source, or a MODEL_INTERPRETATION-type
+         transformation, can only yield a MODEL_INTERPRETATION result.
+      4. Provenance is never silently completed: a source whose
+         provenance is not COMPLETE cannot yield a COMPLETE result.
 
-    IMPORTANT: EvidenceDirectness values are CATEGORICAL, not ordinal.
-    There is no generic DIRECT > INDIRECT > DERIVED comparator.  The
-    safety check implemented here is narrow and structural: a
-    transformation whose source is not DIRECT cannot produce DIRECT
-    output.  This is the minimum safety rule the architecture demands
-    without inventing an ordering the type itself doesn't assert."""
+    Deliberately NOT enforced -- left to evidence construction /
+    assessment, because the frozen architecture gives no categorical
+    table for it:
+      * DIRECT -> DIRECT through a non-model transformation is accepted.
+        Whether a given redaction/normalization "justifies" keeping DIRECT
+        (v2 §14) is a judgment this record cannot make from its fields.
+      * Transitions among INDIRECT / DERIVED / MODEL_INTERPRETATION other
+        than rule 3 are not compared (that would require an ordering).
+      * Authority, integrity and certainty: no such fields exist here.
+
+    ``verify_against`` additionally proves the recorded directness and ids
+    match the two concrete EvidenceItems, so the rules above apply to the
+    real evidence and not merely to what the record says about it.
+
+    Not independently addressable -- no TransformationId."""
     source_evidence_id: EvidenceId
     source_directness: EvidenceDirectness
+    source_provenance: ProvenanceCompleteness
     transformation_type: TransformationType
     transformation_version: str
     transformation_producer: str
     result_evidence_id: EvidenceId
     result_directness: EvidenceDirectness
-    provenance: ProvenanceCompleteness
+    result_provenance: ProvenanceCompleteness
 
     def __post_init__(self) -> None:
-        if not self.transformation_version or not self.transformation_version.strip():
-            raise ValueError(
-                "EvidenceTransformation requires a non-empty "
-                "transformation_version -- reconstructable lineage "
-                "requires knowing what version of the transformation "
-                "was applied"
-            )
-        if not self.transformation_producer or not self.transformation_producer.strip():
-            raise ValueError(
-                "EvidenceTransformation requires a non-empty "
-                "transformation_producer -- reconstructable lineage "
-                "requires knowing what produced the transformation"
-            )
+        _require_text(self.source_evidence_id, "EvidenceTransformation.source_evidence_id")
+        _require_text(self.result_evidence_id, "EvidenceTransformation.result_evidence_id")
+        _require_text(
+            self.transformation_version,
+            "EvidenceTransformation.transformation_version",
+        )
+        _require_text(
+            self.transformation_producer,
+            "EvidenceTransformation.transformation_producer",
+        )
         if self.source_evidence_id == self.result_evidence_id:
             raise ValueError(
-                "EvidenceTransformation source and result must be "
-                "distinct evidence objects -- a transformation that "
-                "maps evidence to itself is not a transformation"
+                "EvidenceTransformation source and result must be distinct "
+                "evidence objects -- a transformation that maps evidence to "
+                "itself is not a transformation"
             )
-        # Transformation safety rule (v2 §14): derived evidence must
-        # not inherit stronger directness than the transformation
-        # justifies.  Since EvidenceDirectness is CATEGORICAL (not
-        # ordinal), the only structural safety check we can make without
-        # inventing an ordering is: if the source is not DIRECT, the
-        # result cannot be DIRECT.  This prevents summaries,
-        # translations, normalizations, OCR, extractions, parsing,
-        # redaction, and model interpretations from silently becoming
-        # DIRECT.
         if (self.source_directness != EvidenceDirectness.DIRECT
                 and self.result_directness == EvidenceDirectness.DIRECT):
             raise ValueError(
-                f"transformation safety violation (v2 §14): source "
-                f"evidence has directness={self.source_directness.value!r}, "
-                f"so derived evidence cannot be DIRECT -- a "
-                f"{self.transformation_type.value} does not make "
-                f"evidence more direct than its source"
+                f"transformation safety violation: source evidence has "
+                f"directness={self.source_directness.value!r}, so derived "
+                f"evidence cannot be DIRECT"
+            )
+        model = EvidenceDirectness.MODEL_INTERPRETATION
+        if ((self.source_directness == model
+                or self.transformation_type == TransformationType.MODEL_INTERPRETATION)
+                and self.result_directness != model):
+            raise ValueError(
+                f"transformation safety violation: a model interpretation is "
+                f"permanent -- result directness must stay "
+                f"{model.value!r}, got {self.result_directness.value!r}"
+            )
+        if (self.source_provenance != ProvenanceCompleteness.COMPLETE
+                and self.result_provenance == ProvenanceCompleteness.COMPLETE):
+            raise ValueError(
+                f"transformation safety violation: source provenance is "
+                f"{self.source_provenance.value!r}; derived evidence cannot "
+                f"claim COMPLETE provenance"
+            )
+
+    def verify_against(self, source: EvidenceItem, result: EvidenceItem) -> None:
+        """Raise EvidenceBindingError unless the two items are the ones
+        this record describes (ids and recorded directness match)."""
+        if source.evidence_id != self.source_evidence_id:
+            raise EvidenceBindingError(
+                f"record source is {self.source_evidence_id!r}, "
+                f"got item {source.evidence_id!r}"
+            )
+        if result.evidence_id != self.result_evidence_id:
+            raise EvidenceBindingError(
+                f"record result is {self.result_evidence_id!r}, "
+                f"got item {result.evidence_id!r}"
+            )
+        if source.directness != self.source_directness:
+            raise EvidenceBindingError(
+                f"record says source directness is "
+                f"{self.source_directness.value!r} but the item is "
+                f"{source.directness.value!r}"
+            )
+        if result.directness != self.result_directness:
+            raise EvidenceBindingError(
+                f"record says result directness is "
+                f"{self.result_directness.value!r} but the item is "
+                f"{result.directness.value!r}"
             )
 
 
 @dataclass(frozen=True)
 class EvidenceBundle:
-    """Immutable collection of evidence actually bound to an assessment
-    (v2 §13).  Preserves ALL evidence including contradictory,
-    irrelevant, insufficient, or otherwise non-supporting evidence
-    without silently filtering, resolving, averaging, or overriding.
+    """The evidence actually bound to one assessment (v2 §13), held as the
+    EvidenceItems themselves so each item's own EvidenceStatus
+    (UNAVAILABLE / INVALID / IRRELEVANT / INSUFFICIENT / SUFFICIENT /
+    CONTRADICTORY), directness and source stay attached.  Nothing is
+    filtered, resolved, averaged or overridden here, and order is kept.
 
-    Bundle membership does NOT imply truth, support, refutation,
-    verification, whole-verification sufficiency, or a verdict.
-    Assessment and aggregation remain later-layer responsibilities.
+    Bundle membership implies NOTHING: not truth, support, refutation,
+    verification, whole-verification sufficiency, or a verdict.  An item
+    need not even list the bound claim in ``supports_claim_ids``.
+    Assessment and aggregation are later-layer responsibilities, and this
+    type deliberately offers no method that decides any of them.
 
-    Not independently addressable in this phase -- the bundle is always
-    scoped to a specific assessment context."""
-    bundle_id: str
-    evidence_ids: Tuple[EvidenceId, ...]
-    criterion_id: Optional[CriterionId] = None
+    Structural rules: immutable tuple; at least one item (an empty bundle
+    is indistinguishable from missing evidence, and missing evidence is
+    never proof of absence); unique evidence_ids; a claim and/or criterion
+    binding; and, for a bound claim, the existing ``check_not_circular``
+    guard is applied to every member, so this type cannot be a route
+    around it.
+
+    Not independently addressable in this phase -- no bundle id."""
+    items: Tuple[EvidenceItem, ...]
     claim_id: Optional[ClaimId] = None
-    provenance: ProvenanceCompleteness = ProvenanceCompleteness.UNKNOWN
+    criterion_id: Optional[CriterionId] = None
 
     def __post_init__(self) -> None:
-        if not self.bundle_id or not self.bundle_id.strip():
+        _require_unique_tuple(self.items, "EvidenceBundle.items")
+        _require_binding(self.claim_id, self.criterion_id, "EvidenceBundle")
+        for item in self.items:
+            if not isinstance(item, EvidenceItem):
+                raise TypeError(
+                    f"EvidenceBundle.items must contain EvidenceItem; "
+                    f"got {type(item).__name__}"
+                )
+        ids = [item.evidence_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            dupes = sorted({i for i in ids if ids.count(i) > 1})
             raise ValueError(
-                "EvidenceBundle requires a non-empty bundle_id"
+                f"EvidenceBundle contains duplicate evidence_ids: {dupes!r}"
             )
-        if not self.evidence_ids:
-            raise ValueError(
-                "EvidenceBundle requires at least one evidence_id -- "
-                "an empty bundle is indistinguishable from missing evidence"
-            )
-        # Check for duplicate evidence IDs within the bundle
-        if len(self.evidence_ids) != len(set(self.evidence_ids)):
-            seen: set = set()
-            duplicates: list = []
-            for eid in self.evidence_ids:
-                if eid in seen:
-                    duplicates.append(eid)
-                seen.add(eid)
-            raise ValueError(
-                f"EvidenceBundle contains duplicate evidence_ids: "
-                f"{duplicates!r} -- each piece of evidence should "
-                f"appear at most once in a bundle"
-            )
+        if self.claim_id is not None:
+            for item in self.items:
+                check_not_circular(self.claim_id, item)
+
+    @property
+    def evidence_ids(self) -> Tuple[EvidenceId, ...]:
+        return tuple(item.evidence_id for item in self.items)
 
 
 @dataclass(frozen=True)
 class MinimumSufficientEvidence:
-    """Declarative retention requirement (v2 §44).  Describes the
-    minimum evidence necessary to reconstruct and audit a decision
-    while minimizing unnecessary storage, context size, privacy
-    exposure, and replay cost.
+    """Declarative retention/auditability requirement (v2 §44): the
+    evidence that must remain retrievable so the decision on a claim
+    and/or criterion can be reconstructed and audited -- "retain enough
+    to reconstruct the decision, not everything that was ever touched".
 
-    This is a REQUIREMENT, not a result.  It is distinct from
-    EvidenceStatus.SUFFICIENT and must never be turned into a verdict,
-    a truth claim, a numeric evidence score, an aggregation algorithm,
-    or automatic promotion of an evidence bundle to verified.
+    A REQUIREMENT, not a result.  It is not a count floor (that is
+    rubric.CriterionEvidenceRequirement, which this type does not
+    duplicate), not an EvidenceStatus, not a score, and never promotes a
+    bundle to verified.  It is status-blind on purpose: reconstructing a
+    decision may require CONTRADICTORY or INSUFFICIENT evidence, so being
+    "required for audit" says nothing about being "sufficient".
 
-    Fields are IMPLEMENTATION JUDGMENT -- the architecture (v2 §44)
-    names the concept and its purpose but does not prescribe a field
-    layout."""
-    criterion_id: CriterionId
-    minimum_items: int
-    required_directness: Optional[EvidenceDirectness] = None
-    required_provenance: ProvenanceCompleteness = ProvenanceCompleteness.COMPLETE
-    description: str = ""
+    Field layout is IMPLEMENTATION JUDGMENT: v2 §44 names the concept and
+    its purpose only.  NOT represented yet (needs metadata this batch does
+    not carry): privacy exposure, storage/replay cost.  Pruning lifetime
+    stays with EvidenceRetention (retention.py).
+
+    Not independently addressable -- no MinimumSufficientEvidenceId."""
+    required_evidence_ids: Tuple[EvidenceId, ...]
+    claim_id: Optional[ClaimId] = None
+    criterion_id: Optional[CriterionId] = None
 
     def __post_init__(self) -> None:
-        if self.minimum_items < 0:
+        _require_unique_tuple(
+            self.required_evidence_ids, "MinimumSufficientEvidence.required_evidence_ids"
+        )
+        _require_binding(self.claim_id, self.criterion_id, "MinimumSufficientEvidence")
+        for eid in self.required_evidence_ids:
+            _require_text(eid, "MinimumSufficientEvidence.required_evidence_ids entry")
+        if len(self.required_evidence_ids) != len(set(self.required_evidence_ids)):
             raise ValueError(
-                "minimum_items cannot be negative"
+                "MinimumSufficientEvidence.required_evidence_ids contains duplicates"
+            )
+
+    def verify_against(self, bundle: EvidenceBundle) -> None:
+        """Raise EvidenceBindingError unless ``bundle`` is bound to the
+        same claim/criterion and actually contains every required item.
+        Pure containment check -- no scoring, no sufficiency judgment."""
+        if self.claim_id is not None and bundle.claim_id != self.claim_id:
+            raise EvidenceBindingError(
+                f"requirement is for claim {self.claim_id!r}, bundle is bound "
+                f"to {bundle.claim_id!r}"
+            )
+        if self.criterion_id is not None and bundle.criterion_id != self.criterion_id:
+            raise EvidenceBindingError(
+                f"requirement is for criterion {self.criterion_id!r}, bundle "
+                f"is bound to {bundle.criterion_id!r}"
+            )
+        missing = [e for e in self.required_evidence_ids if e not in bundle.evidence_ids]
+        if missing:
+            raise EvidenceBindingError(
+                f"bundle lacks required evidence {missing!r} -- the decision "
+                f"could not be reconstructed from it"
             )
