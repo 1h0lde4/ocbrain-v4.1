@@ -73,7 +73,8 @@ class Orchestrator:
                  workflow_runtime: Optional["WorkflowRuntime"] = None,
                  capability_registry: Optional["CapabilityRegistry"] = None,
                  use_k42_frontend: bool = False,
-                 max_recovery_attempts: int = 3):
+                 max_recovery_attempts: int = 3,
+                 intent_sufficiency_enabled: bool = False):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
@@ -99,6 +100,15 @@ class Orchestrator:
             meaningful when use_k42_frontend is True; unused on the
             legacy K2.2/classify-dispatch-merge paths, which have no
               autonomous recovery mechanism of their own (unchanged).
+        intent_sufficiency_enabled: ADR-KERNEL-07 (PROPOSED) slice 1 — feature
+            flag, default False. When True (and only on the K4.2 branch),
+            handle() evaluates intent sufficiency after interpret_request()
+            and before plan(), and returns a specific clarifying question
+            instead of planning/executing an under-specified creative
+            request. When False, handle() is byte-for-byte identical to
+            before this parameter existed. Read from config/settings.toml's
+            [runtime] intent_sufficiency_enabled by main.py's composition
+            root, mirroring use_k42_frontend.
 
         When workflow_runtime is provided, handle() delegates through:
             WorkflowRuntime → PlannerWorker → ExecutionRuntime
@@ -116,6 +126,7 @@ class Orchestrator:
         self._capability_registry = capability_registry
         self._use_k42_frontend = use_k42_frontend
         self._max_recovery_attempts = max_recovery_attempts
+        self._intent_sufficiency_enabled = intent_sufficiency_enabled
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
@@ -301,6 +312,39 @@ class Orchestrator:
                         event_stream=self._event_stream,
                         known_categories=known_categories or None)
                     goal = goals[0]
+
+                    # ── ADR-KERNEL-07 (PROPOSED), slice 1: Intent Sufficiency ──
+                    # Evaluated after interpretation and BEFORE plan(): a
+                    # request that fixes only its form (e.g. "write a 1000
+                    # words story") is stopped here, so no capability
+                    # discovery, compilation or generation call is spent on
+                    # it. The decision is governance's (OrchestrationGovernor,
+                    # same path as ClarificationPolicy, distinct metadata
+                    # key); this block only surfaces it. Flag-gated, default
+                    # off: with the flag off none of this executes.
+                    if self._intent_sufficiency_enabled:
+                        from core.cognitive.sufficiency import (
+                            SufficiencyStatus, evaluate_intent_sufficiency,
+                        )
+                        sufficiency = await evaluate_intent_sufficiency(
+                            query, goal_id=goal.resource_id,
+                            event_stream=self._event_stream,
+                            governance=self._governance)
+                        if sufficiency.status != SufficiencyStatus.SUFFICIENT:
+                            await self._emit_event(
+                                "orchestrator.clarification_requested", {
+                                    "interaction_id": interaction_id,
+                                    "goal_id": goal.resource_id,
+                                    "status": sufficiency.status.value,
+                                    "missing": list(
+                                        sufficiency.assessment.missing),
+                                })
+                            if sufficiency.question is not None:
+                                return sufficiency.question
+                            # Denied by a non-clarification governor: never
+                            # present that as a question about the request.
+                            return ("I'm sorry, I wasn't able to process "
+                                    "your request right now.")
 
                     # G4 (K4.2 completion): assemble user cognitive model
                     # and generate advisory PlannerHints. These are bounded
