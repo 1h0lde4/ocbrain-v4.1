@@ -1,51 +1,48 @@
-"""core/cognitive/sufficiency.py — Intent Sufficiency Gate, slice 1.
+"""core/cognitive/content_anchor.py -- creative content-anchor detector (slice 1).
 
 Architecture: ADR-KERNEL-07 (PROPOSED). Study:
 docs/studies/OCBRAIN_INTENT_SUFFICIENCY_STUDY_SEPT2026.md.
 
-Question this module answers -- and the one it does NOT
---------------------------------------------------------
-``ClarificationPolicy`` (planner.py / OrchestrationGovernor) asks "am I
-unsure which *capability* to use?". This module asks a different question:
-"does the request contain enough *content* to produce something the user
-would recognize as what they asked for?". The two are deliberately kept
-apart: this gate uses its own governance metadata key
-(``sufficiency_score``, never ``confidence``) so ClarificationPolicy -- and
-its ADR-K4.2-H-13 general-purpose exemption -- can neither fire on nor
-swallow a sufficiency decision.
+WHAT THIS IS -- AND IS NOT
+--------------------------
+This is a narrow experimental detector for ONE class of under-specification:
+an open-ended creative-composition request that states only its *form*
+("write a 1000 words story") and contains no content at all. It is the first
+vertical slice toward intent sufficiency, NOT intent sufficiency. The study's
+definition of material sufficiency is "would a different plausible resolution
+of the unknown materially change the output?"; this detector does not
+implement that. It cannot tell that "write a 1000-word science-fiction story"
+still leaves premise, tone, audience and setting open -- any single content
+token passes (fail-open by design). It is named for the signal it actually
+measures so this heuristic is not frozen as the canonical definition.
 
-Placement
----------
-Called by ``Orchestrator.handle()`` after ``interpret_request()`` and
-before ``plan()``. It is a *new module* on purpose: DRIFT-05/DRIFT-10 forbid
-governance calls inside ``intent.py``/``planner.py`` and DRIFT-11 freezes the
-three entrypoint signatures. Governance is invoked here exactly as
-``compiler.py`` and ``learning.py`` already do it (GovernanceAction ->
-``GovernanceKernel.evaluate_action()``); no new governor, gate or rule
-registry is introduced.
+`ClarificationPolicy` (planner.py / OrchestrationGovernor) asks a different
+question ("unsure which *capability*?"). The two are kept apart by metadata
+key: this module uses `content_anchor_score`, never `confidence`, so
+ClarificationPolicy -- and ADR-K4.2-H-13's general-purpose exemption -- can
+neither fire on nor swallow this decision.
+
+Placement and ownership
+-----------------------
+Called by `Orchestrator.handle()` after `interpret_request()` and before
+`plan()`. This detector consumes only the raw request text; it does NOT read
+Intent/Goal state (goal_id is a correlation id). Semantic ownership sits here
+(cognitive layer): this module decides what the score means. The governor
+only applies a threshold, the same mechanism role it plays for
+ClarificationPolicy. DRIFT-11 makes Orchestrator the sole authorized caller
+of the cognitive entrypoints; interpret_request() is not modified.
 
 Signal (deterministic, no model call, replayable)
 -------------------------------------------------
-Scope is intentionally narrow: open-ended creative composition only
-(a generative verb plus an artifact noun such as story/poem/essay). For
-those requests the assessment counts *content-bearing tokens* -- tokens left
-after removing the form specification (verb, artifact noun, length
-words/numbers), pronouns, articles and generic filler. Zero content tokens
-means the request fixes only the *form* ("write a 1000 words story"), so
-subject/premise is undetermined. Everything outside that scope is reported
-``in_scope=False`` and treated as sufficient (fail-open): the gate must not
-ask questions it has no evidence are needed.
+Scope: generative verb + artifact noun (story/poem/essay/...). Everything
+else is `in_scope=False` -> anchored (fail-open). In scope, the detector
+counts content-bearing tokens left after removing form specification (verb,
+artifact noun, numbers, length words), pronouns, articles and filler.
 
-Known limits (documented, not hidden): the lexical signal is coarse. Any
-single content token passes (fail-open), so it under-triggers on e.g.
-"write a funny story"; it has only been exercised on constructed cases, not
-a real request corpus. It is a replaceable signal behind a stable governance
-shape (study Gate 3).
-
-State: none. Slice 1 is stateless per request -- no pending-clarification
-store exists (ADR-KERNEL-07 D-3). ``attempt`` is a caller-supplied value so
-the governor-level bound is real and testable even though the current caller
-always passes 0.
+State: none. Slice 1 keeps no attempt state across turns (ADR-KERNEL-07 D-3),
+therefore it implements NO bounded-retry semantics: a resubmitted request is
+a fresh request. This validates detection and short-circuiting only -- not a
+multi-turn clarification lifecycle.
 """
 
 from __future__ import annotations
@@ -65,12 +62,14 @@ from core.governance.governance_kernel import (
 )
 from core.observability.tracer import get_trace_id
 
-_SUFFICIENCY_ID = "IntentSufficiency"
+_DETECTOR_ID = "CreativeContentAnchor"
+DETECTOR_NAME = "creative_content_anchor"
+DETECTOR_VERSION = "0"
 
 # Metadata key the governor rule reads. Deliberately NOT "confidence": the
 # ClarificationPolicy rule is keyed on that name (ADR-K4.2-H-13).
-SUFFICIENCY_SCORE_KEY = "sufficiency_score"
-SUFFICIENCY_ACTION_TYPE = "intent_sufficiency"
+CONTENT_ANCHOR_SCORE_KEY = "content_anchor_score"
+CONTENT_ANCHOR_ACTION_TYPE = "creative_content_anchor_check"
 
 MISSING_SUBJECT = "subject_or_premise"
 
@@ -80,24 +79,18 @@ MISSING_SUBJECT = "subject_or_premise"
 # ─────────────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class SufficiencyPolicy:
-    """Policy data for the sufficiency gate.
-
-    Same two parameters -- and nothing more -- as ClarificationPolicy
-    (planner.py): a threshold and a bound on repetition. ``score`` below
-    ``score_threshold`` escalates while ``attempt < max_escalations``;
-    at the bound the case is stalled (rejected) rather than re-escalated.
-    """
+class ContentAnchorPolicy:
+    """Threshold only. No max_escalations: slice 1 has no attempt carrier, so
+    a bound would be unreachable governance logic (ADR-KERNEL-07 D-3)."""
 
     score_threshold: float = 0.5
-    max_escalations: int = 2
 
 
 @dataclass(frozen=True)
-class SufficiencyAssessment:
-    """Pure result of assess_sufficiency(). No governance, no I/O."""
+class ContentAnchorAssessment:
+    """Pure result of detect_creative_content_anchors(). No governance, no I/O."""
 
-    score: float                      # in [0, 1]; 1.0 when out of scope
+    score: float                      # in [0, 1]; 1.0 when out of scope (fail-open)
     in_scope: bool                    # False -> not a request this gate judges
     delegated: bool                   # user explicitly delegated the choice
     artifact: Optional[str]           # canonical artifact kind, when in scope
@@ -105,17 +98,16 @@ class SufficiencyAssessment:
     content_token_count: int
 
 
-class SufficiencyStatus(str, Enum):
-    SUFFICIENT = "sufficient"
-    CLARIFICATION_REQUIRED = "clarification_required"
-    STALLED = "stalled"                       # bound reached; do not re-ask blindly
+class ContentAnchorStatus(str, Enum):
+    ANCHORED = "anchored"                      # passes (or out of scope)
+    ANCHOR_MISSING = "anchor_missing"          # ask the user
     GOVERNANCE_BLOCKED = "governance_blocked"  # non-clarification denial
 
 
 @dataclass(frozen=True)
-class SufficiencyResult:
-    status: SufficiencyStatus
-    assessment: SufficiencyAssessment
+class ContentAnchorResult:
+    status: ContentAnchorStatus
+    assessment: ContentAnchorAssessment
     governance_result: Optional[GovernanceResult] = None
     question: Optional[str] = None
 
@@ -177,8 +169,8 @@ _NUMERIC = re.compile(r"\d+\w*")
 # Pure assessment
 # ─────────────────────────────────────────────────────────────────────────
 
-def assess_sufficiency(raw_text: str) -> SufficiencyAssessment:
-    """Deterministic, side-effect-free sufficiency assessment.
+def detect_creative_content_anchors(raw_text: str) -> ContentAnchorAssessment:
+    """Deterministic, side-effect-free content-anchor detection.
 
     Fail-open by construction: anything not recognized as an open-ended
     creative-composition request is ``in_scope=False`` with score 1.0.
@@ -194,13 +186,13 @@ def assess_sufficiency(raw_text: str) -> SufficiencyAssessment:
     has_verb = any(tok in _GENERATIVE_VERBS for tok in tokens)
 
     if artifact is None or not has_verb:
-        return SufficiencyAssessment(
+        return ContentAnchorAssessment(
             score=1.0, in_scope=False, delegated=False, artifact=None,
             missing=(), content_token_count=0,
         )
 
     if _DELEGATION.search(text):
-        return SufficiencyAssessment(
+        return ContentAnchorAssessment(
             score=1.0, in_scope=True, delegated=True, artifact=artifact,
             missing=(), content_token_count=0,
         )
@@ -218,13 +210,13 @@ def assess_sufficiency(raw_text: str) -> SufficiencyAssessment:
     # single content token is enough (deliberately fail-open).
     score = min(1.0, count / 2.0)
     missing: Tuple[str, ...] = (MISSING_SUBJECT,) if count == 0 else ()
-    return SufficiencyAssessment(
+    return ContentAnchorAssessment(
         score=score, in_scope=True, delegated=False, artifact=artifact,
         missing=missing, content_token_count=count,
     )
 
 
-def build_clarification_question(assessment: SufficiencyAssessment) -> str:
+def build_clarification_question(assessment: ContentAnchorAssessment) -> str:
     """Deterministic, specific question. Slice 1 is stateless, so it tells
     the user to resend the request with details (ADR-KERNEL-07 D-3)."""
     kind = assessment.artifact or "piece"
@@ -240,66 +232,62 @@ def build_clarification_question(assessment: SufficiencyAssessment) -> str:
 # Governance-evaluated gate
 # ─────────────────────────────────────────────────────────────────────────
 
-async def evaluate_intent_sufficiency(
+async def evaluate_creative_content_anchors(
     raw_text: str,
     *,
     goal_id: str = "",
-    policy: Optional[SufficiencyPolicy] = None,
-    attempt: int = 0,
+    policy: Optional[ContentAnchorPolicy] = None,
     event_stream: Optional[EventStream] = None,
     governance: Optional[GovernanceKernel] = None,
-) -> SufficiencyResult:
-    """Assess the request, route the decision through governance, emit one event.
+) -> ContentAnchorResult:
+    """Detect, apply the policy through governance, emit one event.
 
-    The decision is governance's, not this function's: the assessment supplies
-    ``sufficiency_score`` and the policy parameters as metadata, and
-    OrchestrationGovernor returns APPROVE / ESCALATE / REJECT (PI LAW 1).
+    Ownership: the detector (this module) decides what the score means; the
+    OrchestrationGovernor only applies the threshold and returns
+    APPROVE / ESCALATE. Stateless: no attempt count is read or kept.
     """
     event_stream = event_stream or get_event_stream()
     governance = governance or get_governance_kernel()
-    policy = policy or SufficiencyPolicy()
+    policy = policy or ContentAnchorPolicy()
     trace_id = get_trace_id()
 
-    assessment = assess_sufficiency(raw_text)
+    assessment = detect_creative_content_anchors(raw_text)
 
-    metadata: Dict[str, Any] = {
-        "goal_id": goal_id,
-        SUFFICIENCY_SCORE_KEY: assessment.score,
-        "sufficiency_threshold": policy.score_threshold,
-        "sufficiency_attempt": attempt,
-        "sufficiency_max_escalations": policy.max_escalations,
-        "in_scope": assessment.in_scope,
-        "delegated": assessment.delegated,
-    }
     action = GovernanceAction(
-        action_type=SUFFICIENCY_ACTION_TYPE,
-        worker_id=_SUFFICIENCY_ID,
+        action_type=CONTENT_ANCHOR_ACTION_TYPE,
+        worker_id=_DETECTOR_ID,
         description=(
-            f"Assess intent sufficiency for goal {goal_id or '<unassigned>'}"
+            f"Creative content-anchor check for goal {goal_id or '<unassigned>'}"
         ),
-        metadata=metadata,
+        metadata={
+            "goal_id": goal_id,
+            CONTENT_ANCHOR_SCORE_KEY: assessment.score,
+            "content_anchor_threshold": policy.score_threshold,
+            "in_scope": assessment.in_scope,
+            "delegated": assessment.delegated,
+        },
     )
     gov_result = governance.evaluate_action(action)
 
     if gov_result.verdict == GovernanceVerdict.APPROVE:
-        status = SufficiencyStatus.SUFFICIENT
-    elif gov_result.governor == "OrchestrationGovernor":
-        status = (
-            SufficiencyStatus.STALLED
-            if gov_result.verdict == GovernanceVerdict.REJECT
-            else SufficiencyStatus.CLARIFICATION_REQUIRED
-        )
+        status = ContentAnchorStatus.ANCHORED
+    elif (gov_result.governor == "OrchestrationGovernor"
+          and gov_result.verdict == GovernanceVerdict.ESCALATE):
+        status = ContentAnchorStatus.ANCHOR_MISSING
     else:
-        # Some other governor denied this action. That is not a statement
-        # about the request's sufficiency, so never dress it up as a question.
-        status = SufficiencyStatus.GOVERNANCE_BLOCKED
+        # Another governor (or an unexpected verdict) denied this action. That
+        # is not a statement about the request's content, so never dress it up
+        # as a clarifying question.
+        status = ContentAnchorStatus.GOVERNANCE_BLOCKED
 
     await event_stream.append(
-        event_type="cognitive.intent_sufficiency_evaluated",
-        source=_SUFFICIENCY_ID,
+        event_type="cognitive.content_anchor_evaluated",
+        source=_DETECTOR_ID,
         payload={
             "trace_id": trace_id,
             "goal_id": goal_id,
+            "detector": DETECTOR_NAME,
+            "detector_version": DETECTOR_VERSION,
             "score": assessment.score,
             "in_scope": assessment.in_scope,
             "delegated": assessment.delegated,
@@ -308,19 +296,13 @@ async def evaluate_intent_sufficiency(
             "verdict": gov_result.verdict.value,
             "status": status.value,
             "governor": gov_result.governor,
-            "attempt": attempt,
         },
     )
 
-    question = (
-        build_clarification_question(assessment)
-        if status in (SufficiencyStatus.CLARIFICATION_REQUIRED,
-                      SufficiencyStatus.STALLED)
-        else None
-    )
-    return SufficiencyResult(
+    return ContentAnchorResult(
         status=status,
         assessment=assessment,
         governance_result=gov_result,
-        question=question,
+        question=(build_clarification_question(assessment)
+                  if status == ContentAnchorStatus.ANCHOR_MISSING else None),
     )

@@ -74,7 +74,7 @@ class Orchestrator:
                  capability_registry: Optional["CapabilityRegistry"] = None,
                  use_k42_frontend: bool = False,
                  max_recovery_attempts: int = 3,
-                 intent_sufficiency_enabled: bool = False):
+                 creative_anchor_gate_enabled: bool = False):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
@@ -100,15 +100,15 @@ class Orchestrator:
             meaningful when use_k42_frontend is True; unused on the
             legacy K2.2/classify-dispatch-merge paths, which have no
               autonomous recovery mechanism of their own (unchanged).
-        intent_sufficiency_enabled: ADR-KERNEL-07 (PROPOSED) slice 1 — feature
-            flag, default False. When True (and only on the K4.2 branch),
-            handle() evaluates intent sufficiency after interpret_request()
-            and before plan(), and returns a specific clarifying question
-            instead of planning/executing an under-specified creative
-            request. When False, handle() is byte-for-byte identical to
-            before this parameter existed. Read from config/settings.toml's
-            [runtime] intent_sufficiency_enabled by main.py's composition
-            root, mirroring use_k42_frontend.
+        creative_anchor_gate_enabled: ADR-KERNEL-07 (PROPOSED) slice 1 --
+            feature flag, default False. Enables a NARROW experimental
+            detector, not general intent sufficiency: when True (K4.2 branch
+            only), handle() checks open-ended creative requests for any content
+            anchor after interpret_request() and before plan(), and returns a
+            specific clarifying question for a form-only request. When False,
+            handle() is byte-for-byte identical to before this parameter
+            existed. Read from config/settings.toml [runtime]
+            creative_anchor_gate_enabled by main.py's composition root.
 
         When workflow_runtime is provided, handle() delegates through:
             WorkflowRuntime → PlannerWorker → ExecutionRuntime
@@ -126,7 +126,7 @@ class Orchestrator:
         self._capability_registry = capability_registry
         self._use_k42_frontend = use_k42_frontend
         self._max_recovery_attempts = max_recovery_attempts
-        self._intent_sufficiency_enabled = intent_sufficiency_enabled
+        self._creative_anchor_gate_enabled = creative_anchor_gate_enabled
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
@@ -313,34 +313,38 @@ class Orchestrator:
                         known_categories=known_categories or None)
                     goal = goals[0]
 
-                    # ── ADR-KERNEL-07 (PROPOSED), slice 1: Intent Sufficiency ──
-                    # Evaluated after interpretation and BEFORE plan(): a
-                    # request that fixes only its form (e.g. "write a 1000
-                    # words story") is stopped here, so no capability
-                    # discovery, compilation or generation call is spent on
-                    # it. The decision is governance's (OrchestrationGovernor,
-                    # same path as ClarificationPolicy, distinct metadata
-                    # key); this block only surfaces it. Flag-gated, default
-                    # off: with the flag off none of this executes.
-                    if self._intent_sufficiency_enabled:
-                        from core.cognitive.sufficiency import (
-                            SufficiencyStatus, evaluate_intent_sufficiency,
+                    # ── ADR-KERNEL-07 (PROPOSED), slice 1: creative content-anchor
+                    # gate. NOT a general intent-sufficiency check: it looks only
+                    # at the request text of open-ended creative composition and
+                    # does not consume Intent/Goal state (goal_id is used for
+                    # correlation only). Owned here because Orchestrator is the
+                    # sole authorized caller of the cognitive entrypoints
+                    # (DRIFT-11); interpret_request() is untouched. Runs after the
+                    # already-paid interpretation call and BEFORE plan(), so a
+                    # request that fixes only its form (e.g. "write a 1000 words
+                    # story") spends no capability discovery, compilation or
+                    # generation call. The detector (cognitive layer) owns the
+                    # meaning of the score; the governor applies the threshold.
+                    # Flag-gated, default off: with the flag off none of this runs.
+                    if self._creative_anchor_gate_enabled:
+                        from core.cognitive.content_anchor import (
+                            ContentAnchorStatus,
+                            evaluate_creative_content_anchors,
                         )
-                        sufficiency = await evaluate_intent_sufficiency(
+                        anchor = await evaluate_creative_content_anchors(
                             query, goal_id=goal.resource_id,
                             event_stream=self._event_stream,
                             governance=self._governance)
-                        if sufficiency.status != SufficiencyStatus.SUFFICIENT:
+                        if anchor.status != ContentAnchorStatus.ANCHORED:
                             await self._emit_event(
                                 "orchestrator.clarification_requested", {
                                     "interaction_id": interaction_id,
                                     "goal_id": goal.resource_id,
-                                    "status": sufficiency.status.value,
-                                    "missing": list(
-                                        sufficiency.assessment.missing),
+                                    "status": anchor.status.value,
+                                    "missing": list(anchor.assessment.missing),
                                 })
-                            if sufficiency.question is not None:
-                                return sufficiency.question
+                            if anchor.question is not None:
+                                return anchor.question
                             # Denied by a non-clarification governor: never
                             # present that as a question about the request.
                             return ("I'm sorry, I wasn't able to process "

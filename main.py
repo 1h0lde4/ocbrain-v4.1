@@ -397,9 +397,9 @@ async def main():
     from core.config import config
     use_k42_frontend = config.get("runtime.use_k42_frontend", False)
     max_recovery_attempts = config.get("runtime.max_recovery_attempts", 3)
-    # ADR-KERNEL-07 (PROPOSED): intent sufficiency gate, default off.
-    intent_sufficiency_enabled = config.get(
-        "runtime.intent_sufficiency_enabled", False)
+    # ADR-KERNEL-07 (PROPOSED): creative content-anchor gate (narrow slice), default off.
+    creative_anchor_gate_enabled = config.get(
+        "runtime.creative_anchor_gate_enabled", False)
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
@@ -409,7 +409,7 @@ async def main():
                                  capability_registry=capability_registry,
                                  use_k42_frontend=use_k42_frontend,
                                  max_recovery_attempts=max_recovery_attempts,
-                                 intent_sufficiency_enabled=intent_sufficiency_enabled)
+                                 creative_anchor_gate_enabled=creative_anchor_gate_enabled)
     log.info("Orchestrator ready (WorkflowRuntime: production execution owner, "
              f"K4.2 frontend: {'ON' if use_k42_frontend else 'off'})")
 

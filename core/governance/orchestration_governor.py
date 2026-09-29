@@ -78,16 +78,19 @@ second one" is trying to prevent, not the behavior it endorses. Documented
 here as a deliberate implementation choice, not a silent assumption.
 
 Scope addition (ADR-KERNEL-07, PROPOSED, 2026-09-28): a fourth,
-independent question -- whether the *request* is sufficiently specified
-(`metadata["sufficiency_score"]`, evaluated by
-`_evaluate_sufficiency_policy()`). It is a sibling of the
-ClarificationPolicy question above, not an extension of it: it reads a
-different metadata key, so a sufficiency action never carries `confidence`
-and the general_purpose_only exemption cannot apply to it. Same shape and
-verdict semantics (ESCALATE below threshold while attempt <
-max_escalations, REJECT once the bound is reached); still no rule-
-registration API, no new governor, and no cognitive-layer type imported.
-Absent `sufficiency_score`, this rule is inert.
+independent question -- whether a creative request carries any content
+anchor (`metadata["content_anchor_score"]`, evaluated by
+`_evaluate_content_anchor_policy()`). Slice 1 of a future intent-
+sufficiency capability; named for the narrow signal it applies to, not for
+the general concept. A sibling of the ClarificationPolicy question above,
+not an extension of it: different metadata key, so a content-anchor action
+never carries `confidence` and the general_purpose_only exemption cannot
+apply to it. ESCALATE below threshold only; no attempt bound (no attempt
+state exists in slice 1); still no rule-registration API, no new governor,
+no cognitive-layer type imported. Absent key -> this rule is inert.
+NOTE (ADR-KERNEL-07 D-5, open): DRIFT-10 describes governance as sitting
+"at the compilation boundary only"; this pre-plan evaluation is in tension
+with that statement and awaits an explicit decision.
 
 Default policy: permissive. All worker types are authorized unless
 explicitly denied at construction — matching the permissive-default risk
@@ -136,9 +139,9 @@ class OrchestrationGovernor(Governor):
         self.deny_worker_types: FrozenSet[str] = deny_worker_types or frozenset()
 
     def evaluate(self, action: GovernanceAction) -> GovernanceResult:
-        sufficiency_result = self._evaluate_sufficiency_policy(action)
-        if sufficiency_result is not None:
-            return sufficiency_result
+        anchor_result = self._evaluate_content_anchor_policy(action)
+        if anchor_result is not None:
+            return anchor_result
 
         clarification_result = self._evaluate_clarification_policy(action)
         if clarification_result is not None:
@@ -171,77 +174,52 @@ class OrchestrationGovernor(Governor):
             verdict=GovernanceVerdict.APPROVE, governor=self.name,
         )
 
-    def _evaluate_sufficiency_policy(
+    def _evaluate_content_anchor_policy(
         self, action: GovernanceAction,
     ) -> Optional[GovernanceResult]:
-        """Evaluates the Intent Sufficiency policy (ADR-KERNEL-07, PROPOSED).
+        """Evaluates the creative content-anchor policy (ADR-KERNEL-07, PROPOSED).
 
-        A sibling of ClarificationPolicy, not a modification of it: it asks
-        whether the *request* is sufficiently specified, where
-        ClarificationPolicy asks whether the *capability match* is
-        confident. The two are kept apart by metadata key -- this rule
-        reads only `sufficiency_score`; the ClarificationPolicy rule reads
-        only `confidence` -- so neither, nor ADR-K4.2-H-13's
-        general_purpose_only exemption, can fire on or swallow the other's
-        decision.
+        Slice 1 of a *future* intent-sufficiency capability -- deliberately
+        NOT named "sufficiency": the signal behind it is a narrow lexical
+        detector, and this rule must not freeze that heuristic as the
+        canonical definition of sufficiency. Semantic ownership: the
+        cognitive layer's detector produces the score and decides what it
+        means; this method only applies a threshold to it, the same
+        mechanism role this governor already plays for ClarificationPolicy.
 
-        Returns None (defer to the remaining checks) when
-        `metadata["sufficiency_score"]` is absent, or when the score meets
-        the threshold -- permissive-on-absence, like every other check this
-        governor performs.
+        A sibling of ClarificationPolicy, not an extension of it: it reads
+        `content_anchor_score`, ClarificationPolicy reads `confidence`, so
+        neither -- nor ADR-K4.2-H-13's general_purpose_only exemption -- can
+        fire on or swallow the other's decision.
 
-        Expected metadata keys (plain values; no cognitive-layer type is
-        imported here, preserving the Governance <- Cognitive layering
-        described in this module's docstring):
-            sufficiency_score (float): 0..1 determinacy of the request.
-            sufficiency_threshold (float, default 0.5).
-            sufficiency_attempt (int, default 0): escalations already made
-                for this same underspecification.
-            sufficiency_max_escalations (int, default 2): bound on
-                repeated escalation; at the bound the case is rejected as
-                stalled rather than escalated again (same bounded-retry
-                discipline as ClarificationPolicy, K4.2 §14).
+        Returns None (defer to the remaining checks) when the score key is
+        absent or meets the threshold -- permissive-on-absence.
+
+        Deliberately has NO attempt/max_escalations bound (unlike
+        ClarificationPolicy): slice 1 keeps no attempt state across turns
+        (ADR-KERNEL-07 D-3), so a bound could never be reached in real use
+        and would be unreachable governance logic. It belongs with a real
+        attempt carrier, when one exists.
+
+        Metadata keys (plain values; no cognitive-layer type imported):
+            content_anchor_score (float): 0..1, from the detector.
+            content_anchor_threshold (float, default 0.5).
         """
-        score = action.metadata.get("sufficiency_score")
+        score = action.metadata.get("content_anchor_score")
         if score is None:
             return None
 
         threshold = action.metadata.get(
-            "sufficiency_threshold", _DEFAULT_CONFIDENCE_THRESHOLD,
+            "content_anchor_threshold", _DEFAULT_CONFIDENCE_THRESHOLD,
         )
         if score >= threshold:
             return None
 
-        attempt = action.metadata.get("sufficiency_attempt", 0)
-        max_escalations = action.metadata.get(
-            "sufficiency_max_escalations", _DEFAULT_MAX_ESCALATIONS,
-        )
-
-        if attempt >= max_escalations:
-            logger.warning(
-                "[OrchestrationGovernor] Sufficiency bound exceeded "
-                "(score=%.2f, threshold=%.2f, attempt=%d, "
-                "max_escalations=%d, worker_id=%s) — stalled, do not "
-                "escalate again.",
-                score, threshold, attempt, max_escalations, action.worker_id,
-            )
-            return GovernanceResult(
-                verdict=GovernanceVerdict.REJECT,
-                reason=(
-                    f"Sufficiency score {score:.2f} below threshold "
-                    f"{threshold:.2f} after {attempt} clarification "
-                    f"attempt(s), exceeding max_escalations="
-                    f"{max_escalations} — stalled case, not escalated again."
-                ),
-                governor=self.name,
-            )
-
         return GovernanceResult(
             verdict=GovernanceVerdict.ESCALATE,
             reason=(
-                f"Sufficiency score {score:.2f} below threshold "
-                f"{threshold:.2f} (clarification attempt {attempt + 1} "
-                f"of {max_escalations})."
+                f"Content-anchor score {score:.2f} below threshold "
+                f"{threshold:.2f}."
             ),
             governor=self.name,
         )

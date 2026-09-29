@@ -1,38 +1,31 @@
-"""tests/core/cognitive/test_intent_sufficiency.py — ADR-KERNEL-07 (PROPOSED),
-slice 1: the Intent Sufficiency gate.
+"""tests/core/cognitive/test_creative_content_anchor.py -- ADR-KERNEL-07 (PROPOSED),
+slice 1: the creative content-anchor detector and gate.
 
-Maps the study's acceptance tests (docs/studies/OCBRAIN_INTENT_SUFFICIENCY_
-STUDY_SEPT2026.md §S) onto what slice 1 actually implements:
+This is a NARROW experimental detector, not general intent sufficiency. What
+these tests prove: detection of form-only creative requests, short-circuiting
+before plan()/compile()/execute, key isolation from ClarificationPolicy /
+ADR-K4.2-H-13, event content, and flag-off inertness. What they do NOT prove:
+material sufficiency (see TestKnownLimits, which pins the detector's blind
+spots as executable facts), a multi-turn lifecycle (no attempt state exists;
+ADR-KERNEL-07 D-3), or Test D (D-4, recorded as a strict xfail).
 
-  Test A  under-specified request      -> TestAssessment / TestEvaluator / TestOrchestrator
-  Test B  sufficiently specified       -> same
-  Test C  delegated choice             -> same
-  Test G  bounded, does not loop       -> TestGovernorRule / TestEvaluator
-  Test D  already-known-from-context   -> NOT IMPLEMENTED (ADR-KERNEL-07 D-4);
-                                          recorded below as an explicit xfail, not skipped
-                                          silently.
-
-Also verifies the isolation property the ADR depends on: the sufficiency rule
-and ClarificationPolicy (incl. ADR-K4.2-H-13's general_purpose_only
-exemption) cannot fire on, or swallow, each other.
-
-Real OrchestrationGovernor / real GovernanceKernel throughout -- governance is
-never mocked to APPROVE in the governance-facing tests.
+Real OrchestrationGovernor / GovernanceKernel throughout the governance-facing
+tests -- governance is never mocked to APPROVE there.
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core.cognitive.intent import Goal
-from core.cognitive.sufficiency import (
+from core.cognitive.content_anchor import (
     MISSING_SUBJECT,
-    SUFFICIENCY_ACTION_TYPE,
-    SUFFICIENCY_SCORE_KEY,
-    SufficiencyPolicy,
-    SufficiencyStatus,
-    assess_sufficiency,
+    CONTENT_ANCHOR_ACTION_TYPE,
+    CONTENT_ANCHOR_SCORE_KEY,
+    ContentAnchorPolicy,
+    ContentAnchorStatus,
+    detect_creative_content_anchors,
     build_clarification_question,
-    evaluate_intent_sufficiency,
+    evaluate_creative_content_anchors,
 )
 from core.context import ContextMemory
 from core.governance.governance_kernel import (
@@ -73,7 +66,7 @@ class TestAssessment:
         "write a really good story",
     ])
     def test_a_form_only_requests_are_underspecified(self, text):
-        a = assess_sufficiency(text)
+        a = detect_creative_content_anchors(text)
         assert a.in_scope and not a.delegated
         assert a.content_token_count == 0
         assert a.score == 0.0
@@ -87,10 +80,10 @@ class TestAssessment:
         "write a bedtime story for my daughter Maya about a dragon",
     ])
     def test_b_well_specified_requests_are_sufficient(self, text):
-        a = assess_sufficiency(text)
+        a = detect_creative_content_anchors(text)
         assert a.in_scope
         # The property that matters: not below the policy threshold.
-        assert a.score >= SufficiencyPolicy().score_threshold
+        assert a.score >= ContentAnchorPolicy().score_threshold
         assert a.missing == ()
 
     @pytest.mark.parametrize("text", [
@@ -101,8 +94,8 @@ class TestAssessment:
         "write a poem, use your judgment",
     ])
     def test_c_delegated_choice_is_sufficient_and_distinct_from_silence(self, text):
-        delegated = assess_sufficiency(text)
-        silent = assess_sufficiency("write a story")
+        delegated = detect_creative_content_anchors(text)
+        silent = detect_creative_content_anchors("write a story")
         assert delegated.delegated and delegated.score == 1.0
         assert delegated.missing == ()
         assert not silent.delegated and silent.score == 0.0
@@ -118,16 +111,16 @@ class TestAssessment:
         "",
     ])
     def test_out_of_scope_is_fail_open(self, text):
-        a = assess_sufficiency(text)
+        a = detect_creative_content_anchors(text)
         assert not a.in_scope
         assert a.score == 1.0
         assert a.missing == ()
 
     def test_none_input_is_safe(self):
-        assert assess_sufficiency(None).in_scope is False  # type: ignore[arg-type]
+        assert detect_creative_content_anchors(None).in_scope is False  # type: ignore[arg-type]
 
     def test_single_content_token_sits_exactly_at_default_threshold(self):
-        a = assess_sufficiency("write a funny story")
+        a = detect_creative_content_anchors("write a funny story")
         assert a.content_token_count == 1
         assert a.score == 0.5  # == default threshold -> passes (documented fail-open)
 
@@ -135,25 +128,55 @@ class TestAssessment:
         # Numbers, "words", "short/long" must never count as content.
         for text in ("write a 5000 word story", "write a long story",
                      "write a story of at least 300 words"):
-            assert assess_sufficiency(text).content_token_count == 0, text
+            assert detect_creative_content_anchors(text).content_token_count == 0, text
 
     def test_assessment_is_deterministic(self):
         t = "write a 1000 words story"
-        assert assess_sufficiency(t) == assess_sufficiency(t)
+        assert detect_creative_content_anchors(t) == detect_creative_content_anchors(t)
 
     def test_question_is_specific_and_offers_a_way_out(self):
-        q = build_clarification_question(assess_sufficiency("write a story"))
+        q = build_clarification_question(detect_creative_content_anchors("write a story"))
         assert "story" in q and "surprise me" in q and "about" in q
         assert build_clarification_question(
-            assess_sufficiency("write a poem")).count("poem") >= 1
+            detect_creative_content_anchors("write a poem")).count("poem") >= 1
+
+
+# ── Known limits (executable; the detector's blind spots, pinned) ────────
+
+class TestKnownLimits:
+    """These pass BECAUSE the detector is weak. They document what it does not
+    detect so nobody mistakes it for general intent sufficiency. If a stronger
+    signal replaces it, these are expected to change -- deliberately."""
+
+    @pytest.mark.parametrize("text", [
+        "Write a 1000-word science-fiction story.",   # premise/tone/audience open
+        "write a story about a dragon",               # still hugely open
+        "write a funny story",                        # one token: at threshold
+    ])
+    def test_materially_underspecified_requests_still_pass(self, text):
+        a = detect_creative_content_anchors(text)
+        assert a.in_scope and a.score >= ContentAnchorPolicy().score_threshold
+        assert a.missing == ()
+
+    def test_detector_reads_request_text_only(self):
+        # No Intent/Goal/hypothesis input exists on the detector's surface.
+        import inspect
+        params = list(inspect.signature(detect_creative_content_anchors).parameters)
+        assert params == ["raw_text"]
+
+    def test_scope_is_creative_composition_only(self):
+        # Under-specified but outside the lexicon -> fail-open, by design.
+        for text in ("write a report", "make me a logo", "plan my trip",
+                     "write me a letter", "create a presentation"):
+            assert not detect_creative_content_anchors(text).in_scope, text
 
 
 # ── Governor rule ───────────────────────────────────────────────────────
 
 def _suff_action(score, **extra):
-    md = {SUFFICIENCY_SCORE_KEY: score}
+    md = {CONTENT_ANCHOR_SCORE_KEY: score}
     md.update(extra)
-    return GovernanceAction(action_type=SUFFICIENCY_ACTION_TYPE,
+    return GovernanceAction(action_type=CONTENT_ANCHOR_ACTION_TYPE,
                             worker_id="t", metadata=md)
 
 
@@ -172,21 +195,17 @@ class TestGovernorRule:
             GovernanceAction(action_type="anything", worker_id="t"))
         assert r.verdict == GovernanceVerdict.APPROVE
 
-    def test_g_bounded_escalation_then_stalled(self):
-        gov = OrchestrationGovernor()
-        verdicts = [
-            gov.evaluate(_suff_action(
-                0.0, sufficiency_attempt=n, sufficiency_max_escalations=2)).verdict
-            for n in (0, 1, 2, 3)
-        ]
-        assert verdicts == [
-            GovernanceVerdict.ESCALATE, GovernanceVerdict.ESCALATE,
-            GovernanceVerdict.REJECT, GovernanceVerdict.REJECT,
-        ]
+    def test_no_attempt_bound_exists_in_slice_1(self):
+        # Deliberate: attempt keys are ignored. A bound needs a real attempt
+        # carrier (D-3); until then it would be unreachable governance logic.
+        r = OrchestrationGovernor().evaluate(_suff_action(
+            0.0, sufficiency_attempt=99, sufficiency_max_escalations=1,
+            content_anchor_attempt=99, content_anchor_max_escalations=1))
+        assert r.verdict == GovernanceVerdict.ESCALATE
 
     def test_custom_threshold_is_honored(self):
         r = OrchestrationGovernor().evaluate(
-            _suff_action(0.7, sufficiency_threshold=0.9))
+            _suff_action(0.7, content_anchor_threshold=0.9))
         assert r.verdict == GovernanceVerdict.ESCALATE
 
     # Isolation from ClarificationPolicy / ADR-K4.2-H-13 ------------------
@@ -215,8 +234,8 @@ class TestGovernorRule:
         assert gov.evaluate(low_conf).verdict == GovernanceVerdict.ESCALATE
         assert gov.evaluate(exempt).verdict == GovernanceVerdict.APPROVE
         # and the sufficiency rule stays inert for both
-        assert gov._evaluate_sufficiency_policy(low_conf) is None
-        assert gov._evaluate_sufficiency_policy(exempt) is None
+        assert gov._evaluate_content_anchor_policy(low_conf) is None
+        assert gov._evaluate_content_anchor_policy(exempt) is None
 
 
 # ── Governed evaluator (real GovernanceKernel) ──────────────────────────
@@ -234,85 +253,89 @@ class TestEvaluator:
     @pytest.mark.asyncio
     async def test_a_underspecified_escalates_with_question_and_event(self):
         events = MockEventStream()
-        res = await evaluate_intent_sufficiency(
+        res = await evaluate_creative_content_anchors(
             "write a 1000 words story", goal_id="g-1",
             event_stream=events, governance=GovernanceKernel())
-        assert res.status == SufficiencyStatus.CLARIFICATION_REQUIRED
+        assert res.status == ContentAnchorStatus.ANCHOR_MISSING
         assert res.question and "story" in res.question
         assert res.governance_result.verdict == GovernanceVerdict.ESCALATE
 
         assert [e["event_type"] for e in events.events] == [
-            "cognitive.intent_sufficiency_evaluated"]
+            "cognitive.content_anchor_evaluated"]
         p = events.events[0]["payload"]
         assert p["goal_id"] == "g-1" and p["verdict"] == "escalate"
-        assert p["status"] == "clarification_required"
-        assert p["missing"] == [MISSING_SUBJECT] and p["attempt"] == 0
+        assert p["status"] == "anchor_missing"
+        assert p["missing"] == [MISSING_SUBJECT]
+        assert p["detector"] == "creative_content_anchor"
+        assert p["detector_version"] == "0"
+        assert "attempt" not in p
 
     @pytest.mark.asyncio
     async def test_event_payload_never_carries_raw_request_text(self):
         events = MockEventStream()
         secret = "write a story SENTINEL-RAW-TEXT-4711"
-        await evaluate_intent_sufficiency(
+        await evaluate_creative_content_anchors(
             secret, event_stream=events, governance=GovernanceKernel())
         assert "SENTINEL-RAW-TEXT-4711" not in repr(events.events)
 
     @pytest.mark.asyncio
     async def test_b_well_specified_is_sufficient_no_question(self):
-        res = await evaluate_intent_sufficiency(
+        res = await evaluate_creative_content_anchors(
             "write a 1000-word noir detective short story, first person, "
             "ending on a twist",
             event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == SufficiencyStatus.SUFFICIENT
+        assert res.status == ContentAnchorStatus.ANCHORED
         assert res.question is None
 
     @pytest.mark.asyncio
     async def test_c_delegation_is_sufficient(self):
-        res = await evaluate_intent_sufficiency(
+        res = await evaluate_creative_content_anchors(
             "write a story, surprise me",
             event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == SufficiencyStatus.SUFFICIENT
+        assert res.status == ContentAnchorStatus.ANCHORED
 
     @pytest.mark.asyncio
     async def test_out_of_scope_request_is_sufficient(self):
-        res = await evaluate_intent_sufficiency(
+        res = await evaluate_creative_content_anchors(
             "book a flight to Tokyo next week",
             event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == SufficiencyStatus.SUFFICIENT
+        assert res.status == ContentAnchorStatus.ANCHORED
         assert res.assessment.in_scope is False
 
     @pytest.mark.asyncio
-    async def test_g_stalled_at_the_bound(self):
-        policy = SufficiencyPolicy(max_escalations=2)
-        statuses = []
-        for attempt in (0, 1, 2):
-            r = await evaluate_intent_sufficiency(
-                "write a story", policy=policy, attempt=attempt,
-                event_stream=MockEventStream(), governance=GovernanceKernel())
-            statuses.append(r.status)
-        assert statuses == [SufficiencyStatus.CLARIFICATION_REQUIRED,
-                            SufficiencyStatus.CLARIFICATION_REQUIRED,
-                            SufficiencyStatus.STALLED]
+    async def test_evaluation_is_stateless_and_repeatable(self):
+        # Slice 1 keeps no attempt state: the same request yields the same
+        # outcome every time (no hidden counter, no drift toward "stalled").
+        outs = []
+        for _ in range(4):
+            r = await evaluate_creative_content_anchors(
+                "write a story", event_stream=MockEventStream(),
+                governance=GovernanceKernel())
+            outs.append((r.status, r.governance_result.verdict))
+        assert len(set(outs)) == 1
+        assert outs[0][0] == ContentAnchorStatus.ANCHOR_MISSING
 
     @pytest.mark.asyncio
     async def test_unrelated_governor_denial_is_not_reported_as_a_question(self):
         kernel = GovernanceKernel()
         kernel._governors.insert(0, _DenyingGovernor())
-        res = await evaluate_intent_sufficiency(
+        res = await evaluate_creative_content_anchors(
             "write a story about a dragon",
             event_stream=MockEventStream(), governance=kernel)
-        assert res.status == SufficiencyStatus.GOVERNANCE_BLOCKED
+        assert res.status == ContentAnchorStatus.GOVERNANCE_BLOCKED
         assert res.question is None
 
     @pytest.mark.asyncio
     async def test_evaluation_goes_through_governance(self):
         kernel = MagicMock()
         kernel.evaluate_action = MagicMock(return_value=GovernanceResult())
-        await evaluate_intent_sufficiency(
+        await evaluate_creative_content_anchors(
             "write a story", event_stream=MockEventStream(), governance=kernel)
         assert kernel.evaluate_action.call_count == 1
         action = kernel.evaluate_action.call_args.args[0]
-        assert action.action_type == SUFFICIENCY_ACTION_TYPE
+        assert action.action_type == CONTENT_ANCHOR_ACTION_TYPE
         assert "confidence" not in action.metadata  # key isolation at the source
+        assert action.action_type == "creative_content_anchor_check"
 
 
 # ── Orchestrator integration ────────────────────────────────────────────
@@ -332,7 +355,7 @@ def _orch(enabled, governance=None):
         event_stream=AsyncMock(),
         execution_runtime=AsyncMock(), workflow_runtime=MagicMock(),
         capability_registry=MagicMock(),
-        use_k42_frontend=True, intent_sufficiency_enabled=enabled,
+        use_k42_frontend=True, creative_anchor_gate_enabled=enabled,
     )
 
 
@@ -355,7 +378,7 @@ class TestOrchestrator:
 
         emitted = [c.kwargs.get("event_type") or c.args[0]
                    for c in orch._event_stream.append.call_args_list]
-        assert "cognitive.intent_sufficiency_evaluated" in emitted
+        assert "cognitive.content_anchor_evaluated" in emitted
         assert "orchestrator.clarification_requested" in emitted
 
     @pytest.mark.asyncio
@@ -375,7 +398,7 @@ class TestOrchestrator:
         # Flag off: pipeline proceeds to plan() exactly as before this ADR.
         assert plan_mock.call_count >= 1
         seen = {c.args[0].action_type for c in gov.evaluate_action.call_args_list}
-        assert SUFFICIENCY_ACTION_TYPE not in seen
+        assert CONTENT_ANCHOR_ACTION_TYPE not in seen
 
     @pytest.mark.asyncio
     async def test_b_flag_on_sufficient_request_proceeds_to_planning(self):
@@ -410,7 +433,7 @@ class TestOrchestrator:
             modules={}, context=MagicMock(spec=ContextMemory),
             router=MagicMock(), memory=AsyncMock(spec=UnifiedMemory),
             governance=GovernanceKernel(), event_stream=AsyncMock())
-        assert orch._intent_sufficiency_enabled is False
+        assert orch._creative_anchor_gate_enabled is False
 
 
 # ── Known gap, recorded rather than skipped ─────────────────────────────
@@ -422,5 +445,5 @@ class TestOrchestrator:
 def test_d_already_known_from_context_is_not_implemented():
     # A genre stated earlier in the conversation should make this sufficient.
     # Slice 1 is stateless and assesses the current request text only.
-    a = assess_sufficiency("write a story")  # imagine: context said "noir"
+    a = detect_creative_content_anchors("write a story")  # imagine: context said "noir"
     assert a.score >= 0.5

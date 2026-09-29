@@ -9,21 +9,12 @@ classifier_model = "mistral"
 web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
+module_factory_enabled = false
 
 [runtime]
 use_k42_frontend = true
 max_recovery_attempts = 3
-
-# ADR-KERNEL-07 (PROPOSED): Intent Sufficiency gate, slice 1. When true (and
-# use_k42_frontend is true), an open-ended creative request that specifies only
-# its form (e.g. "write a 1000 words story") gets a clarifying question instead
-# of being planned and executed. Default false: no behavior change.
-intent_sufficiency_enabled = false
-
-# Execution-budget defaults (K4.4). Distinct from max_recovery_attempts
-# above, which governs ADR-K4.2-H-05's OperationRecoveryBudget (autonomous
-# recovery attempts across a whole operation) -- these govern the time
-# envelope of a single execution attempt. See core/runtime/execution_budget.py.
+creative_anchor_gate_enabled = false
 default_short_request_ceiling_s = 60.0
 default_startup_budget_s = 10.0
 default_progress_budget_s = 45.0
@@ -117,15 +108,4 @@ keywords = [
 staleness_decay = false
 max_kb_size_mb = 100
 confidence_boost = 0.15
-pin_to_external = false
-
-[modules.test_config_reg_tmp]
-enabled = true
-keywords = [
-    "test",
-    "check",
-]
-staleness_decay = true
-max_kb_size_mb = 500
-confidence_boost = 0.1
 pin_to_external = false
