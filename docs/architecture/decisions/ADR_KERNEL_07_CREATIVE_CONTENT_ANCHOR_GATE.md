@@ -1,9 +1,10 @@
 # ADR-KERNEL-07 — Creative Content-Anchor Gate (first narrow slice toward Intent Sufficiency)
 
-**Status:** PROPOSED — **not implementation-ready for merge.** The code on the work
+**Status:** PROPOSED — **not merge-ready: blocked on D-5** (§10). The code on the work
 branch is a reviewable *proposal*, disabled by default
-(`[runtime] creative_anchor_gate_enabled = false`). Decisions D-1..D-5 (§6) are open
-and must be resolved by Moncif before this ADR can be ACCEPTED.
+(`[runtime] creative_anchor_gate_enabled = false`). Its detector, policy rule, events
+and tests are reusable under every D-5 outcome; its *placement* is not (§10). Decisions
+D-1..D-5 (§6) are open and must be resolved by Moncif before this ADR can be ACCEPTED.
 **Date:** Sept 28, 2026 (revised after architecture review, same day)
 **Governing study:** `docs/studies/OCBRAIN_INTENT_SUFFICIENCY_STUDY_SEPT2026.md`
 (study only; unmodified copy). **Series:** next after ADR-KERNEL-06.
@@ -34,11 +35,26 @@ under the Constitution's Invariant 1 / Law 6 (study §A).
    deterministic, no model call, reads **request text only**. In scope only for a
    generative verb + artifact noun (story/poem/essay/…). Counts content-bearing
    tokens after removing form specification (verb, noun, numbers, length words,
-   filler). Zero → score 0.0; delegation phrases ("surprise me") → 1.0; out of scope
-   → 1.0 (fail-open).
-2. **Policy application.** The detector's score is put on a `GovernanceAction` under
-   its own key `content_anchor_score` and evaluated by `OrchestrationGovernor`,
-   which applies a threshold (default 0.5) → `APPROVE` / `ESCALATE`.
+   filler). Zero → score 0.0; delegation phrases ("surprise me") → 1.0. **Out of scope →
+   the detector ABSTAINS** (`score = None`).
+2. **Policy application.** For in-scope requests only, the score is put on a
+   `GovernanceAction` under its own key `content_anchor_score` and evaluated by
+   `OrchestrationGovernor`, which applies a threshold (default 0.5) → `APPROVE` /
+   `ESCALATE`. An abstaining detector has nothing to decide, so **no governance action
+   is created**; an event is still emitted so replay shows it ran and declined.
+
+   **What `score` means (and does not).** A coarse, detector-specific *presence
+   indicator* for content-bearing tokens: `min(1, content_tokens / 2)`. It is **not** a
+   probability that the request is sufficient, not a measure of how well-specified it
+   is, and not comparable across detectors or versions (events carry detector name +
+   version for that reason). `1.0` means only "≥ 2 content tokens, or the user
+   delegated". A future sufficiency model must not consume it as if it were one.
+
+   **What abstention means (and does not).** `in_scope = False` / `status = abstained`
+   means *"this slice declines to make a judgment"* — **not** "known to be sufficient".
+   Orchestration proceeds, but the record says `abstained`, distinct from `anchored`.
+   In-scope + no anchor → clarify; in-scope + anchor/delegated → continue;
+   out of scope → this policy abstains.
 3. **Surface.** On `ESCALATE`, `Orchestrator.handle()` returns a specific question,
    emits `orchestrator.clarification_requested`, and does not call `plan()`,
    `compile()`, or `WorkflowRuntime.execute()`. A denial by a *different* governor is
@@ -47,10 +63,12 @@ under the Constitution's Invariant 1 / Law 6 (study §A).
    (goal_id, detector name + version, score, in_scope, delegated, verdict, status,
    governor). No raw request text in the payload.
 
-**What slice 1 validates:** detection of form-only creative requests and
-short-circuiting before planning. **What it does not:** material sufficiency, a
-multi-turn clarification lifecycle, use of Intent/Goal state, or any Verification
-integration.
+**What slice 1 validates:** detect → ask → stop — pre-plan interception of form-only
+creative requests and surfacing of a question. **What it does not:** material
+sufficiency; conversational task continuation (preserve the task, merge the answer,
+re-evaluate, continue); use of Intent/Goal state; Verification integration.
+`IntentLifecycle.CLARIFICATION_PENDING`/`CLARIFIED` remain **unreached** (`[FACT]`, study
+§H) — their existence as enum values does not mean a clarification lifecycle is live.
 
 ## 3. Placement and ownership (review point 1)
 
@@ -75,7 +93,8 @@ Corrected facts:
   study's cost property: it runs after the already-paid interpretation call and before
   capability discovery, planning, compilation, and execution.
 
-**Proposed resolution (PROPOSED):** keep the Orchestrator-owned placement for slice 1,
+**Proposed resolution (PROPOSED, provisional pending D-5 — §10 shows this placement
+contradicts a K4.2 decision):** keep the Orchestrator-owned placement for slice 1,
 because the detector needs nothing from Intent/Goal state and the alternative
 touches a contract for no benefit. **Reopen** the in-function placement when a
 detector needs hypotheses, dimensions, or discarded-candidate information (the
@@ -121,13 +140,10 @@ spent). Status: `[PENDING]`, not a candidate for slice 1.
   `str → str`. Not built. Candidates exclude `resume()` for this placement (§5).
 - **D-4 — Test D (already known from context).** Needs the hint channel; not in slice 1.
   Recorded as a strict `xfail`.
-- **D-5 — governance boundary (new).** `[FACT]` DRIFT-10 describes governance as
-  sitting "at the compilation boundary only". This slice adds a governed evaluation
-  **before** compilation. It passes the mechanical check (the call is in a new
-  module) but is in tension with that stated rationale. Options: (i) amend the
-  boundary statement to admit a pre-plan, non-capability escalation; (ii) drop the
-  governance round-trip for slice 1 and make the threshold decision inside the
-  cognitive layer, leaving governance at compile. Not decided here.
+- **D-5 — placement vs. the K4.2 "no dedicated clarification gate" decision. OPEN,
+  merge-blocking.** Analysed from repository evidence in §10, with a recommendation
+  (option C) that is **not** a decision. Corrects the earlier framing: the conflict is
+  with a K4.2 architectural decision, not merely DRIFT-10's wording.
 
 ## 7. Verification: what slice 1 proves and does not
 
@@ -140,6 +156,11 @@ Does **not** prove: material sufficiency; behavior against a live model; precisi
 recall on a real corpus (constructed cases only); the study's 466-vs-1000-words
 experiment (`[PENDING]`); cross-turn convergence; Test D. Acceptance for this slice
 is limited to exactly the "proves" list.
+
+**Full-suite qualification (do not let this drift into "suite passed").** The branch and
+`main` @ `2520cb4` have **identical pre-existing failure sets** (23 test IDs: 16 failed +
+7 errors, **untriaged**, causes unknown); the new and targeted tests pass. That is
+evidence of *no newly introduced failures within that set*, nothing more.
 
 ## 8. Boundaries
 
@@ -155,3 +176,67 @@ Set `creative_anchor_gate_enabled = false` (default). Full removal: delete
 `core/cognitive/content_anchor.py`, the governor rule, the orchestrator block, the
 config key and `main.py` wiring, and the test file. No schema, persisted state, or
 registered event type to migrate.
+
+## 10. D-5 — evidence and options (answers the second review's demand)
+
+### 10.1 The actual authority is not DRIFT-10
+`[FACT]` The phrase "compilation boundary only" appears in exactly two places:
+DRIFT-10's description string (`scripts/check_drift.py:598`) and the D10 completion
+report. DRIFT-10 is a *derived mechanical rule* (an AST check for `evaluate_action` calls
+inside `intent.py`/`planner.py`), and **it does not flag this slice** (the call lives in a
+new module). It is not the source authority.
+
+`[FACT]` The source is the K4.2 authoritative document, "Clarification policy":
+*"No dedicated clarification gate — **reaffirmed, not re-derived**"*; clarification is a
+`ClarificationPolicy` **evaluated by the `OrchestrationGovernor` rule at the existing Plan
+Compilation gate (K4 §15)**, *"not a new component or a new gate."* Its stated rationale:
+(a) low confidence propagates `Goal.confidence → ExecutionPlan.confidence`; (b)
+`SupervisorWorker`'s escalation surfaces *a concrete plan with its stated interpretation,
+not an abstract disambiguation question*; (c) no new component.
+
+This slice's pre-plan block **is** a dedicated clarification gate, and it asks an abstract
+question. It contradicts that decision on (b) and (c). Two errors of mine and the study's
+are corrected here: the study's §F argued only non-collision with `ClarificationPolicy`
+and never confronted this decision; my first ADR draft cited "not a new component" to
+reject a new gate while implementing one.
+
+`[FACT]` Status of the decision: authoritative per the K4.2 document; **no**
+`ARCHITECTURE_DECISIONS.md` exists and `ADR_INDEX.md` has no entry for it, so it is not
+recorded as FINAL in a decision ledger. It must still be superseded explicitly, not
+bypassed (PROJECT_INSTRUCTIONS §18.4.5: preserve the original, record the reason).
+
+### 10.2 Cost facts (the pre-plan placement's whole justification)
+`[FACT]` `handle()`: `interpret_request → plan → compile → execute`. `plan()` calls the
+model **unconditionally once** (`_decompose → generate_with_fallback`; degrades only on
+exception) plus capability discovery. `compile()` makes no model call: it runs governance
+and returns. Generation happens at execution. So the pre-plan gate saves one
+decomposition call + discovery + compile; a compile-gate placement saves only execution
+(the large cost) and still pays **one decomposition call** per intercepted request.
+
+### 10.3 Does the decision's premise cover this failure class?
+`[FACT]` No, for content under-specification: the study established hypothesis confidence
+is unrelated to content specificity, and H-13 exempts general-purpose-only plans at the
+compile gate — so premise (a) does not hold for this class. That is a legitimate ground
+to *reconsider* the decision, but reconsideration is a supersession, not a silent bypass.
+
+### 10.4 Options (the review's A–D, plus the current state)
+| Option | Verdict | Evidence |
+|---|---|---|
+| **Current** (pre-plan, dedicated, governed) | Contradicts the K4.2 decision unless superseded | §10.1 |
+| **A** amend DRIFT-10 | Wrong target as the resolution | Derived rule; doesn't flag this slice; changing it leaves the K4.2 decision violated. Only a follow-on if the decision is superseded |
+| **B** another *existing* pre-plan seam | None exists | `[FACT]` `handle()` order above; the only existing seam is Plan Compilation itself → collapses into C |
+| **C** detect early (pure, no governance), carry result to `compile()`, evaluate at the existing compile gate | **Consistent with the K4.2 decision** | No new gate; one rule in the same governor at the same boundary. Costs: 1 decomposition call per intercepted request; needs (i) a carrier into `compile()` — an additive optional kwarg follows the existing `clarification_policy`/`clarification_attempt` pattern (its name/surface is "frozen by K4.2 §1"), or a field on `Goal`/`ExecutionPlan`; (ii) `handle()` turning an `ESCALATED` `CompilationResult` into a specific question instead of the generic apology (which also fixes the study's dead-end finding for `ClarificationPolicy`); (iii) an explicit choice between K4.2's intended "concrete plan + interpretation" surfacing and a question — `[FACT]` that surfacing is not wired on the K4.2 branch |
+| **D** pure Intent-level, no governance | Least aligned | Still a dedicated clarification gate (same contradiction) and removes governance's audited ESCALATE |
+
+### 10.5 Recommendation (`[INFER]`, **not a decision**)
+Prefer **C**: it needs no supersession of a reaffirmed decision, keeps governance at the
+compile boundary, and its cost is one small decomposition call on exactly the requests
+that would otherwise trigger the large generation. Choose to keep the current placement
+**only** if Moncif judges saving that call worth formally superseding K4.2's "no
+dedicated clarification gate" — then an ADR must supersede it (original preserved,
+reason recorded), and DRIFT-10's wording be amended as a consequence.
+
+Reusable under C unchanged: detector, `content_anchor_score` key, governor rule, events,
+abstention semantics, and all tests except the orchestrator-block tests. What changes:
+the orchestrator block and a `compile()` carrier. **No rework is started on C until D-5
+is decided.**
