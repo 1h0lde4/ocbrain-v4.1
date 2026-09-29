@@ -74,7 +74,7 @@ class Orchestrator:
                  capability_registry: Optional["CapabilityRegistry"] = None,
                  use_k42_frontend: bool = False,
                  max_recovery_attempts: int = 3,
-                 creative_anchor_gate_enabled: bool = False):
+                 creative_content_anchor_enabled: bool = False):
         """
         governance/event_stream: Optional[...] = None, defaulting to the
         shared singleton via get_governance_kernel()/get_event_stream().
@@ -100,15 +100,18 @@ class Orchestrator:
             meaningful when use_k42_frontend is True; unused on the
             legacy K2.2/classify-dispatch-merge paths, which have no
               autonomous recovery mechanism of their own (unchanged).
-        creative_anchor_gate_enabled: ADR-KERNEL-07 (PROPOSED) slice 1 --
-            feature flag, default False. Enables a NARROW experimental
-            detector, not general intent sufficiency: when True (K4.2 branch
-            only), handle() checks open-ended creative requests for any content
-            anchor after interpret_request() and before plan(), and returns a
-            specific clarifying question for a form-only request. When False,
-            handle() is byte-for-byte identical to before this parameter
-            existed. Read from config/settings.toml [runtime]
-            creative_anchor_gate_enabled by main.py's composition root.
+        creative_content_anchor_enabled: ADR-KERNEL-07 (PROPOSED; D-5 resolved as
+            Option C) -- feature flag, default False. Enables a NARROW
+            experimental detector, not general intent sufficiency: when True
+            (K4.2 branch only), handle() runs a pure, non-governing content-
+            anchor observation after interpret_request() and carries its
+            result to compile(), where the EXISTING OrchestrationGovernor
+            evaluates it at the Plan Compilation boundary. On ESCALATE the
+            user gets a specific question with the interpreted plan. No new
+            gate or governance boundary. When False, handle() and compile()
+            calls are identical to before this parameter existed. Read from
+            config/settings.toml [runtime] creative_content_anchor_enabled by
+            main.py's composition root.
 
         When workflow_runtime is provided, handle() delegates through:
             WorkflowRuntime → PlannerWorker → ExecutionRuntime
@@ -126,7 +129,7 @@ class Orchestrator:
         self._capability_registry = capability_registry
         self._use_k42_frontend = use_k42_frontend
         self._max_recovery_attempts = max_recovery_attempts
-        self._creative_anchor_gate_enabled = creative_anchor_gate_enabled
+        self._creative_content_anchor_enabled = creative_content_anchor_enabled
         self._id: str = "Orchestrator"
         self._background_tasks: list[asyncio.Task] = []
         # Start Phase 4/5 Cognitive Memory Engines
@@ -286,6 +289,9 @@ class Orchestrator:
             if self._use_k42_frontend and self._workflow_runtime is not None:
                 try:
                     from core.cognitive.compiler import CompilationStatus
+                    from core.cognitive.content_anchor import (
+                        anchor_missing, build_clarification_response,
+                    )
                     from core.cognitive.compiler import compile as compile_plan
                     from core.cognitive.intent import (
                         interpret_request, load_known_categories,
@@ -313,48 +319,26 @@ class Orchestrator:
                         known_categories=known_categories or None)
                     goal = goals[0]
 
-                    # ── ADR-KERNEL-07 (PROPOSED), slice 1: creative content-anchor
-                    # gate. NOT a general intent-sufficiency check: it looks only
-                    # at the request text of open-ended creative composition and
-                    # does not consume Intent/Goal state (goal_id is used for
-                    # correlation only). Owned here because Orchestrator is the
-                    # sole authorized caller of the cognitive entrypoints
-                    # (DRIFT-11); interpret_request() is untouched. Runs after the
-                    # already-paid interpretation call and BEFORE plan(), so a
-                    # request that fixes only its form (e.g. "write a 1000 words
-                    # story") spends no capability discovery, compilation or
-                    # generation call. The detector (cognitive layer) owns the
-                    # meaning of the score; the governor applies the threshold.
-                    # PLACEMENT IS UNRESOLVED (ADR-KERNEL-07 D-5): K4.2 records "no
-                    # dedicated clarification gate" (clarification is evaluated at Plan
-                    # Compilation); this pre-plan block is a dedicated gate and
-                    # contradicts that decision until it is superseded or relocated.
-                    # Flag-gated, default off: with the flag off none of this runs.
-                    if self._creative_anchor_gate_enabled:
+                    # ── ADR-KERNEL-07 (PROPOSED; D-5 resolved: Option C) ──
+                    # Creative content-anchor OBSERVATION. Pure and
+                    # non-governing: it decides nothing, blocks nothing and
+                    # consults no governance. Its result is carried through
+                    # planning to compile(), where the EXISTING
+                    # OrchestrationGovernor evaluates it at the Plan
+                    # Compilation boundary alongside ClarificationPolicy --
+                    # K4.2's "no dedicated clarification gate" is preserved.
+                    # Not general intent sufficiency: it reads request text
+                    # only. Flag-gated, default off: when off, none of this
+                    # runs and compile() is called exactly as before.
+                    anchor_assessment = None
+                    if self._creative_content_anchor_enabled:
                         from core.cognitive.content_anchor import (
-                            ContentAnchorStatus,
-                            evaluate_creative_content_anchors,
+                            observe_creative_content_anchors,
                         )
-                        anchor = await evaluate_creative_content_anchors(
-                            query, goal_id=goal.resource_id,
-                            event_stream=self._event_stream,
-                            governance=self._governance)
-                        if anchor.status not in (
-                                ContentAnchorStatus.ANCHORED,
-                                ContentAnchorStatus.ABSTAINED):
-                            await self._emit_event(
-                                "orchestrator.clarification_requested", {
-                                    "interaction_id": interaction_id,
-                                    "goal_id": goal.resource_id,
-                                    "status": anchor.status.value,
-                                    "missing": list(anchor.assessment.missing),
-                                })
-                            if anchor.question is not None:
-                                return anchor.question
-                            # Denied by a non-clarification governor: never
-                            # present that as a question about the request.
-                            return ("I'm sorry, I wasn't able to process "
-                                    "your request right now.")
+                        anchor_assessment = (
+                            await observe_creative_content_anchors(
+                                query, goal_id=goal.resource_id,
+                                event_stream=self._event_stream))
 
                     # G4 (K4.2 completion): assemble user cognitive model
                     # and generate advisory PlannerHints. These are bounded
@@ -464,9 +448,14 @@ class Orchestrator:
                                 "clarify what you'd like me to do?")
 
                     execution_plan = planner_result.execution_plan
+                    # content_anchor is passed ONLY when the feature is on,
+                    # so the off-path call is identical to before ADR-KERNEL-07.
+                    _compile_extra = (
+                        {"content_anchor": anchor_assessment}
+                        if anchor_assessment is not None else {})
                     compilation_result = await compile_plan(
                         execution_plan, event_stream=self._event_stream,
-                        governance=self._governance)
+                        governance=self._governance, **_compile_extra)
 
                     if compilation_result.status != CompilationStatus.COMPILED:
                         # K4 §16 invariant 9: never retried here or anywhere
@@ -495,6 +484,33 @@ class Orchestrator:
                                     "recovery_budget": budget,
                                 }},
                             )
+                        # ADR-KERNEL-07: an ESCALATE caused by a missing creative
+                        # content anchor is a clarification, not a failure. It
+                        # is recognized by the same predicate the governor
+                        # applied AND the governor's identity, so an escalation
+                        # from any other cause keeps the generic path below.
+                        _gr = compilation_result.governance_result
+                        if (compilation_result.status
+                                == CompilationStatus.ESCALATED
+                                and _gr is not None
+                                and _gr.governor == "OrchestrationGovernor"
+                                and anchor_missing(anchor_assessment)):
+                            await self._emit_event(
+                                "orchestrator.clarification_requested", {
+                                    "interaction_id": interaction_id,
+                                    "goal_id": goal.resource_id,
+                                    "status": compilation_result.status,
+                                    "missing": list(
+                                        anchor_assessment.missing),
+                                })
+                            _sf = getattr(goal, "structured_form", None) or {}
+                            return build_clarification_response(
+                                anchor_assessment,
+                                interpretation=str(
+                                    _sf.get("description") or ""),
+                                plan_steps=[
+                                    st.description
+                                    for st in execution_plan.steps])
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": compilation_result.status,

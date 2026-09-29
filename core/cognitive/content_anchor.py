@@ -1,95 +1,78 @@
 """core/cognitive/content_anchor.py -- creative content-anchor detector (slice 1).
 
-Architecture: ADR-KERNEL-07 (PROPOSED). Study:
-docs/studies/OCBRAIN_INTENT_SUFFICIENCY_STUDY_SEPT2026.md.
+Architecture: ADR-KERNEL-07 (PROPOSED; D-5 resolved as Option C by Moncif,
+2026-09-29). Study: docs/studies/OCBRAIN_INTENT_SUFFICIENCY_STUDY_SEPT2026.md.
 
 WHAT THIS IS -- AND IS NOT
 --------------------------
-This is a narrow experimental detector for ONE class of under-specification:
-an open-ended creative-composition request that states only its *form*
-("write a 1000 words story") and contains no content at all. It is the first
-vertical slice toward intent sufficiency, NOT intent sufficiency. The study's
-definition of material sufficiency is "would a different plausible resolution
-of the unknown materially change the output?"; this detector does not
-implement that. It cannot tell that "write a 1000-word science-fiction story"
-still leaves premise, tone, audience and setting open -- any single content
-token passes (fail-open by design). It is named for the signal it actually
-measures so this heuristic is not frozen as the canonical definition.
+A narrow experimental detector for ONE class of under-specification: an
+open-ended creative-composition request that states only its *form* ("write a
+1000 words story") and contains no content at all. It is the first vertical
+slice toward intent sufficiency, NOT intent sufficiency. It cannot tell that
+"write a 1000-word science-fiction story" still leaves premise, tone,
+audience and setting open -- any single content token passes (fail-open by
+design). It is named for the signal it measures so this heuristic is not
+frozen as the canonical definition of sufficiency.
 
-`ClarificationPolicy` (planner.py / OrchestrationGovernor) asks a different
-question ("unsure which *capability*?"). The two are kept apart by metadata
-key: this module uses `content_anchor_score`, never `confidence`, so
-ClarificationPolicy -- and ADR-K4.2-H-13's general-purpose exemption -- can
-neither fire on nor swallow this decision.
+ARCHITECTURE (Option C -- K4.2's "no dedicated clarification gate" is kept)
+---------------------------------------------------------------------------
+    interpret -> detect (THIS MODULE: pure, non-governing) -> plan
+      -> compile() -> existing OrchestrationGovernor at Plan Compilation
+      -> ESCALATE -> clarification response
 
-Placement and ownership
------------------------
-Called by `Orchestrator.handle()` after `interpret_request()` and before
-`plan()`. This detector consumes only the raw request text; it does NOT read
-Intent/Goal state (goal_id is a correlation id). Semantic ownership sits here
-(cognitive layer): this module decides what the score means. The governor
-only applies a threshold, the same mechanism role it plays for
-ClarificationPolicy. DRIFT-11 makes Orchestrator the sole authorized caller
-of the cognitive entrypoints; interpret_request() is not modified.
+* This module OBSERVES; it never governs. It imports no governance code and
+  makes no allow/deny decision. (Enforced by an architecture test.)
+* Its result is carried through planning to compile(), where the existing
+  OrchestrationGovernor applies a threshold to it alongside
+  ClarificationPolicy, on the same "plan_compile" action but under its OWN
+  metadata key (`content_anchor_score`, never `confidence`), so neither rule
+  can fire on or swallow the other -- including ADR-K4.2-H-13's
+  general_purpose_only exemption, which applies only to ClarificationPolicy.
+* No new clarification gate and no new governance boundary exist.
+* On ESCALATE the Orchestrator surfaces a detector-specific question paired
+  with the concrete interpreted plan/intent K4.2 expects to be shown.
 
-Signal (deterministic, no model call, replayable)
--------------------------------------------------
-Scope: generative verb + artifact noun (story/poem/essay/...). Everything
-else is `in_scope=False` -> anchored (fail-open). In scope, the detector
-counts content-bearing tokens left after removing form specification (verb,
-artifact noun, numbers, length words), pronouns, articles and filler.
+Cost (measured, ADR §10.2): plan() makes one unconditional decomposition
+model call before compile(), so an intercepted request still pays that call;
+what is avoided is execution/generation.
+
+SCORE / ABSTENTION SEMANTICS
+----------------------------
+See ContentAnchorAssessment: `score` is a coarse presence indicator, NOT a
+probability of sufficiency; `score is None` means the detector ABSTAINED
+(out of scope) -- not "known sufficient".
 
 SCOPE OF SLICE 1: detect -> ask -> stop. It does NOT preserve the task, merge
 the user's answer, or re-evaluate. IntentLifecycle.CLARIFICATION_PENDING and
-CLARIFIED remain unreached; their existence as enum values does not mean a
-clarification lifecycle is live.
-
-State: none. Slice 1 keeps no attempt state across turns (ADR-KERNEL-07 D-3),
-therefore it implements NO bounded-retry semantics: a resubmitted request is
-a fresh request. This validates detection and short-circuiting only -- not a
-multi-turn clarification lifecycle.
+CLARIFIED remain unreached (ADR-KERNEL-07 D-3). No attempt state exists, so
+no bounded-retry semantics are implemented.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, FrozenSet, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Sequence, Tuple
 
 from core.events.event_stream import EventStream, get_event_stream
-from core.governance.governance_kernel import (
-    GovernanceAction,
-    GovernanceKernel,
-    GovernanceResult,
-    GovernanceVerdict,
-    get_governance_kernel,
-)
 from core.observability.tracer import get_trace_id
 
 _DETECTOR_ID = "CreativeContentAnchor"
 DETECTOR_NAME = "creative_content_anchor"
 DETECTOR_VERSION = "0"
 
-# Metadata key the governor rule reads. Deliberately NOT "confidence": the
-# ClarificationPolicy rule is keyed on that name (ADR-K4.2-H-13).
+# Metadata keys read by OrchestrationGovernor._evaluate_content_anchor_policy.
+# Deliberately NOT "confidence": ClarificationPolicy is keyed on that name.
 CONTENT_ANCHOR_SCORE_KEY = "content_anchor_score"
-CONTENT_ANCHOR_ACTION_TYPE = "creative_content_anchor_check"
+CONTENT_ANCHOR_THRESHOLD_KEY = "content_anchor_threshold"
+CONTENT_ANCHOR_SCORE_THRESHOLD = 0.5
 
 MISSING_SUBJECT = "subject_or_premise"
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Policy + result types
+# Assessment type
 # ─────────────────────────────────────────────────────────────────────────
-
-@dataclass(frozen=True)
-class ContentAnchorPolicy:
-    """Threshold only. No max_escalations: slice 1 has no attempt carrier, so
-    a bound would be unreachable governance logic (ADR-KERNEL-07 D-3)."""
-
-    score_threshold: float = 0.5
-
 
 @dataclass(frozen=True)
 class ContentAnchorAssessment:
@@ -115,21 +98,6 @@ class ContentAnchorAssessment:
     artifact: Optional[str]           # canonical artifact kind, when in scope
     missing: Tuple[str, ...]          # e.g. ("subject_or_premise",)
     content_token_count: int
-
-
-class ContentAnchorStatus(str, Enum):
-    ANCHORED = "anchored"                      # in scope, has an anchor (or delegated)
-    ABSTAINED = "abstained"                    # out of scope: NO judgment made, not "sufficient"
-    ANCHOR_MISSING = "anchor_missing"          # ask the user
-    GOVERNANCE_BLOCKED = "governance_blocked"  # non-clarification denial
-
-
-@dataclass(frozen=True)
-class ContentAnchorResult:
-    status: ContentAnchorStatus
-    assessment: ContentAnchorAssessment
-    governance_result: Optional[GovernanceResult] = None
-    question: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -237,101 +205,61 @@ def detect_creative_content_anchors(raw_text: str) -> ContentAnchorAssessment:
     )
 
 
-def build_clarification_question(assessment: ContentAnchorAssessment) -> str:
-    """Deterministic, specific question. Slice 1 is stateless, so it tells
-    the user to resend the request with details (ADR-KERNEL-07 D-3)."""
-    kind = assessment.artifact or "piece"
+def anchor_missing(assessment: Optional["ContentAnchorAssessment"]) -> bool:
+    """True iff an in-scope assessment falls below the policy threshold.
+
+    This is the SAME predicate OrchestrationGovernor applies to
+    `content_anchor_score` (score < threshold), used by the caller to
+    recognize that an ESCALATED compilation was caused by a missing anchor.
+    Abstention (score None) is never "missing".
+    """
     return (
-        f"Before I write this {kind}, what should it be about? A subject, "
-        f"genre, or tone is enough (for example: a noir mystery, a cozy "
-        f"fantasy, a funny office comedy) — or say \"surprise me\" and I'll "
-        f"choose. Please send your request again with those details."
+        assessment is not None
+        and assessment.in_scope
+        and assessment.score is not None
+        and assessment.score < CONTENT_ANCHOR_SCORE_THRESHOLD
     )
 
 
+def governance_metadata(
+    assessment: Optional["ContentAnchorAssessment"],
+) -> Dict[str, Any]:
+    """Metadata the Plan Compiler adds to its governance action.
+
+    Empty for None or an abstaining assessment: an abstaining detector has
+    nothing to contribute, so the governor rule stays inert.
+    """
+    if assessment is None or not assessment.in_scope or assessment.score is None:
+        return {}
+    return {
+        CONTENT_ANCHOR_SCORE_KEY: assessment.score,
+        CONTENT_ANCHOR_THRESHOLD_KEY: CONTENT_ANCHOR_SCORE_THRESHOLD,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────
-# Governance-evaluated gate
+# Non-governing observation (pre-plan)
 # ─────────────────────────────────────────────────────────────────────────
 
-async def evaluate_creative_content_anchors(
+async def observe_creative_content_anchors(
     raw_text: str,
     *,
     goal_id: str = "",
-    policy: Optional[ContentAnchorPolicy] = None,
     event_stream: Optional[EventStream] = None,
-    governance: Optional[GovernanceKernel] = None,
-) -> ContentAnchorResult:
-    """Detect, apply the policy through governance, emit one event.
+) -> "ContentAnchorAssessment":
+    """Detect and record. Does NOT decide, block, or consult governance.
 
-    Ownership: the detector (this module) decides what the score means; the
-    OrchestrationGovernor only applies the threshold and returns
-    APPROVE / ESCALATE. Out-of-scope requests ABSTAIN (no governance call).
-    Stateless: no attempt count is read or kept.
+    Emits one `cognitive.content_anchor_observed` event so replay shows what
+    the detector saw (including abstentions), then returns the assessment for
+    the caller to carry to compile(). No raw request text is recorded.
     """
     event_stream = event_stream or get_event_stream()
-    governance = governance or get_governance_kernel()
-    policy = policy or ContentAnchorPolicy()
-    trace_id = get_trace_id()
-
     assessment = detect_creative_content_anchors(raw_text)
-
-    if not assessment.in_scope:
-        # Abstain: nothing to decide, so no governance action is fabricated.
-        # An event is still emitted so replay shows the detector ran and
-        # declined (Law 2), without claiming the request is sufficient.
-        await event_stream.append(
-            event_type="cognitive.content_anchor_evaluated",
-            source=_DETECTOR_ID,
-            payload={
-                "trace_id": trace_id,
-                "goal_id": goal_id,
-                "detector": DETECTOR_NAME,
-                "detector_version": DETECTOR_VERSION,
-                "score": None,
-                "in_scope": False,
-                "delegated": False,
-                "artifact": None,
-                "missing": [],
-                "verdict": None,
-                "status": ContentAnchorStatus.ABSTAINED.value,
-                "governor": None,
-            },
-        )
-        return ContentAnchorResult(
-            status=ContentAnchorStatus.ABSTAINED, assessment=assessment)
-
-    action = GovernanceAction(
-        action_type=CONTENT_ANCHOR_ACTION_TYPE,
-        worker_id=_DETECTOR_ID,
-        description=(
-            f"Creative content-anchor check for goal {goal_id or '<unassigned>'}"
-        ),
-        metadata={
-            "goal_id": goal_id,
-            CONTENT_ANCHOR_SCORE_KEY: assessment.score,
-            "content_anchor_threshold": policy.score_threshold,
-            "in_scope": assessment.in_scope,
-            "delegated": assessment.delegated,
-        },
-    )
-    gov_result = governance.evaluate_action(action)
-
-    if gov_result.verdict == GovernanceVerdict.APPROVE:
-        status = ContentAnchorStatus.ANCHORED
-    elif (gov_result.governor == "OrchestrationGovernor"
-          and gov_result.verdict == GovernanceVerdict.ESCALATE):
-        status = ContentAnchorStatus.ANCHOR_MISSING
-    else:
-        # Another governor (or an unexpected verdict) denied this action. That
-        # is not a statement about the request's content, so never dress it up
-        # as a clarifying question.
-        status = ContentAnchorStatus.GOVERNANCE_BLOCKED
-
     await event_stream.append(
-        event_type="cognitive.content_anchor_evaluated",
+        event_type="cognitive.content_anchor_observed",
         source=_DETECTOR_ID,
         payload={
-            "trace_id": trace_id,
+            "trace_id": get_trace_id(),
             "goal_id": goal_id,
             "detector": DETECTOR_NAME,
             "detector_version": DETECTOR_VERSION,
@@ -340,16 +268,58 @@ async def evaluate_creative_content_anchors(
             "delegated": assessment.delegated,
             "artifact": assessment.artifact,
             "missing": list(assessment.missing),
-            "verdict": gov_result.verdict.value,
-            "status": status.value,
-            "governor": gov_result.governor,
+            "abstained": not assessment.in_scope,
         },
     )
+    return assessment
 
-    return ContentAnchorResult(
-        status=status,
-        assessment=assessment,
-        governance_result=gov_result,
-        question=(build_clarification_question(assessment)
-                  if status == ContentAnchorStatus.ANCHOR_MISSING else None),
+
+# ─────────────────────────────────────────────────────────────────────────
+# Clarification response (post-ESCALATE)
+# ─────────────────────────────────────────────────────────────────────────
+
+_MAX_STEPS_SHOWN = 5
+_MAX_TEXT = 160
+
+
+def _one_line(text: Any, limit: int = _MAX_TEXT) -> str:
+    flat = " ".join(str(text or "").split())
+    return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "\u2026"
+
+
+def build_clarification_question(assessment: "ContentAnchorAssessment") -> str:
+    """Deterministic, specific question. Slice 1 is stateless, so it tells
+    the user to resend the request with details (ADR-KERNEL-07 D-3)."""
+    kind = assessment.artifact or "piece"
+    return (
+        f"Before I write this {kind}, what should it be about? A subject, "
+        f"genre, or tone is enough (for example: a noir mystery, a cozy "
+        f"fantasy, a funny office comedy) \u2014 or say \"surprise me\" and I'll "
+        f"choose. Please send your request again with those details."
     )
+
+
+def build_clarification_response(
+    assessment: "ContentAnchorAssessment",
+    *,
+    interpretation: str = "",
+    plan_steps: Sequence[str] = (),
+) -> str:
+    """Detector-specific question paired with the concrete interpreted
+    plan/intent K4.2 expects to be surfaced (not an abstract question alone).
+
+    `interpretation` and `plan_steps` are model-derived text echoed to the
+    user, so they are flattened to one line and truncated; at most
+    _MAX_STEPS_SHOWN steps are shown.
+    """
+    parts = []
+    if interpretation and str(interpretation).strip():
+        parts.append(f"Here's how I read your request: {_one_line(interpretation)}")
+    steps = [_one_line(s) for s in plan_steps if s and str(s).strip()]
+    if steps:
+        shown = steps[:_MAX_STEPS_SHOWN]
+        listing = "; ".join(f"{i}. {t}" for i, t in enumerate(shown, 1))
+        more = f" (+{len(steps) - len(shown)} more)" if len(steps) > len(shown) else ""
+        parts.append(f"My draft plan: {listing}{more}")
+    parts.append(build_clarification_question(assessment))
+    return "\n\n".join(parts)

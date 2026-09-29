@@ -1,31 +1,52 @@
 """tests/core/cognitive/test_creative_content_anchor.py -- ADR-KERNEL-07 (PROPOSED),
-slice 1: the creative content-anchor detector and gate.
+slice 1, D-5 resolved as Option C: creative content-anchor detector.
 
-This is a NARROW experimental detector, not general intent sufficiency. What
-these tests prove: detection of form-only creative requests, short-circuiting
-before plan()/compile()/execute, key isolation from ClarificationPolicy /
-ADR-K4.2-H-13, event content, and flag-off inertness. What they do NOT prove:
-material sufficiency (see TestKnownLimits, which pins the detector's blind
-spots as executable facts), a multi-turn lifecycle (no attempt state exists;
-ADR-KERNEL-07 D-3), or Test D (D-4, recorded as a strict xfail).
+Architecture under test:
+    interpret -> detect (pure, non-governing) -> plan -> compile()
+      -> EXISTING OrchestrationGovernor at Plan Compilation -> ESCALATE
+      -> clarification response (question + interpreted plan)
 
-Real OrchestrationGovernor / GovernanceKernel throughout the governance-facing
-tests -- governance is never mocked to APPROVE there.
+This is a NARROW experimental detector, not general intent sufficiency.
+What these tests prove: detection of form-only creative requests; that the
+detector observes but never governs (architecture test); that the result rides
+the EXISTING compile() governance action under its own keys; ESCALATE at that
+boundary with real compile()/GovernanceKernel/ExecutionPlan; H-13 exemption and
+ClarificationPolicy isolation; the response pairs the interpreted plan with a
+specific question; abstention is never "sufficient"; flag-off is inert. What
+they do NOT prove: material sufficiency (TestKnownLimits pins the blind spots),
+a multi-turn lifecycle (no attempt state; D-3), Test D (D-4, strict xfail).
 """
+import ast
+import inspect
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from core.cognitive.intent import Goal
+import core.cognitive.content_anchor as content_anchor_module
+from core.cognitive.compiler import (
+    CompilationResult,
+    CompilationStatus,
+    compile as compile_plan,
+)
 from core.cognitive.content_anchor import (
-    MISSING_SUBJECT,
-    CONTENT_ANCHOR_ACTION_TYPE,
     CONTENT_ANCHOR_SCORE_KEY,
-    ContentAnchorPolicy,
-    ContentAnchorStatus,
-    detect_creative_content_anchors,
+    CONTENT_ANCHOR_SCORE_THRESHOLD,
+    CONTENT_ANCHOR_THRESHOLD_KEY,
+    MISSING_SUBJECT,
+    anchor_missing,
     build_clarification_question,
-    evaluate_creative_content_anchors,
+    build_clarification_response,
+    detect_creative_content_anchors,
+    governance_metadata,
+    observe_creative_content_anchors,
+)
+from core.cognitive.intent import Goal
+from core.cognitive.planner import (
+    ExecutionPlan,
+    PlanStep,
+    PlannerResult,
+    PlannerStatus,
 )
 from core.context import ContextMemory
 from core.governance.governance_kernel import (
@@ -83,7 +104,7 @@ class TestAssessment:
         a = detect_creative_content_anchors(text)
         assert a.in_scope
         # The property that matters: not below the policy threshold.
-        assert a.score >= ContentAnchorPolicy().score_threshold
+        assert a.score >= CONTENT_ANCHOR_SCORE_THRESHOLD
         assert a.missing == ()
 
     @pytest.mark.parametrize("text", [
@@ -156,7 +177,7 @@ class TestKnownLimits:
     ])
     def test_materially_underspecified_requests_still_pass(self, text):
         a = detect_creative_content_anchors(text)
-        assert a.in_scope and a.score >= ContentAnchorPolicy().score_threshold
+        assert a.in_scope and a.score >= CONTENT_ANCHOR_SCORE_THRESHOLD
         assert a.missing == ()
 
     def test_detector_reads_request_text_only(self):
@@ -177,7 +198,7 @@ class TestKnownLimits:
 def _suff_action(score, **extra):
     md = {CONTENT_ANCHOR_SCORE_KEY: score}
     md.update(extra)
-    return GovernanceAction(action_type=CONTENT_ANCHOR_ACTION_TYPE,
+    return GovernanceAction(action_type="plan_compile",
                             worker_id="t", metadata=md)
 
 
@@ -239,133 +260,248 @@ class TestGovernorRule:
         assert gov._evaluate_content_anchor_policy(exempt) is None
 
 
-# ── Governed evaluator (real GovernanceKernel) ──────────────────────────
+# ── Non-governing observation + carrier helpers ────────────────────────
 
-class _DenyingGovernor(Governor):
-    name = "SomeOtherGovernor"
-
-    def evaluate(self, action):
-        return GovernanceResult(verdict=GovernanceVerdict.REJECT,
-                                reason="denied for unrelated reasons",
-                                governor=self.name)
-
-
-class TestEvaluator:
+class TestObservation:
     @pytest.mark.asyncio
-    async def test_a_underspecified_escalates_with_question_and_event(self):
+    async def test_observe_records_and_returns_without_deciding(self):
         events = MockEventStream()
-        res = await evaluate_creative_content_anchors(
-            "write a 1000 words story", goal_id="g-1",
-            event_stream=events, governance=GovernanceKernel())
-        assert res.status == ContentAnchorStatus.ANCHOR_MISSING
-        assert res.question and "story" in res.question
-        assert res.governance_result.verdict == GovernanceVerdict.ESCALATE
-
+        a = await observe_creative_content_anchors(
+            "write a 1000 words story", goal_id="g-1", event_stream=events)
+        assert a.missing == (MISSING_SUBJECT,) and a.score == 0.0
         assert [e["event_type"] for e in events.events] == [
-            "cognitive.content_anchor_evaluated"]
+            "cognitive.content_anchor_observed"]
         p = events.events[0]["payload"]
-        assert p["goal_id"] == "g-1" and p["verdict"] == "escalate"
-        assert p["status"] == "anchor_missing"
-        assert p["missing"] == [MISSING_SUBJECT]
+        assert p["goal_id"] == "g-1" and p["abstained"] is False
         assert p["detector"] == "creative_content_anchor"
-        assert p["detector_version"] == "0"
-        assert "attempt" not in p
+        assert p["detector_version"] == "0" and p["score"] == 0.0
 
     @pytest.mark.asyncio
-    async def test_event_payload_never_carries_raw_request_text(self):
+    async def test_abstention_is_recorded_as_abstained_not_sufficient(self):
         events = MockEventStream()
-        secret = "write a story SENTINEL-RAW-TEXT-4711"
-        await evaluate_creative_content_anchors(
-            secret, event_stream=events, governance=GovernanceKernel())
+        a = await observe_creative_content_anchors(
+            "book a flight to Tokyo next week", event_stream=events)
+        assert a.score is None and not a.in_scope
+        p = events.events[0]["payload"]
+        assert p["abstained"] is True and p["score"] is None
+
+    @pytest.mark.asyncio
+    async def test_event_never_carries_raw_request_text(self):
+        events = MockEventStream()
+        await observe_creative_content_anchors(
+            "write a story SENTINEL-RAW-TEXT-4711", event_stream=events)
         assert "SENTINEL-RAW-TEXT-4711" not in repr(events.events)
 
-    @pytest.mark.asyncio
-    async def test_b_well_specified_is_sufficient_no_question(self):
-        res = await evaluate_creative_content_anchors(
-            "write a 1000-word noir detective short story, first person, "
-            "ending on a twist",
-            event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == ContentAnchorStatus.ANCHORED
-        assert res.question is None
+    def test_module_observes_but_never_governs(self):
+        # Architecture test: the detector module must not import governance
+        # or call evaluate_action. It contributes an observation, nothing more.
+        src = Path(content_anchor_module.__file__).read_text()
+        tree = ast.parse(src)
+        imported = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                imported.append(node.module or "")
+                imported += [al.name for al in node.names]
+            elif isinstance(node, ast.Import):
+                imported += [al.name for al in node.names]
+        assert not [m for m in imported if "governance" in m.lower()], imported
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+        attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+        assert "GovernanceAction" not in names
+        assert "evaluate_action" not in attrs
+
+    def test_governance_metadata_only_for_in_scope_assessments(self):
+        assert governance_metadata(None) == {}
+        assert governance_metadata(
+            detect_creative_content_anchors("book a flight")) == {}   # abstained
+        md = governance_metadata(detect_creative_content_anchors("write a story"))
+        assert md == {CONTENT_ANCHOR_SCORE_KEY: 0.0,
+                      CONTENT_ANCHOR_THRESHOLD_KEY: CONTENT_ANCHOR_SCORE_THRESHOLD}
+        assert "confidence" not in md          # key isolation at the source
+
+    def test_anchor_missing_predicate(self):
+        d = detect_creative_content_anchors
+        assert anchor_missing(d("write a story")) is True
+        assert anchor_missing(d("write a poem about autumn")) is False
+        assert anchor_missing(d("write a story, surprise me")) is False
+        assert anchor_missing(d("book a flight")) is False   # abstained != missing
+        assert anchor_missing(None) is False
+
+
+class TestClarificationResponse:
+    def test_pairs_interpretation_and_plan_with_a_specific_question(self):
+        a = detect_creative_content_anchors("write a 1000 words story")
+        r = build_clarification_response(
+            a, interpretation="Write a story of about 1000 words",
+            plan_steps=["Draft the story", "Polish the draft"])
+        assert "Here's how I read your request: Write a story" in r
+        assert "1. Draft the story; 2. Polish the draft" in r
+        assert r.rstrip().endswith("with those details.")
+        assert "surprise me" in r and "story" in r
+
+    def test_degrades_to_the_bare_question_without_context(self):
+        a = detect_creative_content_anchors("write a poem")
+        assert build_clarification_response(a) == build_clarification_question(a)
+
+    def test_model_text_is_flattened_truncated_and_capped(self):
+        a = detect_creative_content_anchors("write a story")
+        r = build_clarification_response(
+            a, interpretation="line1\nline2 " + "x" * 500,
+            plan_steps=[f"step {i}" for i in range(9)])
+        head = r.split("\n\n")[0]
+        assert "\n" not in head and len(head) < 260
+        assert "(+4 more)" in r and "6. step 5" not in r
+
+
+# ── Real compile() + real GovernanceKernel (Plan Compilation boundary) ──
+
+def _plan(confidence=0.9, general_purpose_only=False):
+    return ExecutionPlan(
+        goal_id="g1",
+        steps=[PlanStep(step_id="s1", description="Write the story",
+                        capability_type="llm_completion")],
+        confidence=confidence, derived_from=["g1"],
+        general_purpose_only=general_purpose_only)
+
+
+class _StubGovernor(Governor):
+    def __init__(self, name, verdict, only_for=None):
+        self.name, self._v, self._only = name, verdict, only_for
+
+    def evaluate(self, action):
+        if self._only is not None and action.action_type != self._only:
+            return GovernanceResult()                      # APPROVE, not its concern
+        return GovernanceResult(verdict=self._v, reason="stub", governor=self.name)
+
+
+class TestCompileBoundary:
+    """D-5 = Option C: the EXISTING gate evaluates the carried observation."""
 
     @pytest.mark.asyncio
-    async def test_c_delegation_is_sufficient(self):
-        res = await evaluate_creative_content_anchors(
-            "write a story, surprise me",
-            event_stream=MockEventStream(), governance=GovernanceKernel())
-        assert res.status == ContentAnchorStatus.ANCHORED
-
-    @pytest.mark.asyncio
-    async def test_out_of_scope_abstains_without_a_governance_action(self):
+    async def test_a_form_only_request_escalates_at_plan_compilation(self):
         events = MockEventStream()
+        r = await compile_plan(
+            _plan(), event_stream=events, governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors(
+                "write a 1000 words story"))
+        assert r.status == CompilationStatus.ESCALATED
+        assert r.workflow_definition is None
+        assert r.governance_result.governor == "OrchestrationGovernor"
+        assert "Content-anchor" in r.governance_result.reason
+        p = [e for e in events.events
+             if e["event_type"] == "cognitive.plan_rejected"][0]["payload"]
+        assert p["verdict"] == "escalate" and p["content_anchor_score"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_h13_exemption_does_not_swallow_the_content_anchor_rule(self):
+        # general_purpose_only=True exempts ClarificationPolicy even at
+        # confidence 0.0 -- proven here by the no-anchor baseline compiling.
+        gp = _plan(confidence=0.0, general_purpose_only=True)
+        base = await compile_plan(gp, event_stream=MockEventStream(),
+                                  governance=GovernanceKernel())
+        assert base.status == CompilationStatus.COMPILED      # exemption active
+        r = await compile_plan(
+            gp, event_stream=MockEventStream(), governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors("write a story"))
+        assert r.status == CompilationStatus.ESCALATED        # anchor still fires
+
+    @pytest.mark.asyncio
+    async def test_b_anchored_request_compiles(self):
+        r = await compile_plan(
+            _plan(), event_stream=MockEventStream(), governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors(
+                "write a poem about autumn"))
+        assert r.status == CompilationStatus.COMPILED
+        assert r.workflow_definition is not None
+
+    @pytest.mark.asyncio
+    async def test_c_delegated_request_compiles(self):
+        r = await compile_plan(
+            _plan(), event_stream=MockEventStream(), governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors(
+                "write a story, surprise me"))
+        assert r.status == CompilationStatus.COMPILED
+
+    @pytest.mark.asyncio
+    async def test_abstained_observation_adds_nothing_to_the_action(self):
         kernel = MagicMock()
         kernel.evaluate_action = MagicMock(return_value=GovernanceResult())
-        res = await evaluate_creative_content_anchors(
-            "book a flight to Tokyo next week", goal_id="g-9",
-            event_stream=events, governance=kernel)
-        assert res.status == ContentAnchorStatus.ABSTAINED
-        assert res.status != ContentAnchorStatus.ANCHORED   # not "sufficient"
-        assert res.governance_result is None and res.question is None
-        kernel.evaluate_action.assert_not_called()          # nothing to decide
-        # Replay still shows the detector ran and declined.
-        assert len(events.events) == 1
-        p = events.events[0]["payload"]
-        assert p["status"] == "abstained" and p["score"] is None
-        assert p["verdict"] is None and p["governor"] is None
-        assert p["in_scope"] is False and p["detector_version"] == "0"
+        await compile_plan(
+            _plan(), event_stream=MockEventStream(), governance=kernel,
+            content_anchor=detect_creative_content_anchors("book a flight"))
+        md = kernel.evaluate_action.call_args.args[0].metadata
+        assert CONTENT_ANCHOR_SCORE_KEY not in md
+        assert CONTENT_ANCHOR_THRESHOLD_KEY not in md
 
     @pytest.mark.asyncio
-    async def test_abstention_is_distinct_from_anchored_in_the_record(self):
-        ev_abs, ev_anc = MockEventStream(), MockEventStream()
-        await evaluate_creative_content_anchors(
-            "summarize this article", event_stream=ev_abs,
-            governance=GovernanceKernel())
-        await evaluate_creative_content_anchors(
-            "write a poem about autumn", event_stream=ev_anc,
-            governance=GovernanceKernel())
-        assert ev_abs.events[0]["payload"]["status"] == "abstained"
-        assert ev_anc.events[0]["payload"]["status"] == "anchored"
-
-    @pytest.mark.asyncio
-    async def test_evaluation_is_stateless_and_repeatable(self):
-        # Slice 1 keeps no attempt state: the same request yields the same
-        # outcome every time (no hidden counter, no drift toward "stalled").
-        outs = []
-        for _ in range(4):
-            r = await evaluate_creative_content_anchors(
-                "write a story", event_stream=MockEventStream(),
-                governance=GovernanceKernel())
-            outs.append((r.status, r.governance_result.verdict))
-        assert len(set(outs)) == 1
-        assert outs[0][0] == ContentAnchorStatus.ANCHOR_MISSING
-
-    @pytest.mark.asyncio
-    async def test_unrelated_governor_denial_is_not_reported_as_a_question(self):
-        kernel = GovernanceKernel()
-        kernel._governors.insert(0, _DenyingGovernor())
-        res = await evaluate_creative_content_anchors(
-            "write a story about a dragon",
-            event_stream=MockEventStream(), governance=kernel)
-        assert res.status == ContentAnchorStatus.GOVERNANCE_BLOCKED
-        assert res.question is None
-
-    @pytest.mark.asyncio
-    async def test_evaluation_goes_through_governance(self):
+    async def test_default_none_is_byte_identical_metadata(self):
         kernel = MagicMock()
         kernel.evaluate_action = MagicMock(return_value=GovernanceResult())
-        await evaluate_creative_content_anchors(
-            "write a story", event_stream=MockEventStream(), governance=kernel)
-        assert kernel.evaluate_action.call_count == 1
+        await compile_plan(_plan(), event_stream=MockEventStream(),
+                           governance=kernel)
         action = kernel.evaluate_action.call_args.args[0]
-        assert action.action_type == CONTENT_ANCHOR_ACTION_TYPE
-        assert "confidence" not in action.metadata  # key isolation at the source
-        assert action.action_type == "creative_content_anchor_check"
+        assert action.action_type == "plan_compile"      # NOT a new action type
+        assert not [k for k in action.metadata if k.startswith("content_anchor")]
+
+    @pytest.mark.asyncio
+    async def test_same_existing_action_carries_both_key_families(self):
+        kernel = MagicMock()
+        kernel.evaluate_action = MagicMock(return_value=GovernanceResult())
+        await compile_plan(
+            _plan(confidence=0.7), event_stream=MockEventStream(),
+            governance=kernel,
+            content_anchor=detect_creative_content_anchors("write a story"))
+        assert kernel.evaluate_action.call_count == 1     # one boundary, one call
+        md = kernel.evaluate_action.call_args.args[0].metadata
+        assert md["confidence"] == 0.7 and md[CONTENT_ANCHOR_SCORE_KEY] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_clarification_policy_still_operates_alongside(self):
+        # Anchor present, plan confidence low, NOT general-purpose-only ->
+        # ClarificationPolicy escalates exactly as before; the anchor rule
+        # stays out of it.
+        r = await compile_plan(
+            _plan(confidence=0.1), event_stream=MockEventStream(),
+            governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors(
+                "write a poem about autumn"))
+        assert r.status == CompilationStatus.ESCALATED
+        assert "Content-anchor" not in r.governance_result.reason
+
+    @pytest.mark.asyncio
+    async def test_anchor_rule_is_evaluated_before_clarification_policy(self):
+        r = await compile_plan(
+            _plan(confidence=0.1), event_stream=MockEventStream(),
+            governance=GovernanceKernel(),
+            content_anchor=detect_creative_content_anchors("write a story"))
+        assert r.status == CompilationStatus.ESCALATED
+        assert "Content-anchor" in r.governance_result.reason
+
+    @pytest.mark.asyncio
+    async def test_another_governors_rejection_is_not_an_escalation(self):
+        kernel = GovernanceKernel()
+        kernel._governors.insert(0, _StubGovernor("Other", GovernanceVerdict.REJECT))
+        r = await compile_plan(
+            _plan(), event_stream=MockEventStream(), governance=kernel,
+            content_anchor=detect_creative_content_anchors("write a story"))
+        assert r.status == CompilationStatus.REJECTED
+
+    def test_compile_argument_is_additive_keyword_only_default_none(self):
+        prm = inspect.signature(compile_plan).parameters["content_anchor"]
+        assert prm.default is None and prm.kind is inspect.Parameter.KEYWORD_ONLY
 
 
-# ── Orchestrator integration ────────────────────────────────────────────
+# ── Orchestrator integration (real compile + real governance) ───────────
 
 def _goal(rid="g1"):
-    return Goal(resource_id=rid, structured_form={"description": "t", "raw_request": "t"})
+    return Goal(resource_id=rid, structured_form={
+        "description": "Write a story of about 1000 words",
+        "raw_request": "t"})
+
+
+def _ready(plan):
+    return PlannerResult(status=PlannerStatus.READY_FOR_COMPILATION,
+                         execution_plan=plan, operation_id="op-1")
 
 
 def _orch(enabled, governance=None):
@@ -379,92 +515,161 @@ def _orch(enabled, governance=None):
         event_stream=AsyncMock(),
         execution_runtime=AsyncMock(), workflow_runtime=MagicMock(),
         capability_registry=MagicMock(),
-        use_k42_frontend=True, creative_anchor_gate_enabled=enabled,
+        use_k42_frontend=True, creative_content_anchor_enabled=enabled,
     )
+
+
+def _emitted(orch):
+    return [c.kwargs.get("event_type") or c.args[0]
+            for c in orch._event_stream.append.call_args_list]
+
+
+async def _run(orch, text, plan):
+    with patch("core.cognitive.intent.interpret_request",
+               new=AsyncMock(return_value=[_goal()])), \
+         patch("core.cognitive.planner.plan",
+               new=AsyncMock(return_value=_ready(plan))):
+        try:
+            return await orch.handle(text)
+        except Exception as exc:                 # downstream of compile only
+            return exc
 
 
 class TestOrchestrator:
     @pytest.mark.asyncio
-    async def test_a_flag_on_underspecified_request_is_stopped_before_planning(self):
+    async def test_a_form_only_request_is_answered_with_question_and_plan(self):
         orch = _orch(True)
-        plan_mock, compile_mock = AsyncMock(), AsyncMock()
-        with patch("core.cognitive.intent.interpret_request",
-                   new=AsyncMock(return_value=[_goal()])), \
-             patch("core.cognitive.planner.plan", new=plan_mock), \
-             patch("core.cognitive.compiler.compile", new=compile_mock):
-            answer = await orch.handle("write a 1000 words story")
-
-        assert "story" in answer and "surprise me" in answer
-        assert "wasn't able to prepare" not in answer   # not the generic apology
-        plan_mock.assert_not_called()
-        compile_mock.assert_not_called()
-        orch._workflow_runtime.execute.assert_not_called()
-
-        emitted = [c.kwargs.get("event_type") or c.args[0]
-                   for c in orch._event_stream.append.call_args_list]
-        assert "cognitive.content_anchor_evaluated" in emitted
-        assert "orchestrator.clarification_requested" in emitted
+        answer = await _run(orch, "write a 1000 words story", _plan())
+        assert isinstance(answer, str)
+        assert "Here's how I read your request: Write a story of about 1000" in answer
+        assert "1. Write the story" in answer               # the interpreted plan
+        assert "surprise me" in answer                       # the question
+        assert "wasn't able to prepare" not in answer
+        orch._workflow_runtime.execute.assert_not_called()   # no generation
+        orch._execution_runtime.invoke.assert_awaited()      # Supervisor still surfaced
+        ev = _emitted(orch)
+        assert "cognitive.content_anchor_observed" in ev
+        assert "cognitive.plan_rejected" in ev               # existing gate spoke
+        assert "orchestrator.clarification_requested" in ev
+        assert "orchestrator.query_failed" not in ev
 
     @pytest.mark.asyncio
-    async def test_flag_off_is_inert_even_for_underspecified_request(self):
+    async def test_feature_adds_no_governance_evaluation_of_its_own(self):
+        # The Option-C property. handle() already evaluates a request-
+        # authorization action at entry (pre-existing, PI LAW 1) and the
+        # compile gate evaluates plan_compile. Turning the feature on must add
+        # NO governance evaluation anywhere: same actions, same order, and the
+        # only post-plan one is the existing plan_compile.
+        async def record(flag):
+            order = []
+            kernel = MagicMock()
+            kernel.evaluate_action = MagicMock(
+                side_effect=lambda a: order.append(("gov", a.action_type))
+                or GovernanceResult())
+            orch = _orch(flag, governance=kernel)
+            plan_mock = AsyncMock(side_effect=lambda *a, **k:
+                                  order.append(("plan", None)) or _ready(_plan()))
+            with patch("core.cognitive.intent.interpret_request",
+                       new=AsyncMock(return_value=[_goal()])), \
+                 patch("core.cognitive.planner.plan", new=plan_mock):
+                try:
+                    await orch.handle("write a 1000 words story")
+                except Exception:
+                    pass
+            return order
+
+        off, on = await record(False), await record(True)
+        assert on == off                                  # nothing added, nothing moved
+        gov_types = [t for k, t in on if k == "gov"]
+        assert gov_types.count("plan_compile") == 1
+        post_plan = [t for k, t in on[[k for k, _ in on].index("plan"):] if k == "gov"]
+        assert post_plan == ["plan_compile"]              # only the existing gate
+        assert not [t for t in gov_types
+                    if "anchor" in str(t).lower() or "clarif" in str(t).lower()]
+
+    @pytest.mark.asyncio
+    async def test_b_anchored_request_proceeds_to_execution(self):
+        orch = _orch(True)
+        await _run(orch, "write a poem about autumn", _plan())
+        orch._workflow_runtime.execute.assert_called()
+        assert "orchestrator.clarification_requested" not in _emitted(orch)
+
+    @pytest.mark.asyncio
+    async def test_out_of_scope_request_abstains_and_proceeds(self):
+        orch = _orch(True)
+        await _run(orch, "book a flight to Tokyo next week", _plan())
+        orch._workflow_runtime.execute.assert_called()
+        obs = [c.kwargs["payload"] for c in orch._event_stream.append.call_args_list
+               if c.kwargs.get("event_type") == "cognitive.content_anchor_observed"]
+        assert obs and obs[0]["abstained"] is True and obs[0]["score"] is None
+        assert "orchestrator.clarification_requested" not in _emitted(orch)
+
+    @pytest.mark.asyncio
+    async def test_flag_off_is_inert_and_compile_call_is_unchanged(self):
         orch = _orch(False)
-        gov = MagicMock()
-        gov.evaluate_action = MagicMock(return_value=GovernanceResult())
-        orch._governance = gov
-        plan_mock = AsyncMock(side_effect=RuntimeError("reached plan()"))
+        compile_mock = AsyncMock(return_value=CompilationResult(
+            status=CompilationStatus.COMPILED, workflow_definition=MagicMock()))
         with patch("core.cognitive.intent.interpret_request",
                    new=AsyncMock(return_value=[_goal()])), \
-             patch("core.cognitive.planner.plan", new=plan_mock):
+             patch("core.cognitive.planner.plan",
+                   new=AsyncMock(return_value=_ready(_plan()))), \
+             patch("core.cognitive.compiler.compile", new=compile_mock):
             try:
                 await orch.handle("write a 1000 words story")
             except Exception:
                 pass
-        # Flag off: pipeline proceeds to plan() exactly as before this ADR.
-        assert plan_mock.call_count >= 1
-        seen = {c.args[0].action_type for c in gov.evaluate_action.call_args_list}
-        assert CONTENT_ANCHOR_ACTION_TYPE not in seen
+        compile_mock.assert_awaited_once()
+        assert "content_anchor" not in compile_mock.call_args.kwargs
+        assert "cognitive.content_anchor_observed" not in _emitted(orch)
 
     @pytest.mark.asyncio
-    async def test_b_flag_on_sufficient_request_proceeds_to_planning(self):
+    async def test_flag_on_passes_the_observation_to_compile(self):
         orch = _orch(True)
-        plan_mock = AsyncMock(side_effect=RuntimeError("reached plan()"))
+        compile_mock = AsyncMock(return_value=CompilationResult(
+            status=CompilationStatus.COMPILED, workflow_definition=MagicMock()))
         with patch("core.cognitive.intent.interpret_request",
                    new=AsyncMock(return_value=[_goal()])), \
-             patch("core.cognitive.planner.plan", new=plan_mock):
+             patch("core.cognitive.planner.plan",
+                   new=AsyncMock(return_value=_ready(_plan()))), \
+             patch("core.cognitive.compiler.compile", new=compile_mock):
             try:
-                await orch.handle(
-                    "write a 1000-word noir detective story, first person")
+                await orch.handle("write a 1000 words story")
             except Exception:
                 pass
-        assert plan_mock.call_count >= 1
+        assert compile_mock.call_args.kwargs["content_anchor"].missing == (
+            MISSING_SUBJECT,)
 
     @pytest.mark.asyncio
-    async def test_flag_on_out_of_scope_request_proceeds_to_planning(self):
+    async def test_escalation_from_another_governor_keeps_the_generic_path(self):
+        kernel = GovernanceKernel()
+        # Scoped to plan_compile: handle() ALSO evaluates a request-authorization
+        # action at entry (ORCHESTRATOR_ACTION_TYPE), which must pass untouched.
+        kernel._governors.insert(0, _StubGovernor(
+            "SomeOtherGovernor", GovernanceVerdict.ESCALATE, only_for="plan_compile"))
+        orch = _orch(True, governance=kernel)
+        answer = await _run(orch, "write a 1000 words story", _plan())
+        assert isinstance(answer, str) and "wasn't able to prepare" in answer
+        assert "surprise me" not in answer
+        assert "orchestrator.clarification_requested" not in _emitted(orch)
+        assert "orchestrator.query_failed" in _emitted(orch)
+
+    @pytest.mark.asyncio
+    async def test_clarification_policy_escalation_is_unchanged(self):
+        # Anchored request, low-confidence plan: ClarificationPolicy escalates;
+        # the user still gets the pre-existing generic message.
         orch = _orch(True)
-        plan_mock = AsyncMock(side_effect=RuntimeError("reached plan()"))
-        with patch("core.cognitive.intent.interpret_request",
-                   new=AsyncMock(return_value=[_goal()])), \
-             patch("core.cognitive.planner.plan", new=plan_mock):
-            try:
-                await orch.handle("book a flight to Tokyo next week")
-            except Exception:
-                pass
-        assert plan_mock.call_count >= 1
-        payloads = [c.kwargs.get("payload") for c in
-                    orch._event_stream.append.call_args_list
-                    if c.kwargs.get("event_type") == "cognitive.content_anchor_evaluated"]
-        assert payloads and payloads[0]["status"] == "abstained"
-        emitted = [c.kwargs.get("event_type") or c.args[0]
-                   for c in orch._event_stream.append.call_args_list]
-        assert "orchestrator.clarification_requested" not in emitted
+        answer = await _run(orch, "write a poem about autumn",
+                            _plan(confidence=0.1))
+        assert isinstance(answer, str) and "wasn't able to prepare" in answer
+        assert "orchestrator.clarification_requested" not in _emitted(orch)
 
     @pytest.mark.asyncio
-    async def test_default_constructor_leaves_gate_off(self):
+    async def test_default_constructor_leaves_the_feature_off(self):
         orch = Orchestrator(
             modules={}, context=MagicMock(spec=ContextMemory),
             router=MagicMock(), memory=AsyncMock(spec=UnifiedMemory),
             governance=GovernanceKernel(), event_stream=AsyncMock())
-        assert orch._creative_anchor_gate_enabled is False
+        assert orch._creative_content_anchor_enabled is False
 
 
 # ── Known gap, recorded rather than skipped ─────────────────────────────
@@ -472,7 +677,7 @@ class TestOrchestrator:
 @pytest.mark.xfail(
     strict=True,
     reason="ADR-KERNEL-07 D-4: Test D (already-known-from-context) needs the "
-           "hint channel wired into the sufficiency check; not in slice 1.")
+           "hint channel wired into the detector; not in slice 1.")
 def test_d_already_known_from_context_is_not_implemented():
     # A genre stated earlier in the conversation should make this sufficient.
     # Slice 1 is stateless and assesses the current request text only.

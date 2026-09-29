@@ -77,23 +77,21 @@ risked exactly the field-conflation "reuse... rather than inventing a
 second one" is trying to prevent, not the behavior it endorses. Documented
 here as a deliberate implementation choice, not a silent assumption.
 
-Scope addition (ADR-KERNEL-07, PROPOSED, 2026-09-28): a fourth,
-independent question -- whether a creative request carries any content
-anchor (`metadata["content_anchor_score"]`, evaluated by
-`_evaluate_content_anchor_policy()`). Slice 1 of a future intent-
-sufficiency capability; named for the narrow signal it applies to, not for
-the general concept. A sibling of the ClarificationPolicy question above,
-not an extension of it: different metadata key, so a content-anchor action
-never carries `confidence` and the general_purpose_only exemption cannot
-apply to it. ESCALATE below threshold only; no attempt bound (no attempt
-state exists in slice 1); still no rule-registration API, no new governor,
-no cognitive-layer type imported. Absent key -> this rule is inert.
-NOTE (ADR-KERNEL-07 D-5, open): the K4.2 authoritative document records "no
-dedicated clarification gate" (clarification is evaluated here, at Plan
-Compilation); the slice-1 caller evaluates this rule PRE-plan, which
-contradicts that decision until it is superseded or the call is relocated.
-(DRIFT-10's "compilation boundary only" wording is a derived rule, not the
-source authority.)
+Scope addition (ADR-KERNEL-07, PROPOSED; D-5 resolved as Option C,
+2026-09-29): a fourth, independent question -- whether a creative request
+carries any content anchor (`metadata["content_anchor_score"]`, evaluated by
+`_evaluate_content_anchor_policy()`). Slice 1 of a future intent-sufficiency
+capability; named for the narrow signal it applies to. It is evaluated at the
+EXISTING Plan Compilation boundary: compile() merges the pre-plan detector's
+keys into its own "plan_compile" action, so there is no new gate and no new
+governance boundary (K4.2: "no dedicated clarification gate"). It is a sibling
+of the ClarificationPolicy question above, not an extension of it: the two
+rules read different keys (`content_anchor_score` vs `confidence`) from the
+same action, so neither -- nor ADR-K4.2-H-13's general_purpose_only exemption,
+which applies only to ClarificationPolicy -- can fire on or swallow the
+other's decision. ESCALATE below threshold only; no attempt bound (no attempt
+state exists in slice 1); still no rule-registration API, no new governor, no
+cognitive-layer type imported. Absent key -> this rule is inert.
 
 Default policy: permissive. All worker types are authorized unless
 explicitly denied at construction — matching the permissive-default risk
@@ -190,10 +188,12 @@ class OrchestrationGovernor(Governor):
         means; this method only applies a threshold to it, the same
         mechanism role this governor already plays for ClarificationPolicy.
 
-        A sibling of ClarificationPolicy, not an extension of it: it reads
-        `content_anchor_score`, ClarificationPolicy reads `confidence`, so
+        A sibling of ClarificationPolicy, not an extension of it. Both may be
+        present on the same compile-time action: this rule reads only
+        `content_anchor_score`, ClarificationPolicy reads only `confidence`, so
         neither -- nor ADR-K4.2-H-13's general_purpose_only exemption -- can
-        fire on or swallow the other's decision.
+        fire on or swallow the other's decision. This rule is evaluated first;
+        when it passes (or is inert) ClarificationPolicy is evaluated as before.
 
         Returns None (defer to the remaining checks) when the score key is
         absent or meets the threshold -- permissive-on-absence.
