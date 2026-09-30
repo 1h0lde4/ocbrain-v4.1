@@ -246,3 +246,284 @@ Every docstring and comment in `docker_backend.py` that said `UNVERIFIED`, descr
 Test changes, recorded per the testing-discipline rule that existing tests change only when the frozen contract's expected behavior actually changes, with the reason stated: three tests whose entire premise was "capabilities is empty" (`test_capabilities_start_empty`, `test_empty_capabilities_means_admission_gate_rejects_everything`, `test_no_new_sandbox_capability_claimed_yet`) were rewritten, not deleted, to assert the new true state instead — the premise changed, not the standard. Two genuinely new tests were added alongside them for the admission boundary's other two cases (a networked request; a deliberately-incomplete capability set).
 
 44/44 tests in this file now; full `core/sandbox` regression: 103 passed, 0 failed. mypy clean on both files. This is the actual completion point: **the backend's declared security capabilities are backed by adversarial runtime evidence, and the admission layer enforces those claims** — not merely "DockerBackend is implemented." The A9 finding stays exactly as `_lsm_active()` and its regression test already record it — real, unmitigated, permanently represented — regardless of anything above; nothing in this section touches it.
+
+
+## 17. D10 remediated; C2 downgraded to FAIL and `NETWORK_ALLOWLIST` withdrawn after a cross-sandbox egress finding (update, September 29 2026)
+
+Two results, deliberately kept separate: a lifecycle defect class that is now fixed and verified (D10), and a stronger, unrelated isolation failure that is *not* fixed and is recorded here as its own finding.
+
+### 17.1 D10 — remediated
+
+§15/§16 recorded D10 as passing on the strength of container-orphan checks after the D11 race pairs. The checklist's D10 requires one test per failure point (creation, network setup, start, execution, timeout, cancellation, external disappearance, daemon/API failure), each asserting no leftover labeled resource, and names "testing only the happy-path `destroy()`" as the forbidden shortcut. A fresh audit found the earlier evidence too thin for that, and found real defects behind it, reproduced against the unmodified code:
+
+1. **Proxy listener leak.** `create()` called `proxy.start()` before spawning `docker create`; only a *nonzero exit* stopped it. If the spawn itself raised, the listener stayed alive and accepting connections with no handle anywhere that could stop it.
+2. **Workspace leak.** A failed `create()` left behind the workspace directory it had just made (nonzero `docker create`, and network-setup failure).
+3. **Handle dropped before removal was confirmed.** `destroy()` popped the handle first and ignored `docker rm`'s outcome, so an unspawnable or failing `rm` orphaned the container, the proxy and the workspace with no handle left to retry from.
+4. **Container with no handle.** A container genuinely created before a failure or cancellation could not be found again. This one was not shown in the red run (the proxy check fires first there); it is established by mutation M2 below.
+
+**Fix** (`docker_backend.py` only): every resource acquired in `create()` is now either cleaned immediately or retained in a destroyable handle. The container is removed by its backend-private name and *absence is confirmed* by a label query — a `None` (could not look) is never confused with `[]` (nothing there). A workspace is removed only if that call created it; a pre-existing caller-owned one is never touched. `destroy()` retains the handle and raises `DockerBackendError` when removal cannot be confirmed, stops the host-side proxy regardless, and removes the workspace only once the container is confirmed gone.
+
+**Behavior change to note:** `destroy()` can now raise (`DockerBackendError`) where it used to return silently, and a second call retries.
+
+**Evidence.**
+
+- Red, tests against the *unmodified* source: 6 of 16 failed, each for the intended reason (workspace leak ×2, live proxy listener ×3, raw `FileNotFoundError` with the handle already dropped); 10 passed, i.e. timeout, cancellation, external removal (mid-run and before run), execution failure, start failure, run-start failure and artifact-copy cleanup were already correct. A first red run was mostly noise because of a test-helper off-by-one (`_docker_cmd` never matched, so the injector never fired); it was fixed and the red phase redone.
+- Green: all D10 tests pass. Every injecting test asserts the injection actually fired (`.hits`), so none passes vacuously.
+- Mutation checks, each breaking one mechanism in a throwaway copy and restoring it byte-identical: M1 (`_abort_create` skips `proxy.stop()`) caught by 4 tests; M2 (skips by-label removal) caught by the 2 after-container tests; M3 (unconditional workspace removal) caught by the pre-existing-workspace guard; M4 (drops the handle when unconfirmed) and M5 (fake "confirmed gone") each caught by the daemon-unreachable test; M6 (`destroy()` skips `proxy.stop()`) caught by 9 tests.
+- Final state after this section's other changes (§17.3): DockerBackend file 59/59; full `core/sandbox` 118/118 (the previously flaky `test_net_proxy` test happened to pass this run — intermittency is unresolved, not fixed); mypy clean on both files; after the run 0 containers, 0 endpoints on the shared network, 0 artifact temp dirs.
+
+**Honesty note.** The failures are *simulated at the CLI-call boundary* (`asyncio.create_subprocess_exec` patched for specific `docker` invocations). They exercise this backend's own cleanup invariant; they are not evidence about how Docker or its daemon behaves when it actually fails.
+
+**Scope of the D10 closure.** Closed for: containers, proxy listeners, workspace (host bind source), artifact temp directories, and per-sandbox endpoints on the shared network. **Not decided here:** the lifecycle of the shared network *object* itself (persist vs remove). The frozen documents are silent, and §17.2 makes it a question for the network redesign, so no contract is encoded either way; an earlier draft of this remediation encoded "shared network = persistent infrastructure" and was reverted before it entered the baseline.
+
+### 17.2 Finding: one sandbox can use another sandbox's egress proxy (proposed `DEBT-038`)
+
+- **Observed:** with two concurrent sandboxes holding different allowlists, sandbox B obtained a tunnel to a host that only A's allowlist permits, by connecting to A's proxy on the shared gateway.
+- **Expected:** a sandbox's outbound policy is enforced independently of its siblings (invariant in §17.4).
+- **Evidence** (reproduction attached verbatim in §17.7): A allows `example.com`; B allows `example.org`.
+
+| Probe, from inside B | Result |
+|---|---|
+| B's own proxy → `example.com` (not in B's allowlist) | `403 Forbidden` (control: B's policy works) |
+| B's own proxy → `example.org` (in B's allowlist) | `200 Connection Established` (control: upstream egress works, so a 200 is meaningful) |
+| **A's proxy → `example.com` (in A's allowlist only)** | **`200 Connection Established`** |
+
+- **Likely mechanism (hypothesis from reading the code, consistent with the result, not separately verified):** every sandbox's `AllowlistProxy` binds the one shared network's gateway IP; the gateway is reachable from every container on that network; the proxy does not identify which sandbox is calling; `enable_icc=false` constrains container-to-container traffic, not container-to-gateway traffic.
+- **Caveats, stated rather than hidden:** in the reproduction B was *given* A's port through `request.env`. Discovering it by scanning the gateway is expected to be feasible (an ephemeral port on a local bridge) but was **not demonstrated**. Requires two concurrent networked sandboxes. Only `CONNECT` tunnelling was tried. Single-sandbox behavior is unaffected as far as §14 tested it. Whether an `AF_VSOCK` socket (A9) offers an additional way out is untested.
+- **Severity:** not formally assigned (the project's audit method defines none for this finding). It is blocking for the `NETWORK_ALLOWLIST` claim.
+- **Why §14/C2 missed it:** the C2 bullets covered a raw connection bypassing the proxy, the gateway as a route *beyond* the host, a sibling *container* as a relay (ICC), and `request.env` overrides. A sibling's *proxy* was never a tested path.
+
+### 17.3 Dispositions
+
+| Item | Status | Note |
+|---|---|---|
+| D10 | **Closed** (scope in §17.1) | Network-object lifecycle explicitly undecided |
+| C2 | **FAIL** | The observed behavior contradicts the intended per-sandbox isolation property; §14's results stand only for the paths it tested |
+| `NETWORK_ALLOWLIST` | **Withdrawn** | Removed from `_CAPS` (8 of 12 at this point; 7 of 12 after §17.8). `check_admission()` again rejects a request that sets `allowed_hosts`. Re-earn only with a passing concurrent A/B test |
+| `NET_NAMESPACE` | **Withdrawn** (§17.8) | Claim/evidence withdrawal only: implementation unchanged, no direct committed test yet |
+| A1 | Mechanism retained | The import-time paired-claim invariant is unchanged and still tested (it fires when violated); it holds trivially again |
+| Sandbox-security closeout | **Not issued** | No overall closeout may say the network-isolation claims passed |
+
+Direct callers that bypass admission and call `create()` with `allowed_hosts` still reach the network path; `create()` was deliberately not given a backend-local refusal (no second policy surface, addendum B3). Admission, driven by `_CAPS`, is the guard.
+
+**Test changes, recorded per the testing-discipline rule** (existing tests change only where the frozen contract's expected result changes, with the reason stated): the capability-set test drops `NETWORK_ALLOWLIST` and lists it among the deliberately absent; the claimed-count assertion moves 9 → 8; the networked-request admission test's expectation flips from *admitted* to *rejected* (the contract changed: the claim was withdrawn); the A1 comment no longer says both claims are held. One D10 test — the one that encoded the reverted persistence decision — was deleted; that is removing an assertion of a contract we chose not to adopt, not weakening a check of existing behavior. Everything else about D10 coverage is unchanged.
+
+### 17.4 Invariant for the network-redesign workstream
+
+> A sandbox must not be able to reach or use another sandbox's egress proxy, directly or indirectly, and its outbound policy must be enforced independently of sibling sandboxes.
+
+That workstream may legitimately modify `_net_proxy.py` and the network topology. A per-sandbox network/proxy binding is one plausible direction, not a decision; the redesign should be worked from the invariant, not from an assumed implementation. Its regression gate is a **concurrent A/B test with deliberately different allowlists**, of the shape in §17.7, that must show B cannot obtain A's egress.
+
+### 17.5 Separate follow-ups (not conflated with §17.2)
+
+- After a failed `docker start` spawn, `run()` leaves the handle's state at `RUNNING` although nothing started (D6/D8 bookkeeping; the handle remains destroyable).
+- Create-unwind residual: if the daemon is unreachable during the unwind itself, an already-created container cannot be confirmed removed and has no handle; it stays enumerable by the `ocbrain.sandbox=true` label.
+- Test hygiene: a D10 test that fails midway can leave containers behind (a finalizer removing containers created during the test would prevent it).
+- The test module's docstring still says every daemon-gated test is skipped; that has not been true for some time.
+- `test_net_proxy.py` remains intermittently flaky (`test_plain_http_to_allowed_host_is_forwarded`, and earlier a different assertion). Together with the plain-HTTP 403 seen in the C2 work, the plain-HTTP path of `_net_proxy.py` has two separate unexplained behaviors; neither has been diagnosed.
+- `handoff.md` §5 is stale on D10 (now closed with new evidence), C2 (PASS → FAIL) and `NETWORK_ALLOWLIST` (withdrawn).
+
+### 17.6 Proposed `KNOWN_ISSUES.md` entry (not applied — outside this workstream's file boundary)
+
+> **DEBT-038 (proposed; next free id after DEBT-037 on this checkout) — cross-sandbox egress via a sibling's proxy.** DockerBackend's sandboxes share one network whose gateway hosts every sandbox's `AllowlistProxy`; sandbox B was observed tunnelling to a host permitted only by sandbox A's allowlist (reconciliation §17.2). `NETWORK_ALLOWLIST` withdrawn from `DockerBackend._CAPS`; C2 FAIL. Fix needs a network/proxy redesign (may touch `_net_proxy.py`); regression gate is a concurrent A/B test with different allowlists.
+
+### 17.7 Reproduction (verbatim scratch script, not part of the test suite) and its output
+
+```python
+"""Scratch probe (NOT in the repo): can sandbox B (allowlist {example.org}) use
+sandbox A's proxy (allowlist {example.com}) via the shared gateway?"""
+import asyncio, sys, shutil
+sys.path.insert(0, "/home/claude/ocbrain-v4.1")
+from core.sandbox.backends.docker_backend import DockerBackend
+from core.sandbox.contracts import SandboxPolicy, SandboxRequest
+
+B_SCRIPT = r'''
+import os, socket, urllib.parse
+def connect_via(host, port, target):
+    try:
+        s = socket.create_connection((host, port), timeout=8)
+        s.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode())
+        s.settimeout(12)
+        line = s.recv(300).split(b"\r\n")[0]; s.close(); return line.decode()
+    except Exception as e:
+        return "ERR " + repr(e)
+own = urllib.parse.urlparse(os.environ["HTTPS_PROXY"])
+a_port = int(os.environ["A_PORT"])
+print("1 B's OWN proxy -> example.com  (NOT in B's allowlist):", connect_via(own.hostname, own.port, "example.com:443"))
+print("2 B's OWN proxy -> example.org  (in B's allowlist)    :", connect_via(own.hostname, own.port, "example.org:443"))
+print("3 A's proxy     -> example.com  (in A's allowlist only):", connect_via(own.hostname, a_port, "example.com:443"))
+'''
+
+async def main():
+    be = DockerBackend(image_ref="ocbrain-test/base:local")
+    for d in ("/tmp/xsb-A", "/tmp/xsb-B"): shutil.rmtree(d, ignore_errors=True)
+    reqA = SandboxRequest(command=("sleep", "40"), policy=SandboxPolicy(workspace_dir="/tmp/xsb-A", allowed_hosts=("example.com",), timeout_sec=60))
+    hA = await be.create(reqA)
+    runA = asyncio.ensure_future(be.run(hA, reqA))
+    await asyncio.sleep(1.5)
+    a_port = be._handles[hA.handle_id].proxy.port
+    reqB = SandboxRequest(command=("python3", "-c", B_SCRIPT), env={"A_PORT": str(a_port)},
+                          policy=SandboxPolicy(workspace_dir="/tmp/xsb-B", allowed_hosts=("example.org",), timeout_sec=60))
+    hB = await be.create(reqB)
+    resB = await be.run(hB, reqB)
+    print(f"[A's proxy port = {a_port}]")
+    print(resB.stdout.strip() or "(no stdout)")
+    if resB.stderr.strip(): print("stderr:", resB.stderr.strip()[:300])
+    await be.cancel(hA); await runA
+    await be.destroy(hA); await be.destroy(hB)
+
+asyncio.run(main())
+```
+
+Output observed (September 29 2026, Docker 29.1.3, the `docker import`-built test image):
+
+```
+[A's proxy port = 45573]
+1 B's OWN proxy -> example.com  (NOT in B's allowlist): HTTP/1.1 403 Forbidden
+2 B's OWN proxy -> example.org  (in B's allowlist)    : HTTP/1.1 200 Connection Established
+3 A's proxy     -> example.com  (in A's allowlist only): HTTP/1.1 200 Connection Established
+```
+
+### 17.8 Amendment (same day): `NET_NAMESPACE` withdrawn
+
+`NET_NAMESPACE` is removed from the asserted capability set; `_CAPS` is now **7 of 12** (`MOUNT_NAMESPACE`, `PID_NAMESPACE`, `UTS_NAMESPACE`, `CGROUP_MEMORY`, `NO_NEW_PRIVS`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`). Under addendum B2 a capability needs a gate of its own, and none exists: its only cited evidence was the C2 set, which tests egress paths rather than namespace separation. The scratch observation that a container's netns inode differs from the host's is useful but is not a committed test, so it does not earn the claim.
+
+This is a **claim/evidence withdrawal, not a statement that Docker failed to create a network namespace.** The implementation is unchanged.
+
+The three statuses are kept distinct:
+
+| Item | Status |
+|---|---|
+| `NET_NAMESPACE` | Implementation fact awaiting a direct gate |
+| `NETWORK_ALLOWLIST` | Withdrawn: observed behavior contradicts the claimed invariant (§17.2) |
+| C2 | FAIL pending a network-boundary redesign and regression proof |
+
+**Future gate (not added in this change):** at minimum, (a) a sandbox's network namespace is distinct from the host's, and (b) concurrently created sandboxes have pairwise-distinct network namespaces.
+
+**Separation rule:** passing that gate re-earns `NET_NAMESPACE` *only*. It does not resurrect `NETWORK_ALLOWLIST` or C2, and DEBT-038 stays open. (A1's existing paired-claim invariant already makes `NET_NAMESPACE` a *prerequisite* for ever claiming `NETWORK_ALLOWLIST` again; necessary is not sufficient.)
+
+**Effects:** `check_admission()` still rejects any request that sets `allowed_hosts`, now on the `NET_NAMESPACE` check first. Tests changed only where the contract changed: the capability-set test (8 → 7, `NET_NAMESPACE` added to the deliberately-absent list) and its count assertion. No test was deleted or weakened.
+
+
+## 18. Closeout audit: the 28-item matrix, B and D12 audits (September 29 2026)
+
+**Verdict: the original prompt's completion standard (§15) is NOT met.** 24 PASS, 2 FAIL (A9, C2), 2 BLOCKED (A1, C3). No overall sandbox-security closeout is issued, and none may say the network-isolation claims passed.
+
+This audit was made against the frozen checklist's *literal* text, not the handoff's ledger (§5 of `handoff.md`), because D10 had already shown that ledger could over-claim. It found the ledger's evidence thinner than stated in several places, added tests for every checklist-required verification that had none, and found three product defects, now fixed.
+
+### 18.1 What the audit found
+
+**Product defects (reproduced against the unmodified code, then fixed):**
+
+1. **D5 — artifact collection hangs on a FIFO.** A sandbox that runs `mkfifo` in its workspace blocked collection indefinitely: `_sha256_of` does a synchronous `open()`, which blocks forever on a FIFO with no writer, stalling the *whole event loop*. Fix: only regular files are hashed. (Mutation M7 re-creates the hang.)
+2. **D6 — a second `run()` re-executed the command.** `docker start` on an exited container silently restarts it. Fix: a handle can be run at most once (`DockerBackendError` otherwise).
+3. **D6 — cancel-before-run mislabeled a later run.** `cancel()` set its flag unconditionally, so a run that then completed normally was reported `CANCELLED`. Fix: the flag is set only while the sandbox is actually running; the `docker kill` stays unconditional (the D11 race tests depend on it).
+4. **D4 — `request_id` was in neither the container name nor its labels**, though D4 requires it. Fix: an `ocbrain.request_id` label.
+
+**Behavior changes visible to callers** (all inside the existing contract's shape): a second `run()` on a handle raises; `cancel()` before `run()` no longer taints it; and, from §17, `destroy()` can raise when removal cannot be confirmed.
+
+**Evidence that was weaker than its name or the ledger said (fixed by adding tests, not by changing code):** `test_artifacts_collected_with_real_sha256` never checked a hash (only that a filename appeared); `test_cancel_kills_full_process_tree` would pass vacuously if the grandchild never started (`None == None`); A3, A6 and D2 had only construction-level or ad hoc evidence; D6 had one of its six cases; C1 lacked the same-exit-code cancel case; D8 checked bookkeeping equality, not the container itself.
+
+**Not a product defect, recorded because it bit this audit:** my first C1 test assumed `kill -9 $$` from a container's PID 1 would produce exit 137; a PID 1 shell ignores its own SIGKILL. Corrected before any conclusion was drawn from it.
+
+**Recorded behavior, not a fix:** a *relative* symlink that escapes the workspace makes `docker cp` itself refuse (`invalid symlink`), so the manifest is empty — nothing escapes, but every artifact is lost silently. Absolute and directory symlinks are rejected by the collector's containment check while legitimate files survive.
+
+**Corrections to the handoff ledger:** its B-numbering was a guess; the checklist's is B1 = `SECCOMP` is not CVE-specific protection, B2 = capabilities empty until earned, B3 = no second policy surface, B4 = file-touch boundary. C3 was filed "NOT APPLICABLE (moot)" but the item has no N/A clause, so it is BLOCKED. D10, C2, A1 and the capability count were superseded by §17.
+
+### 18.2 The 28-item verification matrix
+
+Classification: A = verified gap, B = traceability rule, C = gate extension, D = implementation requirement. All symbols are in `core/sandbox/backends/docker_backend.py` and all tests in `tests/core/sandbox/test_docker_backend.py` unless stated. "Mutation Mn" means the fix or guard was broken in a throwaway copy and the named test failed.
+
+| ID | Class | Status | Evidence | File/Symbol | Public/Policy Surface | Host Dependency | Notes |
+|---|---|---|---|---|---|---|---|
+| A1 | A | **BLOCKED** | Invariant enforced at import and tested (`test_a1_*`: holds; fires when violated). The required verification, an allowlist request admitted and reaching the proxy path, is impossible while both claims are withdrawn (§17, §17.8) | `_CAPS`, `_check_a1_paired_capability_invariant` | capability claims withdrawn | none | Unblocks only after the DEBT-038 redesign and a `NET_NAMESPACE` gate; the mechanism itself is sound |
+| A2 | A | PASS | `test_a2_mount_…`, `test_a2_pid_…`, `test_a2_uts_…` (real host mount, real host PID, hostname) | `_CAPS` | claims MOUNT/PID/UTS_NAMESPACE | none | Claimed on their own tests, not "Docker uses namespaces" |
+| A3 | A | PASS | `test_a3_independent_backends_resolve_the_identical_immutable_digest`, `test_a3_image_like_env_cannot_change_what_runs` (M14), `test_sandbox_request_has_no_image_field` | `_resolve_image_digest`, constructor | none: no `image` field | image must carry local RepoDigests | Verified only for a `docker import` image; `docker build` path untested |
+| A4 | A | PASS | `test_a4_host_only_env_var_is_absent_and_request_env_is_present_in_the_container` (M18), `test_c2_env_cannot_redirect_the_enforced_proxy`, env-builder unit tests | `_build_container_env` | none | none | Verifies env ordering only; says nothing about egress enforcement (C2 FAIL) |
+| A5 | A | PASS | `test_a5_a_restrictive_allowed_imports_value_still_runs_unimpeded`, `test_create_args_ignores_allowed_imports` | `_build_create_args` (structural: no such parameter) | none | none | Option (a), non-enforcement preserved; a documentation test, not a security property |
+| A6 | A | PASS | `test_a6_runtime_inspect_shows_no_privilege_or_host_sharing[False/True]` (M13) asserts `Privileged`, `CapAdd`, `PidMode`/`IpcMode`/`UTSMode`/`NetworkMode`, `Devices`, mounts, `ReadonlyRootfs` from a live `docker inspect`; plus the construction test | `_build_create_args` | none | Docker version | Effective state, not just the request |
+| A7 | A | PASS | §18.4 evidence line: local unix socket, context `default`, `DOCKER_HOST` unset | Phase 0 | n/a | this daemon | Findings apply to this daemon only |
+| A8 | A | PASS | §18.4 evidence line: kernel 6.18.44-fc-v50, cgroup v1, `cgroupfs` | Phase 0 | n/a | this kernel/cgroup | Conclusions scoped to that combination; the kernel drifts within a session (v37→v42→v49→v50) |
+| A9 | A | **FAIL** | `test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state`; §12: `AF_VSOCK` via `socketcall(2)` (`int $0x80`) creates a real socket inside a real container, so the bypass is open. `AF_ALG` probed separately: `EAFNOSUPPORT`, not exercisable on this kernel | `_lsm_active`, `_CAPS` (`SECCOMP` absent) | `SECCOMP` unclaimed | kernel lacks `AF_ALG`; no LSM policy loaded; Docker 29.1.3 predates the upstream fixes | The procedural half (separate probes, recorded independently) is satisfied; the property is not. `AF_ALG` protection is unverified, not "blocked" |
+| B1 | B | PASS | `test_capabilities_reflect_exactly_the_evidence_backed_set` asserts `SECCOMP` absent; the bypass is tracked separately as A9 FAIL | `_CAPS` | none | none | The two facts are kept independent |
+| B2 | B | PASS | `_CAPS` started `frozenset()` (commit history). Every claim traces to a test: MOUNT/PID/UTS to the A2 tests; CGROUP_MEMORY to `test_oom_kill_reported_as_resource_exceeded_not_inferred_from_exit_code`; NO_NEW_PRIVS to `test_no_new_privs_runtime_proc_status`; CGROUP_PIDS to `test_cgroup_pids_enforced_and_container_stays_controllable`; FILESYSTEM_JAIL to `test_filesystem_jail_full_attack_surface` | `_CAPS` | 7 of 12 claimed | none | `NETWORK_ALLOWLIST` and `NET_NAMESPACE` withdrawn (§17, §17.8). The FILESYSTEM_JAIL test's name overclaims (no `/dev/shm`, `/proc`, `/sys` or mount attempts) |
+| B3 | B | PASS | Source review: imports and uses `AllowlistProxy`; defines no parallel admission function, proxy or request/result shape; admission is consumed through `capabilities` | module | none | none | The `--internal` Docker network is topology, not a policy standing in for the proxy; the redesign may revisit it |
+| B4 | B | PASS, one documented exception | §18.6 file-set evidence | whole diff | n/a | none | `handoff.md` is outside the literal allow-list (§18.6) |
+| C1 | C | PASS | `test_oom_kill_reported_as_resource_exceeded_not_inferred_from_exit_code`, `test_c1_ordinary_sigkill_with_exit_137_is_not_resource_exceeded`, `test_c1_cancel_with_exit_137_is_cancelled_not_resource_exceeded` (M17: the `exit_code == 137` shortcut is caught) | `_classify` | none | cgroup v1 `OOMKilled` | Same exit code, opposite classification, from inspected state |
+| C2 | C | **FAIL** | §17.2: with concurrent sandboxes holding different allowlists, sandbox B obtained a tunnel through A's proxy on the shared gateway. The six C2 bullet tests pass and stand only for what they tested | `create()` network path, shared gateway, `_net_proxy.py` (not touched) | `NETWORK_ALLOWLIST` withdrawn | Docker `--internal` network | Filed as proposed DEBT-038; the invariant and regression gate are in §17.4 |
+| C3 | C | **BLOCKED** | Requires two outcomes recorded together: bypass closed and a benign compat probe still working. The first cannot be obtained: nothing closes the bypass on this host | Phase 4 step, report | none | needs a host with an active AppArmor or SELinux policy and a Docker release containing the socketcall fix | Not N/A (the item has no such clause). Nothing is reported closed |
+| D1 | D | PASS | `test_create_args_workspace_is_the_writable_mount`, `test_artifacts_collected_with_real_sha256` (file retrievable), `test_d5_manifest_hash_and_size_match_an_independent_recomputation`, `test_root_filesystem_is_read_only`, `test_filesystem_jail_full_attack_surface` (write to an undocumented path fails) | `_build_create_args` | none | none | Mapping documented in the builder |
+| D2 | D | PASS | `test_d2_read_only_path_rejects_write_delete_create_and_symlink_escape` (M12): write, modify, delete and create all fail; absolute and relative symlinks cannot reach a host secret; host side untouched | `_build_create_args` (`:ro` bind) | none | none | One declared path exercised; several behave identically by construction |
+| D3 | D | PASS | `test_root_filesystem_is_read_only`, `test_filesystem_jail_full_attack_surface` (writes to `/etc`, `/usr`, `..` traversal and symlink escape all denied; workspace stays writable) | `_build_create_args` (`--read-only`) | none | none | The first test alone is weak (asserts only a nonzero exit); the jail test carries it |
+| D4 | D | PASS | `test_d4_create_args_label_carries_the_request_id` and `test_d4_abandoned_labeled_container_is_found_and_removed_by_a_cleanup_pass` (M10), `test_two_concurrent_sandboxes_do_not_collide`, D11 | `_build_create_args`, `create()` | none: no `SandboxHandle` field | none | Fixed this audit (§18.1, item 4) |
+| D5 | D | PASS | `test_d5_manifest_hash_and_size_match_an_independent_recomputation`, `test_d5_absolute_symlinks_are_rejected_while_legitimate_artifacts_survive` (M11), `test_d5_relative_escaping_symlinks_never_reach_the_manifest`, `test_d5_non_regular_files_neither_hang_collection_nor_enter_the_manifest` (M7) | `_collect_artifacts` | none | none | Fixed this audit. Not attacked: extraction races, hard links, workspace size. Relative escaping symlinks empty the manifest silently |
+| D6 | D | PASS | One test per case: `test_d6_run_before_create_is_a_defined_error`, `test_d6_double_run_is_a_defined_error_not_a_second_execution` (M8), `test_d6_cancel_before_run_is_a_no_op_that_does_not_taint_the_later_run` (M9), `test_d6_cancel_after_terminate_is_a_no_op`, `test_double_destroy_is_idempotent`, `test_d6_inspect_after_destroy_reports_a_defined_sandbox_state` | `run`, `cancel`, `destroy`, `inspect` | none | none | Two cases fixed this audit. The state left `RUNNING` after a failed `docker start` spawn is a separate follow-up (§17.5) |
+| D7 | D | PASS | `test_d7_cancel_reaches_a_grandchild_that_was_provably_alive_before` (M15): proves the grandchild was alive and advancing before, then stopped, and the container is not running | `cancel` | none | none | Supersedes the weaker `test_cancel_kills_full_process_tree`, kept |
+| D8 | D | PASS | `test_d8_inspect_never_touches_the_container_itself` (M16): `docker inspect` shows a created container stays created and an exited one stays exited across repeated `inspect()` | `inspect` | none | none | By construction `inspect()` only reads bookkeeping |
+| D9 | D | PASS (vacuous) | `docker_backend.py` never publishes; `test_no_new_contracts_py_enum_members_added`; nothing in the repo outside `contracts.py` and tests references `SandboxEventType`, and nothing else imports `core.sandbox` | module | none | none | **The ordered-emission test cannot be run: no backend emits events, `NamespaceBackend` included.** Flagged for a decision (§18.8) |
+| D10 | D | PASS | §17.1: 15 failure-injection tests, red then green, mutations M1–M6 | `create`, `destroy`, `_abort_create`, `_remove_container` | none | none | Scope and simulated-failure honesty note in §17.1; network-object lifecycle undecided |
+| D11 | D | PASS | Five race-pair tests plus repeated cancel/destroy and inspect mid-run; stable across repeated runs | handle bookkeeping | none | none | There is no explicit lock: consistency rests on single-event-loop atomicity with no `await` between check and update. Flagged for a decision (§18.8) |
+| D12 | D | PASS | §18.7 | `contracts.py` (unchanged) | none | none | |
+
+### 18.3 Test summary
+
+- **Repository baseline:** `sandbox-fabric`, `76fb1c0` at session start; nothing under `core/sandbox/` other than `docker_backend.py` differs from `d53b164`.
+- **Tests:** the DockerBackend file went from 44 at the handoff to **81**: 15 D10 tests (§17), 22 closeout-audit tests, and the §17 capability-set tests updated where the contract changed (§17.3, §17.8).
+- **Mutation checks:** 18 deliberate breakages (M1–M18), each caught by the intended test, each source restored byte-identical. Several failures were re-run with full tracebacks to confirm they failed for the intended reason.
+- **Final regression:** DockerBackend file 81/81; mypy clean on both files; 0 containers, 0 shared-network endpoints and 0 artifact temp dirs afterwards; the 7 out-of-scope files byte-identical.
+- **Pre-existing failure:** `tests/core/sandbox/test_net_proxy.py` is intermittently flaky in a file this workstream never touches. Three different tests in it have now failed at different times (`test_plain_http_to_allowed_host_is_forwarded`, `test_connect_to_allowed_host_tunnels_real_data`, and an earlier different assertion). The full suite last ran 139 passed, 1 failed, the failure being that file's. Not diagnosed; not called environmental.
+- **One unidentified failure:** a single DockerBackend-file run showed 1 failed / 78 passed; I did not capture which test. It did not recur in the 11 runs that followed (4 full-file runs, 6 runs of the 40 most timing-sensitive tests, one full-suite run), so it is unexplained, not resolved.
+- Temp-dir note: two `ocbrain-docker-artifacts-*` directories were left by the two runs where the FIFO hang was induced on purpose (the hung subprocess was killed before its cleanup). The fixed code left none across all later runs.
+
+### 18.4 Host summary (fresh, this session)
+
+| Fact | Value |
+|---|---|
+| Daemon / runtime | Docker Engine 29.1.3 (API 1.52), `io.containerd.runc.v2` / `runc` |
+| Endpoint certified | local unix socket `/var/run/docker.sock` (root:docker), context `default`, `DOCKER_HOST` unset; not rootless, not remote |
+| Kernel | 6.18.44-fc-v50 (a Firecracker microVM; the value drifted v37→v42→v49→v50 during this workstream) |
+| cgroups | v1, driver `cgroupfs`; storage driver `overlayfs` |
+| `userns-remap` | not enabled (`SecurityOptions` lists only `name=seccomp,profile=builtin`) |
+| `no-new-privileges` | not a daemon default (no `daemon.json`); applied per container and verified effective (`NoNewPrivs: 1`) |
+| AppArmor / SELinux | AppArmor not compiled in, modules disabled; SELinux compiled in and listed in the active LSM stack (`lockdown,capability,landlock,selinux,bpf`) with **no policy loaded** |
+| iproute2 | 6.1.0 |
+| CVE / fix state | The installed Docker predates the upstream `AF_ALG` fix and the socketcall/`AF_VSOCK` fix (moby/moby #52537 and #53551, per the sources recorded in §12), so this daemon does not contain them; the observed bypass is consistent with that. `AF_ALG` is not exercisable because this kernel does not provide it |
+| Image / registry | test image built with `docker import`; no registry reachable, so `docker build` and pull-by-digest paths are untested |
+
+### 18.5 Scope summary
+
+- **Files changed by this workstream:** `docker_backend.py`, `test_docker_backend.py`, the reconciliation document; earlier, the addendum, the checklist and `handoff.md` (§18.6).
+- **Public interfaces changed:** none; `contracts.py` is byte-identical to the base. Caller-visible behavior changed as listed in §18.1.
+- **Policy surfaces changed:** none.
+- **Capability surface:** `_CAPS` started empty, reached 9 of 12 in §16, and is **7 of 12** after §17 and §17.8.
+
+### 18.6 B audit
+
+- **B1 PASS.** `SECCOMP` is not claimed; the bypass is tracked as its own FAIL (A9).
+- **B2 PASS.** Each of the 7 claims traces to a named passing test (matrix, B2). Two earlier claims were withdrawn because their evidence did not hold up.
+- **B3 PASS.** No parallel admission, proxy, or request/result shape exists in `docker_backend.py`.
+- **B4 PASS with one documented exception.** Files touched by the workstream's own commits (merges from `main` excluded, by author): `docker_backend.py`, `test_docker_backend.py`, the reconciliation document, the checklist, the addendum, and `handoff.md`. The base prompt's Definition of Done authorizes the first three (the reconciliation document as "the reconciliation addendum") and B4 authorizes "this checklist/addendum". **`handoff.md` is on no allow-list.** It was created on your explicit instruction and the project's handoff protocol requires it, so it is recorded here as an exception, not counted as compliant. None of `SandboxBackend`, `NamespaceBackend`, `_ns_init.py`, `_seccomp.py`, `_net_proxy.py`, `admission.py` or `contracts.py` differs from the base. Also note: the base prompt asks for a *short* addendum to the reconciliation document; §§10–18 are a full evidence trail.
+
+### 18.7 D12 audit
+
+**PASS.** `contracts.py` has an empty diff against the base (`d53b164`), so no enum entry was added at all. `SandboxRequest` has no `image` field and `SandboxHandle` gained no field (both tested). The D4 label needed no new public surface. The only additions are private helpers, labels and one private capability-set change.
+
+### 18.8 Remaining blockers and decisions
+
+**Blockers, with the evidence needed to resolve each:**
+
+1. **C2 / DEBT-038:** a network-boundary redesign; evidence is a passing concurrent A/B test with different allowlists (§17.4).
+2. **A1:** blocked on item 1 and on a `NET_NAMESPACE` gate.
+3. **`NET_NAMESPACE`:** a direct committed test that a sandbox's netns differs from the host's and that concurrently created sandboxes have pairwise-distinct netns; passing it does not resurrect `NETWORK_ALLOWLIST` or C2 (§17.8).
+4. **A9 / C3:** a host with an active AppArmor or SELinux policy and a Docker release containing the socketcall fix; evidence is the exploit probe blocked plus a benign 32-bit/compat probe still working; `AF_ALG` additionally needs a kernel that exposes it.
+
+**Untested or unattacked, not claimed:** `docker build` `RepoDigests`; hard links and workspace size in artifact collection; whether an `AF_VSOCK` socket has anywhere to connect on a real host; `FILESYSTEM_JAIL` vectors beyond those tested (`/dev/shm`, `/proc`, `/sys`, mount attempts).
+
+**Judgment calls made in this audit that you may want to overrule:**
+
+- **D9** is PASS only vacuously. No backend emits events, so LAW 2 (event sourcing) is unimplemented package-wide for sandboxes. That is a project-level gap, not a DockerBackend one, and is not fixed here.
+- **D11** is PASS on the tests and on single-event-loop atomicity, but the checklist's forbidden-shortcut list literally includes "no lock at all".
+- **A9** is FAIL because the combined Phase 4 gate is not met even though its procedural half is.
+- **B4**: `handoff.md` (above).
+
+**Follow-ups, unchanged from §17.5 and not conflated with any FAIL:** state left `RUNNING` after a failed `docker start` spawn; the create-unwind residual; a finalizer to keep failing D10 tests from leaving containers; the test module's stale docstring (still says every daemon-gated test is skipped); `test_net_proxy.py` flakiness and the two unexplained plain-HTTP behaviors; `handoff.md` §5 is stale; the proposed `KNOWN_ISSUES.md` entry (§17.6) has not been applied.
