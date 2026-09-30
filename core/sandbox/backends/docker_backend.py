@@ -251,6 +251,7 @@ def _build_container_env(
 def _build_create_args(
     *,
     container_name: str,
+    request_id: str,
     image_digest: str,
     command: tuple[str, ...],
     env: dict[str, str],
@@ -280,15 +281,16 @@ def _build_create_args(
     same in-container path.
     D4 — `container_name` (backend-private, derived from a uuid4 by the
     caller) becomes both the Docker container name and an
-    `ocbrain.sandbox=true` label, so an abandoned container is
-    enumerable for cleanup without SandboxHandle needing a new field
-    (D12).
+    `ocbrain.sandbox=true` label, and the request's `request_id` becomes
+    an `ocbrain.request_id` label, so an abandoned container is
+    enumerable for cleanup by backend or by request without
+    SandboxHandle needing a new field (D12).
 
     Construction-time only: this proves the ARGUMENT LIST never asks for
     any of the above. It does not prove Docker's daemon actually honors
-    every one of them at runtime — that needs `docker inspect` on a live
-    container (checklist A6's own required test), which this function
-    cannot perform and this session could not run.
+    every one of them at runtime; that is asserted from `docker inspect`
+    on a live container by test_a6_runtime_inspect_shows_no_privilege_or_
+    host_sharing (reconciliation §18).
     """
     args = [
         "docker",
@@ -299,6 +301,8 @@ def _build_create_args(
         "ocbrain.sandbox=true",
         "--label",
         f"ocbrain.container_name={container_name}",
+        "--label",
+        f"ocbrain.request_id={request_id}",
         "--read-only",
         "--network",
         network_mode,
@@ -612,6 +616,7 @@ class DockerBackend(SandboxBackend):
             env = _build_container_env(request.env, proxy_url=proxy_url)
             args = _build_create_args(
                 container_name=container_name,
+                request_id=request.request_id,
                 image_digest=image_digest,
                 command=request.command,
                 env=env,
@@ -672,6 +677,13 @@ class DockerBackend(SandboxBackend):
             raise DockerBackendError(
                 f"run() called for unknown handle {handle.handle_id!r} — create() first"
             )
+        if state.state is not SandboxState.PROVISIONING:
+            # D6: `docker start` on an exited container silently re-executes
+            # the command, so a second run() must be an error, not a re-run.
+            raise DockerBackendError(
+                f"run() called on handle {handle.handle_id!r} in state "
+                f"{state.state.name}; a handle can be run at most once"
+            )
         state.state = SandboxState.RUNNING
         started = time.monotonic()
 
@@ -731,7 +743,12 @@ class DockerBackend(SandboxBackend):
         state = self._handles.get(handle.handle_id)
         if state is None:
             return
-        state.cancel_requested = True
+        if state.state is SandboxState.RUNNING:
+            # D6: only a run that is actually running can be cancelled. A
+            # flag set before run() would later mislabel a run that finished
+            # normally as CANCELLED. The kill below stays unconditional and
+            # harmless when nothing is running (D11 depends on it).
+            state.cancel_requested = True
         await self._kill_container(state.container_id)
 
     async def destroy(self, handle: SandboxHandle) -> None:
@@ -900,12 +917,15 @@ class DockerBackend(SandboxBackend):
         entry whose resolved real path escapes the copied root, so a
         symlink written inside the sandbox can't point the collector at
         an arbitrary host path. `docker cp`'s own behavior here is
-        exercised in every real test run in reconciliation §§11-16;
-        the symlink-escape rejection specifically is this backend's
-        own defense (not yet adversarially targeted with a symlink
-        crafted to defeat `os.path.realpath`'s specific resolution
-        order — recorded here as the honest remaining scope, not
-        claimed as fully adversarially hardened)."""
+        exercised in every real test run in reconciliation §§11-16.
+        Adversarially targeted in §18 with absolute, relative, nested and
+        directory symlinks and a FIFO: absolute/directory symlinks are
+        rejected here by the containment check; a relative symlink that
+        escapes makes `docker cp` itself refuse (`invalid symlink`), which
+        yields an EMPTY manifest -- nothing escapes, but every artifact is
+        lost silently (recorded in §18, not treated as a pass of anything
+        beyond the no-escape invariant). Not attacked: extraction races,
+        hard links, or workspace size."""
         tmp_root = tempfile.mkdtemp(prefix="ocbrain-docker-artifacts-")
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -928,6 +948,12 @@ class DockerBackend(SandboxBackend):
                     real_path = os.path.realpath(path)
                     if os.path.commonpath([real_root, real_path]) != real_root:
                         continue  # symlink resolves outside the copied root — reject
+                    if not os.path.isfile(real_path):
+                        # A FIFO/socket/device the sandbox created: opening it to
+                        # hash it blocks (a FIFO with no writer blocks forever),
+                        # and a synchronous open() here would stall the whole
+                        # event loop. Only regular files are artifacts.
+                        continue
                     try:
                         rel = os.path.relpath(path, tmp_root)
                         files.append((rel, _sha256_of(path), os.path.getsize(path)))

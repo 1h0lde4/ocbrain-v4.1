@@ -36,7 +36,11 @@ Two tiers here, gated differently on purpose:
 """
 import asyncio
 import glob
+import hashlib
+import json
+import sys
 import os
+import pathlib
 import shutil
 import socket
 import tempfile
@@ -53,7 +57,13 @@ from core.sandbox.backends.docker_backend import (
     _build_container_env,
     _build_create_args,
 )
-from core.sandbox.contracts import SandboxPolicy, SandboxRequest, SandboxState, TerminationReason
+from core.sandbox.contracts import (
+    SandboxHandle,
+    SandboxPolicy,
+    SandboxRequest,
+    SandboxState,
+    TerminationReason,
+)
 
 
 def _docker_available() -> bool:
@@ -70,6 +80,7 @@ _needs_docker = pytest.mark.skipif(
 
 _COMMON_ARGS = dict(
     container_name="t",
+    request_id="req-test",
     image_digest="example/image@sha256:" + "a" * 64,
     command=("true",),
     env={},
@@ -1478,3 +1489,458 @@ async def test_d10_artifact_copy_failure_leaks_no_host_tmpdir(d10_backend, start
     await d10_backend.destroy(handle)
     _assert_no_live_listener(started_proxies)
     _assert_nothing_leaked(before)  # includes artifact_tmpdirs
+
+
+# ======================================================================
+# Closeout audit (reconciliation §18) -- evidence the frozen checklist
+# literally requires, which earlier passes either only asserted in prose
+# or covered with a weaker test (e.g. test_artifacts_collected_with_real_
+# sha256 never checked a hash; the D7 heartbeat test would pass
+# vacuously if the grandchild never started; D2/D4/D6 had no runtime
+# tests of the specified cases; A3/A6 had construction-level tests
+# only). Each test below asserts EFFECTIVE state (docker inspect,
+# in-container behavior, host filesystem), not the request that was built.
+# ======================================================================
+
+
+def _inspect_container(container_id: str) -> dict:
+    out = subprocess.run(["docker", "inspect", container_id], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)[0]
+
+
+def _closeout_image() -> str:
+    return os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+
+
+# ---- A3: image identity ---------------------------------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a3_independent_backends_resolve_the_identical_immutable_digest(tmp_path):
+    b1, b2 = DockerBackend(image_ref=_closeout_image()), DockerBackend(image_ref=_closeout_image())
+    d1, d2 = await b1._resolve_image_digest(), await b2._resolve_image_digest()
+    assert d1 == d2 and "@sha256:" in d1  # two fresh resolutions, not one cached value
+    handles = []
+    try:
+        for i, b in enumerate((b1, b2)):
+            request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path / f"w{i}")))
+            h = await b.create(request)
+            handles.append((b, h))
+            info = _inspect_container(b._handles[h.handle_id].container_id)
+            assert info["Config"]["Image"] == d1  # the container is pinned to the digest, not a tag
+    finally:
+        for b, h in handles:
+            await b.destroy(h)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a3_image_like_env_cannot_change_what_runs(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    hostile = {k: "attacker/evil:latest" for k in ("OCBRAIN_SANDBOX_DOCKER_IMAGE", "DOCKER_IMAGE", "IMAGE", "image")}
+    request = SandboxRequest(command=("true",), env=hostile, policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        expected = await backend._resolve_image_digest()
+        info = _inspect_container(backend._handles[handle.handle_id].container_id)
+        assert info["Config"]["Image"] == expected
+        assert "attacker" not in info["Config"]["Image"]
+    finally:
+        await backend.destroy(handle)
+
+
+# ---- A6: privilege surface, as the daemon actually holds it ----------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+@pytest.mark.parametrize("networked", [False, True])
+async def test_a6_runtime_inspect_shows_no_privilege_or_host_sharing(tmp_path, networked):
+    backend = DockerBackend(image_ref=_closeout_image())
+    policy = SandboxPolicy(workspace_dir=str(tmp_path / "ws"), allowed_hosts=("example.com",) if networked else ())
+    handle = await backend.create(SandboxRequest(command=("true",), policy=policy))
+    try:
+        info = _inspect_container(backend._handles[handle.handle_id].container_id)
+        hc = info["HostConfig"]
+        assert hc["Privileged"] is False
+        assert not hc.get("CapAdd")
+        assert hc.get("PidMode") in ("", None)
+        assert hc.get("IpcMode") in ("", None, "private")
+        assert hc.get("UTSMode") in ("", None)
+        assert hc["NetworkMode"] != "host"
+        assert not hc.get("Devices")
+        assert hc["ReadonlyRootfs"] is True
+        assert any("no-new-privileges" in o for o in (hc.get("SecurityOpt") or []))
+        for m in info["Mounts"]:
+            assert ".sock" not in m["Source"], f"runtime socket mounted: {m}"
+            assert m["Source"] != "/"
+    finally:
+        await backend.destroy(handle)
+
+
+# ---- C1: exit code 137 alone must never decide the classification ----
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c1_ordinary_sigkill_with_exit_137_is_not_resource_exceeded(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("sh", "-c", "sh -c 'kill -9 $$'; exit $?"), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+        assert result.exit_code == 137  # the same code a real OOM kill produces ...
+        assert result.termination_reason != TerminationReason.RESOURCE_EXCEEDED  # ... and it is not one
+    finally:
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_c1_cancel_with_exit_137_is_cancelled_not_resource_exceeded(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("sleep", "30"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await backend.create(request)
+    try:
+        run_task = asyncio.ensure_future(backend.run(handle, request))
+        await asyncio.sleep(1.0)
+        await backend.cancel(handle)
+        result = await asyncio.wait_for(run_task, timeout=15)
+        assert result.exit_code == 137
+        assert result.termination_reason == TerminationReason.CANCELLED
+    finally:
+        await backend.destroy(handle)
+
+
+# ---- D2: read_only_paths, at runtime ---------------------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d2_read_only_path_rejects_write_delete_create_and_symlink_escape(tmp_path):
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    (ro / "existing.txt").write_text("original")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("HOSTSECRET-d2")
+    os.symlink(str(secret), ro / "abs_link")  # absolute host path
+    os.symlink("../secret.txt", ro / "rel_link")  # relative climb out of the mount
+    backend = DockerBackend(image_ref=_closeout_image())
+    script = (
+        f"echo w > {ro}/new.txt 2>/dev/null; echo new=$?; "
+        f"echo w > {ro}/existing.txt 2>/dev/null; echo mod=$?; "
+        f"rm {ro}/existing.txt 2>/dev/null; echo rm=$?; "
+        f"cat {ro}/abs_link 2>/dev/null; echo abs=$?; "
+        f"cat {ro}/rel_link 2>/dev/null; echo rel=$?; "
+        f"cat {ro}/existing.txt"
+    )
+    policy = SandboxPolicy(workspace_dir=str(tmp_path / "ws"), read_only_paths=(str(ro),))
+    request = SandboxRequest(command=("sh", "-c", script), policy=policy)
+    handle = await backend.create(request)
+    try:
+        out = (await backend.run(handle, request)).stdout
+    finally:
+        await backend.destroy(handle)
+    for op in ("new", "mod", "rm", "abs", "rel"):
+        assert f"{op}=0" not in out, f"{op} unexpectedly succeeded inside the read-only path:\n{out}"
+    assert "HOSTSECRET-d2" not in out  # neither symlink reached the host secret
+    assert out.rstrip().endswith("original")  # the path is readable, just not writable
+    assert (ro / "existing.txt").read_text() == "original"  # host side untouched
+    assert not (ro / "new.txt").exists()
+
+
+# ---- D4: identity and label-based cleanup ----------------------------
+
+
+def test_d4_create_args_label_carries_the_request_id():
+    args = _build_create_args(**{**_COMMON_ARGS, "request_id": "req-d4-1234"})
+    assert "ocbrain.request_id=req-d4-1234" in args
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d4_abandoned_labeled_container_is_found_and_removed_by_a_cleanup_pass(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    container_id = backend._handles[handle.handle_id].container_id
+    del backend, handle  # abandoned: nothing in-process still refers to it
+
+    def ids(label: str) -> set:
+        r = subprocess.run(["docker", "ps", "-aq", "--no-trunc", "--filter", f"label={label}"],
+                           capture_output=True, text=True, check=True)
+        return set(r.stdout.split())
+
+    try:
+        assert container_id in ids(f"ocbrain.request_id={request.request_id}")  # by request identity
+        assert container_id in ids("ocbrain.sandbox=true")  # by the generic backend label
+    finally:
+        subprocess.run(["docker", "rm", "-f", container_id], capture_output=True)  # the cleanup pass
+    assert container_id not in ids("ocbrain.sandbox=true")
+
+
+# ---- D5: artifacts ----------------------------------------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d5_manifest_hash_and_size_match_an_independent_recomputation(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    script = "printf 'hello-d5' > out.bin && mkdir sub && printf 'deep' > sub/deep.txt"
+    request = SandboxRequest(command=("sh", "-c", script), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        files = {name: (sha, size) for name, sha, size in (await backend.run(handle, request)).artifacts.files}
+    finally:
+        await backend.destroy(handle)
+    assert files["out.bin"] == (hashlib.sha256(b"hello-d5").hexdigest(), 8)
+    assert files["sub/deep.txt"] == (hashlib.sha256(b"deep").hexdigest(), 4)  # normalized relative path
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d5_absolute_symlinks_are_rejected_while_legitimate_artifacts_survive(tmp_path):
+    secret = tmp_path / "host_secret.txt"
+    secret.write_text("HOSTSECRET-d5")
+    secret_sha = hashlib.sha256(secret.read_bytes()).hexdigest()
+    backend = DockerBackend(image_ref=_closeout_image())
+    script = f"ln -s {secret} leak_abs; ln -s /etc leak_dir; echo ok > legit.txt"
+    request = SandboxRequest(command=("sh", "-c", script), policy=SandboxPolicy(workspace_dir=str(tmp_path / "ws")))
+    handle = await backend.create(request)
+    try:
+        files = (await backend.run(handle, request)).artifacts.files
+    finally:
+        await backend.destroy(handle)
+    names = [f[0] for f in files]
+    assert "legit.txt" in names  # the collector rejects the links, not the workspace
+    assert not [n for n in names if "leak_" in n], names
+    assert secret_sha not in [f[1] for f in files]  # the host file was never hashed into the manifest
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d5_relative_escaping_symlinks_never_reach_the_manifest(tmp_path):
+    """Recorded behavior, not an endorsement: a RELATIVE symlink that climbs
+    out of the workspace makes `docker cp` itself refuse (`invalid symlink`),
+    so the manifest comes back empty -- nothing escapes, but the sandbox's
+    legitimate artifacts are lost silently. The invariant asserted is the
+    D5 one: no manifest entry resolves outside the artifact root."""
+    backend = DockerBackend(image_ref=_closeout_image())
+    script = "ln -s ../../../../../etc/hostname leak_rel; mkdir sub; ln -s ../../../../etc/hostname sub/leak_nested; echo ok > legit.txt"
+    request = SandboxRequest(command=("sh", "-c", script), policy=SandboxPolicy(workspace_dir=str(tmp_path / "ws")))
+    handle = await backend.create(request)
+    try:
+        files = (await backend.run(handle, request)).artifacts.files
+    finally:
+        await backend.destroy(handle)
+    assert not [f[0] for f in files if "leak_" in f[0]], files
+
+
+@_needs_docker
+def test_d5_non_regular_files_neither_hang_collection_nor_enter_the_manifest(tmp_path):
+    """Run in a subprocess with a hard timeout on purpose: hashing a FIFO
+    would block the event loop thread itself (synchronous open()), so an
+    in-process wait_for could never fire and a failure would hang the
+    whole suite instead of failing this test."""
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+    ws = tmp_path / "ws"
+    script = f"""
+import asyncio, sys
+sys.path.insert(0, {str(repo_root)!r})
+from core.sandbox.backends.docker_backend import DockerBackend
+from core.sandbox.contracts import SandboxPolicy, SandboxRequest
+async def main():
+    be = DockerBackend(image_ref={_closeout_image()!r})
+    req = SandboxRequest(command=("sh", "-c", "mkfifo pipe; echo ok > legit.txt"),
+                         policy=SandboxPolicy(workspace_dir={str(ws)!r}))
+    h = await be.create(req)
+    try:
+        r = await be.run(h, req)
+        print("NAMES=" + ",".join(sorted(f[0] for f in r.artifacts.files)))
+    finally:
+        await be.destroy(h)
+asyncio.run(main())
+"""
+    before = _d10_snapshot()["containers"]
+    try:
+        proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        pytest.fail("artifact collection hung on a non-regular file (FIFO) the sandbox created")
+    finally:
+        for cid in _d10_snapshot()["containers"] - before:
+            subprocess.run(["docker", "rm", "-f", cid], capture_output=True)  # never leave a hung run's container
+    assert proc.returncode == 0, proc.stderr
+    names = proc.stdout.split("NAMES=")[1].strip().split(",")
+    assert names == ["legit.txt"], names
+
+
+# ---- D6: invalid and repeated lifecycle calls -------------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d6_run_before_create_is_a_defined_error():
+    backend = DockerBackend(image_ref=_closeout_image())
+    ghost = SandboxHandle(handle_id="docker-never-created", request_id="r", backend_name="docker", state=SandboxState.PENDING)
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir="/tmp/unused"))
+    with pytest.raises(DockerBackendError):
+        await backend.run(ghost, request)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d6_double_run_is_a_defined_error_not_a_second_execution(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("sh", "-c", "echo x >> /workspace/count"),
+                             policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        await backend.run(handle, request)
+        with pytest.raises(DockerBackendError):
+            await backend.run(handle, request)
+        assert (tmp_path / "count").read_text().count("x") == 1, "the command was executed a second time"
+    finally:
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d6_cancel_before_run_is_a_no_op_that_does_not_taint_the_later_run(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("echo", "hi"), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        await backend.cancel(handle)  # nothing is running: must not raise, must not linger as a flag
+        result = await backend.run(handle, request)
+        assert result.termination_reason == TerminationReason.COMPLETED, "a run that finished normally was reported as cancelled"
+        assert "hi" in result.stdout
+    finally:
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d6_cancel_after_terminate_is_a_no_op(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        await backend.run(handle, request)
+        await backend.cancel(handle)  # must not raise
+        assert await backend.inspect(handle) == SandboxState.TERMINATED  # and must not change the state
+    finally:
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d6_inspect_after_destroy_reports_a_defined_sandbox_state(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    await backend.destroy(handle)
+    state = await backend.inspect(handle)
+    assert isinstance(state, SandboxState)  # a contract enum member, never a raw docker string
+    assert state == SandboxState.PENDING  # unknown-handle behavior, same shape as NamespaceBackend
+
+
+# ---- D7 / D8, strengthened evidence -----------------------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d7_cancel_reaches_a_grandchild_that_was_provably_alive_before(tmp_path):
+    """The older heartbeat test compares two readings taken AFTER cancel, so
+    it also passes if the grandchild never started (None == None). This one
+    first proves the grandchild was alive and advancing, then that it stopped."""
+    backend = DockerBackend(image_ref=_closeout_image())
+    script = "(sh -c 'while true; do date +%s%N > /workspace/heartbeat; sleep 0.2; done' &); sleep 30"
+    request = SandboxRequest(command=("sh", "-c", script), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await backend.create(request)
+    container_id = backend._handles[handle.handle_id].container_id
+    hb = tmp_path / "heartbeat"
+    try:
+        run_task = asyncio.ensure_future(backend.run(handle, request))
+        await asyncio.sleep(1.5)
+        before_1 = hb.read_text().strip() if hb.exists() else ""
+        await asyncio.sleep(0.6)
+        before_2 = hb.read_text().strip() if hb.exists() else ""
+        assert before_1 and before_2 and before_1 != before_2, "vacuous: the grandchild was not alive and advancing before cancel()"
+        await backend.cancel(handle)
+        await asyncio.wait_for(run_task, timeout=15)
+        after_1 = hb.read_text().strip()
+        await asyncio.sleep(1.0)
+        assert hb.read_text().strip() == after_1, "a descendant kept writing after cancel() returned"
+        running = subprocess.run(["docker", "inspect", "--format", "{{.State.Running}}", container_id],
+                                 capture_output=True, text=True)
+        assert running.stdout.strip() == "false"
+    finally:
+        await backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d8_inspect_never_touches_the_container_itself(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    cid = backend._handles[handle.handle_id].container_id
+    try:
+        def docker_view() -> tuple:
+            st = _inspect_container(cid)["State"]
+            return (st["Status"], st["StartedAt"], st["FinishedAt"], _inspect_container(cid)["RestartCount"])
+
+        created = docker_view()
+        assert created[0] == "created"
+        for _ in range(5):
+            await backend.inspect(handle)
+        assert docker_view() == created  # a created container is still created, never started
+        await backend.run(handle, request)
+        finished = docker_view()
+        assert finished[0] == "exited"
+        for _ in range(5):
+            await backend.inspect(handle)
+        assert docker_view() == finished  # an exited container is still exited, never restarted
+    finally:
+        await backend.destroy(handle)
+
+
+# ---- A4 / A5: effective state inside the container ---------------------
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a4_host_only_env_var_is_absent_and_request_env_is_present_in_the_container(tmp_path, monkeypatch):
+    monkeypatch.setenv("OCBRAIN_HOST_ONLY_A4", "leak-me")
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(
+        command=("printenv",),
+        env={"OCBRAIN_REQ_A4": "visible"},
+        policy=SandboxPolicy(workspace_dir=str(tmp_path)),
+    )
+    handle = await backend.create(request)
+    try:
+        out = (await backend.run(handle, request)).stdout
+    finally:
+        await backend.destroy(handle)
+    assert "OCBRAIN_HOST_ONLY_A4" not in out and "leak-me" not in out  # no host-process env var reached the container
+    assert "OCBRAIN_REQ_A4=visible" in out  # what the request asked for did
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_a5_a_restrictive_allowed_imports_value_still_runs_unimpeded(tmp_path):
+    """Documents A5's chosen option (a): DockerBackend, like NamespaceBackend,
+    does NOT enforce `allowed_imports`. A documentation test, not a security
+    property: it would start failing only if someone added Docker-only import
+    filtering, which is exactly the second policy surface A5/B3 forbid."""
+    backend = DockerBackend(image_ref=_closeout_image())
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_imports=("json",))
+    request = SandboxRequest(command=("python3", "-c", "import socket, os, sys; print('imports-ok')"), policy=policy)
+    handle = await backend.create(request)
+    try:
+        result = await backend.run(handle, request)
+    finally:
+        await backend.destroy(handle)
+    assert "imports-ok" in result.stdout
