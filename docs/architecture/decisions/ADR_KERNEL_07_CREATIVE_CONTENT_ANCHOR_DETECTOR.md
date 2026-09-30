@@ -132,12 +132,26 @@ detection point neither exists. `[INFER]` The study's "strong candidate for reus
 established for a pre-plan carrier. Under C the decision now happens *after* planning, so a
 future carrier could reconsider it — `[PENDING]`, not part of slice 1.
 
-## 8. Open decisions D-1..D-4 — evidence and recommended dispositions
+## 8. D-1..D-4 — dispositions recorded (explicit acceptance by Moncif pending)
 
-These are **recommendations with evidence, not decisions**; each is Moncif's. Nothing in
-the Constitution documents was edited. D-5 is resolved (§10).
+Status vocabulary follows PROJECT_INSTRUCTIONS §0.3. Each disposition was recommended by Claude
+from the evidence below and **endorsed in the 2026-09-30 architecture review**; none has been
+explicitly ACCEPTED by Moncif, so none is recorded as ACCEPTED. D-5 is decided (§10).
 
-**D-1 — what "verify" means in Invariant 1.** *Recommend: record a clarifying note.*
+| # | Disposition | Status |
+|---|---|---|
+| D-1 | "verify" = **Intent Verification**; asking the user is one mechanism, not the only one; output Verification is separate. Recorded as a note *in this ADR* | PROPOSED |
+| D-2 | Keep the flag **off**; enabling is a measured experiment | PROPOSED — equals the implemented default |
+| D-3 | Cross-turn state / session identity → **its own future ADR** (number not reserved) | DEFERRED |
+| D-4 | Test D stays a strict `xfail`; depends on D-3 | DEFERRED |
+| — | Live draft-plan behavior (§10.4) | **UNKNOWN — requires a configured model provider** |
+
+**No code on this branch depends on any of these dispositions.** D-2's "off" is the
+pre-existing default; D-3 and D-4 are unimplemented by design; D-1 is a documentation note.
+**Nothing in the Constitution documents was edited**; if the D-1 note should also live there,
+that is a separate, Moncif-initiated change.
+
+**D-1 — what "verify" means in Invariant 1.** *Disposition: clarifying note (PROPOSED).*
 - `[FACT]` Constitution line 99: *"The kernel does not act on intent it has not first
   attempted to understand and, where genuinely ambiguous, verify."*
 - `[FACT]` Pressure Test glossary: *"Intent is the raw, possibly ambiguous expression of what
@@ -154,8 +168,8 @@ the Constitution documents was edited. D-5 is resolved (§10).
 - Proposed note text: *"'verify' in Invariant 1 means Intent Verification; asking the user is
   one mechanism; output Verification is a separate concept."*
 
-**D-2 — is asking the right default (e.g. for the story example)?** *Recommend: keep the flag
-off; treat enabling as a measured experiment.*
+**D-2 — is asking the right default (e.g. for the story example)?** *Disposition: flag stays off;
+enabling is a measured experiment (PROPOSED).*
 - `[FACT]` Rationale §2: the qualifier *"where genuinely ambiguous"* is *"a deliberate hedge
   against a literal reading that would make the system stop and ask for clarification
   constantly. That hedge is untested. Worth watching in practice rather than trusting the
@@ -166,7 +180,7 @@ off; treat enabling as a measured experiment.*
   `cognitive.content_anchor_observed` events (`abstained: false`). Product call; not an
   engineering one.
 
-**D-3 — cross-turn state carrier.** *Recommend: defer to its own ADR (e.g. ADR-KERNEL-08).*
+**D-3 — cross-turn state carrier.** *Disposition: DEFERRED to its own ADR.*
 - `[FACT]` No session/conversation identity on the K4.2 path: `_interaction_id(query)` hashes
   the query text alone; `interface/api.py` has no session/conversation concept (0 matches);
   `interpret_request()` takes no context parameter.
@@ -179,7 +193,7 @@ off; treat enabling as a measured experiment.*
 - A real lifecycle needs a session-identity decision touching the API, events and
   `IntentLifecycle` — out of slice 1, which stays **detect → ask → stop**.
 
-**D-4 — Test D (already known from context).** *Recommend: keep the strict `xfail`; depends on D-3.*
+**D-4 — Test D (already known from context).** *Disposition: DEFERRED; strict `xfail` stays; depends on D-3.*
 - `[FACT]` `interpret_request` parameters: `raw_text, memory, event_stream, known_categories,
   ontology_schemas` — no inbound context channel. The "PlannerHint" mentions are the
   *outbound* Intent→Planner channel. The detector reads request text only.
@@ -199,6 +213,8 @@ another governor's rejection is not turned into a question; the feature adds **n
 governance evaluation (sequence identical on vs off); the detector module has no governance
 import; flag-off is inert and the `compile()` call is unchanged; the response pairs the
 interpreted plan with a specific question and bounds model-derived text.
+Acceptance of the slice's structural invariants does **not** depend on live draft-plan behavior,
+which is UNKNOWN (§10.4).
 Does **not** prove: material sufficiency; live-model behavior; precision/recall on a real
 corpus; the study's 466-vs-1000-words experiment (`[PENDING]`); cross-turn convergence; Test D.
 
@@ -254,14 +270,15 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
   supplied, the system says "content is missing" while displaying invented content. The
   question to answer, narrowly: *does exposing draft plan steps add useful context, or
   introduce speculative assumptions?*
-  - **Status: NOT run live.** This sandbox has no model provider (verified: no credentials, no
+  - **Status: UNKNOWN — live draft-plan behavior is UNVERIFIED and requires a configured model
+    provider.** Not run live. This sandbox has no model provider (verified: no credentials, no
     local server). The instrument exists: `scripts/live_check_draft_plan.py` (17 tests, 4
     mutation checks). Live mode runs the pipeline's two real model calls (interpretation +
     planner decomposition) on 11 requests — 8 form-only plus 3 long-form ones chosen to tempt
     multi-step splitting — and reports per step the content-bearing words that appear in
     neither the request nor the interpretation. A run where every call degraded exits 2 and
     declares itself NOT EVIDENCE; offline mode is synthetic and says so.
-  - `[INFER]` (unconfirmed) The decomposition prompt says most goals need one step, its input
+  - **Hypothesis, not evidence** (no acceptance claim rests on it): the decomposition prompt says most goals need one step, its input
     is the interpretation (not the raw request), and its degrade path is a single step equal
     to that interpretation. So the likely common outcome is a **redundant** plan (restating the
     interpretation line), not a speculative one. Only a live run can confirm or refute this.
@@ -271,7 +288,8 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     primary evidence; read them.
   - Containment options, **none applied**: `plan_steps=[]` (one line) if speculation shows up;
     omit the plan when it is a single step equal to the interpretation if redundancy does.
-    Disposition is Moncif's, made from the live output.
+    Applying either now would turn an unverified hypothesis into architecture, so neither is
+    applied. Disposition is Moncif's, made from live output.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
 
