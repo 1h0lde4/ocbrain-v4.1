@@ -2187,6 +2187,19 @@ class TestEvidenceReference(unittest.TestCase):
         item = _ev_item(status=EvidenceStatus.CONTRADICTORY, supports=())
         self.assertIsNone(_ev_reference(claim_id="c1").verify_against(item))
 
+    def test_verify_against_is_status_blind(self):
+        for state in EvidenceStatus:
+            self.assertIsNone(_ev_reference().verify_against(_ev_item(status=state)))
+
+    def test_claim_bound_reference_cannot_bind_a_claim_to_its_own_restatement(self):
+        restatement = _ev_item("e1", supports=("c1",), restatement=True)
+        with self.assertRaises(CircularEvidenceError):
+            _ev_reference(claim_id="c1").verify_against(restatement)
+
+    def test_restatement_of_a_different_claim_is_not_circular_for_this_reference(self):
+        other = _ev_item("e1", supports=("c1",), restatement=True)
+        self.assertIsNone(_ev_reference(claim_id="c2").verify_against(other))
+
 
 class TestEvidenceObservation(unittest.TestCase):
     def _link(self, **over):

@@ -183,9 +183,13 @@ class EvidenceReference:
 
     def verify_against(self, item: EvidenceItem) -> None:
         """Raise EvidenceBindingError unless ``item`` is the evidence this
-        reference points at (same id, source and locator).  Pure: no
+        reference points at (same id, source and locator), and, for a
+        claim-bound reference, CircularEvidenceError if the item is a
+        restatement of that very claim (``check_not_circular``).  Pure: no
         registry, the caller supplies the item.  Says nothing about
-        whether the item supports or refutes anything."""
+        whether the item supports or refutes anything.  A criterion-only
+        reference has no claim to test, so the claim-scoped guard cannot
+        apply to it."""
         if item.evidence_id != self.evidence_id:
             raise EvidenceBindingError(
                 f"reference points at evidence {self.evidence_id!r}, "
@@ -201,6 +205,11 @@ class EvidenceReference:
                 f"reference locator {self.locator!r} does not match "
                 f"evidence {item.evidence_id!r} locator {item.locator!r}"
             )
+        if self.claim_id is not None:
+            # Binding a claim to its own restatement is the circular route
+            # check_not_circular exists to close; this record must not be a
+            # way around it.
+            check_not_circular(self.claim_id, item)
 
 
 @dataclass(frozen=True)
@@ -390,7 +399,8 @@ class EvidenceBundle:
     never proof of absence); unique evidence_ids; a claim and/or criterion
     binding; and, for a bound claim, the existing ``check_not_circular``
     guard is applied to every member, so this type cannot be a route
-    around it.
+    around it.  A criterion-only bundle has no claim to test, so the
+    claim-scoped guard cannot apply to it.
 
     Not independently addressable in this phase -- no bundle id."""
     items: Tuple[EvidenceItem, ...]
