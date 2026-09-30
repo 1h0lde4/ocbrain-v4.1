@@ -132,15 +132,62 @@ detection point neither exists. `[INFER]` The study's "strong candidate for reus
 established for a pre-plan carrier. Under C the decision now happens *after* planning, so a
 future carrier could reconsider it — `[PENDING]`, not part of slice 1.
 
-## 8. Open decisions (Moncif)
+## 8. Open decisions D-1..D-4 — evidence and recommended dispositions
 
-- **D-1** meaning of "verify" in Invariant 1 (ask the user vs route through Verification).
-- **D-2** is asking the right default even for the story example? Product decision;
-  over-escalation is a documented failure mode.
-- **D-3** cross-turn state carrier (answer merge, attempt counter, lifecycle states),
-  event-sourced. Not built.
-- **D-4** Test D (already known from context). Strict `xfail`.
-- ~~**D-5**~~ **Resolved: Option C** — see §10.
+These are **recommendations with evidence, not decisions**; each is Moncif's. Nothing in
+the Constitution documents was edited. D-5 is resolved (§10).
+
+**D-1 — what "verify" means in Invariant 1.** *Recommend: record a clarifying note.*
+- `[FACT]` Constitution line 99: *"The kernel does not act on intent it has not first
+  attempted to understand and, where genuinely ambiguous, verify."*
+- `[FACT]` Pressure Test glossary: *"Intent is the raw, possibly ambiguous expression of what
+  a user wants, prior to verification. Goal is the verified, disambiguated target state
+  Intent compiles down to once verification succeeds"*, and "Goal Verification" is renamed
+  **Intent Verification**: *"you verify the Intent in order to produce a Goal."*
+- `[INFER]` So "verify" is **Intent Verification** (Intent → Goal) — neither "route through the
+  output-Verification subsystem" nor, by definition, "ask the user". The study's dichotomy
+  was a false one; the Constitution does not say *who or what* performs Intent Verification.
+  Asking the user (this ADR) is one legitimate mechanism of it, not the only one.
+- `[INFER]` Naming tension, recorded not fixed: `interpret_request()` returns `Goal`s *before*
+  any verification, while the glossary defines a Goal as post-verification; under Option C the
+  clarification happens after Goal formation and planning.
+- Proposed note text: *"'verify' in Invariant 1 means Intent Verification; asking the user is
+  one mechanism; output Verification is a separate concept."*
+
+**D-2 — is asking the right default (e.g. for the story example)?** *Recommend: keep the flag
+off; treat enabling as a measured experiment.*
+- `[FACT]` Rationale §2: the qualifier *"where genuinely ambiguous"* is *"a deliberate hedge
+  against a literal reading that would make the system stop and ask for clarification
+  constantly. That hedge is untested. Worth watching in practice rather than trusting the
+  wording is already right."*
+- `[FACT]` The detector fires only on in-scope requests with zero content tokens; "surprise
+  me" is an escape hatch; default is off. `[FACT]` No ask-rate data exists.
+- Measurable at no extra cost: compare `orchestrator.clarification_requested` events with
+  `cognitive.content_anchor_observed` events (`abstained: false`). Product call; not an
+  engineering one.
+
+**D-3 — cross-turn state carrier.** *Recommend: defer to its own ADR (e.g. ADR-KERNEL-08).*
+- `[FACT]` No session/conversation identity on the K4.2 path: `_interaction_id(query)` hashes
+  the query text alone; `interface/api.py` has no session/conversation concept (0 matches);
+  `interpret_request()` takes no context parameter.
+- `[FACT]` The orchestrator comment at L597–604 says the legacy K2.2 branch saves interaction
+  and context itself and the K4.2 branch does so explicitly after execution. By control flow
+  the clarification return precedes those writes, so the asked question and the user's reply
+  are **not recorded as a linked exchange**.
+- `[INFER]` `resume()` remains inapplicable under C: the ESCALATE happens at `compile()`,
+  before `execute()` creates an instance.
+- A real lifecycle needs a session-identity decision touching the API, events and
+  `IntentLifecycle` — out of slice 1, which stays **detect → ask → stop**.
+
+**D-4 — Test D (already known from context).** *Recommend: keep the strict `xfail`; depends on D-3.*
+- `[FACT]` `interpret_request` parameters: `raw_text, memory, event_stream, known_categories,
+  ontology_schemas` — no inbound context channel. The "PlannerHint" mentions are the
+  *outbound* Intent→Planner channel. The detector reads request text only.
+- `[INFER]` Without D-3's prior-turn carrier there is nothing to consult; inventing an inbound
+  channel here would be an unrecorded architectural decision.
+
+**Suggested order:** D-1 (note) → D-2 (keep off; decide whether to run the experiment) → D-3 →
+D-4 (dependent on D-3). The live draft-plan check (§10.4) is independent of all four.
 
 ## 9. Verification: what is and is not proven
 
@@ -202,11 +249,29 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
 ### 10.4 Consequences and risks
 - **Cost:** an intercepted request still pays `plan()`'s one decomposition model call (plus
   capability discovery); only execution/generation is avoided.
-- **Risk `[PENDING]`:** the draft plan steps shown to the user are model-generated from an
-  under-specified request and may themselves speculate (e.g. invent a premise), which is the
-  behavior the detector exists to avoid. Mitigated by showing at most five truncated, labeled
-  "draft" steps; whether showing them helps or hurts is an empirical question for a live run.
-  The pairing is easy to drop (`plan_steps=[]`) if it proves unhelpful.
+- **Risk `[PENDING]` — draft plan steps.** The response shows model-generated plan steps for
+  a request the detector says lacks content. If a step contains content the user never
+  supplied, the system says "content is missing" while displaying invented content. The
+  question to answer, narrowly: *does exposing draft plan steps add useful context, or
+  introduce speculative assumptions?*
+  - **Status: NOT run live.** This sandbox has no model provider (verified: no credentials, no
+    local server). The instrument exists: `scripts/live_check_draft_plan.py` (17 tests, 4
+    mutation checks). Live mode runs the pipeline's two real model calls (interpretation +
+    planner decomposition) on 11 requests — 8 form-only plus 3 long-form ones chosen to tempt
+    multi-step splitting — and reports per step the content-bearing words that appear in
+    neither the request nor the interpretation. A run where every call degraded exits 2 and
+    declares itself NOT EVIDENCE; offline mode is synthetic and says so.
+  - `[INFER]` (unconfirmed) The decomposition prompt says most goals need one step, its input
+    is the interpretation (not the raw request), and its degrade path is a single step equal
+    to that interpretation. So the likely common outcome is a **redundant** plan (restating the
+    interpretation line), not a speculative one. Only a live run can confirm or refute this.
+  - Instrument limitation: it is a word-level proxy (a short explicit process-vocabulary list
+    decides what is "not content"; an early version without it flagged every multi-step plan),
+    and it cannot see degradation *inside* `interpret_request`. The printed steps are the
+    primary evidence; read them.
+  - Containment options, **none applied**: `plan_steps=[]` (one line) if speculation shows up;
+    omit the plan when it is a single step equal to the interpretation if redundancy does.
+    Disposition is Moncif's, made from the live output.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
 
