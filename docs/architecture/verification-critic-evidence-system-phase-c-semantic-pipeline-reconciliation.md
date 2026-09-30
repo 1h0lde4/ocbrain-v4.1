@@ -35,31 +35,31 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 1 | `VerificationRequest` | ❌ | — | |
 | 2 | `VerificationTarget` | ◐ | `target.py` | Superseded in shape by `VerificationTargetFingerprint`+`VerificationTargetSnapshot` (v3 §4) — the plain type was never meant to survive as a third thing; treat as satisfied |
 | 3 | `VerificationContext` | ❌ | — | |
-| 4 | `VerificationObligation` | ❌ | — | **This phase's primary deliverable** |
-| 5 | `Rubric` | ❌ | — | **This phase's primary deliverable** |
-| 6 | `Criterion` | ❌ | — | **This phase's primary deliverable** |
-| 7 | `CriterionDependency` | ❌ | — | |
-| 8 | `CriterionApplicability` | ❌ | — | |
-| 9 | `CriterionEvidenceRequirement` | ❌ | — | |
+| 4 | `VerificationObligation` | ✅ | `obligation.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: **This phase's primary deliverable** |
+| 5 | `Rubric` | ◐ | `rubric.py` | Built and tested; status reconciled 2026-09-30. Partial because its `construct` field is a forward reference to the unbuilt `VerificationConstruct` (row 47) — v2 §9 says Rubric should not ship without it; this is the one remaining `mypy` error in `core/verification`. Original planning note: **This phase's primary deliverable** |
+| 6 | `Criterion` | ✅ | `rubric.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: **This phase's primary deliverable** |
+| 7 | `CriterionDependency` | ✅ | `rubric.py` | Built and tested; status reconciled 2026-09-30 against code and test references. |
+| 8 | `CriterionApplicability` | ✅ | `rubric.py` | Built and tested; status reconciled 2026-09-30 against code and test references. |
+| 9 | `CriterionEvidenceRequirement` | ✅ | `rubric.py` | Built and tested; status reconciled 2026-09-30 against code and test references. |
 | 10 | `CriterionResult` | ❌ | — | Should reuse `VerificationResult`'s shape (verdict/assurance/confidence), scoped to one criterion — not a fifth parallel result type |
-| 11 | `CompiledVerificationSpecification` | ❌ | — | The output of Rubric lock/compile (§9, §16 satisfiability) |
-| 12 | `Claim` | ❌ | — | Phase 3 |
+| 11 | `CompiledVerificationSpecification` | ✅ | `compiled_specification.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: The output of Rubric lock/compile (§9, §16 satisfiability) |
+| 12 | `Claim` | ✅ | `claim.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 3 |
 | 13 | `ClaimDependency` | ✅ | `claim.py` | Batch 1: `ClaimDependencyType` (RELIES_ON/PRESUPPOSES), immutable edge with self-dep guard. Reconciled against `ClaimOrigin`/`derived_from`/`caused_by` — non-overlapping |
-| 14 | `InspectionPlan` | ❌ | — | **This phase's primary deliverable** — see §5 below re: its Method dependency |
-| 15 | `InspectionStep` | ❌ | — | **This phase's primary deliverable** |
+| 14 | `InspectionPlan` | ✅ | `inspection.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: **This phase's primary deliverable** — see §5 below re: its Method dependency |
+| 15 | `InspectionStep` | ✅ | `inspection.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: **This phase's primary deliverable** |
 | 16 | `EvidenceSource` | ✅ | `evidence.py` | |
 | 17 | `EvidenceItem` | ✅ | `evidence.py` | Circular-evidence check (`check_not_circular`) tested and confirmed structural, not a judgment call |
 | 18 | `EvidenceReference` | ◐ | `evidence.py` | Batch 2, decided scope implemented and tested: exact source (reuses `EvidenceSource`) + non-empty locator + claim/criterion binding, `verify_against(item)` drift check plus `check_not_circular` for a claim-bound reference. No payload field. NOT enforced: that a locator is genuinely *exact*. v1 §15 metadata (scope, validity window, relevance, specificity, integrity, correlation_group, independence_level, sensitivity) not carried — open decision |
 | 19 | `EvidenceObservation` | ✅ | `evidence.py` | Batch 2: binds evidence→`Observation` by id + provenance completeness; carries no authority of its own; `verify_against` rejects an `Interpretation` |
 | 20 | `EvidenceTransformation` | ◐ | `evidence.py` | Batch 2, decided scope implemented: lineage + categorical rules only (no ordinal on `EvidenceDirectness`): no upgrade into DIRECT, MODEL_INTERPRETATION permanent (v1 §16), provenance never silently COMPLETE; `verify_against` also stops a restatement flag being dropped through lineage (circular evidence cannot be laundered). Authority/integrity/certainty NOT enforced (no fields). DIRECT→DIRECT via non-model transformation deliberately left to higher layers |
 | 21 | `EvidenceBundle` | ✅ | `evidence.py` | Batch 2: immutable tuple of `EvidenceItem`s (all six statuses preserved, no filtering), applies `check_not_circular` for a bound claim; membership implies no support/verdict |
-| 22 | `VerificationMethod` | ❌ | — | Phase 5. `policy.py`/`dimension.py` already use string placeholders for method names in anticipation (see §4) |
-| 23 | `VerificationCapability` | ❌ | — | Phase 5 |
+| 22 | `VerificationMethod` | ✅ | `method.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5. `policy.py`/`dimension.py` already use string placeholders for method names in anticipation (see §4) |
+| 23 | `VerificationCapability` | ✅ | `method.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5 |
 | 24 | `VerificationObservation` | ❌ | — | Phase 4. Distinct from the three dimension refinements already built (row 27) |
-| 25 | `VerificationFinding` | ❌ | — | Phase 5 — the type meant to carry method+dimension as two independent classifications (v2 §11) |
-| 26 | `Critique` | ❌ | — | Phase 5 |
-| 27 | `CounterArgument` | ❌ | — | Phase 5 |
-| 28 | `Contradiction` | ❌ | — | Phase 5 |
+| 25 | `VerificationFinding` | ✅ | `finding.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5 — the type meant to carry method+dimension as two independent classifications (v2 §11) |
+| 26 | `Critique` | ✅ | `critique.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5 |
+| 27 | `CounterArgument` | ✅ | `critique.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5 |
+| 28 | `Contradiction` | ✅ | `critique.py` | Built and tested; status reconciled 2026-09-30 against code and test references. Original planning note: Phase 5 |
 | 29 | Five `*Coverage` types (Task/Verification/Criterion/Evidence/Observation) | ❌ | — | v2 §13's explicit fix for the "task completeness silently becoming verification completeness" collapse. Phase 6 |
 | 30 | `ProcessVerificationResult` / `OutcomeVerificationResult` | ❌ | — | |
 | 31 | `VerificationResult` | ✅ | `verdict.py` | |
@@ -90,7 +90,7 @@ Legend: ✅ built and tested · ◐ partially built · ❌ not built. File colum
 | 56 | `EvidenceRetention` / `ReceiptRetention` / `SourceRetention` | ✅ | `retention.py` | Three genuinely independent types confirmed (not one parametrized class) |
 | 57 | `ControlType` / `ControlCase` | ✅ | `control.py` | `expected_abstention` structurally forbidden on POSITIVE/NEGATIVE cases — enforced, matches G-0001's own lesson |
 
-**Built: 20 of 57 listed rows fully ✅ (five more ◐: `VerificationTarget` and `VerificationConfidence` partially/architecturally-satisfied, plus `EvidenceReference`, `EvidenceTransformation` and `MinimumSufficientEvidence`, whose decided scope is implemented but whose architecture-named parts are deferred — see §9).** Batch 1 (epistemic spine completion) added rows 13, 44, 48; Batch 2 (Evidence) closed rows 19 and 21 and brought rows 18, 20, 49 to their decided scope. *Count correction:* this header previously overstated ✅ by one since `ead305d` (it said 16; the table had 15 ✅ rows); it now matches the table. This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
+**Built: 35 of 57 listed rows fully ✅ (six more ◐: `VerificationTarget` and `VerificationConfidence` partially/architecturally-satisfied; `Rubric` (forward reference to unbuilt `VerificationConstruct`); and `EvidenceReference`, `EvidenceTransformation`, `MinimumSufficientEvidence`, whose decided scope is implemented but whose architecture-named parts are deferred — see §9). 16 rows remain ❌.** *Inventory reconciled 2026-09-30:* 16 rows previously marked ❌ were found built in code and tests and were re-marked; before that the header overstated ✅ by one since `ead305d` (said 16, table had 15). This table is now the baseline for sizing later batches. Batch 1 (epistemic spine completion) added rows 13, 44, 48; Batch 2 (Evidence) closed rows 19 and 21 and brought rows 18, 20, 49 to their decided scope. *Count correction:* this header previously overstated ✅ by one since `ead305d` (it said 16; the table had 15 ✅ rows); it now matches the table. This is a more precise count than `KNOWN_ISSUES.md`'s own "~15 of ~90" — the difference is granularity (that figure appears to count at the "named concept in prose" level; this table counts at the "class in code" level, e.g. `VerificationRequirements`/`Policy`/`Strategy`/`Profile` as four rows, not one). Both are honest counts of the same underlying reality; neither supersedes the other.
 
 ---
 
@@ -198,4 +198,4 @@ Recorded from the review disposition; this is a state record, not a completion c
 
 **G8 (deferred hardening debt):** tautological or string-blacklist tests in Batch 1; no runtime enforcement of enum-typed fields on `Assumption.status` / `Reference.quality`; `ClaimDependency` has no consuming contract yet. Not yet registered in `KNOWN_ISSUES.md` to avoid picking a `DEBT-` id that may collide with the ids already added on `main`; register at merge time.
 
-**Known drift in the inventory table (found in the final branch audit; pre-existing, not caused by the side work; not yet reconciled).** 16 rows are still marked ❌ although their classes exist in `core/verification/`: rows 4–9 (`VerificationObligation`, `Rubric`, `Criterion`, `CriterionDependency`, `CriterionApplicability`, `CriterionEvidenceRequirement`), 11 (`CompiledVerificationSpecification`), 12 (`Claim`), 14–15 (`InspectionPlan`, `InspectionStep`), 22–23 (`VerificationMethod`, `VerificationCapability`) and 25–28 (`VerificationFinding`, `Critique`, `CounterArgument`, `Contradiction`). The "Built" header count above is therefore consistent with the table but *understates* the code; the ✅/◐/❌ statuses of those rows should be re-verified against code and tests before the table is used to size or order later batches. Separately, `rubric.py` still annotates `construct: Optional["VerificationConstruct"]` while row 47 (`VerificationConstruct` / `ConstructValidity`) is unbuilt (a dangling forward reference; the one remaining `mypy` error in `core/verification`).
+**Inventory drift: resolved (2026-09-30).** The 16 rows that were marked ❌ although their classes exist (rows 4–9, 11, 12, 14–15, 22–23, 25–28) were re-verified against `core/verification/` and the test files and re-marked; `Rubric` (row 5) is ◐ because its `construct` field forward-references the unbuilt `VerificationConstruct` (row 47), the one remaining `mypy` error in `core/verification` (`rubric.py:145`). Reconciliation method: class defined in `core/verification/*.py` plus test references in `tests/test_verification_contracts.py` / `tests/verification_run_tests_stdlib.py`; the depth of each contract's tests was not re-audited row by row. Remaining ❌ rows: 1, 3, 10, 24, 29, 30, 35, 36, 38, 39, 41, 42, 43, 47, 50, 51.
