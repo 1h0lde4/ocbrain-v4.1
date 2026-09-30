@@ -2561,6 +2561,29 @@ class TestEvidenceTransformation:
         with pytest.raises(EvidenceBindingError):
             tx.verify_against(good_source, _ev_item("eX", directness=EvidenceDirectness.DERIVED))
 
+    def test_verify_against_blocks_laundering_circular_evidence_through_lineage(self):
+        # restatement of c1 -> "summary" -> derived copy with the flag dropped
+        tx = _ev_transformation()
+        restated = _ev_item("e1", directness=EvidenceDirectness.DIRECT, supports=("c1",), restatement=True)
+        laundered = _ev_item("e2", directness=EvidenceDirectness.DERIVED, supports=("c1",), restatement=False)
+        with pytest.raises(CircularEvidenceError):
+            tx.verify_against(restated, laundered)
+
+    def test_restatement_flag_kept_through_lineage_is_still_caught_by_the_bundle(self):
+        tx = _ev_transformation()
+        restated = _ev_item("e1", directness=EvidenceDirectness.DIRECT, supports=("c1",), restatement=True)
+        kept = _ev_item("e2", directness=EvidenceDirectness.DERIVED, supports=("c1",), restatement=True)
+        assert tx.verify_against(restated, kept) is None
+        with pytest.raises(CircularEvidenceError):
+            EvidenceBundle(items=(kept,), claim_id="c1")
+
+    def test_transformation_of_a_non_restatement_is_not_over_blocked(self):
+        tx = _ev_transformation()
+        plain = _ev_item("e1", directness=EvidenceDirectness.DIRECT, supports=("c1",), restatement=False)
+        derived = _ev_item("e2", directness=EvidenceDirectness.DERIVED, supports=("c1",), restatement=False)
+        assert tx.verify_against(plain, derived) is None
+        assert EvidenceBundle(items=(derived,), claim_id="c1").claim_id == "c1"
+
 
 class TestEvidenceBundle:
     def test_preserves_every_evidence_status_in_order_without_filtering(self):

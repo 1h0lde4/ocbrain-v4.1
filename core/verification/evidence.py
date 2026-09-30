@@ -299,7 +299,12 @@ class EvidenceTransformation:
 
     ``verify_against`` additionally proves the recorded directness and ids
     match the two concrete EvidenceItems, so the rules above apply to the
-    real evidence and not merely to what the record says about it.
+    real evidence and not merely to what the record says about it.  It also
+    keeps ``check_not_circular`` from being bypassed by lineage: if the
+    source is flagged as a restatement of a claim, the derived item must
+    keep that flag (CircularEvidenceError otherwise).  This is applied when
+    ``verify_against`` is called -- an EvidenceBundle does not know its
+    items' transformations, and no registry is introduced to make it.
 
     Not independently addressable -- no TransformationId."""
     source_evidence_id: EvidenceId
@@ -355,7 +360,9 @@ class EvidenceTransformation:
 
     def verify_against(self, source: EvidenceItem, result: EvidenceItem) -> None:
         """Raise EvidenceBindingError unless the two items are the ones
-        this record describes (ids and recorded directness match)."""
+        this record describes (ids and recorded directness match), and
+        CircularEvidenceError if the derived item drops a restatement flag
+        its source carries."""
         if source.evidence_id != self.source_evidence_id:
             raise EvidenceBindingError(
                 f"record source is {self.source_evidence_id!r}, "
@@ -377,6 +384,17 @@ class EvidenceTransformation:
                 f"record says result directness is "
                 f"{self.result_directness.value!r} but the item is "
                 f"{result.directness.value!r}"
+            )
+        if source.is_restatement_of_claim and not result.is_restatement_of_claim:
+            # Restatement-ness is inherited through a transformation: a
+            # summary/translation/extraction of a restatement is still that
+            # restatement.  Without this, dropping the flag would launder
+            # circular evidence past check_not_circular.
+            raise CircularEvidenceError(
+                f"evidence {result.evidence_id} is derived from "
+                f"{source.evidence_id}, which is flagged as a restatement of "
+                f"a claim, but the derived item drops that flag -- circular "
+                f"evidence cannot be laundered through a transformation"
             )
 
 
