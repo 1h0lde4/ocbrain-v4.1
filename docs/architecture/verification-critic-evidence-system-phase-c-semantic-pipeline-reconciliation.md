@@ -169,3 +169,31 @@ Per `PROJECT_INSTRUCTIONS.md`'s Architecture Freeze Principle and this project's
 ## 8. Recommendation
 
 Proceed to Phase 2: implement `obligation.py`, `rubric.py`, `inspection.py`, plus the two `identity.py` additions (`ObligationId`, `InspectionPlanId`), with tests, on `feature/verification-critic-evidence-phase-c`. Hold `Claim`/`Assumption`/`Reference`/`Oracle` (Phase 3) for the one-sentence ADR cross-reference noted in §6 — not blocking, but cheap to do first.
+
+---
+
+## 9. Status register after the side-work audit (2026-09-30)
+
+Recorded from the review disposition; this is a state record, not a completion claim for the Verification subsystem.
+
+| Item | State |
+|---|---|
+| Batch 1 (epistemic spine: `ClaimDependency`, `AssumptionSource`, `AssumptionStatus`, `ReferenceQuality`) | Complete |
+| `CompiledVerificationSpecification` hardening | Repaired and validated: duplicate-ID detection and `InspectionStep.plan_id` validation kept; the strategy↔method consistency check was removed. `VerificationStrategy.selected_methods` (method names/types, `policy.py`) and `InspectionStep.method_reference` (registry reference) stay separate; how they relate is still an open design question |
+| Batch 2 Evidence (rows 18–21, 49) | Partially implemented — **WIP, not complete** |
+| G8 — Batch 1 hardening | Deferred hardening debt, not an architectural blocker |
+
+**Batch 2: enforced now** (only what each contract's own fields can observe): exact source + non-empty locator + claim/criterion binding; observation binding by id with no authority of its own (an `Interpretation` is rejected); transformation lineage with categorical rules only (no upgrade into `DIRECT`, `MODEL_INTERPRETATION` permanent, provenance never silently `COMPLETE`); immutable `EvidenceBundle` preserving all six `EvidenceStatus` values; `check_not_circular` applied by both a claim-bound `EvidenceReference` and a claim-bound `EvidenceBundle`; `MinimumSufficientEvidence` as a declarative retention/reconstructability set, distinct from `CriterionEvidenceRequirement` and `EvidenceStatus.SUFFICIENT`.
+
+**Batch 2: deferred, explicitly**
+
+| Deferred item | Why | Owner layer |
+|---|---|---|
+| Observation-absence states (`NOT_OBSERVED` / `OBSERVED_ABSENT` / `OBSERVATION_INCOMPLETE` / `OBSERVATION_COVERAGE_UNKNOWN`) | Coverage contracts, not evidence contracts | Coverage batch |
+| Scope, validity window, relevance, specificity, integrity, correlation group, independence level, sensitivity on evidence | Named by v1 §15 / v2 §13 but no vocabulary is defined by any authoritative contract; `VerificationAssurance.assurance_scope`/`independence_level`/`integrity_verified` are assurance-level, not evidence-level, and are not aliased | Decide with the consuming layer |
+| Authority / integrity / certainty rules in `EvidenceTransformation` | The contract has no fields to observe them | Evidence construction / assessment |
+| `DIRECT` → `DIRECT` through a non-model transformation | Architecture gives no per-type table; accepted and tested as a documented boundary | Evidence construction / assessment |
+| Claim-scoped circularity for criterion-only references/bundles | No claim id to test | Assessment |
+| Privacy-exposure and cost dimensions of `MinimumSufficientEvidence` | Need the deferred sensitivity metadata | Later batch |
+
+**G8 (deferred hardening debt):** tautological or string-blacklist tests in Batch 1; no runtime enforcement of enum-typed fields on `Assumption.status` / `Reference.quality`; `ClaimDependency` has no consuming contract yet. Not yet registered in `KNOWN_ISSUES.md` to avoid picking a `DEBT-` id that may collide with the ids already added on `main`; register at merge time.
