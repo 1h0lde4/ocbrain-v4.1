@@ -9,6 +9,7 @@ import time
 from typing import Dict, Any, Optional
 
 from . import parser, merger
+from .error_ref import log_and_ref
 from .context import ContextMemory
 from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
@@ -741,9 +742,14 @@ class Orchestrator:
                 for i, res in enumerate(results):
                     mod_name = labels[i]["module"]
                     if isinstance(res, Exception):
-                        logger.error(f"[Orchestrator] Module {mod_name} failed: {res}")
+                        # merger.merge() appends error answers to what the
+                        # caller receives, so raw exception text here reached
+                        # /query clients. Detail goes to the log under a ref.
+                        ref = log_and_ref(
+                            logger, f"[Orchestrator] Module {mod_name}", res)
                         processed_results.append(RouteResult(
-                            answer=f"[Error in {mod_name}: {res}]",
+                            answer=(f"[Error in {mod_name}: "
+                                    f"{type(res).__name__} (ref {ref})]"),
                             source="error"
                         ))
                     else:
