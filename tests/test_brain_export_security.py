@@ -89,3 +89,113 @@ def test_legitimate_module_name_still_imports(tmp_path, monkeypatch):
     name = be.import_module(bundle, overwrite=True)
     assert name == "finance_helper"
     assert (fake_repo / "modules" / "finance_helper").exists()
+
+
+# ---------------------------------------------------------------------------
+# export_module(): the same traversal class as CTX-EXPORT-001, on the sibling
+# function. CTX-EXPORT-001 validated the manifest's module_name in
+# import_module() but export_module() takes module_name straight from the
+# request body (interface/api.py POST /export AND core/brain_api.py's
+# /export route -- two HTTP entry points into one sink) and used it, unvalidated,
+# to build five different paths: MODULES/<name>, DATA/evals/<name>.json,
+# DATA/raw/<name>, and the output bundle's own filename. Its only check was
+# mod_dir.exists(), which is not a containment check.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+
+SECRET = "SECRET-OUTSIDE-MODULES-DIR"
+
+
+@pytest.fixture
+def export_sandbox(tmp_path, monkeypatch):
+    """A fake repo mirroring the real layout (modules/, data/exports/ are
+    siblings under a root) with a decoy directory that sits *outside*
+    modules/ -- and, importantly, reachable such that the output bundle's
+    own path also resolves somewhere writable. Without that second
+    property an exploit attempt would fail at ZipFile() for an unrelated
+    reason and this test would pass on unfixed code for the wrong reason.
+    """
+    fake_repo = tmp_path / "fake_repo"
+    (fake_repo / "modules" / "legit_module").mkdir(parents=True)
+    (fake_repo / "data").mkdir(parents=True)
+    exports = fake_repo / "data" / "exports"
+
+    monkeypatch.setattr(be, "ROOT", fake_repo)
+    monkeypatch.setattr(be, "MODULES", fake_repo / "modules")
+    monkeypatch.setattr(be, "DATA", fake_repo / "data")
+    monkeypatch.setattr(be, "EXPORTS", exports)
+
+    # export_module() reads two global singletons; stub them so the test is
+    # hermetic and can't touch the repo's live config/brain-version state.
+    from core.config import config
+    from core.brain_version import brain_version_manager
+    monkeypatch.setattr(config, "get_module_state", lambda name: {})
+    monkeypatch.setattr(
+        brain_version_manager, "get_state", lambda: SimpleNamespace(modules={})
+    )
+
+    decoy = fake_repo / "decoy_area"
+    (decoy / "weights" / "active").mkdir(parents=True)
+    (decoy / "weights" / "active" / "secret.txt").write_text(SECRET)
+
+    # Self-check, per this file's own convention: the traversal string
+    # really does resolve onto the decoy, and the decoy really is outside
+    # modules/. If either were false the test below would prove nothing.
+    traversal = "../decoy_area"
+    assert (fake_repo / "modules" / traversal).resolve() == decoy.resolve()
+    assert (fake_repo / "modules") not in decoy.resolve().parents
+
+    return SimpleNamespace(
+        root=fake_repo, exports=exports, decoy=decoy, traversal=traversal,
+        tmp=tmp_path,
+    )
+
+
+def _attempt_export(name):
+    # Deliberately not asserting an exception type: the property that
+    # matters is what did or didn't happen on disk, unconditionally.
+    try:
+        be.export_module(name)
+    except Exception:
+        pass
+
+
+def test_export_path_traversal_cannot_write_bundle_outside_exports_dir(export_sandbox):
+    """The output filename is f"{module_name}_{ts}.ocbrain" joined onto
+    EXPORTS. A '/' or '..' in module_name must not let the bundle land
+    anywhere except directly inside EXPORTS."""
+    _attempt_export(export_sandbox.traversal)
+
+    outside = [
+        p for p in export_sandbox.tmp.rglob("*.ocbrain")
+        if export_sandbox.exports.resolve() not in p.resolve().parents
+    ]
+    assert not outside, f"bundle written outside EXPORTS: {outside}"
+
+
+def test_export_path_traversal_cannot_exfiltrate_files_from_outside_modules_dir(export_sandbox):
+    """export_module() copies weights/active and knowledge.db out of
+    MODULES/<name>. A traversal name must not let it harvest those from a
+    directory outside modules/ into a bundle."""
+    _attempt_export(export_sandbox.traversal)
+
+    leaked = []
+    for bundle in export_sandbox.tmp.rglob("*.ocbrain"):
+        with zipfile.ZipFile(bundle) as zf:
+            for member in zf.namelist():
+                if SECRET.encode() in zf.read(member):
+                    leaked.append((bundle.name, member))
+    assert not leaked, f"decoy content exfiltrated into a bundle: {leaked}"
+
+
+def test_legitimate_module_name_still_exports(export_sandbox):
+    """Positive control: the fix must not reject or break a real module.
+    (Also guards the two tests above against passing trivially -- e.g. if
+    export were simply broken in the sandbox, they'd pass for that reason.)"""
+    path = be.export_module("legit_module")
+
+    assert path.exists()
+    assert export_sandbox.exports.resolve() in path.resolve().parents
+    with zipfile.ZipFile(path) as zf:
+        assert "manifest.json" in zf.namelist()
