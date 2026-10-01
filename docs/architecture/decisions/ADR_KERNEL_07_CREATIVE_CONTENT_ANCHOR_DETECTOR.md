@@ -1,8 +1,9 @@
 # ADR-KERNEL-07 — Creative Content-Anchor Detector (first narrow slice toward Intent Sufficiency)
 
 **Status:** PROPOSED. **D-5 RESOLVED — Option C, decided by Moncif on 2026-09-29** (§10).
-D-1..D-4 remain open. Acceptance and merge readiness are Moncif's call; nothing here is
-ACCEPTED. The implementation is on a work branch, disabled by default
+D-1..D-4 have dispositions recorded in §8 (D-1/D-2 PROPOSED, D-3/D-4 DEFERRED), none yet
+accepted. Acceptance is Moncif's call; nothing here is ACCEPTED. The implementation is merged to `main` behind a default-off flag (a merge is not an acceptance of
+this ADR, which stays PROPOSED); it is disabled by default
 (`[runtime] creative_content_anchor_enabled = false`); with the flag off, `handle()` and the
 `compile()` call are unchanged.
 **Date:** Sept 29, 2026 (supersedes the earlier "Gate" revisions of this ADR; the renaming
