@@ -1,1034 +1,315 @@
 # Session Handoff
 
+> **Version 2.** It supersedes version 1 (the DockerBackend implementation handoff), which is still in git history: `git show 9310155:handoff.md`. Version 1's section 2 holds the original DockerBackend implementation prompt verbatim; read it if you need that root contract. Everything below is about the **closure of the `sandbox-fabric` reconciliation**.
+
 ## 1. Handoff Metadata
 
-- Handoff version: 1
-- Created at: 2026-09-27T19:35 UTC (session ran 2026-09-21 through 2026-09-27)
-- Workstream: DockerBackend implementation (DEBT-021), branch `sandbox-fabric`
-- Task identifier: DEBT-021 — DockerBackend, per the committed base prompt (`d53b164`) + the frozen pre-implementation addendum + the frozen 28-item checklist
-- Source session purpose: execute the "DockerBackend Implementation — Definitive Docker-Host Handoff" (reproduced in full in §2). Over the course of the session, a real Docker daemon became available (installed inside the session's own execution container — see §14) and every checklist item was carried through to real, adversarial, evidence-backed verification rather than staying design-only.
-- Transfer status: **TRANSFER INCOMPLETE — LOCAL COMMIT ONLY** at the time this file was written (everything is committed, but the last two commits — the addendum/checklist commit and this handoff commit — are not yet on `origin/sandbox-fabric`, because no GitHub credential was available in the session when this was written). It becomes TRANSFER READY when `git fetch origin sandbox-fabric` shows the remote at or beyond the handoff commit — see §19 for the exact criterion and evidence.
+- Handoff version: 2
+- Created at: 2026-10-01 (the session ran 2026-09-29 through 2026-10-01)
+- Workstream: closing the `sandbox-fabric` reconciliation (DockerBackend, DEBT-021). Steps 1 to 4 of the closure sequence are done. Step 5, the completion decision, is open.
+- Task identifiers: DEBT-021 (DockerBackend); DEBT-039 (proposed, **not yet registered anywhere**: the cross-sandbox egress finding, formerly written "DEBT-038" until `main` registered that id for the `/distill` traversal)
+- Source session purpose: carry out the user's closure sequence (section 2), which grew out of a D10 remediation and a closeout audit.
+- Transfer status: see section 19.
 
 ## 2. Original Starting Prompt
 
-Reproduced verbatim. This is the literal text the source session was given; everything else in this handoff is downstream of it.
+Preserved verbatim. This is the user's instruction that defines this workstream (the earlier DockerBackend implementation prompt is in version 1; see the note above).
 
-> DockerBackend Implementation — Definitive Docker-Host Handoff
->
-> Mission
->
-> Implement the DockerBackend work defined by the committed DockerBackend implementation prompt, as amended by the frozen DockerBackend implementation addendum, and operationalized by the frozen 28-item checklist.
->
-> This is an implementation session on the actual Docker host.
->
-> The addendum and checklist are frozen. Do not rewrite, renumber, simplify, reinterpret, merge, split, or otherwise modify them.
->
-> The objective is to implement the specified behavior, establish evidence for every requirement, maintain the existing architecture and policy boundaries, and produce a scope-clean result suitable for incorporation into the OCBrain kernel freeze audit.
->
-> ---
->
-> 0. Source-of-truth hierarchy
->
-> Use the following hierarchy:
->
-> 1. Committed DockerBackend implementation prompt — base contract.
-> 2. Frozen DockerBackend addendum — additive amendments/extensions to that contract.
-> 3. Frozen 28-item checklist — operational mapping of the addendum, including each item's source classification, affected file/symbol, and public/policy-surface flag.
-> 4. Current committed repository/code/tests.
-> 5. Actual observations from the Docker host.
->
-> The addendum is additive, not substitutive.
->
-> The 28-item checklist does not replace the committed prompt or its original Phase 0–6 requirements.
->
-> Therefore:
->
-> «Passing the 28 checklist items alone is not sufficient for completion. The original Phase 0–6 gates remain operative, as amended or extended by the frozen addendum.»
->
-> When the addendum extends an existing phase gate, verify the original gate together with the extension.
->
-> Do not implement from this handoff prompt alone. Before modifying the repository, locate and read the complete committed implementation prompt, frozen addendum, and frozen 28-item checklist.
->
-> If any required source artifact is unavailable, appears to be a different version, or conflicts materially with another authoritative source, stop before modifying code and report the discrepancy.
->
-> Use repository/code evidence over stale notes or remembered state.
->
-> ---
->
-> 1. Establish BOTH baselines before implementation
->
-> No repository modification is permitted until both baselines are recorded with sufficient evidence.
->
-> 1A. Repository baseline
->
-> Record:
->
-> - repository and exact location;
-> - current branch;
-> - current commit;
-> - clean/dirty working-tree state;
-> - committed implementation prompt/version;
-> - frozen addendum/version;
-> - frozen 28-item checklist/version;
-> - relevant baseline tests;
-> - pre-existing failures/errors relevant to this work.
->
-> Do not attribute pre-existing failures to the DockerBackend implementation.
->
-> 1B. Docker-host baseline
->
-> Record the actual runtime environment required by the committed Phase 0 gates and addendum, including:
->
-> - Docker daemon identity;
-> - Docker/daemon version;
-> - which daemon/runtime is actually serving the API;
-> - endpoint/security context being certified;
-> - relevant CVE fix/version or fix-date state;
-> - "userns-remap" state;
-> - "no-new-privileges" state;
-> - AppArmor state/profile;
-> - SELinux state/policy where applicable;
-> - "iproute2" version/capabilities relevant to the requirements;
-> - kernel version;
-> - cgroup version;
-> - cgroup driver;
-> - any other Phase 0/addendum host fact needed for interpretation.
->
-> Do not treat the host inventory as a substitute for running the original Phase 0 acceptance gates.
->
-> Remote or otherwise untrusted Docker API endpoints must not silently qualify as the intended local sandbox runtime merely because the Docker API is reachable.
->
-> Host-dependent requirements must be interpreted against the actual daemon/runtime/kernel/cgroup/security environment observed here.
->
-> ---
->
-> 2. A–D are classifications, NOT implementation phases
->
-> The 28 checklist items use A/B/C/D as epistemic/source categories:
->
-> - A — verified gaps;
-> - B — already-explicit rules carried forward for traceability;
-> - C — extensions to existing gates;
-> - D — implementation requirements.
->
-> Do not execute:
->
-> «A → B → C → D»
->
-> as a build sequence.
->
-> B is continuous
->
-> B is not a code phase.
->
-> - B1 is reporting discipline, not code.
-> - B2/B3 constrain how all implementation is performed.
-> - B4 governs final-diff reconciliation.
->
-> Keep B active throughout the entire session and audit it explicitly at the end.
->
-> The four carried-forward rules include, at minimum:
->
-> - "SECCOMP" does not by itself prove protection against a specific CVE/bypass;
-> - capabilities remain empty/unearned until their corresponding verification gates pass;
-> - do not introduce a second policy surface;
-> - the committed Definition-of-Done file-touch boundary remains binding.
->
-> ---
->
-> 3. Implementation sequencing is dependency-driven
->
-> The dependency order below governs implementation sequencing only.
->
-> It does not replace, reorder, or weaken the original Phase 0–6 acceptance gates.
->
-> 3A. A3 first
->
-> Resolve A3 first.
->
-> No container can exist until image resolution is established.
->
-> A3 must preserve the following:
->
-> - image configuration is backend-private;
-> - "SandboxRequest" does not acquire an image injection surface;
-> - resolve the configured image reference to an immutable digest before execution;
-> - record/use the resolved immutable identity as required by the frozen contract.
->
-> Do not treat an image tag alone as immutable execution identity.
->
-> 3B. Establish the minimum executable lifecycle scaffold
->
-> After A3, establish:
->
-> - D1
-> - D4
-> - D6
-> - D9
->
-> This must produce a working create/run/inspect/destroy path sufficient to establish and observe:
->
-> - filesystem mapping;
-> - container identity;
-> - lifecycle/state mapping;
-> - event visibility.
->
-> Do not expand this scaffold beyond what the committed prompt/addendum requires.
->
-> Identity must remain backend-private and support collision avoidance and cleanup of abandoned containers, including appropriate naming/labeling behavior where required by the checklist.
->
-> 3C. Exercise the dependent isolation/filesystem gates
->
-> Once a real, inspectable container exists, implement and verify:
->
-> - A2
-> - A6
-> - D2
-> - D3
->
-> A6 must explicitly account for the absence of:
->
-> - "--privileged";
-> - host PID/IPC/network/UTS sharing;
-> - "--cap-add";
-> - device exposure;
-> - mounted Docker/container-runtime sockets.
->
-> A security property must be established from the resulting runtime state, not merely from request construction.
->
-> Do not add capability claims simply because a related Docker option or low-level mechanism exists.
->
-> 3D. Network-dependent requirements
->
-> Once the original Phase 5 network setup is operational, implement and verify:
->
-> - A1
-> - C2
->
-> For "NETWORK_ALLOWLIST", establish the required "NET_NAMESPACE" dependency as required by admission and the frozen contract.
->
-> For network enforcement, test the specified negative/bypass paths, including:
->
-> - direct connection bypassing the proxy;
-> - Docker gateway as an alternate route;
-> - another reachable container acting as a bridge;
-> - "request.env" attempting to redirect proxy variables.
->
-> Environment application order must preserve the enforcement invariant:
->
-> 1. apply "request.env";
-> 2. in allowlist/proxy-enforced mode, forcibly set the actual enforced proxy endpoint for both uppercase and lowercase HTTP/HTTPS proxy variables.
->
-> Caller-supplied proxy variables must not be able to redirect around the enforced network path.
->
-> 3E. Host-dependent security/resource requirements
->
-> Using the host baseline and the original phase evidence, implement and verify:
->
-> - A9
-> - C1
-> - C3
->
-> A9
->
-> Test the relevant security behavior directly.
->
-> In particular:
->
-> - test "AF_ALG" as required;
-> - test "AF_VSOCK" separately and directly;
-> - never infer AF_VSOCK protection from an AF_ALG result;
-> - do not represent generic "SECCOMP" presence as proof of protection against a specific bypass.
->
-> C1
->
-> Distinguish a genuine cgroup/resource enforcement event from an ambiguous process exit such as "137".
->
-> Do not infer a specific resource-exceeded condition from the exit code alone.
->
-> C3
->
-> Distinguish:
->
-> - "the bypass is closed"
->   from
-> - "the implementation also broke legitimate 32-bit/compat workloads."
->
-> A security gate that merely breaks legitimate compatibility behavior is not automatically a clean pass.
->
-> 3F. A5 is independent
->
-> A5 may be resolved at any convenient point.
->
-> Do not create Docker-only policy merely to make an existing request field appear enforced.
->
-> Where the existing architecture does not enforce a field such as "allowed_imports", preserve the documented non-enforcement contract unless the frozen requirements explicitly require genuine enforcement.
->
-> Do not add an isolated DockerBackend policy surface merely to manufacture compliance.
->
-> 3G. Lifecycle hardening
->
-> With the core lifecycle working, implement and verify:
->
-> - D5
-> - D7
-> - D8
-> - D10
-> - D11
->
-> This includes, as applicable:
->
-> Artifact handling
->
-> Preserve the existing "ArtifactManifest" contract and implement the specified extraction behavior.
->
-> Verify:
->
-> - path normalization;
-> - traversal rejection;
-> - symlink-escape rejection;
-> - hashing of the bytes actually retrieved;
-> - no following a sandbox-created symlink into an arbitrary host path.
->
-> Lifecycle/state semantics
->
-> Preserve the existing public "TerminationReason" and "SandboxState" enums.
->
-> Test the specified invalid/idempotent lifecycle operations, including:
->
-> - run before create;
-> - double run;
-> - cancel before run;
-> - cancel after termination;
-> - double destroy;
-> - inspect after destroy.
->
-> Cancellation
->
-> Cancellation must be tested against an actual process tree, including parent/child/grandchild behavior.
->
-> Do not conclude that descendants died merely because:
->
-> - "docker stop" returned;
-> - the top-level PID disappeared;
-> - the container state changed.
->
-> Verify descendants actually terminate.
->
-> Inspect
->
-> Verify that inspection is side-effect free.
->
-> Events
->
-> Preserve the existing event taxonomy and event semantics.
->
-> Do not create a parallel event taxonomy for cancellation/timeout or other lifecycle outcomes when the existing event types/detail fields are sufficient and required by the contract.
->
-> Cleanup
->
-> Exercise the specified failure points.
->
-> Verify no orphaned:
->
-> - containers;
-> - networks;
-> - mounts;
-> - proxy listeners;
-> - handles/bookkeeping state.
->
-> Preserve idempotent "destroy()" semantics.
->
-> Concurrency
->
-> Test the race pairs specified by the checklist.
->
-> Verify:
->
-> - consistent bookkeeping;
-> - valid terminal state;
-> - no leaked/orphaned containers or resources;
-> - correct behavior under concurrent lifecycle operations.
->
-> ---
->
-> 4. Original Phase 0–6 requirements remain active
->
-> Throughout implementation, continue to enforce the full original committed prompt, including all applicable requirements from:
->
-> - Phase 0 — host/runtime baseline and admission prerequisites;
-> - Phase 1 — contracts, capabilities, and event semantics;
-> - Phase 2 — namespace/privilege isolation;
-> - Phase 3 — resource enforcement;
-> - Phase 4 — security/CVE-specific gates;
-> - Phase 5 — network setup/enforcement;
-> - Phase 6 — lifecycle/integration behavior.
->
-> The frozen A/B/C/D checklist is an amendment and implementation mapping over those gates.
->
-> Never use the dependency graph as an excuse to skip an original phase requirement.
->
-> ---
->
-> 5. Strict implementation surface
->
-> The Definition-of-Done/file-touch boundary is binding.
->
-> Do not modify:
->
-> - "SandboxBackend";
-> - "NamespaceBackend";
-> - "_ns_init.py";
-> - "_seccomp.py";
-> - "_net_proxy.py";
-> - unrelated architecture or unrelated backend logic.
->
-> Keep implementation confined to the authorized DockerBackend surface described by the frozen prompt/checklist, including:
->
-> - "docker_backend.py";
-> - DockerBackend-private helpers explicitly required by the implementation;
-> - "test_docker_backend.py";
-> - additive "SandboxCapability" entries only where explicitly justified/authorized;
-> - other files only where the frozen contract explicitly authorizes them.
->
-> Do not repair unrelated cross-backend issues as part of this work.
->
-> In particular, do not "fix" the existing "NamespaceBackend._CAPS" issue as part of this task unless it is separately brought into scope by an authoritative requirement.
->
-> Anything outside the authorized file/symbol boundary is scope drift until explicitly justified.
->
-> ---
->
-> 6. No second policy surface
->
-> The committed prompt's architectural rule governing policy placement remains binding:
->
-> «Do not create a second policy surface for implementation convenience.»
->
-> Do not duplicate policy in:
->
-> - backend-local shadow policy;
-> - helper defaults;
-> - convenience fallbacks;
-> - capability declarations;
-> - request-construction shortcuts;
-> - test-only production semantics;
-> - alternate enforcement tables.
->
-> Use the existing policy/governance architecture.
->
-> If satisfying a requirement appears to require a new policy surface, stop and reconcile it against the frozen contract before proceeding.
->
-> ---
->
-> 7. Capability discipline
->
-> Capabilities are earned, not declared optimistically.
->
-> For every capability:
->
-> - identify the corresponding gate;
-> - prove that gate;
-> - only then add/claim the capability;
-> - otherwise leave it absent/unearned as required by the contract.
->
-> Do not use generic mechanism presence as evidence of a specific security property.
->
-> In particular:
->
-> «"SECCOMP" ≠ proof of protection against a particular CVE-specific bypass.»
->
-> Do not add a "SandboxCapability" value simply because Docker supports an option or because a code path appears to request it.
->
-> ---
->
-> 8. Security gate and fail-closed discipline
->
-> Where the contract defines a security/isolation/resource property as an admission or acceptance gate:
->
-> - inability to establish the required control is a gate failure;
-> - do not silently degrade to a weaker configuration;
-> - reject/contain the operation according to the committed contract.
->
-> Do not convert an unsupported or unverified host/runtime condition into a PASS.
->
-> Where the contract intentionally permits non-enforcement, preserve that explicit behavior rather than inventing a new enforcement mechanism.
->
-> ---
->
-> 9. Evidence model
->
-> For every security, resource, filesystem, lifecycle, or enforcement requirement, distinguish:
->
-> 1. Requested state — what DockerBackend asked for.
-> 2. Accepted state — what Docker/daemon accepted.
-> 3. Effective state — what inspection, runtime observation, or host evidence proves actually happened.
->
-> A requirement about effective behavior cannot be marked PASS from requested or accepted state alone.
->
-> For every security/isolation requirement, test both:
->
-> - the intended/positive path;
-> - the relevant negative/bypass path whenever specified by the checklist or original prompt.
->
-> A positive-path success by itself is insufficient for a security claim.
->
-> Do not invent or infer evidence.
->
-> If a requirement cannot be meaningfully verified on the current host, mark it BLOCKED, identify the exact limitation, and identify the required evidence.
->
-> Do not relabel an unverified requirement as PASS merely because the implementation appears correct.
->
-> ---
->
-> 10. Test discipline
->
-> Do not weaken the test suite to make the implementation pass.
->
-> Do not:
->
-> - delete tests;
-> - skip tests;
-> - broadly mock away the behavior being verified;
-> - add unjustified "xfail";
-> - weaken assertions;
-> - change an expected result merely to accommodate implementation behavior.
->
-> Existing tests may change only where the frozen contract explicitly changes the expected behavior, and the reason must be recorded.
->
-> Add the narrowest tests necessary to establish the frozen requirements.
->
-> Run relevant tests after each dependency-ready implementation group rather than waiting until the end to discover basic failures.
->
-> ---
->
-> 11. If implementation reveals a new dependency
->
-> The stated dependency order is the current implementation map, not permission to invent architecture.
->
-> If implementation reveals that:
->
-> - another dependency exists;
-> - an existing gate must be interpreted differently;
-> - an existing architectural boundary is insufficient;
-> - a public surface would need to expand;
-> - a policy surface would need to be duplicated;
->
-> do not silently modify the architecture or the contract.
->
-> Record the discovered dependency/conflict and stop before making an architectural expansion.
->
-> ---
->
-> 12. Final verification
->
-> After implementation:
->
-> 12A. Verify the original contract
->
-> Verify all applicable original Phase 0–6 requirements.
->
-> 12B. Verify the addendum/checklist
->
-> Produce evidence for every one of the 28 checklist items.
->
-> Use the exact checklist IDs and classifications.
->
-> Each item must be one of:
->
-> - PASS — implemented and actually verified;
-> - FAIL — tested and does not satisfy the requirement;
-> - BLOCKED — exact environmental/repository dependency prevents verification;
-> - NOT APPLICABLE — only where the authoritative requirement genuinely permits this state.
->
-> Do not use vague statuses such as "implemented," "mostly done," or "should work."
->
-> 12C. Audit B explicitly
->
-> At the end, explicitly verify:
->
-> - B1;
-> - B2;
-> - B3;
-> - B4.
->
-> B4 must be checked against the actual final diff.
->
-> 12D. Audit D12 explicitly
->
-> D12 — No new public surface is an independent consolidating requirement.
->
-> Explicitly verify that no unrequested public or policy surface was introduced, including through a change that spans the constraints represented by A3/B2/B3/D4.
->
-> ---
->
-> 13. Final diff reconciliation
->
-> Inspect the complete final diff.
->
-> For every changed file/symbol, identify the exact authoritative requirement that authorizes the change.
->
-> Reconcile:
->
-> - files touched;
-> - symbols changed;
-> - public interfaces;
-> - policy/governance surfaces;
-> - capability declarations;
-> - sandbox/security behavior;
-> - lifecycle behavior;
-> - tests;
-> - documentation/contract changes.
->
-> Anything not justified by the committed prompt, frozen addendum, frozen checklist, or necessary test support is scope drift.
->
-> Remove unrelated/speculative changes before declaring completion.
->
-> Confirm the authorized file-touch boundary remains intact.
->
-> ---
->
-> 14. Required closeout report
->
-> Produce a 28-item verification matrix:
->
-> ID| Classification| Status| Evidence| File/Symbol| Public/Policy Surface| Host Dependency| Notes
->
-> Then provide:
->
-> Test summary
->
-> - repository baseline;
-> - tests added/changed;
-> - full relevant regression result;
-> - new regressions, if any;
-> - pre-existing failures/errors, if any.
->
-> Host summary
->
-> - Docker daemon/runtime;
-> - endpoint/security context;
-> - kernel;
-> - cgroups;
-> - "userns-remap";
-> - "no-new-privileges";
-> - AppArmor/SELinux;
-> - iproute2;
-> - CVE/fix-state evidence;
-> - other required Phase 0 facts.
->
-> Scope summary
->
-> - files changed;
-> - public interfaces changed;
-> - policy surfaces changed;
-> - capability surfaces changed.
->
-> B audit
->
-> Explicit PASS/FAIL/BLOCKED assessment for B1–B4.
->
-> D12 audit
->
-> Explicit PASS/FAIL/BLOCKED assessment of the no-new-public-surface rule.
->
-> Remaining blockers
->
-> List only concrete unresolved blockers and the exact evidence required to resolve them.
->
-> ---
->
-> 15. Completion standard
->
-> Completion requires all of the following:
->
-> - original committed Phase 0–6 requirements satisfied as applicable;
-> - all applicable frozen addendum requirements implemented;
-> - all 28 checklist items evidenced;
-> - B1–B4 continuously respected and explicitly audited;
-> - D12/no-new-public-surface requirement satisfied;
-> - capabilities reflect verified behavior only;
-> - security gates fail closed where required;
-> - requested/accepted/effective state distinguished;
-> - relevant negative/bypass paths tested;
-> - full relevant regression suite completed;
-> - final diff reconciled;
-> - authorized file/symbol boundary respected;
-> - no unrelated architectural changes remain.
->
-> A "28/28 PASS" result alone is not sufficient if any original prompt gate, scope rule, public/policy constraint, regression requirement, or final-diff requirement remains unsatisfied.
->
-> ---
->
-> 16. Operational sequence
->
-> Begin with:
->
-> Repository baseline + Docker-host baseline
->
-> Then proceed using the dependency order:
->
-> A3 → D1/D4/D6/D9 → A2/A6/D2/D3 → A1/C2 → A9/C1/C3 → D5/D7/D8/D10/D11
->
-> with:
->
-> A5 independently
->
-> and:
->
-> B1–B4 continuously enforced throughout and audited at closeout.
->
-> This sequence is an implementation dependency order, not an A/B/C/D phase order.
->
-> The committed Phase 0–6 gates remain authoritative throughout.
->
-> Do not modify the frozen addendum or frozen checklist.
->
-> Do not create a separate traceability document; the checklist already contains the required source classification, affected file/symbol, and public/policy-surface information.
->
-> Do not modify the repository until both baselines have been recorded with sufficient evidence.
->
-> Proceed only from the authoritative artifacts and actual Docker-host observations.
+> Next is not another feature. Finish and close the `sandbox-fabric` reconciliation first.
+> Sequence
+> 1. Freeze the current five commits locally.
+> Create a `git bundle` now as the recovery point. Do not push or merge yet.
+> 2. Reconcile §18 against the literal checklist.
+> Update the matrix so it explicitly records:
+>
+> * A9 = UNVERIFIED
+> * C3 = BLOCKED
+> * D9 = UNVERIFIED/BLOCKED, because no lifecycle-event producer exists
+> * B4 = exception/non-compliant unless formally accepted
+> * D11 = FAIL/pending design decision unless the checklist is changed
+>
+> 3. Resolve D11.
+> This is the main substantive architectural question. Determine from the actual implementation and checklist whether the required synchronization primitive is mandatory. Do not let passing tests override an explicit “no lock at all” prohibition.
+> 4. Close the evidence gap.
+> Reproduce or conclusively document the unexplained DockerBackend failure. Then rerun:
+>
+> * DockerBackend targeted suite
+> * mypy
+> * orphan check
+> * full suite
+>
+> Record the known `test_net_proxy.py` flake separately from any DockerBackend failure.
+> 5. Make the completion decision.
+> There are only two legitimate outcomes:
+>
+> * all checklist requirements are evidenced → sandbox-fabric complete
+> * D11/B4/A9/D9/C3 remain unresolved → sandbox-fabric remains explicitly incomplete, with the exact debt/blocker recorded.
+>
+> Only after that should you push to repo
 
-The same human turn also included, ahead of this handoff text: the full `PROJECT_INSTRUCTIONS.md` (OCBrain v4.x governing document — laws, architecture, engineering standards, the §18.4.8 handoff-format specification this very document follows) and a `<userPreferences>` field containing a `GITHUB_TOKEN`. That token placement was flagged immediately as inappropriate (preferences fields aren't secret storage) and never used from that field; see §10 for the full handling.
-
-`PROJECT_INSTRUCTIONS.md` itself is not reproduced here — it is not committed anywhere in this repository (confirmed by search across all branches), so reproducing it in this handoff would not make it any more available to a fresh session than it already isn't; a fresh session either receives it again the same way this one did, or works from the distilled conventions already in memory (`ways-of-working.md`, aliased `PROJECT_INSTRUCTIONS`). This handoff itself is written to comply with that document's §18.4.8 structure regardless of whether the next session has the source text.
+The governing documents are in the repo: `docs/architecture/PROJECT_INSTRUCTIONS.md`; the base prompt `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt.md` (hierarchy position 1); the addendum `…-prompt-addendum.md` (2); the frozen 28-item checklist `docs/architecture/sandbox-fabric-dockerbackend-implementation-checklist.md` (3). **The addendum and checklist are frozen: do not modify them.**
 
 ## 3. Subsequent User Instructions / Corrections
 
-In chronological order. Exact wording preserved where it changed what got built.
+In order. Wording preserved where it changed what was built or recorded.
 
-1. **"Continue"** (after an initial turn that only read project memory, no text response yet) — proceed with baseline establishment.
-2. *[Uploaded the addendum as a PDF]* — no accompanying text.
-3. *[Uploaded the 28-item checklist as a .md file]* — no accompanying text.
-4. Selected, via a presented button choice: **"Proceed here — code the non-host-dependent parts (A3/A4/A5/D12 design, docker_backend.py skeleton), mark every Phase 0+ verification item BLOCKED"** — this authorized writing code in a session that, at that point, had no Docker daemon at all.
-5. **"can you install docker here to start the remaining work?"** — this is what led to installing `docker.io` mid-session and converting the rest of the work from design-only to empirically verified.
-6. **"continue"** (after Phase 0 + A3 + lifecycle + C1 + A6 were verified against the newly-available real daemon).
-7. **"keep going, and instead of patchs, update the feature branche"** [sic] — two instructions at once: continue the checklist work, and stop delivering results as flat diff/patch files, deliver as real git history (commits) on `sandbox-fabric` instead. No GitHub push credential existed at this point, so delivery became local commits + a downloadable `git bundle` from that point on.
-8. *[Pasted external research from another AI tool]*, recommending mitigating the just-found A9 seccomp bypass before continuing to C2/D11, with specific (and, on verification, materially accurate) technical claims about Docker's own upstream fix. Verified against primary sources before acting on it (Docker's real release notes, the actual `moby/moby` PR) rather than trusted at face value — see §10, §11.
-9. **"push to repo: [token]"** — first direct push request, with a GitHub token pasted inline. Used for that one push only, never stored, never left in git config afterward (verified each time — see §13).
-10. **"Continue"** ×2 — C2 (real network isolation) and D11 (concurrency races), each its own turn.
-11. **"push to branch : [token]"** — second direct push (C2 + D11 commits).
-12. *[Pasted more external research]*, this time recommending closing the three remaining capability-evidence gaps (`NO_NEW_PRIVS`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`) and then updating `_CAPS` to reflect what's actually earned, with a specific proposed sequence and proposed final capability set. Followed, after independently confirming the proposed capability names actually exist in `contracts.py` (D12 discipline) and that the proposed test designs made sense against the real admission logic.
-13. **"Push"** (alone, no token) → Claude explained it holds no credential between turns and asked for it again → user replied with just the token → pushed.
-14. **"Start next step"** — Claude began assembling the formal 28-item closeout matrix the original prompt's §14 requires (had read through the reconciliation doc's §§12–15 evidence when interrupted by the next instruction).
-15. **"Next step will be done in a new session, create the handoff.md file containing all the remaining work and necessary information (after updating the work done here to the branch)"** — the instruction this handoff exists to satisfy. Superseded instruction 14: the closeout matrix is now explicit **Next Steps** item 1 (§17) for the new session, not something finished here.
-
-Note on the GitHub token specifically: it was supplied by the user, inline, four separate times across this session (items 9, 11, 13, and once earlier in `<userPreferences>` before any of this list). It is deliberately **not** reproduced in this document, is not stored anywhere in this repository, and should not be — see §14's closing note.
+1. **D10 go-ahead, with a scope correction.** Fix D10 first, but "do not yet touch `_CAPS`, declare the sandbox closed, or write the final closeout." Allowed files: the DockerBackend module and its test file. Required invariant: "Every resource acquired before a failure is either: 1. cleaned immediately, or 2. retained in a handle that remains destroyable." Cover create, network setup, container start, timeout, external container disappearance, daemon/API failure; "one explicit test per D10 failure point"; "no reliance on a happy-path destroy() test". For the shared network: "do not silently change its lifecycle just to make D10 green." A simulated spawn failure "is evidence of the cleanup path, not evidence that Docker itself produced that failure." Rotating the plaintext Git credential is "security hygiene, not part of the DockerBackend authorized patch."
+2. **The cross-sandbox finding.** "Record it as a separate security finding, mark C2 FAIL, and do not redesign the network inside this workstream." `NETWORK_ALLOWLIST` withdrawn for concurrent sandboxes until isolation is demonstrated; `NET_NAMESPACE` must not be presented as sufficient evidence of network isolation; revert the "shared network = acceptable persistent infrastructure" decision; the redesign is a new workstream that may modify `_net_proxy.py` and the topology, "worked from an explicit invariant" (section 10, DEC-5); "do not issue an overall sandbox-security closeout that says the network isolation claims passed"; the `docker start`→`RUNNING` defect and the create-unwind residual stay separate follow-ups.
+3. **`NET_NAMESPACE` withdrawn.** "Withdraw `NET_NAMESPACE` until it has a direct committed test": `_CAPS` becomes 7 of 12; implementation unchanged ("a claim/evidence withdrawal, not a statement that Docker failed to create a network namespace"); add the dedicated regression gate *later* (netns distinct from the host's; concurrently created sandboxes have distinct netns); "passing the future `NET_NAMESPACE` test must not resurrect the `NETWORK_ALLOWLIST` or C2 claims."
+4. **The closure sequence** (section 2). Statuses to record at step 2 are in that text.
+5. **"push to repo"**: I found the remote already contained all five commits (the user had merged my bundle, and `main`, into the remote branch). Nothing needed pushing.
+6. **"continue Steps 2"**, then **"Step 3 (D11) is next"**.
+7. **Guidance on step 4** (key points): establish the intended state machine first (`PENDING → STARTING → RUNNING → CANCELLING/CANCELLED`); the test must establish six facts (start blocked before completion; `cancel()` invoked in that interval; the cancel path runs while start is pending; the start completes afterwards; the workload is demonstrably still running; the backend reports what the contract promises); "don't fix the test by simply making `cancel()` wait for `start()` unless that is the intended lifecycle contract"; compare fixes (record intent; explicit startup state plus a post-start check; locking `run()`/`cancel()` together, to be avoided); "D11 should stay PASS while Step 4 is investigated independently."
+8. **"push the finished work to repo, then create a handoff to complete the remaining work in a new session."** This file is that handoff.
 
 ## 4. Goal, Scope & Success Criteria
 
 ### Goal
+Close the `sandbox-fabric` reconciliation by making the **step-5 completion decision** and recording the exact debts and blockers.
 
-Implement `DockerBackend` (`core/sandbox/backends/docker_backend.py`) against the frozen base prompt + addendum + 28-item checklist, with every claim backed by real evidence from an actual Docker daemon rather than left as design-only.
+### In scope
+- Writing the completion decision into the reconciliation document (`docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`), as a new subsection after §19.3.
+- Collecting the user decisions listed in section 17.
+- Pushing the resulting commits.
 
-### In Scope
+### Out of scope (do not do these inside this workstream)
+- The network redesign (C2, DEBT-039). It is a new workstream.
+- Any change to `_net_proxy.py`, `NamespaceBackend`, `_ns_init.py`, `_seccomp.py`, `admission.py` or `contracts.py`.
+- Modifying the frozen addendum or checklist.
+- The Dependabot findings on the default branch (see section 15).
+- Editing `KNOWN_ISSUES.md` without the user's go-ahead (it is outside the file boundary; see section 17).
 
-- `core/sandbox/backends/docker_backend.py` and its own small private helpers
-- `tests/core/sandbox/test_docker_backend.py`
-- `core/sandbox/contracts.py`'s `SandboxCapability` enum, additive-only (in the event, nothing was added — every capability claimed already existed)
-- `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` (the base prompt's own DoD calls this "the reconciliation addendum")
-- Committing the addendum and checklist documents themselves into `docs/architecture/` (done in this handoff session specifically — see §9)
-- This handoff document
-
-### Out of Scope
-
-- `core/sandbox/backend.py` (`SandboxBackend`), `core/sandbox/backends/namespace_backend.py`, `core/sandbox/backends/_ns_init.py`, `core/sandbox/backends/_seccomp.py`, `core/sandbox/backends/_net_proxy.py` — read from (imported), never modified
-- `core/sandbox/admission.py` — called (`check_admission()`), never modified or reimplemented
-- Anything on `main` or any other branch
-- The Dependabot findings surfaced incidentally on `main` during a push (3 vulnerabilities, 1 critical + 2 high) — completely uninvestigated, explicitly out of this workstream's scope (see §15)
-- Fixing `_net_proxy.py`'s plain-HTTP-path behavior (a real, observed oddity — see §12/§14 of the reconciliation doc — noted, not touched)
-- Fixing `NamespaceBackend._CAPS`'s own lack of a runtime gate (flagged in the addendum itself as explicitly out of scope)
-
-### Success Criteria
-
-Per the original prompt's own §15 "Completion standard" (reproduced in full in §2 above): all 28 checklist items evidenced with PASS/FAIL/BLOCKED/NOT APPLICABLE (not vague language); B1–B4 respected and audited; D12 satisfied; capabilities reflect only verified behavior; security gates fail closed; requested/accepted/effective state distinguished; negative/bypass paths tested; full regression clean; final diff reconciled against the file-touch boundary; a formal closeout report produced (§14 of the original prompt) — **this last piece is the one genuinely unfinished item**, explicitly deferred to the new session as §17 Next Step 1.
+### Success criteria
+There are two legitimate outcomes (user's wording, section 2). **Outcome 1 is not reachable:** six checklist items cannot be evidenced as PASS in this environment or by this workstream alone (section 5). So the expected result is **Outcome 2: `sandbox-fabric` remains explicitly incomplete, with the exact debt or blocker recorded for each unresolved item.**
 
 ## 5. Requirement Ledger
 
-All 28 checklist items, plus the four carried-forward B rules. Every status below is grounded in a specific reconciliation-doc section (`docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`), cited in the Notes column — read that section before treating a PASS as self-evident from this table alone.
+### Closure sequence
 
-| ID | Requirement (short form) | Status | Evidence / Reconciliation § | Notes |
-|---|---|---|---|---|
-| A1 | `NETWORK_ALLOWLIST` requires paired `NET_NAMESPACE` claim | PASS | §12, §16 | Fail-closed invariant enforced at *import time* in `docker_backend.py`, not only a test; both capabilities now in `_CAPS` together |
-| A2 | `MOUNT`/`PID`/`UTS_NAMESPACE` each need a defined gate | PASS | §12, §16 | Real adversarial tests: host mount made after container-start is invisible inside; a real host PID can't be signaled/seen; hostname is independent. Now claimed in `_CAPS` |
-| A3 | Docker image source: backend-private, resolved to immutable digest | PASS | §11 | Resolves and caches correctly against a live daemon. One open sub-question: verified only via `docker import`-sourced images (this session's only option, no registry reachable); `docker build`'s `RepoDigests` behavior is untested |
-| A4 | `SandboxRequest.env` handling deliberately chosen and documented | PASS | §10 (design), §14 (end-to-end) | Explicit minimal base + `request.env`, proxy vars forced *after* `request.env` in allowlist mode; verified end to end including an actual redirect-attempt test through the real backend |
-| A5 | `allowed_imports` non-enforcement decision made explicit | PASS | §10 | Structural: not even a parameter of the arg-builder, so it's physically inert; matches `NamespaceBackend`'s existing non-enforcement |
-| A6 | Broader privilege surface (no `--privileged`/host-ns/`--cap-add`/device/socket) | PASS | §10 (construction), §11 (runtime, via `docker inspect` `HostConfig`) | Both construction-time and daemon-confirmed runtime evidence |
-| A7 | Phase 0 records daemon identity, not just reachability | PASS | §11 | Local `unix:///var/run/docker.sock`, `DOCKER_HOST` unset — confirmed not a remote/untrusted endpoint |
-| A8 | Host kernel/cgroup inventory | PASS | §11 | Kernel, cgroup version, cgroup driver, storage driver all recorded from `docker info`/`uname` directly |
-| A9 | `AF_VSOCK` tested separately from `AF_ALG` | **FAIL — disclosed, not mitigated** | §12 (found), §13 (mitigation attempted and failed) | Real, reproducible seccomp bypass via the legacy `socketcall(2)` 32-bit compat path (`int $0x80`), verified via `/proc/self/fd` showing a genuine socket. A custom seccomp profile does **not** close it on this host (confirmed with real evidence, not assumed). Root cause needs an LSM (AppArmor/SELinux) this host has neither of. `_lsm_active()` added as a standing precondition; the exploit is a permanent regression test. `SECCOMP` deliberately absent from `_CAPS` because of exactly this |
-| B1 | (carried-forward rule — reporting discipline; best-fit mapping, see caveat below) | ADHERED TO | throughout | See note under this table on B-numbering uncertainty |
-| B2 | Capabilities empty until individually earned | ADHERED TO | §10 through §16 | `_CAPS` started `frozenset()` and only grew when each value had real evidence; still 3 of 12 deliberately absent with stated reasons |
-| B3 | No second policy surface | ADHERED TO | throughout | `check_admission()` and `AllowlistProxy` called, never reimplemented; `allowed_imports` non-enforcement preserved rather than inventing Docker-only filtering |
-| B4 | File-touch boundary is final-diff law | ADHERED TO | §10–§16, every commit | Verified via `git diff --stat`/`git status` before every commit in the session; only the authorized files were ever touched |
-| C1 | Real cgroup OOM vs. ambiguous exit-137 | PASS | §12 | Independently cross-checked outside pytest: real OOM → `OOMKilled=true, ExitCode=137`; ordinary SIGKILL → `OOMKilled=false, ExitCode=137` — same exit code, opposite flag, conclusive |
-| C2 | Network gate's negative/bypass paths | PASS | §14 | All four named paths plus one more (sibling-container-as-bridge, via ICC) tested end to end against real external hosts through the real backend |
-| C3 | Bypass-closed vs. legitimate-compat-broken distinction | **NOT APPLICABLE (moot)** | §13 | No fix was successfully deployed (the seccomp-profile attempt failed), so there is nothing closed to test compatibility impact against. Revisit only if a working mitigation is ever found |
-| D1 | Filesystem mapping (image rootfs / workspace / paths) | PASS | §11, §16 | Workspace mounted to `/workspace`, explicit and tested |
-| D2 | `read_only_paths` → `:ro` binds | PASS | §10 (construction test), §16 (adversarial) | |
-| D3 | Root filesystem read-only + explicit writable workspace | PASS | §16 | Adversarial: writes to `/etc`, an unrelated path, a `..` traversal, and a symlink escape all denied (`EROFS`); workspace itself stays writable |
-| D4 | Container identity (backend-private, collision-free) | PASS | §10, §12, §15 | Uuid-derived naming/labeling; tested under real concurrency (D11) with no collisions |
-| D5 | Artifacts: extraction, normalization, symlink/traversal rejection, real hashing | **PASS, with one disclosed residual gap** | §11 (basic collection), §16's own code comment | Basic collection and real SHA-256 hashing verified. The symlink-escape-*during-collection* rejection logic exists (checks `os.path.realpath` against the copied root) but has **not** been adversarially targeted with a symlink specifically crafted to defeat that check — recorded as open scope in the code's own docstring, not silently assumed safe |
-| D6 | Lifecycle/state mapping + idempotent invalid operations | PASS | §11, §15 | Full state-transition testing plus run-before-create-style invalid-operation testing via D11's race pairs |
-| D7 | Cancellation reaches the full process tree | PASS | §11 (initial), §15 (under concurrency) | Real parent/child/grandchild test via a heartbeat-file technique; heartbeat verifiably stops advancing after `cancel()` |
-| D8 | `inspect()` is side-effect-free | PASS | §11, §15 | Repeated calls consistent, no state mutation, verified both standalone and mid-`run()` |
-| D9 | Events: existing taxonomy only, no new mechanism | PASS (by design) | code comment in `docker_backend.py` | Deliberately does **not** call `events.publish()` at all, matching `NamespaceBackend`'s own precedent (confirmed directly that `NamespaceBackend` doesn't call it either) — same surface, no divergence |
-| D10 | Failure-path cleanup, no orphans | PASS | §15 (explicit orphan checks after every D11 race pair) | `docker ps -a` filtered on the relevant container ID confirmed empty after every failure-adjacent scenario tested |
-| D11 | Concurrency race pairs | PASS | §15 | All 5 named pairs, with the two most timing-sensitive ones re-run 10 additional trials at tighter timing; stable across 3 full-file reruns |
-| D12 | No new public surface | PASS | §16, explicit test | Zero `contracts.py` changes; explicitly tested (`len(capabilities.supported) == 9`, `.issubset(set(SandboxCapability))`) |
+| ID | Requirement | Status | Evidence |
+|---|---|---|---|
+| S1 | Freeze the five commits in a `git bundle`, no push or merge | DONE | `sandbox-fabric-021a3b4.bundle` (verified; restores to `021a3b4`). It is now stale: everything is on the remote |
+| S2 | Reconcile §18 with the literal checklist (A9, C3, D9, B4, D11) | DONE | commit `97aac38`; §18.2 legend and rows |
+| S3 | Resolve D11 | DONE | D11 FAIL to PASS: `9e1378b`, `bbdb717`; reconciliation §19.1 |
+| S4 | Evidence gap: explain the unexplained failure; rerun suite, mypy, orphans, full suite; record the `test_net_proxy.py` flake separately | DONE, with a caveat | `b8a76c5`, `2e8c74c`; §19.2 and §19.3. The mechanism is reproduced; that it caused the one-off failure is **unproven** (the failing test was not captured) |
+| S5 | Completion decision | **OPEN** | not written |
 
-**On B1–B4's exact numbering:** the addendum's own text lists the four carried-forward rules as an unordered bullet list, and this session's own code comments settled on B4 = the file-touch boundary (high confidence, directly tied to the original prompt's own "final-diff reconciliation" language) and B2 = capabilities-empty-until-earned (used consistently as "Addendum B2" in code comments throughout). B1 and B3's exact assignment to "reporting discipline" vs. "no second policy surface" vs. "SECCOMP ≠ proof" was never fully pinned down — all four rules were followed regardless of which letter maps to which; the checklist document itself (now committed at `docs/architecture/sandbox-fabric-dockerbackend-implementation-checklist.md`) may resolve this unambiguously — prefer that over this handoff's guess if it does.
+### The 28 checklist items (reconciliation §18.2 is authoritative; this is a copy)
+
+**PASS (22):** A2, A3, A4, A5, A6, A7, A8, B1, B2, B3, C1, D1 to D8, D10, D11, D12.
+
+**Not PASS (6), each with its exact blocker:**
+
+| ID | Status | Exact blocker / what unblocks it |
+|---|---|---|
+| A1 | BLOCKED | Needs `NETWORK_ALLOWLIST` and `NET_NAMESPACE` re-earned: the DEBT-039 redesign and a direct `NET_NAMESPACE` gate. The paired-claim invariant mechanism itself is sound and tested |
+| A9 | UNVERIFIED | `AF_VSOCK` probe was run and is **negative** (bypass open via `socketcall(2)` on this host); `AF_ALG` is not exercisable (the kernel lacks it). Needs a host with an active AppArmor or SELinux policy and a Docker release containing the socketcall fix. `SECCOMP` stays unclaimed |
+| B4 | NON-COMPLIANT | `handoff.md` is on no allow-list. Closes only by the user's **formal acceptance** of the exception (and of the reconciliation document's status under B4's list), or by removing `handoff.md` |
+| C2 | FAIL | DEBT-039: sandbox B obtained a tunnel through sandbox A's proxy on the shared gateway (reconciliation §17.2, reproduction in §17.7). Needs the network redesign and a passing concurrent A/B test |
+| C3 | BLOCKED | Needs the same host as A9: the exploit probe blocked **and** a benign compat probe still working, recorded together. Not N/A: the item has no N/A clause |
+| D9 | UNVERIFIED, BLOCKED | No lifecycle-event producer exists anywhere (`NamespaceBackend` included; nothing outside tests imports `core.sandbox`). Needs a decision: backends publish through `EventStream`, or D9 is amended |
+
+`_CAPS` is **7 of 12**: `CGROUP_MEMORY`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`, `MOUNT_NAMESPACE`, `NO_NEW_PRIVS`, `PID_NAMESPACE`, `UTS_NAMESPACE`. Absent: `NETWORK_ALLOWLIST` and `NET_NAMESPACE` (withdrawn), `NETWORK_DENY_DEFAULT`, `SECCOMP`, `USER_NAMESPACE` (never earned).
 
 ## 6. Current Verified State
 
-**VERIFIED** (real, repeated, adversarial evidence — see the Requirement Ledger above for per-item citations): A1–A8, C1, C2, D1–D12 (D5 with the one disclosed sub-gap), B1–B4 adherence, and the 9-capability `_CAPS` set together with the `AdmissionGate` boundary now admitting realistic requests (tested both directions).
+**VERIFIED** (all at HEAD `2e8c74c`; evidence in section 13):
+- DockerBackend targeted suite: 88/88 on three consecutive runs.
+- Full `tests/core/sandbox`: 147 passed in one run.
+- mypy clean on `docker_backend.py` and `test_docker_backend.py`.
+- 0 containers, 0 shared-network endpoints, 0 artifact temp dirs after every run.
+- The 7 out-of-scope files are byte-identical to the base.
+- Local HEAD equals `origin/sandbox-fabric` (unauthenticated `git ls-remote`).
 
-**VERIFIED AS A REAL, OPEN PROBLEM** (not a gap in verification — a verified fact that the property does *not* hold): A9. The bypass is real, reproducible, and not mitigated. This is the single most important fact for the next session to internalize before doing anything else with `SECCOMP` or with any claim implying full isolation.
+**IMPLEMENTED BUT NOT VERIFIED:** nothing known.
 
-**NOT APPLICABLE / MOOT**: C3 (nothing was closed, so nothing to test compatibility impact against).
+**PROPOSED (not accepted or registered):** DEBT-039 as the id for the cross-sandbox finding, with the text in reconciliation §17.6; the §17.5 follow-ups as separate debts.
 
-**DEFERRED / NOT YET DONE**:
-- The formal 28-item closeout matrix + test/host/scope summaries + B audit + D12 audit + remaining-blockers list, in the *exact* format the original prompt's §14 specifies (this handoff's Requirement Ledger above covers the same ground informally; the formal version is explicitly §17 Next Step 1)
-- Full one-for-one adversarial parity with `NamespaceBackend`'s own test suite (Phase 6's aspiration) — a representative subset was built instead, by deliberate, disclosed choice each time (see reconciliation §10's own note on this)
+**BLOCKED / UNVERIFIED / FAIL:** the six items in section 5.
 
-**BLOCKED** (environmental, not a code gap):
-- Actually closing A9 — needs a host with AppArmor or SELinux active; this session's environment (a Firecracker microVM sandbox — see §14) has neither, and there is no known way to add one within it (see §15 for one untried avenue worth a real attempt)
-- `docker build`'s `RepoDigests` behavior — this session only ever had `docker import` available (no registry reachable to test a `docker build`-sourced image against)
-
-**UNKNOWN / UNINVESTIGATED**: the Dependabot findings on `main` (3 vulnerabilities, 1 critical + 2 high) — surfaced incidentally by a `git push` response message, nothing more is known about them.
+**UNKNOWN:** the identity of the single unreproduced DockerBackend failure (section 11); the cause of the `test_net_proxy.py` flake (section 15).
 
 ## 7. Git / Repository Checkpoint
 
-- Primary repository: `1h0lde4/ocbrain-v4.1`
-- Remote: `origin` — `https://github.com/1h0lde4/ocbrain-v4.1.git`
-- Branch: `sandbox-fabric`
-- Base branch: `main` (this branch has **not** been synced with `main` at any point during this workstream, consistent with the project's own prior decision, recorded in memory, to keep them separate "until both are further along")
-- HEAD before this handoff commit: `5c6d7c4` (docs: commit the addendum and 28-item checklist into the repo)
-- Transfer commit (the last substantive implementation commit): `34623dd755c6b34ff5373e1bb8d4645dd9aa637b` — "docs: reconciliation §16 — capability gaps closed, _CAPS reflects earned evidence"
-- Handoff commit: the commit that first adds this file (`handoff.md`, repository root). A commit cannot contain its own hash, so it is not embedded here; find it exactly with `git log --diff-filter=A --format='%H %s' -- handoff.md` (its parent is `5c6d7c4`)
-- Parent commit of the handoff commit: `5c6d7c4` (the addendum/checklist commit made earlier in this same handoff session)
-- Working tree status: clean as of the last check before writing this file (`git status` → "nothing to commit, working tree clean")
-- Relevant untracked files: none
-- Relevant ignored files: none known
-- Submodules or nested repositories: none
-- Remote push status: `origin/sandbox-fabric` independently confirmed (via fresh `git fetch`, not trusted from push output alone) at `34623dd` as of the last credentialed push in this session. The two most recent local commits (`5c6d7c4` and whatever commits this handoff itself) are **not yet pushed** as of this file being written — see §19
-- Remote verification status: every push in this session was independently re-verified via a fresh `git fetch` immediately afterward, not trusted from the `git push` command's own stdout
-
-Full commit list for this workstream, oldest first:
-
-```
-d53b164  (base — the committed prompt, pre-existing)
-601e6ad  sandbox-fabric: DockerBackend skeleton — A3/A4/A5/A6/D2/D3/D4/D12
-eb45ac4  docs: reconciliation §10-11 — DockerBackend status, then real verification
-149c31d  DockerBackend: A1 fail-closed invariant + A2 real namespace isolation tests
-abe1c6b  docs: reconciliation §12 — A1/A2 closed, A9 finds a real seccomp bypass
-590c180  DockerBackend: A9 mitigation investigation -- seccomp patch doesn't work, add _lsm_active() precondition
-a862bf5  docs: reconciliation §13 -- the seccomp-patch attempt, why it fails, and why
-f3a43c9  DockerBackend: C2 -- real network isolation, replacing the bridge placeholder
-c41dcf9  docs: reconciliation §14 -- C2 real network isolation, verified end to end
-7142707  DockerBackend: D11 -- the real race-pair tests
-56a447f  docs: reconciliation §15 -- D11 closes the 28-item checklist's testing work
-ceefec6  DockerBackend: close the last 3 capability gaps, flip _CAPS to what's earned
-34623dd  docs: reconciliation §16 -- capability gaps closed, _CAPS reflects earned evidence
-5c6d7c4  docs: commit the addendum and 28-item checklist into the repo
-[handoff commit — adds handoff.md; look it up with the command above]
-```
+- Primary repository: `1h0lde4/ocbrain-v4.1`, remote `origin` = `https://github.com/1h0lde4/ocbrain-v4.1.git`
+- Branch: `sandbox-fabric`; base branch: `main` (the user has merged `main` into the branch twice, `68fd460` and `565ea3a`)
+- Implementation and docs checkpoint ("transfer commit"): **`2e8c74c`**, pushed and verified. The remote moved `f64fe5d` → `2e8c74c`.
+- Commits pushed this session, oldest first: `97aac38` (§18 reconciled), `9e1378b` (D11 code), `bbdb717` (D11 docs), `b8a76c5` (cancel-during-start code), `2e8c74c` (§19.2 and §19.3 docs).
+- Earlier workstream commits (D10, the withdrawals, the closeout audit; `e41299a`, `4eb818f`, `a59c979`, `fa06317`, `021a3b4`) reached the remote through the user's merge of the bundle.
+- Handoff commit: the commit that last touched this file. Find it with `git log -1 --format=%H -- handoff.md`. Its parent is `2e8c74c`.
+- Working tree status: clean when this file was written.
+- Untracked and ignored relevant files: none.
+- Remote push status: implementation checkpoint pushed and verified by an unauthenticated `git ls-remote`.
 
 ## 8. Active Files / Modified Files / Artifacts
 
-- `core/sandbox/backends/docker_backend.py` (823 lines) — the full `DockerBackend` implementation. Every method has an up-to-date docstring pointing at the reconciliation-doc section that verifies it; `_CAPS`'s own comment is the fastest way to see exactly what's claimed and why.
-- `tests/core/sandbox/test_docker_backend.py` (1023 lines) — 44 tests. About a dozen need no Docker daemon and run unconditionally; the rest are individually `@pytest.mark.skipif`-gated on a reachable daemon (a deliberate, disclosed deviation from the base prompt's literal "skip the whole file" wording — see reconciliation §10).
-- `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` (248 lines; §§10–16 added by this workstream) — the full evidentiary narrative. **Read this before re-deriving anything** — it is more complete than this handoff's own summaries and is the primary source those summaries were built from.
-- `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt-addendum.md` (new, this handoff session) — the addendum, committed to the repo for the first time.
-- `docs/architecture/sandbox-fabric-dockerbackend-implementation-checklist.md` (new, this handoff session) — the 28-item checklist, committed verbatim for the first time.
-- `handoff.md` (this file, repository root) — new.
-- `core/sandbox/contracts.py` — **read, never modified**. Confirm this remains true in the final diff if anything looks off.
-
-Nothing required for continuation exists only outside the pushed repository, with one narrow exception recorded honestly: the exact local daemon-startup helper script this session wrote (`/home/claude/start_docker.sh`) lives only in this session's own ephemeral execution container, not in git — reproduced in full in §14 below so a fresh session's container (which will almost certainly hit the exact same startup race) doesn't have to rediscover it the hard way.
+- `core/sandbox/backends/docker_backend.py`: the implementation. Its docstrings cite the reconciliation sections that verify them.
+- `tests/core/sandbox/test_docker_backend.py`: 88 tests; about 20 need no daemon, the rest are gated per test on a reachable daemon.
+- `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`: the evidence narrative. **Read §§17, 18 and 19 first.** §17 is D10 and the cross-sandbox finding; §18 is the 28-item matrix and the B and D12 audits; §19.1 is D11; §19.2 and §19.3 are the cancel race, the unexplained failure and the step-4 results.
+- `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt-addendum.md` and `…-checklist.md`: frozen.
+- `handoff.md`: this file.
+- Not in the repo and not reproducible from it: the scratch pytest plugin and mutation helper (section 14, reproduced there); the `.bundle` file (delivered to the user).
 
 ## 9. Changes Made
 
-- **New backend**: `DockerBackend(SandboxBackend)`, implementing `capabilities`, `create()`, `run()`, `cancel()`, `destroy()`, `inspect()`.
-- **New capability claims**: `_CAPS` went from `frozenset()` to 9 of the 12 `SandboxCapability` values (listed in full in the Requirement Ledger, §5). This is a genuine behavior change: `AdmissionGate.check_admission()` now actually admits realistic `DockerBackend` requests for the first time, rather than rejecting everything before any method is reached.
-- **New network primitive**: `_ensure_sandbox_network()` — an idempotent, shared `docker network create --internal -o com.docker.network.bridge.enable_icc=false` network, replacing an earlier `network_mode="bridge"` placeholder.
-- **New security precondition**: `_lsm_active()` — checks for AppArmor/SELinux presence; returns `False` on this host, honestly; a standing gate for any future capability claim that would depend on A9's bypass being closed.
-- **New fail-closed invariant**: `_check_a1_paired_capability_invariant()`, run at module import time.
-- **New tests**: 44 in `test_docker_backend.py`, covering everything in the Requirement Ledger.
-- **Documentation**: reconciliation doc §§10–16 (the full narrative); this handoff; the addendum and checklist committed to the repo for the first time.
-- **No schema changes.** No changes to `SandboxRequest`, `SandboxHandle`, `SandboxResult`, `TerminationReason`, `SandboxState`, `SandboxEventType`, or `SandboxCapability`'s membership (only which existing values `DockerBackend` claims).
-- **No governance/architecture changes** outside the new backend itself.
-- **No security regressions** to anything pre-existing — `_net_proxy.py`, `NamespaceBackend`, `_seccomp.py`, `admission.py` are all byte-for-byte unmodified (confirmed via `git diff --stat` before every commit in this session).
+Since version 1 (details in reconciliation §§17 to 19):
+
+- **D10:** `create()` now cleans or retains every resource acquired before a failure; `destroy()` confirms removal before forgetting a handle. Fixed a live proxy listener left with no handle, a leaked workspace directory, and a handle dropped before removal was confirmed.
+- **Capabilities:** `NETWORK_ALLOWLIST` and `NET_NAMESPACE` withdrawn from `_CAPS` (9 → 7). `check_admission()` therefore rejects any request that sets `allowed_hosts`.
+- **Closeout-audit defects (D4, D5, D6):** a `request_id` label; non-regular files (a sandbox-made FIFO hung artifact collection) are no longer hashed; a second `run()` raises instead of re-executing; `cancel()` before `run()` no longer mislabels a later run.
+- **D11:** the handle record is kept until removal is confirmed, and `destroy()` runs under a **per-handle** `asyncio.Lock`; `run()` and `cancel()` take no lock.
+- **Cancel during start:** `cancel()` records intent (a private `asyncio.Event`) and `run()` enforces it by re-sending `docker kill` every 50 ms until the container is dead.
+- **Caller-visible behavior changes:** a second `run()` raises `DockerBackendError`; concurrent `destroy()` calls on a handle wait for the earlier one; `destroy()` can raise `DockerBackendError` when removal cannot be confirmed (the handle is then retained); `inspect()` during an in-flight destroy reports the real state, not `PENDING`.
+- **No schema, contract or policy changes.** `contracts.py` is byte-identical to the base.
+- **Tests:** 44 at version 1 → 88. 26 mutation checks in total, each caught by the intended test.
 
 ## 10. Decisions & Rationale
 
-| Decision | Reason | Alternatives considered | Status | Reopen condition |
+| ID | Decision | Status | Authority / rationale | Reopen condition |
 |---|---|---|---|---|
-| CLI + `asyncio.create_subprocess_exec` over the `docker` Python SDK | Matches the codebase's existing low-level style (`NamespaceBackend` shells out to `unshare` directly); avoids a new pip dependency the project would need to review | `docker-py` SDK | Settled | If the CLI-based approach proves to have a correctness limitation the SDK wouldn't |
-| `docker import` (from this container's own rootfs) as the test image source | No image registry is reachable from this environment at all (confirmed: `registry-1.docker.io`, `ghcr.io` both return 403) | `docker build` (also untested, same registry problem for its base image) | Settled for this environment | A future session with real registry access should test the intended production image path for real |
-| `--internal` Docker network + `enable_icc=false` for C2, over porting `NamespaceBackend`'s veth/named-netns pattern literally | Achieves the same no-default-route + no-inter-sandbox-communication properties using Docker's own native primitives, verified to work; a literal veth port would need lower-level network namespace manipulation Docker's own CLI doesn't expose the same way | Manual veth/netns wiring matching `NamespaceBackend` exactly | Settled, verified | None known |
-| A9: `_lsm_active()` precondition instead of a custom seccomp profile | The seccomp-profile approach was tried first and **does not work** on this host (real evidence, not a shortcut) — seccomp/BPF structurally cannot filter `socketcall(2)`'s arguments (they're behind a userspace pointer); only an LSM hook can | (1) blanket seccomp deny of `socketcall` entirely — rejected: known to break legitimate 32-bit workloads per Docker's own prior experience with exactly this; (2) argument-filtered seccomp rule for the compat path — not possible per the root cause above | Settled, pending a host with a real LSM | If a future host has AppArmor/SELinux active, re-verify the bypass is actually closed there (don't assume) before claiming `SECCOMP` |
-| `NETWORK_DENY_DEFAULT` excluded from `_CAPS` | Checked `admission.py` directly — it is never actually consulted there. D12's bar for a new claim is a demonstrated cross-backend need, not "the property is technically true" | Include it since every non-networked request does deny by default | Settled | If a future admission.py change starts consulting it |
-| Per-test `@pytest.mark.skipif` gating instead of the base prompt's literal "skip the whole file" wording | Lets the daemon-independent tests run for real in any environment, rather than being needlessly skipped alongside the ones that truly need a daemon | Whole-file skip as literally specified | Settled, disclosed as a deliberate deviation | None — this was a considered, documented choice, not an oversight |
-| Deliver work as local commits + `git bundle` when no push token is available, rather than flat diff/patch files | User explicitly asked to stop using patches ("instead of patchs, update the feature branche") | Flat unified diffs (the original delivery method, before that instruction) | Settled | N/A — superseded by the explicit instruction |
-| Never use the token found in `<userPreferences>` on Claude's own initiative; only use a token the user pastes directly in the current turn, for that turn's push only, never stored | The preferences field is not appropriate secret storage, and using a credential found there without a fresh, explicit ask for *that specific action* would be presuming authorization that wasn't clearly given | Using the preferences-field token directly once flagged | Settled, followed consistently across every push in this session | N/A |
-| Commit the addendum + checklist into the repo as part of this handoff session | The base prompt's own DoD already authorizes "the reconciliation addendum" as a touchable file/concept; leaving these two documents existing only as chat uploads would violate the handoff discipline's "material information must not exist only outside the pushed repository" the moment this session ends | Leave them as an unresolved gap for the next session to hit again | Settled, done | N/A |
+| DEC-1 | D10 remediation stays strictly inside the DockerBackend module and its tests | Settled | User instruction | n/a |
+| DEC-2 | `NETWORK_ALLOWLIST` withdrawn from `_CAPS` | Settled | Observed cross-sandbox egress contradicts the claim; capabilities are earned (B2) | A passing concurrent A/B test with different allowlists |
+| DEC-3 | `NET_NAMESPACE` withdrawn (claim only; implementation unchanged) | Settled | No direct committed test; its only evidence was the C2 set. A scratch check showed the netns differs from the host's but is not a committed test | A committed test that the netns differs from the host's and that concurrent sandboxes have distinct netns. Passing it re-earns `NET_NAMESPACE` alone |
+| DEC-4 | The shared network's lifecycle (persist vs remove) is **undecided**; an earlier "persistent infrastructure" draft was reverted | Settled as undecided | User instruction: it belongs to the redesign | The redesign workstream |
+| DEC-5 | C2 = FAIL; DEBT-039 is a separate security finding and a new workstream. The invariant to preserve, verbatim: "A sandbox must not be able to reach or use another sandbox's egress proxy, directly or indirectly, and its outbound policy must be enforced independently of sibling sandboxes." Its regression gate is a concurrent A/B test with deliberately different allowlists, of the shape in reconciliation §17.7. A per-sandbox network/proxy binding is one plausible direction, not a decision | Settled | User instruction | n/a |
+| DEC-6 | Statuses A9 UNVERIFIED, C3 BLOCKED, D9 UNVERIFIED/BLOCKED, B4 NON-COMPLIANT. Note: A9's `AF_VSOCK` probe was run and was negative, so UNVERIFIED describes the *protection*, not whether testing happened | Settled | User instruction; the checklist's literal text wins over earlier judgments | A host or decision that changes the evidence |
+| DEC-7 | D11 = PASS via record retention plus a per-handle lock | Settled | Base prompt silent; addendum requires race-safe bookkeeping; the checklist forbids "no lock at all". The pop-first `destroy()` had violated the invariant | The checklist is amended, or a new interleaving is shown unsafe |
+| DEC-8 | Cancel enforcement lives in `run()`; `cancel()` never waits for start and no lock is added | Settled | Public `SandboxState` fixed by D12; the cancel contract does not promise to wait; waiting would reintroduce the serialization D11 forbids (mutant M26 guards it) | The contract changes |
+| DEC-9 | `DEBT-039`, not `DEBT-038`, for the cross-sandbox finding | **Proposed** by the assistant, no objection so far | `main` registered DEBT-038 (the `/distill` `module_name` traversal, PRs #37 and #38) | The user picks another id |
+| DEC-10 | Tests assert **effective** state (docker inspect, in-container behavior, host filesystem), not the request that was built | Settled | The prompt's requested, accepted, effective distinction | n/a |
 
 ## 11. Investigation Already Performed
 
-- **Repository structure**: `core/sandbox/` fully read (`contracts.py`, `backend.py`, `admission.py`, `events.py`, `backends/namespace_backend.py`, `backends/_net_proxy.py`, `backends/stub_backend.py`) before writing any DockerBackend code, specifically to match existing style/precedent rather than inventing new patterns.
-- **Full remote branch history** (all 18 branches at the time) searched for the addendum/checklist filenames and content — confirmed absent from git entirely before this handoff session committed them.
-- **Docker/host capability inventory**: performed multiple times across the session as the environment changed (Docker installed partway through) — see reconciliation §§11, 16 and this handoff's §14 for the final, current facts.
-- **Upstream Docker security history**: `moby/moby#53551` (the exact AF_VSOCK/socketcall fix, Engine 29.8.0), the preceding AF_ALG-specific fix (`moby/moby#52537`, ~29.4.x), and `moby/profiles/seccomp/default.json` (the actual upstream seccomp profile source) were all fetched and read directly — not taken on faith from the externally-pasted research that first raised them.
-- **Container process-lifetime behavior of this session's own execution environment**: discovered that background daemons (`dockerd`/`containerd`) do not survive between separate tool-call invocations, and that `setsid`-based backgrounding causes the invoking call itself to hang/truncate. Both findings shaped the `start_docker.sh` helper (§14) — findings not disproven, only worked around.
-- **Findings explicitly disproven along the way** (recorded because they looked true briefly): an early `pgrep` result that looked like a leaked host-side process was the `pgrep` command's own command-line text self-matching, not a real leak; an early "AF_VSOCK bypass via raw syscall 102" result was actually a call to `getuid()`, not `socketcall` (§12).
-- **Not yet investigated**: `docker build`'s `RepoDigests` behavior; whether the AppArmor kernel module can be loaded in this environment despite not being loaded by default (see §15); the Dependabot findings on `main`.
+| Area | Inspected | Result | Revisit trigger |
+|---|---|---|---|
+| Authority for each audited item | Base prompt, addendum and checklist read literally for A9, B4, C3, D9, D11 | Statuses reconciled (§18) | A checklist amendment |
+| Possible LSM on this host | Kernel config, `/sys/kernel/security/lsm`, `/proc/self/attr/current` | AppArmor is not compiled in and `nomodule` is set; SELinux is compiled in and listed in the active LSM stack with **no policy loaded**; a policy load was not attempted (risk to the VM, defaults permissive) | A host that has a policy loaded |
+| Cross-sandbox proxy reach | Scratch A/B probe | B reached A's proxy (reconciliation §17.7). Port discovery by scanning was **not** demonstrated (B was handed the port) | The redesign |
+| Artifact collector | Absolute, relative, nested and directory symlinks; a FIFO | Absolute and directory symlinks rejected; a relative escaping symlink makes `docker cp` refuse, so the manifest is empty (silent loss); the FIFO hung collection (fixed) | Hard links, extraction races, workspace size (not attacked) |
+| Lifecycle ordering (D6) | Run-before-create, double run, cancel-before-run, cancel-after-terminate, double destroy, inspect-after-destroy | Two defects fixed, four already correct | n/a |
+| Event producers (D9) | `grep` across the repo | None publishes; `EventStream` exists | A producer is added |
+| The unexplained failure | See below | Mechanism reproduced; causation unproven | The failing test is captured |
+| DEBT id collision | `KNOWN_ISSUES.md` on the remote tip | DEBT-038 taken; the next free id is DEBT-039 | n/a |
+| Remote history | `git log` of the remote tip | The user merged my bundle and `main` into `sandbox-fabric` | n/a |
+
+**The unexplained failure, exactly.** One DockerBackend-file run showed 1 failed / 78 passed right after a mass `docker rm -f`, and I had not captured which test. The mechanism that explains the class is a `cancel()` landing while `docker start` is in flight (reconciliation §19.2). Under a scratch plugin that delays every `docker start` by 1.5 s, 4 of the 10 existing cancel tests failed on the unmodified code. After the fix they pass at 1.5 s and 3.0 s. It did not recur in 9 full-file runs, 3 full-suite runs and 6 timing-sensitive subset runs since. **Do not claim it is explained as the cause**: only the mechanism is established.
 
 ## 12. Failed Attempts / Dead Ends
 
 | Approach | Result | Cause | Retry? |
 |---|---|---|---|
-| `syscall(102, ...)` via `ctypes` directly from a 64-bit Python process, to test the AF_VSOCK/socketcall bypass | Looked like a successful bypass (returned fd 0) | Syscall number 102 is `getuid()` on the native x86_64 ABI, not `socketcall` -- that's a 32-bit-ABI-only assignment. The "socket" was actually just the process's own UID (0, root), and fd 0 was the container's already-closed stdin (`/dev/null`) | **No** -- always verify a returned fd via `/proc/self/fd/N` before trusting it; use a real `gcc -m32 -static` binary for any future syscall-ABI probing, not raw ctypes syscall numbers from a 64-bit process |
-| Inline `int $0x80` assembly compiled into a 64-bit binary | `EFAULT` | The compat 32-bit syscall entry truncates pointer arguments to 32 bits; a 64-bit process's stack address isn't representable there | **No** -- a genuinely 32-bit-compiled (`-m32`) binary is required; `gcc-multilib`/`libc6-dev-i386` need to be installed first |
-| Custom Docker seccomp profile (real upstream `default.json`, `socketcall` removed from its allow rule) to close the A9 bypass | Bypass stayed open | Not fully isolated -- ruled out "silently not applied" (an ordinary 64-bit syscall removed the same way *was* correctly blocked; `Seccomp: 2` confirmed active; `strace` confirmed the kernel genuinely created the socket). Also tried explicitly setting `"architectures"` instead of the source file's `"archMap"` -- no change | **Maybe, with new information** -- if revisited, investigate *why* the X86 sub-architecture's BPF rule doesn't take effect for this one syscall before assuming a variant of the same approach will work differently |
-| `setsid`-based daemon backgrounding, to make `dockerd`/`containerd` survive across separate tool calls | The entire tool call hung/returned truncated output | Not fully diagnosed -- reverting to plain `&` backgrounding (which does *not* survive across calls, but doesn't break the calling shell either) resolved it immediately | **No**, not without first understanding why -- plain `&` + restart-every-call (`start_docker.sh`) is the known-working pattern |
-| Testing the "allowed host" C2 case with a plain `http://` URL through the proxy | Got `403` for both the allowed *and* disallowed host | `_net_proxy.py`'s plain-HTTP path (`_handle_plain_http`), not its CONNECT path -- a real, pre-existing characteristic of a file this workstream doesn't modify | **N/A for this workstream** -- use HTTPS/CONNECT (the path that file's own docstring calls primary) for any future proxy-through-Docker testing; if `_net_proxy.py` itself is ever in scope, this is worth a look |
-| Checking CGROUP_PIDS "container remains controllable" *after* the main process had already exited | `docker exec` failed (`container not running`) | The container's PID 1 had already exited normally by the time the check ran -- same class of mistake as the one below | **No** -- check controllability *while* the container is still running, not after |
-| Checking A2's namespace properties via `docker exec` against a container that had only been `create()`d, not `run()`/started | `docker exec` failed | `create()` only calls `docker create` (container exists, stopped); `docker exec` requires a running container | **No** -- explicitly `docker start` (or use `run()`) before any exec-based probe |
-
-All of the above are also recorded, with the exact commands and outputs, in `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` §§12, 13, 16.
+| A combined D5 symlink test requiring `legit.txt` in the manifest | Empty manifest | A relative escaping symlink makes `docker cp` itself refuse; the collector then returns an empty manifest | No: split into two tests |
+| First C1 test using `kill -9 $$` from a container's PID 1 | Exit 0, not 137 | A PID 1 shell ignores its own SIGKILL | No: kill from a child and re-exit with its status |
+| First red phase for D10 | Mostly noise | A test-helper off-by-one (`_docker_cmd` slice) meant the injector never fired | No: every injecting test now asserts the injection fired (`.hits`) |
+| Running the D5 FIFO test in-process | Would hang the whole suite | `_sha256_of` does a synchronous `open()`, which blocks the event loop, so `wait_for` can never fire | No: the test runs in a subprocess with a hard timeout |
+| Sourcing `start_docker.sh` with its output discarded | All Docker-gated tests silently skipped ("10 skipped"); no result was valid | The VM had restarted and the daemon was not up | **Never discard the start script's output; abort if the daemon is not ready** |
+| Bash arrays and `base64 -w0` assumptions | Syntax error | The shell is `dash` | Use POSIX `sh`, or call `bash -c` explicitly |
+| Pushing before checking the remote | Would have attempted a non-fast-forward | The user had already merged the bundle | Always `git fetch` first and only push if the remote is an ancestor of HEAD |
+| A custom seccomp profile to close the `AF_VSOCK` bypass (version 1) | Bypass stayed open | seccomp cannot filter `socketcall(2)` arguments (they sit behind a userspace pointer); only an LSM hook can | Only on a host with an active LSM policy |
 
 ## 13. Verification Evidence
 
-All commands below were run against the real Docker daemon this session installed (see §14). Freshest confirmed results (2026-09-27, immediately before writing this handoff):
+Commands run in `/home/claude/ocbrain-v4.1` (the Docker daemon must be up first; section 14):
 
-- `python3 -m pytest tests/core/sandbox -q --asyncio-mode=auto` → **103 passed, 0 failed**
-- `python3 -m pytest tests/core/sandbox/test_docker_backend.py -q --asyncio-mode=auto` → **44 passed**
-- `python3 -m mypy core/sandbox/backends/docker_backend.py tests/core/sandbox/test_docker_backend.py --ignore-missing-imports --explicit-package-bases` → **Success: no issues found in 2 source files**
-- `git status` → clean; `git fetch origin sandbox-fabric` + `git log origin/sandbox-fabric -1` → confirmed matching local HEAD at the time (`34623dd`, before this handoff session's own two additional commits)
-
-Historical results through the session (all in reconciliation §§11–16, with exact commands): real Phase 0 host inventory; A3 digest resolution + caching; full create/run/inspect/destroy lifecycle via the actual class; C1's independent (non-pytest) OOM-vs-SIGKILL cross-check; A6's `docker inspect` `HostConfig` confirmation; A1/A2's adversarial namespace tests; A9's socketcall bypass (found, then independently re-verified with a corrected methodology after the first attempt was itself found to be wrong -- see §12); C2's six real bypass-path tests against genuine external hosts; D11's five race pairs, with the two timing-sensitive ones re-run 10 additional trials each; the three final capability-gap tests (`NO_NEW_PRIVS`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`).
-
-No test was skipped, deleted, or weakened to make anything pass. Three pre-existing tests were rewritten (not deleted) when their premise ("capabilities is empty") stopped being true, with the reason recorded in both the commit message and reconciliation §16.
-
-**Pre-existing, unrelated flakiness** (not introduced by this work, in a file this workstream never touches): `tests/core/sandbox/test_net_proxy.py` showed intermittent failures across this session -- different specific assertions failing on different reruns (`test_connect_to_allowed_host_tunnels_real_data`, then `test_plain_http_to_allowed_host_is_forwarded`), consistent with genuine timing-sensitive flakiness in that file's own real-socket tests, re-confirmed by running it standalone multiple times. No commits from this session touch that file.
+- `python3 -m pytest tests/core/sandbox/test_docker_backend.py -q --asyncio-mode=auto -p no:cacheprovider` → **88 passed**, three consecutive runs (~55 s each).
+- `python3 -m pytest tests/core/sandbox -q --asyncio-mode=auto -p no:cacheprovider -rf --tb=short` → **147 passed** in one run, 0 DockerBackend failures. An earlier full-suite run (140 tests, before the later work) showed 139 passed and 1 failed, the failure being `test_net_proxy.py`.
+- `python3 -m mypy core/sandbox/backends/docker_backend.py tests/core/sandbox/test_docker_backend.py --ignore-missing-imports --explicit-package-bases` → Success.
+- Orphan check after each run: `docker ps -aq | wc -l` = 0; shared-network endpoints empty; `ls -d /tmp/ocbrain-docker-artifacts-*` empty.
+- **`test_net_proxy.py` alone, 6 runs: 3 failed.** `test_plain_http_to_allowed_host_is_forwarded` twice and `test_connect_to_allowed_host_tunnels_real_data` once. Inside the full suite it usually passes, which hides the frequency. Neither it nor `_net_proxy.py` is touched by this workstream.
+- Mutation checks M1 to M26, each caught by the intended test and each restoring the source byte-identical (summarized in §17.1, §18.3, §19.1 and §19.2).
+- Remote verification: `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric` = `2e8c74c171ac298cc84065a8f96dda34bf126bd5` at the time of the push.
 
 ## 14. Environment / Tooling Assumptions
 
-- OS: Ubuntu 24.04.4 LTS
-- Kernel: a Firecracker microVM build -- observed as `6.18.44-fc-v37` early in the session and `6.18.44-fc-v42` by the end. **Do not assume this is fixed** -- it appears to drift over the life of a long session, and a fresh session's container may show yet another value. Re-check rather than trust this handoff's number.
-- cgroup: v1, `cgroupfs` driver (`docker info --format 'CgroupVersion={{.CgroupVersion}} CgroupDriver={{.CgroupDriver}}'`)
-- No AppArmor (`/sys/module/apparmor/parameters/enabled` doesn't exist; `aa-status` reports "apparmor not present"), no SELinux (`getenforce` not installed) -- this is the direct cause of A9 staying open
-- Python 3.12.3, `pytest` + `pytest-asyncio` (install via `pip install pytest pytest-asyncio --break-system-packages` if a fresh container doesn't have them)
-- **Docker is not present in a fresh copy of this environment by default.** It was installed mid-session via `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io gcc-multilib libc6-dev-i386` -- `docker.io` is Ubuntu's own package (from `noble-updates`/`universe`); Docker's own upstream repo (`download.docker.com`) is **not** reachable from this environment's network egress allowlist. Installed version: `29.1.3`. `gcc-multilib`/`libc6-dev-i386` are needed for the A9 regression test's 32-bit probe.
-- **No Docker registry is reachable** -- `registry-1.docker.io` and `ghcr.io` both return 403. The test image (`ocbrain-test/base:local`) is built via `docker import` from this container's own root filesystem:
+- Ubuntu 24.04; kernel `6.18.44-fc-v50` (a Firecracker microVM; the value **drifts** within a session: v37 → v42 → v49 → v50); Python 3.12; Docker Engine 29.1.3 (Ubuntu's `docker.io`); cgroup v1 with `cgroupfs`; no AppArmor; iproute2 6.1.0; no `daemon.json`.
+- **The VM can restart mid-session.** The filesystem and the Docker image survive; the daemon does not. Re-run the start script at the top of every call that needs Docker, and read its output:
 
-  ```sh
-  tar -C / -c --exclude=proc --exclude=sys --exclude=dev --exclude=tmp --exclude=run \
-    --exclude=home/claude --exclude=mnt --exclude=var/lib/docker --exclude=var/lib/containerd \
-    bin sbin lib lib64 usr etc | docker import - ocbrain-test/base:local
-  ```
+```sh
+#!/bin/sh
+if ! docker info > /dev/null 2>&1; then
+    containerd > /var/log/containerd.log 2>&1 &
+    sleep 3
+    dockerd > /var/log/dockerd.log 2>&1 &
+    i=0
+    while [ $i -lt 20 ]; do
+        docker info > /dev/null 2>&1 && break
+        i=$((i + 1))
+        sleep 1
+    done
+fi
+docker info > /dev/null 2>&1 && echo "docker: ready" || echo "docker: FAILED -- $(tail -8 /var/log/dockerd.log)"
+```
 
-  A fresh session needs to rebuild this the same way; it does not persist in git (it's a local Docker image, not a repo artifact).
-- **Critical, repeatedly-confirmed quirk**: background daemons (`dockerd`, `containerd`) started with `&` do **not** survive between separate tool-call invocations in this session's execution environment -- the process tree appears to be reaped between calls, even though the container's filesystem (including Docker's own image/volume store under `/var/lib/docker`) persists. Practical consequence: restart both daemons at the top of *every* tool call that needs Docker. Do **not** use `setsid` for this -- it was tried and caused the entire invoking call to hang/return truncated output (§12); plain `&` backgrounding is the confirmed-working pattern.
-- The exact helper script used throughout this session (lives only at `/home/claude/start_docker.sh` in this session's own container -- **not** part of the git repo, recreate it in any fresh session):
+  It lives at `/home/claude/start_docker.sh` in the session container only (recreate it). Source it with `. /home/claude/start_docker.sh`, then **abort if it does not print `docker: ready`**. A cold start after a restart can take longer than the 20-second wait.
+- Install, if absent: `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io gcc-multilib libc6-dev-i386`; `pip install pytest pytest-asyncio mypy --break-system-packages`. No registry is reachable (`registry-1.docker.io` and `ghcr.io` return 403).
+- Test image (not in git; rebuild it): `tar -C / -c --exclude=proc --exclude=sys --exclude=dev --exclude=tmp --exclude=run --exclude=home/claude --exclude=mnt --exclude=var/lib/docker --exclude=var/lib/containerd bin sbin lib lib64 usr etc | docker import - ocbrain-test/base:local`, then `export OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local`.
+- The shell is `dash`.
+- Scratch tooling used for the evidence (not in the repo): a **mutation helper** that replaces one exact string in `docker_backend.py` (asserting it matches exactly once), runs the targeted tests, and restores the file from a saved copy, checking its sha256; and a **slow-start pytest plugin** loaded with `PYTHONPATH=/tmp python3 -m pytest -p slowstart_plugin …`:
 
-  ```sh
-  #!/bin/sh
-  if ! docker info > /dev/null 2>&1; then
-      containerd > /var/log/containerd.log 2>&1 &
-      sleep 3
-      dockerd > /var/log/dockerd.log 2>&1 &
-      i=0
-      while [ $i -lt 20 ]; do
-          docker info > /dev/null 2>&1 && break
-          i=$((i + 1))
-          sleep 1
-      done
-  fi
-  docker info > /dev/null 2>&1 && echo "docker: ready" || echo "docker: FAILED -- $(tail -8 /var/log/dockerd.log)"
-  ```
+```python
+import asyncio, pytest
+@pytest.fixture(autouse=True)
+def _slow_docker_start(monkeypatch):
+    real = asyncio.create_subprocess_exec
+    async def fake(*argv, **kw):
+        if len(argv) >= 2 and argv[0] == "docker" and argv[1] == "start":
+            await asyncio.sleep(1.5)
+        return await real(*argv, **kw)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake)
+```
 
-  Usage pattern at the top of every Docker-needing call: `. /home/claude/start_docker.sh` (source it, don't just execute it, so `docker: ready`/`FAILED` prints inline).
-
-- The command execution shell in this environment is `dash` (`/bin/sh`), **not** `bash` -- bash-only syntax (e.g. `${var:0:12}` substring expansion) fails with "Bad substitution." Stick to POSIX `sh` syntax, or explicitly invoke `bash -c '...'` when a bash feature is genuinely needed.
-- Network egress from this container is allowlisted to a specific set of domains (package registries, `github.com`/`api.github.com`/`codeload.github.com`/`raw.githubusercontent.com`, `archive.ubuntu.com`/`security.ubuntu.com`, `api.anthropic.com`) -- this is why the Docker registry and Docker's own apt repo are unreachable, and it's a constraint of the *session's own environment*, not of the target repository or the Docker daemon itself.
-- No secrets of any kind are stored in this repository, in `docker_backend.py`, in the reconciliation doc, or in this handoff. The GitHub token used for pushes during this session is **not** recorded anywhere in git and should not be copied from earlier chat context into a fresh session's memory or files -- if push access is needed, ask the user for a fresh token at the time it's needed.
+- **Credentials.** No secret is stored in the repo, in this file, or in memory. The user's **preferences field contains a plaintext GitHub token**; the user has said it should be rotated and removed. It was used only for push operations the user explicitly asked for, passed per command via `git -c http.extraheader=…`, never written to git config or a remote URL, and never printed. Do not copy it anywhere. If you need to push, either use a token the user pastes for that push or get an explicit instruction to use the preferences one.
+- Network egress from the container is allowlisted: package registries, `github.com`, `api.github.com`, `raw.githubusercontent.com`, and a few others.
 
 ## 15. Unresolved Questions / Risks / Blockers
 
-| Question / Risk | Current evidence | Known options | Disposition | Can work continue without resolving it? |
-|---|---|---|---|---|
-| Can A9's bypass ever be closed in *this class* of environment? | No LSM active; seccomp-only mitigation confirmed not to work | (1) Accept as permanently disclosed/open on any environment like this one; (2) attempt `modprobe apparmor` -- **this specific avenue was never actually tried** (only checked whether AppArmor was *already* active, not whether the kernel module could be loaded on demand); (3) get access to a genuinely different host with AppArmor/SELinux already enabled | Open | Yes -- `SECCOMP` correctly stays unclaimed either way; this only matters if someone wants to *close* the gap rather than just track it |
-| What exactly are the 3 Dependabot vulnerabilities on `main`? | Only know the count and severity mix (1 critical, 2 high), surfaced incidentally by a `git push` message | Visit `https://github.com/1h0lde4/ocbrain-v4.1/security/dependabot` | Uninvestigated | Yes -- unrelated to `sandbox-fabric`/DockerBackend entirely; needs an explicit go-ahead before spending time on it, since it's outside this workstream's authorized scope |
-| Does `docker build` populate `RepoDigests` the same way `docker import` does? | Untested -- no registry reachable to build a realistic image against | Test once real registry access exists | Untested | Yes -- `_resolve_image_digest()`'s current behavior is correct for the only path this session could exercise; just don't assume it's proven for the build path too |
-| Is the artifact-collector's symlink-escape rejection adversarially sound? | The logic exists and is reasoned about in the code; not specifically attacked with a crafted symlink the way `FILESYSTEM_JAIL`'s write-based escape was | Write a dedicated adversarial test (a symlink inside the workspace, written by the sandboxed process itself, that `docker cp` might resolve before this backend's own `os.path.realpath` check gets a chance to reject it) | Open, self-disclosed in the code's own docstring | Yes -- recorded as a known scope boundary, not a hidden gap |
-| Kernel version drift observed mid-session (`fc-v37` to `fc-v42`) -- any other environment facts drift too? | Only the kernel version was specifically re-checked and found to differ; nothing else was re-verified at the end that was only checked at the start | Re-run the full Phase 0 host inventory fresh in any new session rather than trusting this handoff's numbers | Open, low-priority | Yes -- every host-dependent finding in this handoff cites a specific verification date/section; re-verify rather than assume stability across a long session |
-
-Do not convert any of the above into a silent assumption -- each needs either a deliberate "accepted, not pursuing" decision or actual follow-up.
+| Item | Evidence | Options | Safe to continue without it? |
+|---|---|---|---|
+| **B4 acceptance** | `handoff.md` is outside B4's literal allow-list; the branch diff also contains `main` merged by the user | Formally accept the exception, or remove `handoff.md` (the project's handoff protocol requires one) | Yes for the decision document; the status stays NON-COMPLIANT |
+| **D9 path** | No event producer exists | (a) backends (DockerBackend, arguably `NamespaceBackend`) publish through `EventStream`: implementation work, LAW 2 | Yes: record as BLOCKED |
+| **DEBT-039 registration** | Not in `KNOWN_ISSUES.md`; proposed text in reconciliation §17.6 | Add on a separate branch or PR, or with the user's go-ahead | Yes |
+| **`DEBT-021` status in `KNOWN_ISSUES.md`** | The entry on the remote still says there is no Docker-backed implementation | Update it to reflect "implemented, explicitly incomplete" | Yes |
+| **Network redesign (C2)** | §17.2, §17.4 and §17.7 | New workstream: may touch `_net_proxy.py` and the topology; invariant in DEC-5; plausible direction is a per-sandbox network and proxy binding | Yes |
+| **`test_net_proxy.py` flake** | 3 of 6 standalone runs failed; two different tests; cause undiagnosed | Diagnose inside the redesign workstream | Yes (recorded separately) |
+| **A9 / C3 host** | See section 5 | A host with an active LSM policy and Docker ≥ the fix release; a kernel exposing `AF_ALG` | Yes |
+| Unattacked or untested | `docker build` `RepoDigests`; artifact hard links and workspace size; `FILESYSTEM_JAIL` vectors (`/dev/shm`, `/proc`, `/sys`, mount attempts); whether an `AF_VSOCK` socket can connect anywhere on a real host; port discovery of a sibling proxy by scanning | Optional follow-ups | Yes |
+| Follow-ups from §17.5 | `RUNNING` is left after a failed `docker start` spawn; the create-unwind residual if the daemon is down during the unwind; a finalizer so failing D10 tests do not leave containers; the stale module docstring in the test file that says every daemon test is skipped; a relative escaping symlink empties the manifest silently | Separate debts | Yes |
+| **Dependabot** | Every push prints "3 vulnerabilities (1 critical, 2 high)" on the default branch; never investigated | Needs the user's go-ahead; a different workstream | Yes |
+| `handoff.md` version 1 §5 is stale | Superseded by this file | n/a | Yes |
 
 ## 16. Relevant Information / References
 
-- Base prompt (in-repo): `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt.md` (commit `d53b164`)
-- Addendum (in-repo as of this handoff): `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt-addendum.md`
-- 28-item checklist (in-repo as of this handoff): `docs/architecture/sandbox-fabric-dockerbackend-implementation-checklist.md`
-- Full evidence narrative: `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`, §§10-16 for this workstream specifically (§§1-9 predate it)
-- `docs/architecture/sandbox-fabric-docker-backend-security-comparison.md` -- the pre-existing doc (predates this workstream) that first identified the userns-remap/no-new-privs/AppArmor gap between `NamespaceBackend` and a hypothetical Docker backend; this workstream's findings are consistent with it
-- `docs/architecture/sandbox-fabric-v2-implementation-readiness-audit.md` -- the pre-existing readiness audit referenced in project memory as the origin of the "six uncertifiable claims" the base prompt exists to close
-- `KNOWN_ISSUES.md` on `main` -- DEBT-021's entry there predates this workstream and should be updated to reflect current status (not done as part of this session -- durable-documentation updates on `main` were out of this workstream's scope)
-- Upstream references fetched and read directly this session: `moby/moby#53551` (AF_VSOCK/socketcall fix, Engine 29.8.0), `moby/moby#52537` (the earlier AF_ALG-specific fix), `moby/profiles/seccomp/default.json` (upstream seccomp profile source), Docker Engine 29 release notes (`docs.docker.com/engine/release-notes/29/`)
-- Project memory (if available to the new session -- this is a claude.ai Project-scoped memory store, not part of the git repo): `/projects/019f94b9-639e-777e-b562-e461acf56278/areas/dockerbackend.md` has a running log of this entire workstream from the chat side; `overview.md` and `ways-of-working.md` have the broader project context
+- Reconciliation document: `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` §§17 to 19.
+- The frozen checklist and addendum (paths in section 2). The checklist's literal item text is what the statuses are judged against.
+- `docs/architecture/PROJECT_INSTRUCTIONS.md`: §18.4.8 is the handoff format used here.
+- Upstream references recorded in §12 of the reconciliation document: `moby/moby#52537` (the earlier `AF_ALG` fix) and `moby/moby#53551` (the socketcall/`AF_VSOCK` fix, Engine 29.8.0). The installed Docker 29.1.3 predates both.
+- `main`'s DEBT-038 is the `/distill` `module_name` path traversal (PRs #37 and #38).
+- Version 1 of this handoff: `git show 9310155:handoff.md`.
 
 ## 17. Next Steps
 
-In execution order.
+In order.
 
-1. **Produce the formal closeout report** the original prompt's §14 requires, in its exact format (28-item matrix with columns `ID | Classification | Status | Evidence | File/Symbol | Public/Policy Surface | Host Dependency | Notes`, plus Test/Host/Scope summaries, B audit, D12 audit, remaining-blockers list). This handoff's §5 Requirement Ledger above has all the underlying content already gathered -- this step is mostly reformatting it into the prompt's specific required shape, not new investigation. Where to do it: append as a new, clearly-dated section to `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`, matching this workstream's established pattern of keeping the evidence trail in one place. Prerequisite: none -- all underlying evidence already exists. Expected verification: none needed beyond what's already in §§10-16; this is synthesis, not new testing.
+1. **Resume and verify** (section 18). No code change is expected in this workstream.
+2. **Ask the user for four decisions** (one message): (a) accept or reject the `handoff.md` B4 exception; (b) for D9, whether to keep it BLOCKED or open a workstream to make backends publish through `EventStream`; (c) whether to confirm `DEBT-039` and authorize registering it, and updating `DEBT-021`, in `KNOWN_ISSUES.md` (outside the file boundary: separate branch or PR, or an explicit go-ahead); (d) whether to open the network-redesign workstream now.
+3. **Write the completion decision** as a new subsection after §19.3 of the reconciliation document (§19.4): state **Outcome 2, explicitly incomplete**, and carry the six items of section 5 with their exact blocker and the evidence that would unblock each. Record the user's decisions from step 2 verbatim. Update the §18 headline to point at it.
+4. If the user authorizes it, make the `KNOWN_ISSUES.md` changes on a separate branch or PR, not on `sandbox-fabric`.
+5. **Commit, then push** with the fast-forward guard (section 18, step 3), and verify with an unauthenticated `git ls-remote`.
+6. Do **not** start the network redesign, the `EventStream` work or the A9/C3 host work inside this workstream.
 
-2. **Decide what to do about A9**, using §15's untried avenue as the starting point: attempt `modprobe apparmor` (or the SELinux equivalent) in a fresh session's container and see whether it's actually possible to get a real LSM active, even though it isn't by default. If it works, re-run the exact A9 regression test and the reconciliation §13 seccomp-profile experiment fresh against a now-LSM-active host -- do not assume either result carries over from the LSM-less environment. If it's confirmed impossible, that's fine too -- just confirm it rather than leaving it untried. Prerequisite: none. Expected verification: the existing `test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state` test, run fresh -- if `_lsm_active()` ever returns `True` in a new environment, that test's assertion logic already handles it correctly (it only asserts the bypass-open direction when no LSM is active).
-
-3. **If pursuing #2 successfully closes the bypass**: only then does C3 become applicable again -- test whether the closure breaks legitimate 32-bit/compat workloads, and only then consider claiming `SECCOMP` in `_CAPS`. Do not claim `SECCOMP` without this step.
-
-4. **Decide whether to investigate the Dependabot findings on `main`** -- this needs an explicit go-ahead from the user first, since it's a different branch and a different kind of work entirely (dependency vulnerabilities, not sandbox isolation). If pursued, it should very likely be its own separate workstream/branch, not folded into `sandbox-fabric`.
-
-5. **Optional, lower priority**: close D5's self-disclosed symlink-escape-during-artifact-collection gap with a dedicated adversarial test; test `docker build`'s `RepoDigests` behavior if/when real registry access is ever available; consider whether Phase 6's full one-for-one adversarial parity with `NamespaceBackend`'s test suite is worth pursuing beyond the representative subset already built.
-
-6. **Update `KNOWN_ISSUES.md` on `main`** to reflect DEBT-021's real current status -- this is durable, standing project documentation that this workstream deliberately left untouched (out of `sandbox-fabric`'s own scope), but it should be updated once this work is considered stable, likely alongside or shortly after whatever `main` merge eventually happens.
+Expected verification for step 3: the matrix tally in §18.2 (22 PASS, 1 FAIL, 3 BLOCKED, 1 UNVERIFIED, 1 NON-COMPLIANT) still sums to 28 and matches the new subsection.
 
 ## 18. Resume Instructions
 
-1. Verify the current branch is (or check out) `sandbox-fabric`, and find the handoff commit with `git log --diff-filter=A --format='%H %s' -- handoff.md` (§7 explains why its hash is not embedded in this file). Confirm it is an ancestor of, or equal to, your current `HEAD`.
-2. Verify the remote: `git fetch origin sandbox-fabric && git log origin/sandbox-fabric -1` -- confirm the remote is at or beyond the handoff commit from step 1. If it is not (§19 explains why this file may have been written before the push happened), push `sandbox-fabric` first, using a token the user provides fresh for that purpose -- do not assume one is available, and do not use any token found in a preferences field or earlier chat context.
-3. Compare this handoff's material claims against the live repository -- read `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md` in full (it is more complete than this handoff's own summaries) and spot-check a few of §5's PASS claims against the actual code/tests before trusting them wholesale.
-4. Resolve any mismatch between this handoff and the live repository state before writing any new code -- the repository is the authority; this handoff is a transfer record, not a substitute for it.
-5. Begin from §17 Next Step 1.
-6. Re-establish the Docker-host baseline fresh (§14) rather than assuming this handoff's numbers (especially the kernel version) still hold -- recreate `start_docker.sh` from §14's exact content, since it does not exist anywhere except in this document.
+1. Check out `sandbox-fabric`; `git fetch origin sandbox-fabric`; confirm `git log -1 --format=%H -- handoff.md` is an ancestor of, or equal to, `HEAD`, and that `2e8c74c` is an ancestor of `HEAD`.
+2. Confirm the remote: `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric` is at or beyond the handoff commit. If the remote has moved ahead (the user merges into this branch from their own machine), **fast-forward local to it before committing anything**.
+3. Before any push: `git fetch`; push only if `origin/sandbox-fabric` is an ancestor of `HEAD`. If it is not, **stop and report; never force.**
+4. Read the reconciliation document §§17 to 19 before trusting any status in this file; the repository is the authority and this file is a transfer record.
+5. If you will run any test, recreate the Docker host first (section 14) and confirm the daemon prints `docker: ready`.
+6. Begin from section 17, step 2. Do not reconstruct completed work.
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — LOCAL COMMIT ONLY** at the time this file was written.
+**TRANSFER INCOMPLETE — HANDOFF NOT PUSHED at the moment this file was written.** The implementation checkpoint (`2e8c74c`) **is** pushed and verified. This becomes **TRANSFER READY** when `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric` shows a commit at or beyond the one returned by `git log -1 --format=%H -- handoff.md`. The session pushes the handoff commit immediately after writing it, so if you are reading this file from the remote, that criterion is met and this paragraph is simply out of date.
 
-Nothing is at risk of being lost — all material work is committed and this document describes it in full — but the transfer is not yet complete by the project's own definition, because two commits exist only in the session's local clone: `5c6d7c4` (the addendum + checklist commit made during this handoff) and the handoff commit itself. No GitHub credential was available when this was written, and the session never holds one between turns by design.
-
-**The criterion that upgrades this to TRANSFER READY**: `git fetch origin sandbox-fabric && git log origin/sandbox-fabric -1` shows a commit at or beyond the handoff commit (`git log --diff-filter=A --format='%H %s' -- handoff.md` gives its hash). If that is already true when you read this, the transfer is ready and this paragraph is simply out of date — the repository, not this file's snapshot of its own status, is the authority. If it is not, the resuming session's first action is exactly §18 step 2: get those two commits onto the remote (using a token the user supplies for that purpose) before anything else.
-
-Condition-by-condition, as of writing:
-
-- Original task preserved: yes, verbatim, in full (§2)
-- Material subsequent instructions preserved: yes, all 15, in order, with exact wording where it mattered (§3)
-- Scope and success criteria preserved: yes (§4)
-- Material requirements accounted for: yes, all 28 checklist items plus B1–B4 (§5)
-- Current state verified (not merely inferred): yes, with a fresh regression run immediately before this document was written (§13)
-- Material decisions preserved: yes (§10)
-- Major investigation recorded: yes (§11)
-- Failed approaches recorded: yes, 7 of them, each with cause and retry guidance (§12)
-- Verification recorded: yes (§13)
-- Required environment assumptions recorded: yes, including the one genuinely non-repository-resident artifact (`start_docker.sh`, reproduced in full — §14)
-- All material work represented in git: yes — `docker_backend.py`, the test file, the reconciliation doc, the addendum/checklist, and this file are all committed locally
-- Implementation checkpoint committed: yes
-- Implementation checkpoint pushed: **partially** — everything through `34623dd` was independently verified on the remote earlier in this session (fresh `git fetch`, not push output); `5c6d7c4` was not pushed
-- Handoff committed: yes (locally)
-- Handoff pushed: **no**
-- Remote checkpoint verified: **no**, for the last two commits (verified for everything up to `34623dd`)
-- Exact next action defined: yes (§17, §18)
+Condition by condition: original task preserved (section 2, verbatim); material instructions preserved (section 3); scope and success criteria (section 4); requirements accounted for (section 5, all 5 steps and all 28 items); current state verified (section 6, with a fresh full run); decisions preserved (section 10); investigation and failed approaches recorded (sections 11 and 12); verification recorded (section 13); environment assumptions recorded (section 14); all material work in Git: yes; implementation checkpoint pushed: yes; handoff committed: yes, immediately after this file is written; exact next action defined: yes (section 17).
