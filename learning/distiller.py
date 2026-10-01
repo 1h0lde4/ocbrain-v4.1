@@ -48,6 +48,21 @@ Questions:
 Respond as JSON array: [{{"question": "...", "answer": "..."}}, ...]"""
 
 
+def _require_module_identifier(module_name: str) -> None:
+    """SECURITY: module_name becomes a directory under data/raw in
+    _save_pairs. POST /distill passes it straight from the request body, and
+    nothing between the handler and the mkdir validated it -- a name like
+    "../../x" created (and wrote distil_*.json into) directories outside
+    data/raw. Same .isidentifier() check module_factory.create() and
+    brain_export.py already use for this field; kept consistent rather than
+    inventing a second convention."""
+    if not isinstance(module_name, str) or not module_name.isidentifier():
+        raise ValueError(
+            f"Invalid module_name: {module_name!r}. "
+            f"Use only letters, digits, underscores."
+        )
+
+
 async def distill_topic(
     module_name: str,
     topic: str,
@@ -58,6 +73,7 @@ async def distill_topic(
     Generate synthetic training pairs for a module on a specific topic.
     Returns the number of pairs actually generated and saved.
     """
+    _require_module_identifier(module_name)   # before any model call/print
     
     host  = config.get("global.ollama_host") or "http://localhost:11434"
     state = config.get_module_state(module_name)
@@ -151,6 +167,7 @@ def _score_pair(pair: dict) -> float:
 
 
 def _save_pairs(module_name: str, topic: str, pairs: list[dict]) -> int:
+    _require_module_identifier(module_name)
     out = DATA_RAW / module_name
     out.mkdir(parents=True, exist_ok=True)
     saved = 0

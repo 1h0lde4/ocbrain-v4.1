@@ -461,6 +461,10 @@ async def train_module(module_name: str):
 
 @app.post("/distill")
 async def distill(req: DistillRequest):
+    if not req.module_name.isidentifier():
+        raise HTTPException(
+            400, "Invalid module_name: use only letters, digits, underscores."
+        )
     from learning.distiller import distill_topic
     n = await distill_topic(req.module_name, req.topic, req.num_pairs)
     return {"status": "done", "pairs_generated": n}
@@ -499,7 +503,10 @@ async def debug():
             try:
                 report["modules"][name] = mod.health()
             except Exception as e:
-                report["modules"][name] = {"error": str(e)}
+                error_id = _log_and_redact(f"GET /debug module health ({name})", e)
+                report["modules"][name] = {
+                    "error": type(e).__name__, "error_id": error_id,
+                }
 
     # Ollama connectivity
     host = config.get("global.ollama_host") or "http://localhost:11434"
@@ -514,10 +521,12 @@ async def debug():
                 "models_available": models,
             }
     except Exception as e:
+        error_id = _log_and_redact("GET /debug ollama connectivity", e)
         report["ollama"] = {
             "status": "UNREACHABLE",
             "host": host,
-            "error": str(e),
+            "error": type(e).__name__,
+            "error_id": error_id,
             "fix": "Make sure Ollama is running: ollama serve",
         }
 

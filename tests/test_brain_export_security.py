@@ -157,16 +157,15 @@ class TestExportModuleNameValidation:
 
 
 class TestZipSlipExtraction:
-    """import_module()'s zip-extraction step (CodeQL py/path-injection,
-    core/brain_export.py) -- the zip-slip half of CTX-EXPORT-001, distinct
-    from the module_name checks covered above. zipfile.ZipFile.extractall()
-    does not itself validate member paths; a crafted .ocbrain bundle
-    containing an entry like "../../victim_area/evil.txt" could write
-    outside the extraction directory before manifest.json is even read.
-    Found while reconciling this session's export_module() fix against
-    the repo's full open Code Scanning alert list -- not named in the
-    originating write-up, and more severe than what that write-up
-    described (write, not just read).
+    """import_module()'s zip-extraction step (CodeQL py/path-injection flags
+    the extractall() call in core/brain_export.py). These tests pin down the
+    strictness _safe_extractall adds: a member whose name tries to leave the
+    extraction directory rejects the whole bundle before anything is
+    extracted. They do NOT demonstrate a vulnerability that plain
+    extractall() had -- CPython's zipfile already drops '..' and absolute
+    components from member names (verified on Python 3.12.3: nothing
+    escaped; the same filter is in the 3.11 and 3.13 sources), so the original write-up of this as an exploitable
+    arbitrary-file-write was wrong. This is defense-in-depth.
     """
 
     def _malicious_bundle(self, path: Path) -> Path:
