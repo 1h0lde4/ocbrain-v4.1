@@ -384,10 +384,18 @@ async def test_cancel_kills_full_process_tree(backend, tmp_path):
     import asyncio
 
     run_task = asyncio.ensure_future(backend.run(handle, request))
-    await asyncio.sleep(1.0)
-    await backend.cancel(handle)
-    await asyncio.sleep(0.5)
     heartbeat_path = tmp_path / "heartbeat"
+    # Wait for the grandchild itself instead of assuming a `docker start`
+    # latency (a fixed sleep made this pass vacuously when the grandchild
+    # never started, and fail when the daemon was merely slow -- §19.2).
+    for _ in range(300):
+        if heartbeat_path.exists():
+            break
+        await asyncio.sleep(0.05)
+    assert heartbeat_path.exists(), "vacuous: the grandchild never started"
+    await backend.cancel(handle)
+    # cancel() does not wait for the kill to land (and must not); run() ends when it has.
+    await asyncio.wait_for(run_task, timeout=15)
     reading_1 = heartbeat_path.read_text() if heartbeat_path.exists() else None
     await asyncio.sleep(1.0)
     reading_2 = heartbeat_path.read_text() if heartbeat_path.exists() else None
@@ -1866,7 +1874,10 @@ async def test_d7_cancel_reaches_a_grandchild_that_was_provably_alive_before(tmp
     hb = tmp_path / "heartbeat"
     try:
         run_task = asyncio.ensure_future(backend.run(handle, request))
-        await asyncio.sleep(1.5)
+        for _ in range(300):  # wait for the grandchild itself, not for a guessed start latency
+            if hb.exists() and hb.read_text().strip():
+                break
+            await asyncio.sleep(0.05)
         before_1 = hb.read_text().strip() if hb.exists() else ""
         await asyncio.sleep(0.6)
         before_2 = hb.read_text().strip() if hb.exists() else ""
@@ -2062,5 +2073,64 @@ async def test_d11_two_concurrent_runs_on_one_handle_execute_exactly_once(tmp_pa
         results = await asyncio.gather(backend.run(handle, request), backend.run(handle, request), return_exceptions=True)
         assert len([r for r in results if isinstance(r, DockerBackendError)]) == 1, results
         assert (tmp_path / "count").read_text().count("x") == 1
+    finally:
+        await backend.destroy(handle)
+
+
+# ======================================================================
+# D7 / D11 (reconciliation §19.2): a cancel() that lands while `docker
+# start` is still in flight.
+#
+# Intended state machine. The public SandboxState is fixed by D12
+# (PENDING, PROVISIONING, RUNNING, TERMINATED), so "starting" and
+# "cancelling" can only be PRIVATE phases of RUNNING:
+#   PROVISIONING --run()--> RUNNING [start in flight -> container running]
+#                           --exit or kill--> TERMINATED
+# cancel() on a RUNNING handle must (a) not block on the start, (b) record
+# intent, and (c) guarantee the workload cannot run to completion: the
+# container is killed as soon as it is running and run() ends CANCELLED.
+# cancel() is NOT serialized behind start (that would reintroduce the
+# coarse serialization D11 forbids); run() owns enforcement.
+# ======================================================================
+
+
+def _container_status(container_id: str) -> str:
+    return _inspect_container(container_id)["State"]["Status"]
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d7_cancel_during_an_in_flight_start_cannot_be_escaped_by_the_workload(tmp_path, monkeypatch):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("sleep", "30"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await backend.create(request)
+    cid = backend._handles[handle.handle_id].container_id
+    start = _DockerFailureInjector(monkeypatch, _docker_cmd("start"), "slow", delay=1.5)  # the real start, 1.5s late
+    kill = _DockerFailureInjector(monkeypatch, _docker_cmd("kill"), "slow")  # pass-through, counts kill attempts
+    loop = asyncio.get_running_loop()
+    try:
+        run_task = asyncio.ensure_future(backend.run(handle, request))
+        for _ in range(40):  # fact 1: `docker start` is blocked before completion ...
+            if start.hits:
+                break
+            await asyncio.sleep(0.05)
+        assert start.hits >= 1 and not run_task.done()
+        assert _container_status(cid) == "created"  # ... and the container has not started
+
+        t0 = loop.time()
+        await backend.cancel(handle)  # fact 2: cancel() is invoked during the blocked interval
+        assert loop.time() - t0 < 1.0, "cancel() blocked on the in-flight start"  # not serialized behind it
+        assert kill.hits >= 1 and not run_task.done()  # fact 3: the cancel path ran while start was still pending,
+        assert _container_status(cid) == "created"  # against a container that had not started
+
+        await asyncio.sleep(1.5 + 1.0)  # let the start complete, with margin
+        running = _inspect_container(cid)["State"]["Running"]
+        # facts 4 and 5: on the unfixed code the start completes afterwards and the workload is running
+        assert running is False, "the start completed after cancel() and the workload is still running"
+
+        result = await asyncio.wait_for(run_task, timeout=10)  # fact 6: what the contract promises
+        assert result.termination_reason == TerminationReason.CANCELLED
+        assert result.exit_code == 137  # it was killed, not allowed to finish
+        assert await backend.inspect(handle) == SandboxState.TERMINATED
     finally:
         await backend.destroy(handle)

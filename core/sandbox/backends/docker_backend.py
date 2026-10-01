@@ -397,6 +397,9 @@ def _lsm_active() -> bool:
 
 
 _SANDBOX_NETWORK_NAME = "ocbrain-sandbox-net"
+# How often run() re-sends `docker kill` once a cancel has been requested and the
+# container has not died yet (it may not have started: reconciliation §19.2).
+_CANCEL_ENFORCE_INTERVAL_SEC = 0.05
 
 
 async def _ensure_sandbox_network() -> str:
@@ -502,6 +505,10 @@ class _DockerRunState:
     # cancel() and run() deliberately do NOT take it: cancelling a run, or
     # destroying a running sandbox, has to be able to interrupt it.
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # D7/D11 (§19.2): set by cancel() on a RUNNING handle. run() owns
+    # enforcement from then on, so a cancel that lands while `docker start`
+    # is still in flight cannot be escaped by the workload starting later.
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class DockerBackend(SandboxBackend):
@@ -694,23 +701,29 @@ class DockerBackend(SandboxBackend):
         state.state = SandboxState.RUNNING
         started = time.monotonic()
 
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "start",
-            "-a",
-            state.container_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        timed_out = False
+        enforcer = asyncio.ensure_future(self._enforce_cancellation(state))
         try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=request.policy.timeout_sec
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "start",
+                "-a",
+                state.container_id,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except asyncio.TimeoutError:
-            timed_out = True
-            await self._kill_container(state.container_id)
-            stdout, stderr = b"", b""
+            timed_out = False
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=request.policy.timeout_sec
+                )
+            except asyncio.TimeoutError:
+                timed_out = True
+                await self._kill_container(state.container_id)
+                stdout, stderr = b"", b""
+        finally:
+            enforcer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await enforcer
 
         state.state = SandboxState.TERMINATED
         artifacts = await self._collect_artifacts(state)
@@ -756,6 +769,10 @@ class DockerBackend(SandboxBackend):
             # normally as CANCELLED. The kill below stays unconditional and
             # harmless when nothing is running (D11 depends on it).
             state.cancel_requested = True
+            # D7/D11 (§19.2): the kill below finds nothing to kill if the
+            # container has not started yet. Recording the intent hands
+            # enforcement to run(); cancel() itself never waits for start.
+            state.cancel_event.set()
         await self._kill_container(state.container_id)
 
     async def destroy(self, handle: SandboxHandle) -> None:
@@ -816,6 +833,21 @@ class DockerBackend(SandboxBackend):
         return state.state if state else SandboxState.PENDING
 
     # -- private helpers ---------------------------------------------
+
+    async def _enforce_cancellation(self, state: _DockerRunState) -> None:
+        """D7/D11 (§19.2). cancel() may land while `docker start` is still
+        in flight, when its single `docker kill` finds a container that is
+        not running yet and does nothing. Once cancel intent exists, keep
+        killing until run() has finished with the container (run() cancels
+        this task in a `finally`), so the workload cannot escape
+        cancellation by starting afterwards. Costs nothing until a cancel
+        is requested; never holds the handle lock, so it cannot serialize
+        anything (D11)."""
+        await state.cancel_event.wait()
+        while True:
+            with contextlib.suppress(OSError):
+                await self._kill_container(state.container_id)
+            await asyncio.sleep(_CANCEL_ENFORCE_INTERVAL_SEC)
 
     async def _container_ids_for(self, container_name: str) -> list[str] | None:
         """Ids of every container, in ANY state, carrying this run's
