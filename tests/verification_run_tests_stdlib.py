@@ -1,8 +1,10 @@
 import os
 import sys
 import unittest
+import json
 from dataclasses import FrozenInstanceError, fields as dataclass_fields
 from datetime import datetime, timezone
+from typing import get_type_hints
 
 # Portable repo-root insertion, matching tests/conftest.py's own technique —
 # needed here because running this file directly (not via pytest) skips
@@ -20,6 +22,9 @@ from core.verification.evidence import (
     ProvenanceCompleteness, EvidenceReference, EvidenceObservation,
     TransformationType, EvidenceTransformation, EvidenceBundle,
     MinimumSufficientEvidence, EvidenceBindingError,
+)
+from core.verification.construct import (
+    VerificationConstruct, ConstructValidityStatus, ConstructValidity,
 )
 from core.verification.verdict import (
     VerificationVerdict, VerificationExecutionFailure, VerificationResult,
@@ -2528,6 +2533,232 @@ class TestEvidenceChainReconstruction(unittest.TestCase):
         self.assertEqual(link.evidence_id, reference.evidence_id)
         self.assertEqual(link.observation_id, observation.observation_id)
         self.assertEqual(observation.authority, ObservationAuthority.RUNTIME)
+
+
+
+# ---------------------------------------------------------------------------
+# Batch 3A -- VerificationConstruct / ConstructValidity (core/verification/construct.py)
+# ---------------------------------------------------------------------------
+
+def _c3_criterion(cid):
+    return Criterion(
+        criterion_id=cid, rubric_id="r3a", description="d",
+        applicability=CriterionApplicability(applies_unconditionally=True),
+        evidence_requirement=CriterionEvidenceRequirement(minimum_evidence_items=1),
+    )
+
+
+def _c3_rubric(**over):
+    kwargs = dict(
+        rubric_id="r3a", version="1.0.0", fingerprint="fp-abc123",
+        created_from="obligation o1", created_by="session", derived_from="requirement",
+        source_requirements=("req1",), context_basis="target snapshot t1",
+        criteria=("c1",),
+    )
+    kwargs.update(over)
+    return Rubric(**kwargs)
+
+
+def _c3_result(verdict=VerificationVerdict.VERIFIED, confidence=0.95):
+    assurance = VerificationAssurance(
+        basis=VerificationBasis(frozenset({BasisComponent.DETERMINISTIC})),
+        observation_authority=ObservationAuthority.FILESYSTEM,
+        inspection_authorization=InspectionAuthorization(surface="fs:/tmp", authorized=True),
+        assurance_scope="artifact_existence", coverage=1.0,
+        independence_level="single_verifier", integrity_verified=True,
+    )
+    return VerificationResult(
+        verification_id=new_id(), task_id=new_id(), execution_id=new_id(),
+        attempt_id=new_id(), verdict=verdict, assurance=assurance, confidence=confidence,
+    )
+
+
+class TestVerificationConstruct(unittest.TestCase):
+    def test_preserves_description(self):
+        construct = VerificationConstruct(description="the answer cites only retrieved sources")
+        self.assertEqual(construct.description, "the answer cites only retrieved sources")
+
+    def test_is_immutable(self):
+        construct = VerificationConstruct(description="d")
+        with self.assertRaises(FrozenInstanceError):
+            construct.description = "other"
+
+    def test_blank_descriptions_rejected(self):
+        for bad in ("", " ", "   ", "\n\t", "\u00a0\u2003"):
+            with self.assertRaises(ValueError):
+                VerificationConstruct(description=bad)
+
+    def test_non_string_description_rejected(self):
+        for bad in (None, 5, b"bytes", ["a"]):
+            with self.assertRaises(ValueError):
+                VerificationConstruct(description=bad)
+
+    def test_description_with_content_inside_whitespace_is_valid(self):
+        self.assertEqual(VerificationConstruct(description="  padded  ").description, "  padded  ")
+
+    def test_has_no_independent_identity_or_speculative_fields(self):
+        self.assertEqual({f.name for f in dataclass_fields(VerificationConstruct)}, {"description"})
+        with self.assertRaises(TypeError):
+            VerificationConstruct(description="d", construct_id="k1")
+
+    def test_is_a_value_object_equal_by_content(self):
+        self.assertEqual(VerificationConstruct(description="x"), VerificationConstruct(description="x"))
+        self.assertNotEqual(VerificationConstruct(description="x"), VerificationConstruct(description="y"))
+        self.assertEqual(hash(VerificationConstruct(description="x")), hash(VerificationConstruct(description="x")))
+
+
+class TestRubricConstructIntegration(unittest.TestCase):
+    def test_rubric_carries_its_construct(self):
+        construct = VerificationConstruct(description="measures factual grounding")
+        self.assertIs(_c3_rubric(construct=construct).construct, construct)
+
+    def test_construct_stays_optional_so_existing_construction_sites_work(self):
+        self.assertIsNone(_c3_rubric().construct)
+
+    def test_a_non_construct_is_rejected_not_coerced(self):
+        for bad in ("measures factual grounding", {"description": "d"}, 5):
+            with self.assertRaises(TypeError):
+                _c3_rubric(construct=bad)
+
+    def test_construct_survives_every_lock_state_transition(self):
+        construct = VerificationConstruct(description="measures factual grounding")
+        rubric = _c3_rubric(construct=construct)
+        validated = rubric.advance_to(RubricLockState.VALIDATED, criteria=[_c3_criterion("c1")])
+        compiled = validated.advance_to(RubricLockState.COMPILED)
+        locked = compiled.advance_to(RubricLockState.LOCKED)
+        for stage in (validated, compiled, locked):
+            self.assertIs(stage.construct, construct)
+
+    def test_construct_does_not_weaken_existing_rubric_validation(self):
+        construct = VerificationConstruct(description="d")
+        with self.assertRaises(ValueError):
+            _c3_rubric(construct=construct, criteria=())
+        with self.assertRaises(RubricValidationError):
+            _c3_rubric(construct=construct, criteria=("c1", "c1"))
+
+
+class TestConstructValidityStatus(unittest.TestCase):
+    def test_closed_four_state_vocabulary(self):
+        self.assertEqual({m.name for m in ConstructValidityStatus}, {"NOT_EVALUATED", "SUPPORTED", "CONTESTED", "UNSUPPORTED"})
+        with self.assertRaises(ValueError):
+            ConstructValidityStatus("construct_bogus")
+
+    def test_values_are_disjoint_from_neighbouring_vocabularies(self):
+        # str enums with equal values compare equal and collide as dict keys,
+        # so the values must not overlap any status-like enum in the package.
+        mine = {m.value for m in ConstructValidityStatus}
+        for other in (VerificationVerdict, AssumptionStatus, EvidenceStatus, ReferenceQuality, RubricLockState, ProvenanceCompleteness):
+            self.assertFalse((mine & {m.value for m in other}))
+
+    def test_unsupported_is_not_the_verdict_unsupported(self):
+        # VerificationVerdict already has UNSUPPORTED; sharing its string value
+        # would make these compare equal and collide as dict keys.
+        self.assertNotEqual(ConstructValidityStatus.UNSUPPORTED, VerificationVerdict.UNSUPPORTED)
+        self.assertIsNone({VerificationVerdict.UNSUPPORTED: "verdict"}.get(ConstructValidityStatus.UNSUPPORTED))
+
+    def test_each_state_survives_serialization_without_collapsing(self):
+        for state in ConstructValidityStatus:
+            original = ConstructValidity(rubric_fingerprint="fp-abc123", status=state)
+            wire = json.dumps({"rubric_fingerprint": original.rubric_fingerprint, "status": original.status.value})
+            data = json.loads(wire)
+            restored = ConstructValidity(rubric_fingerprint=data["rubric_fingerprint"], status=ConstructValidityStatus(data["status"]))
+            self.assertEqual(restored, original)
+            self.assertIs(restored.status, state)
+
+    def test_not_evaluated_is_not_a_default_outcome_of_any_other_state(self):
+        others = [s for s in ConstructValidityStatus if s != ConstructValidityStatus.NOT_EVALUATED]
+        self.assertEqual(len(others), 3)
+        for state in others:
+            self.assertNotEqual(ConstructValidity("fp", state).status, ConstructValidityStatus.NOT_EVALUATED)
+
+
+class TestConstructValidity(unittest.TestCase):
+    def test_records_the_assessed_rubric_fingerprint_and_status(self):
+        validity = ConstructValidity(rubric_fingerprint="fp-abc123", status=ConstructValidityStatus.SUPPORTED)
+        self.assertEqual(validity.rubric_fingerprint, "fp-abc123")
+        self.assertEqual(validity.status, ConstructValidityStatus.SUPPORTED)
+
+    def test_is_immutable(self):
+        validity = ConstructValidity("fp", ConstructValidityStatus.CONTESTED)
+        with self.assertRaises(FrozenInstanceError):
+            validity.status = ConstructValidityStatus.SUPPORTED
+
+    def test_blank_fingerprint_rejected(self):
+        for bad in ("", "  ", None, 7):
+            with self.assertRaises(ValueError):
+                ConstructValidity(rubric_fingerprint=bad, status=ConstructValidityStatus.SUPPORTED)
+
+    def test_status_must_be_a_construct_validity_status(self):
+        # Not a verdict, not a confidence value, not a bare string.
+        for bad in (VerificationVerdict.VERIFIED, VerificationVerdict.UNSUPPORTED, AssumptionStatus.CONFIRMED,
+                    "construct_supported", 0.9, None):
+            with self.assertRaises(TypeError):
+                ConstructValidity(rubric_fingerprint="fp", status=bad)
+
+    def test_has_no_stability_confidence_verdict_consistency_or_score_field(self):
+        self.assertEqual({f.name for f in dataclass_fields(ConstructValidity)}, {"rubric_fingerprint", "status"})
+        for extra in ("stability", "confidence", "verdict", "consistency", "score"):
+            with self.assertRaises(TypeError):
+                ConstructValidity("fp", ConstructValidityStatus.SUPPORTED, **{extra: 1})
+
+    def test_validity_and_verdict_are_independent_axes_with_no_implied_mapping(self):
+        # No verdict forces, or is forced by, any validity status: every
+        # combination is representable and neither side moves the other.
+        for verdict in VerificationVerdict:
+            result = _c3_result(verdict=verdict, confidence=0.5)
+            for state in ConstructValidityStatus:
+                validity = ConstructValidity("fp", state)
+                self.assertEqual(result.verdict, verdict)
+                self.assertEqual(result.confidence, 0.5)
+                self.assertEqual(validity.status, state)
+
+    def test_a_verified_verdict_does_not_imply_a_supported_construct(self):
+        verified = _c3_result(verdict=VerificationVerdict.VERIFIED, confidence=0.99)
+        unsupported = ConstructValidity("fp", ConstructValidityStatus.UNSUPPORTED)
+        self.assertEqual(verified.verdict, VerificationVerdict.VERIFIED)
+        self.assertEqual(unsupported.status, ConstructValidityStatus.UNSUPPORTED)
+
+    def test_results_and_receipts_carry_no_construct_validity_state(self):
+        for contract in (VerificationResult, VerificationAssurance, VerificationReceipt):
+            self.assertFalse(any("construct" in f.name.lower() for f in dataclass_fields(contract)))
+
+
+class TestConstructValidityAndRubricIdentity(unittest.TestCase):
+    def test_validity_is_linked_to_the_rubric_only_by_fingerprint_value(self):
+        rubric = _c3_rubric(construct=VerificationConstruct(description="measures grounding"))
+        validity = ConstructValidity(rubric_fingerprint=rubric.fingerprint, status=ConstructValidityStatus.SUPPORTED)
+        self.assertEqual(validity.rubric_fingerprint, rubric.fingerprint)
+        self.assertEqual(rubric.construct.description, "measures grounding")
+
+    def test_neither_type_holds_a_reference_to_the_other(self):
+        rubric_hints = get_type_hints(Rubric)
+        validity_hints = get_type_hints(ConstructValidity)
+        self.assertFalse(any("ConstructValidity" in str(t) for t in rubric_hints.values()))
+        self.assertFalse(any("Rubric" in str(t) for t in validity_hints.values()))
+
+    def test_assessing_a_rubric_leaves_its_identity_unchanged(self):
+        rubric = _c3_rubric(construct=VerificationConstruct(description="d"))
+        snapshot = (rubric, hash(rubric), rubric.fingerprint, rubric.lock_state, rubric.construct)
+        for state in ConstructValidityStatus:
+            ConstructValidity(rubric_fingerprint=rubric.fingerprint, status=state)
+        self.assertEqual((rubric, hash(rubric), rubric.fingerprint, rubric.lock_state, rubric.construct), snapshot)
+
+    def test_a_changed_assessment_is_a_new_record_and_the_old_one_keeps_its_meaning(self):
+        rubric = _c3_rubric()
+        first = ConstructValidity(rubric.fingerprint, ConstructValidityStatus.NOT_EVALUATED)
+        second = ConstructValidity(rubric.fingerprint, ConstructValidityStatus.CONTESTED)
+        self.assertEqual(first.status, ConstructValidityStatus.NOT_EVALUATED)
+        self.assertEqual(second.status, ConstructValidityStatus.CONTESTED)
+        self.assertNotEqual(first, second)
+
+    def test_a_locked_rubric_is_unaffected_by_any_validity_record(self):
+        rubric = _c3_rubric(construct=VerificationConstruct(description="d"))
+        locked = (rubric.advance_to(RubricLockState.VALIDATED, criteria=[_c3_criterion("c1")])
+                  .advance_to(RubricLockState.COMPILED).advance_to(RubricLockState.LOCKED))
+        before = locked
+        ConstructValidity(locked.fingerprint, ConstructValidityStatus.UNSUPPORTED)
+        self.assertEqual(locked, before)
+        self.assertEqual(locked.lock_state, RubricLockState.LOCKED)
 
 
 if __name__ == "__main__":

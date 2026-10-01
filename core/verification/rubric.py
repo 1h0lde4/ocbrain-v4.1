@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
+from .construct import VerificationConstruct
 from .evidence import EvidenceDirectness
 from .identity import CriterionId, RubricId
 
@@ -135,14 +136,13 @@ class Rubric:
     context_basis: str
     criteria: Tuple[CriterionId, ...]
     lock_state: RubricLockState = RubricLockState.DRAFT
-    # Forward reference to the future VerificationConstruct/ConstructValidity
-    # (mission row 47, still unbuilt) so Rubric never needs a breaking field
-    # migration once that type lands. Deliberately NOT the policy.py-style
-    # string-tag placeholder used elsewhere (Phase 1 finding, 22 Sept 2026):
-    # that pattern fits a namable tag (a method/dimension name), not a
-    # structured object a caller will eventually construct and pass in
-    # directly, which is what VerificationConstruct is architected as.
-    construct: Optional["VerificationConstruct"] = None
+    # What this rubric claims to measure (v2 §9), as a VerificationConstruct.
+    # Kept Optional with a None default so existing construction sites are not
+    # broken; whether a rubric may be locked/compiled without one is a separate
+    # architecture decision that is NOT made here.  Its construct-validity
+    # assessment (ConstructValidity) deliberately lives outside this object:
+    # an assessment must not change the identity of the thing it assesses.
+    construct: Optional[VerificationConstruct] = None
 
     def __post_init__(self) -> None:
         if not self.version or not self.version.strip():
@@ -151,6 +151,13 @@ class Rubric:
             raise ValueError("Rubric requires a non-empty fingerprint")
         if not self.criteria:
             raise ValueError("Rubric requires at least one criterion")
+        if self.construct is not None and not isinstance(
+            self.construct, VerificationConstruct
+        ):
+            raise TypeError(
+                f"Rubric.construct must be a VerificationConstruct or None, "
+                f"got {type(self.construct).__name__}"
+            )
         if len(self.criteria) != len(set(self.criteria)):
             raise RubricValidationError("Rubric lists a duplicate criterion_id")
 
