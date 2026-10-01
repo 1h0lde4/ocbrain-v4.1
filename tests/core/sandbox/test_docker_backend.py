@@ -1118,7 +1118,7 @@ class _DockerFailureInjector:
     really ran, then the caller-side await fails). `active` may be
     flipped off mid-test to model the failure clearing."""
 
-    def __init__(self, monkeypatch, matches, mode, exc_type=RuntimeError):
+    def __init__(self, monkeypatch, matches, mode, exc_type=RuntimeError, delay=0.0):
         self.active = True
         self.hits = 0
         real_exec = asyncio.create_subprocess_exec
@@ -1126,6 +1126,10 @@ class _DockerFailureInjector:
         async def fake(*argv, **kwargs):
             if self.active and matches(argv):
                 self.hits += 1
+                if delay:
+                    await asyncio.sleep(delay)  # widens the window so interleavings are deterministic
+                if mode == "slow":
+                    return await real_exec(*argv, **kwargs)  # the real command, just late
                 if mode == "spawn_error":
                     raise FileNotFoundError("simulated: docker CLI could not be spawned")
                 if mode == "nonzero_exit":
@@ -1944,3 +1948,119 @@ async def test_a5_a_restrictive_allowed_imports_value_still_runs_unimpeded(tmp_p
     finally:
         await backend.destroy(handle)
     assert "imports-ok" in result.stdout
+
+
+# ======================================================================
+# D11 (reconciliation §19): the record and the lock.
+#
+# Checklist D11's invariant: "no interleaving produces two internal
+# records for one handle, OR A CONTAINER WITH NONE"; its forbidden
+# shortcut: "a lock so coarse it serializes unrelated sandboxes, or no
+# lock at all". The earlier D11 tests fire the named pairs and pass, but
+# they never widen the window inside destroy(), so they could not see
+# that destroy() removed the handle's record BEFORE awaiting the
+# container's removal. These tests widen that window deterministically
+# (the real `docker rm`, just delayed) and assert the invariant directly.
+# ======================================================================
+
+
+def _slow_rm_of(container_name, delay):
+    return lambda argv: _docker_cmd("rm")(argv) and container_name in argv
+
+
+async def _created_and_run(backend, tmp_path, name="ws"):
+    request = SandboxRequest(command=("true",), policy=SandboxPolicy(workspace_dir=str(tmp_path / name)))
+    handle = await backend.create(request)
+    await backend.run(handle, request)
+    return handle, backend._handles[handle.handle_id]
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_a_container_always_has_a_record_while_destroy_is_in_flight(tmp_path, monkeypatch):
+    backend = DockerBackend(image_ref=_closeout_image())
+    handle, state = await _created_and_run(backend, tmp_path)
+    inj = _DockerFailureInjector(monkeypatch, _slow_rm_of(state.container_name, 0.8), "slow", delay=0.8)
+    task = asyncio.ensure_future(backend.destroy(handle))
+    await asyncio.sleep(0.3)  # the removal is now in flight
+    assert inj.hits >= 1
+    assert state.container_id in _d10_snapshot()["containers"]  # the container still exists ...
+    assert handle.handle_id in backend._handles, "a container with no internal record"  # ... so its record must too
+    assert await backend.inspect(handle) == SandboxState.TERMINATED  # and inspect() must still see the real state
+    await task
+    assert handle.handle_id not in backend._handles
+    assert state.container_id not in _d10_snapshot()["containers"]
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_a_second_destroy_does_not_return_until_the_container_is_gone(tmp_path, monkeypatch):
+    backend = DockerBackend(image_ref=_closeout_image())
+    handle, state = await _created_and_run(backend, tmp_path)
+    _DockerFailureInjector(monkeypatch, _slow_rm_of(state.container_name, 0.8), "slow", delay=0.8)
+    first = asyncio.ensure_future(backend.destroy(handle))
+    await asyncio.sleep(0.2)
+    await backend.destroy(handle)  # the second caller
+    assert state.container_id not in _d10_snapshot()["containers"], "destroy() returned while the removal was still in flight"
+    await first
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_concurrent_destroys_under_failure_report_failure_to_every_caller(tmp_path, monkeypatch):
+    before = _d10_snapshot()
+    backend = DockerBackend(image_ref=_closeout_image())
+    handle, state = await _created_and_run(backend, tmp_path)
+    inj = _DockerFailureInjector(monkeypatch, _any_docker, "spawn_error", delay=0.3)
+    results = await asyncio.gather(backend.destroy(handle), backend.destroy(handle), return_exceptions=True)
+    assert inj.hits >= 1
+    assert all(isinstance(r, DockerBackendError) for r in results), f"a caller was told success while removal had failed: {results}"
+    assert handle.handle_id in backend._handles  # retained, so a retry is possible
+    inj.active = False
+    await backend.destroy(handle)
+    assert backend._handles == {}
+    _assert_nothing_leaked(before)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_concurrent_destroys_on_one_handle_are_serialized_not_repeated(tmp_path, monkeypatch):
+    backend = DockerBackend(image_ref=_closeout_image())
+    handle, state = await _created_and_run(backend, tmp_path)
+    inj = _DockerFailureInjector(monkeypatch, _slow_rm_of(state.container_name, 0.6), "slow", delay=0.6)
+    await asyncio.gather(backend.destroy(handle), backend.destroy(handle))
+    assert inj.hits == 1, "the second destroy() repeated the removal instead of observing the first one's completion"
+    assert backend._handles == {}
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_destroying_one_sandbox_does_not_wait_for_another(tmp_path, monkeypatch):
+    """The other half of the forbidden shortcut: a lock so coarse that it
+    serializes unrelated sandboxes."""
+    backend = DockerBackend(image_ref=_closeout_image())
+    handle_a, state_a = await _created_and_run(backend, tmp_path, "a")
+    handle_b, _ = await _created_and_run(backend, tmp_path, "b")
+    _DockerFailureInjector(monkeypatch, _slow_rm_of(state_a.container_name, 1.5), "slow", delay=1.5)
+    slow = asyncio.ensure_future(backend.destroy(handle_a))
+    await asyncio.sleep(0.2)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    await backend.destroy(handle_b)
+    assert loop.time() - t0 < 1.0, "destroying B waited on A's removal"
+    await slow
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_two_concurrent_runs_on_one_handle_execute_exactly_once(tmp_path):
+    backend = DockerBackend(image_ref=_closeout_image())
+    request = SandboxRequest(command=("sh", "-c", "echo x >> /workspace/count"),
+                             policy=SandboxPolicy(workspace_dir=str(tmp_path)))
+    handle = await backend.create(request)
+    try:
+        results = await asyncio.gather(backend.run(handle, request), backend.run(handle, request), return_exceptions=True)
+        assert len([r for r in results if isinstance(r, DockerBackendError)]) == 1, results
+        assert (tmp_path / "count").read_text().count("x") == 1
+    finally:
+        await backend.destroy(handle)

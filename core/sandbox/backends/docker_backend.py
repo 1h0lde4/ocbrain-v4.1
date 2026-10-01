@@ -78,7 +78,7 @@ import shutil
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.sandbox.backend import SandboxBackend
 from core.sandbox.backends._net_proxy import AllowlistProxy
@@ -495,6 +495,13 @@ class _DockerRunState:
     state: SandboxState = SandboxState.PENDING
     cancel_requested: bool = False
     proxy: AllowlistProxy | None = None
+    # D11: serializes the multi-await sequences that must not interleave
+    # (today: destroy()'s remove -> confirm -> stop proxy -> forget).
+    # PER HANDLE, never global: destroying one sandbox must not wait on
+    # another (test_d11_destroying_one_sandbox_does_not_wait_for_another).
+    # cancel() and run() deliberately do NOT take it: cancelling a run, or
+    # destroying a running sandbox, has to be able to interrupt it.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class DockerBackend(SandboxBackend):
@@ -756,38 +763,49 @@ class DockerBackend(SandboxBackend):
         gone, is already-clean and is not an error (checklist D6/D10's
         double-destroy requirement).
 
+        D11: the handle's record is KEPT until the container's removal is
+        confirmed, so there is never a container without a record (the
+        checklist's invariant) and inspect() keeps reporting the real
+        state while the removal is in flight. Concurrent destroy() calls
+        on one handle are serialized by its own lock (never a global one);
+        a caller that waited re-checks that the record is still there and
+        returns if the earlier destroy() already finished, so it neither
+        repeats the removal nor returns before it is done. If the earlier
+        attempt failed, the record is still there and the waiting caller
+        makes -- and reports -- its own attempt.
+
         D10: "already gone" is CONFIRMED (a label query that succeeds and
         finds nothing), never inferred from `docker rm` having been
         called or having exited. If removal cannot be confirmed -- the
-        daemon or CLI failed -- the handle is RETAINED, so a later
-        destroy() can finish the job, and DockerBackendError is raised;
-        the container is never silently dropped from bookkeeping while it
-        may still exist. The host-side proxy listener is stopped either
-        way (it depends on nothing in the daemon), and the workspace is
-        removed only once the container is confirmed gone.
+        daemon or CLI failed -- the record is retained and
+        DockerBackendError is raised, so a later destroy() can finish the
+        job. The host-side proxy listener is stopped either way (it
+        depends on nothing in the daemon); the workspace is removed only
+        once the container is confirmed gone. If this coroutine is
+        cancelled part-way, the record is likewise never forgotten.
 
-        Verified against a real daemon, including concurrently with
-        run() and cancel() (D11, §15), and under injected CLI failure
-        (D10 tests -- simulated at the CLI-call boundary, so evidence
-        about this backend's cleanup logic, not about daemon behavior)."""
-        state = self._handles.pop(handle.handle_id, None)
+        Verified against a real daemon, including under deterministic
+        latency injection (D11 tests, reconciliation §19) and injected CLI
+        failure (D10 tests -- simulated at the CLI-call boundary, so
+        evidence about this backend's cleanup logic, not about daemon
+        behavior)."""
+        state = self._handles.get(handle.handle_id)
         if state is None:
             return
-        try:
+        async with state.lock:
+            if self._handles.get(handle.handle_id) is not state:
+                return  # an earlier destroy() finished while this one waited
             gone = await self._remove_container(state.container_name)
             if state.proxy is not None:
                 state.proxy.stop()
                 state.proxy = None
-        except BaseException:
-            self._handles[handle.handle_id] = state  # still destroyable
-            raise
-        if not gone:
-            self._handles[handle.handle_id] = state
-            raise DockerBackendError(
-                f"could not confirm removal of container {state.container_name!r}; "
-                "the handle is retained -- call destroy() again once docker is reachable"
-            )
-        shutil.rmtree(state.workspace_dir, ignore_errors=True)
+            if not gone:
+                raise DockerBackendError(
+                    f"could not confirm removal of container {state.container_name!r}; "
+                    "the handle is retained -- call destroy() again once docker is reachable"
+                )
+            self._handles.pop(handle.handle_id, None)  # only now: the container is confirmed gone
+            shutil.rmtree(state.workspace_dir, ignore_errors=True)
 
     async def inspect(self, handle: SandboxHandle) -> SandboxState:
         """Read-only by construction (D8) — only ever reads the local
