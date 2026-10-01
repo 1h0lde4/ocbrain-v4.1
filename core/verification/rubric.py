@@ -135,14 +135,17 @@ class Rubric:
     source_requirements: Tuple[str, ...]
     context_basis: str
     criteria: Tuple[CriterionId, ...]
+    # What this rubric claims to measure (v2 §9).  REQUIRED: a Rubric has no
+    # construct-less state, DRAFT included.  The construct is part of what
+    # defines the rubric (like criteria and fingerprint, which are also
+    # required from construction), so a rubric without one would carry a
+    # fingerprint that does not cover its own definition.  Having a construct
+    # says nothing about whether its validity has been assessed, and locking a
+    # rubric does not require any particular ConstructValidity: that
+    # assessment (ConstructValidity) lives outside this object on purpose, so
+    # assessing a rubric cannot change which rubric it is.
+    construct: VerificationConstruct
     lock_state: RubricLockState = RubricLockState.DRAFT
-    # What this rubric claims to measure (v2 §9), as a VerificationConstruct.
-    # Kept Optional with a None default so existing construction sites are not
-    # broken; whether a rubric may be locked/compiled without one is a separate
-    # architecture decision that is NOT made here.  Its construct-validity
-    # assessment (ConstructValidity) deliberately lives outside this object:
-    # an assessment must not change the identity of the thing it assesses.
-    construct: Optional[VerificationConstruct] = None
 
     def __post_init__(self) -> None:
         if not self.version or not self.version.strip():
@@ -151,12 +154,11 @@ class Rubric:
             raise ValueError("Rubric requires a non-empty fingerprint")
         if not self.criteria:
             raise ValueError("Rubric requires at least one criterion")
-        if self.construct is not None and not isinstance(
-            self.construct, VerificationConstruct
-        ):
+        if not isinstance(self.construct, VerificationConstruct):
             raise TypeError(
-                f"Rubric.construct must be a VerificationConstruct or None, "
-                f"got {type(self.construct).__name__}"
+                f"Rubric.construct must be a VerificationConstruct, got "
+                f"{type(self.construct).__name__} -- a Rubric cannot exist "
+                f"without stating what it claims to measure"
             )
         if len(self.criteria) != len(set(self.criteria)):
             raise RubricValidationError("Rubric lists a duplicate criterion_id")

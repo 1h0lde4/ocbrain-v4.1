@@ -600,6 +600,7 @@ class TestRubric:
             created_from="obligation o1", created_by="phase-c-session",
             derived_from="user requirement", source_requirements=("req1",),
             context_basis="task target snapshot t1", criteria=("c1", "c2"),
+            construct=VerificationConstruct(description="test construct"),
         )
         assert r.lock_state == RubricLockState.DRAFT
 
@@ -609,6 +610,7 @@ class TestRubric:
                 rubric_id="r1", version="", fingerprint="abc123",
                 created_from="x", created_by="y", derived_from="z",
                 source_requirements=(), context_basis="w", criteria=("c1",),
+                construct=VerificationConstruct(description="test construct"),
             )
 
     def test_empty_fingerprint_rejected(self):
@@ -617,6 +619,7 @@ class TestRubric:
                 rubric_id="r1", version="1.0.0", fingerprint="",
                 created_from="x", created_by="y", derived_from="z",
                 source_requirements=(), context_basis="w", criteria=("c1",),
+                construct=VerificationConstruct(description="test construct"),
             )
 
     def test_empty_criteria_rejected(self):
@@ -625,6 +628,7 @@ class TestRubric:
                 rubric_id="r1", version="1.0.0", fingerprint="abc",
                 created_from="x", created_by="y", derived_from="z",
                 source_requirements=(), context_basis="w", criteria=(),
+                construct=VerificationConstruct(description="test construct"),
             )
 
     def test_duplicate_criterion_id_rejected(self):
@@ -633,6 +637,7 @@ class TestRubric:
                 rubric_id="r1", version="1.0.0", fingerprint="abc",
                 created_from="x", created_by="y", derived_from="z",
                 source_requirements=(), context_basis="w", criteria=("c1", "c1"),
+                construct=VerificationConstruct(description="test construct"),
             )
 
 
@@ -642,6 +647,7 @@ class TestRubricLockStateProgression:
             rubric_id="r1", version="1.0.0", fingerprint="abc",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1",),
+            construct=VerificationConstruct(description="test construct"),
         )
 
     def _matching_criteria(self):
@@ -727,6 +733,7 @@ class TestRubricLockStateProgression:
             rubric_id="r2", version="1.0.0", fingerprint="abc",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1", "c2"),
+            construct=VerificationConstruct(description="test construct"),
         )
         two_criteria = [
             Criterion(
@@ -1090,6 +1097,7 @@ class TestCompileVerificationSpecification:
             rubric_id="r1", version="1.0.0", fingerprint="fp1",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1",),
+            construct=VerificationConstruct(description="test construct"),
         ).advance_to(RubricLockState.VALIDATED, criteria=[criterion])
           .advance_to(RubricLockState.COMPILED))
         obligation = VerificationObligation(
@@ -1135,6 +1143,7 @@ class TestCompileVerificationSpecification:
             rubric_id="r1", version="1.0.0", fingerprint="fp1",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1",),
+            construct=VerificationConstruct(description="test construct"),
         )
         scenario["rubric"] = draft_rubric
         result = compile_spec(**scenario)
@@ -1164,6 +1173,7 @@ class TestCompileVerificationSpecification:
             rubric_id="r1", version="1.0.0", fingerprint="fp1",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1", "c2"),
+            construct=VerificationConstruct(description="test construct"),
         ).advance_to(RubricLockState.VALIDATED, criteria=[scenario["criteria"][0], c2]).advance_to(RubricLockState.COMPILED)
         cyclic_deps = [
             CriterionDependency(criterion_id="c1", depends_on_criterion_id="c2", dependency_type=CriterionDependencyType.REQUIRES),
@@ -1383,6 +1393,7 @@ class TestCompileVerificationSpecification:
             rubric_id="r1", version="1.0.0", fingerprint="fp1",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1",),
+            construct=VerificationConstruct(description="test construct"),
         )
         scenario["rubric"] = draft_rubric
         scenario["method_registry"] = {}
@@ -1455,6 +1466,7 @@ class TestCompiledSpecificationHardening:
             rubric_id="r1", version="1.0.0", fingerprint="fp1",
             created_from="x", created_by="y", derived_from="z",
             source_requirements=(), context_basis="w", criteria=("c1",),
+            construct=VerificationConstruct(description="test construct"),
         ).advance_to(RubricLockState.VALIDATED, criteria=[criterion])
           .advance_to(RubricLockState.COMPILED))
         obligation = VerificationObligation(
@@ -2749,7 +2761,7 @@ def _c3_rubric(**over):
         rubric_id="r3a", version="1.0.0", fingerprint="fp-abc123",
         created_from="obligation o1", created_by="session", derived_from="requirement",
         source_requirements=("req1",), context_basis="target snapshot t1",
-        criteria=("c1",),
+        criteria=("c1",), construct=VerificationConstruct(description="measures grounding"),
     )
     kwargs.update(over)
     return Rubric(**kwargs)
@@ -2808,8 +2820,21 @@ class TestRubricConstructIntegration:
         construct = VerificationConstruct(description="measures factual grounding")
         assert _c3_rubric(construct=construct).construct is construct
 
-    def test_construct_stays_optional_so_existing_construction_sites_work(self):
-        assert _c3_rubric().construct is None
+    def test_a_rubric_cannot_be_built_without_a_construct(self):
+        # No construct-less state, DRAFT included.
+        kwargs = dict(
+            rubric_id="r3a", version="1.0.0", fingerprint="fp", created_from="o",
+            created_by="s", derived_from="d", source_requirements=("req1",),
+            context_basis="t", criteria=("c1",),
+        )
+        with pytest.raises(TypeError):
+            Rubric(**kwargs)
+
+    def test_none_is_not_a_construct(self):
+        with pytest.raises(TypeError):
+            _c3_rubric(construct=None)
+        assert _c3_rubric().lock_state == RubricLockState.DRAFT
+        assert isinstance(_c3_rubric().construct, VerificationConstruct)
 
     def test_a_non_construct_is_rejected_not_coerced(self):
         for bad in ("measures factual grounding", {"description": "d"}, 5):
