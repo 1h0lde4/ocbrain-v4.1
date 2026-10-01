@@ -397,6 +397,9 @@ async def main():
     from core.config import config
     use_k42_frontend = config.get("runtime.use_k42_frontend", False)
     max_recovery_attempts = config.get("runtime.max_recovery_attempts", 3)
+    # ADR-KERNEL-07 (PROPOSED): creative content-anchor detector (narrow slice), default off.
+    creative_content_anchor_enabled = config.get(
+        "runtime.creative_content_anchor_enabled", False)
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
@@ -405,7 +408,8 @@ async def main():
                                  workflow_runtime=workflow_runtime,
                                  capability_registry=capability_registry,
                                  use_k42_frontend=use_k42_frontend,
-                                 max_recovery_attempts=max_recovery_attempts)
+                                 max_recovery_attempts=max_recovery_attempts,
+                                 creative_content_anchor_enabled=creative_content_anchor_enabled)
     log.info("Orchestrator ready (WorkflowRuntime: production execution owner, "
              f"K4.2 frontend: {'ON' if use_k42_frontend else 'off'})")
 

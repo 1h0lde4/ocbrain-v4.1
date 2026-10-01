@@ -29,6 +29,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
+from core.error_ref import log_and_ref
 from core.runtime.execution_context import ExecutionContext
 
 logger = logging.getLogger("ocbrain.workers.planner")
@@ -171,10 +172,14 @@ class PlannerWorker(AbstractCognitiveWorker):
             for i, res in enumerate(results):
                 mod_name = labels[i]["module"]
                 if isinstance(res, Exception):
-                    logger.error("[PlannerWorker] Module %s failed: %s",
-                                 mod_name, res)
+                    # Same as Orchestrator: merger.merge() puts this text in
+                    # the answer the caller reads, so the detail stays in the
+                    # log under a ref instead.
+                    ref = log_and_ref(
+                        logger, f"[PlannerWorker] Module {mod_name}", res)
                     processed_results.append(RouteResult(
-                        answer=f"[Error in {mod_name}: {res}]",
+                        answer=(f"[Error in {mod_name}: "
+                                f"{type(res).__name__} (ref {ref})]"),
                         source="error",
                     ))
                 else:
