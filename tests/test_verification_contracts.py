@@ -6,7 +6,8 @@ invariants -- not verification behavior, per the Phase C scope
 boundary (no strategy execution, no LLM calls, no runtime workers).
 """
 import json
-from dataclasses import FrozenInstanceError, fields as dataclass_fields
+from dataclasses import FrozenInstanceError, fields as dataclass_fields, replace as dataclass_replace
+from itertools import product
 from datetime import datetime, timezone
 from typing import get_type_hints
 
@@ -24,6 +25,11 @@ from core.verification.evidence import (
     TransformationType, EvidenceTransformation, EvidenceBundle,
     MinimumSufficientEvidence, EvidenceBindingError,
 )
+from core.verification.coverage import (
+    TaskCoverage, VerificationCoverage, CriterionCoverage, EvidenceCoverage,
+    ObservationCoverage,
+)
+from core.verification.absence import ObservationAbsenceState, ObservationAbsence
 from core.verification.construct import (
     VerificationConstruct, ConstructValidityStatus, ConstructValidity,
 )
@@ -2980,3 +2986,248 @@ class TestConstructValidityAndRubricIdentity:
         ConstructValidity(locked.fingerprint, ConstructValidityStatus.UNSUPPORTED)
         assert locked == before
         assert locked.lock_state == RubricLockState.LOCKED
+
+
+# ---------------------------------------------------------------------------
+# Batch 3B -- five coverage types (coverage.py) and observation-absence states
+# (absence.py).  VerificationObservation is deliberately NOT part of 3B.
+# ---------------------------------------------------------------------------
+
+_COVERAGE_TYPES = (TaskCoverage, VerificationCoverage, CriterionCoverage, EvidenceCoverage, ObservationCoverage)
+
+
+class TestCoverageTypes:
+    def test_each_type_preserves_fraction_and_scope(self):
+        for cls in _COVERAGE_TYPES:
+            cov = cls(fraction=0.4, scope="requirements in the task statement")
+            assert cov.fraction == 0.4
+            assert cov.scope == "requirements in the task statement"
+
+    def test_zero_and_one_are_valid_boundaries(self):
+        for cls in _COVERAGE_TYPES:
+            assert cls(fraction=0.0, scope="s").fraction == 0.0
+            assert cls(fraction=1.0, scope="s").fraction == 1.0
+            assert cls(fraction=1, scope="s").fraction == 1
+
+    def test_out_of_range_and_non_finite_fractions_rejected(self):
+        for cls in _COVERAGE_TYPES:
+            for bad in (-0.0001, 1.0001, 2, -1, float("nan"), float("inf"), float("-inf")):
+                with pytest.raises(ValueError):
+                    cls(fraction=bad, scope="s")
+
+    def test_non_numeric_and_boolean_fractions_rejected(self):
+        # bool is an int subclass: True would otherwise silently mean 1.0
+        for cls in _COVERAGE_TYPES:
+            for bad in ("0.5", True, False, [0.5], b"1"):
+                with pytest.raises(TypeError):
+                    cls(fraction=bad, scope="s")
+
+    def test_unknown_is_none_and_is_not_zero_or_one(self):
+        for cls in _COVERAGE_TYPES:
+            unknown = cls(fraction=None, scope="s")
+            assert unknown.fraction is None
+            assert unknown != cls(fraction=0.0, scope="s")
+            assert unknown != cls(fraction=1.0, scope="s")
+
+    def test_fraction_has_no_default_so_unknown_must_be_stated(self):
+        for cls in _COVERAGE_TYPES:
+            with pytest.raises(TypeError):
+                cls(scope="s")
+
+    def test_scope_is_required_and_non_blank(self):
+        for cls in _COVERAGE_TYPES:
+            for bad in ("", "  ", "\n", None, 5):
+                with pytest.raises(ValueError):
+                    cls(fraction=0.5, scope=bad)
+            with pytest.raises(TypeError):
+                cls(fraction=0.5)
+
+    def test_unknown_coverage_still_requires_a_scope(self):
+        for cls in _COVERAGE_TYPES:
+            with pytest.raises(ValueError):
+                cls(fraction=None, scope="")
+
+    def test_is_immutable(self):
+        for cls in _COVERAGE_TYPES:
+            cov = cls(fraction=0.5, scope="s")
+            with pytest.raises(FrozenInstanceError):
+                cov.fraction = 1.0
+            with pytest.raises(FrozenInstanceError):
+                cov.scope = "other"
+
+    def test_unknown_survives_serialization_without_becoming_a_number(self):
+        for cls in _COVERAGE_TYPES:
+            for fraction in (None, 0.0, 0.4, 1.0):
+                original = cls(fraction=fraction, scope="s")
+                data = json.loads(json.dumps({"fraction": original.fraction, "scope": original.scope}))
+                restored = cls(fraction=data["fraction"], scope=data["scope"])
+                assert restored == original
+                assert (restored.fraction is None) == (fraction is None)
+
+
+class TestCoverageIndependence:
+    def test_five_distinct_types_with_no_shared_coverage_base(self):
+        assert len(set(_COVERAGE_TYPES)) == 5
+        for cls in _COVERAGE_TYPES:
+            assert cls.__mro__ == (cls, object)
+
+    def test_equal_field_values_in_different_types_are_not_equal_or_interchangeable(self):
+        for a in _COVERAGE_TYPES:
+            for b in _COVERAGE_TYPES:
+                if a is not b:
+                    assert a(fraction=0.4, scope="s") != b(fraction=0.4, scope="s")
+                    assert not isinstance(a(fraction=0.4, scope="s"), b)
+
+    def test_task_complete_but_verification_partial_is_representable(self):
+        task = TaskCoverage(fraction=1.0, scope="all 12 requirements implemented")
+        verification = VerificationCoverage(fraction=0.4, scope="5 of 12 requirements verified")
+        assert task.fraction == 1.0
+        assert verification.fraction == 0.4
+
+    def test_every_combination_of_known_and_unknown_values_is_representable(self):
+        values = (None, 0.0, 0.4, 1.0)
+        for combo in product(values, repeat=5):
+            built = [cls(fraction=value, scope="s") for cls, value in zip(_COVERAGE_TYPES, combo)]
+            assert [c.fraction for c in built] == list(combo)
+
+    def test_verification_assurance_coverage_is_left_unchanged_and_unlinked(self):
+        hints = get_type_hints(VerificationAssurance)
+        assert hints["coverage"] is float
+        assert not any("Coverage" in str(t) for t in hints.values())
+        assert dataclass_replace(_c3_result().assurance, coverage=0.4).coverage == 0.4
+
+
+_ABS_SURFACE = "fs:/data/out"
+
+
+def _abs_auth(surface=_ABS_SURFACE, authorized=True):
+    return InspectionAuthorization(surface=surface, authorized=authorized, authorized_by="governance")
+
+
+def _abs(state=ObservationAbsenceState.OBSERVED_ABSENT, **over):
+    kwargs = dict(state=state, surface=_ABS_SURFACE, inspected=True,
+                  coverage_sufficient=True, inspection_authorization=_abs_auth())
+    kwargs.update(over)
+    return ObservationAbsence(**kwargs)
+
+
+class TestObservationAbsenceState:
+    def test_closed_four_state_vocabulary(self):
+        assert {m.name for m in ObservationAbsenceState} == {"NOT_OBSERVED", "OBSERVED_ABSENT", "OBSERVATION_INCOMPLETE", "OBSERVATION_COVERAGE_UNKNOWN"}
+        with pytest.raises(ValueError):
+            ObservationAbsenceState("absent")
+
+    def test_values_are_disjoint_from_neighbouring_vocabularies(self):
+        mine = {m.value for m in ObservationAbsenceState}
+        for other in (VerificationVerdict, AssumptionStatus, EvidenceStatus, ReferenceQuality,
+                      RubricLockState, ProvenanceCompleteness, ConstructValidityStatus):
+            assert not (mine & {m.value for m in other})
+
+    def test_each_state_survives_serialization_distinctly(self):
+        for state in ObservationAbsenceState:
+            wire = json.dumps({"state": state.value})
+            assert ObservationAbsenceState(json.loads(wire)["state"]) is state
+
+
+class TestObservationAbsence:
+    def test_observed_absent_is_constructible_with_all_three_prerequisites(self):
+        absent = _abs()
+        assert absent.state == ObservationAbsenceState.OBSERVED_ABSENT
+        assert absent.inspected is True
+        assert absent.inspection_authorization.authorized is True
+        assert absent.coverage_sufficient is True
+
+    def test_observed_absent_requires_every_prerequisite(self):
+        # all 2**3 truth assignments: only the all-true one may be constructed
+        for inspected, authorized, sufficient in product((True, False), repeat=3):
+            facts = dict(inspected=inspected, inspection_authorization=_abs_auth(authorized=authorized), coverage_sufficient=sufficient)
+            if inspected and authorized and sufficient:
+                assert _abs(**facts).state == ObservationAbsenceState.OBSERVED_ABSENT
+            else:
+                with pytest.raises(ValueError):
+                    _abs(**facts)
+
+    def test_observed_absent_without_any_authorization_record_is_rejected(self):
+        with pytest.raises(ValueError):
+            _abs(inspection_authorization=None)
+
+    def test_authorization_for_a_different_surface_does_not_count(self):
+        with pytest.raises(ValueError):
+            _abs(inspection_authorization=_abs_auth(surface="fs:/data/OTHER"))
+
+    def test_prerequisites_must_be_real_booleans_not_truthy_values(self):
+        for bad in (1, "yes", "true", [True]):
+            with pytest.raises(TypeError):
+                _abs(inspected=bad)
+            with pytest.raises(TypeError):
+                _abs(coverage_sufficient=bad)
+        with pytest.raises(ValueError):
+            _abs(inspection_authorization=InspectionAuthorization(surface=_ABS_SURFACE, authorized=1))
+
+    def test_every_other_state_is_constructible_without_the_prerequisites(self):
+        # The OBSERVED_ABSENT gate must not leak into the other three states.
+        others = [s for s in ObservationAbsenceState if s != ObservationAbsenceState.OBSERVED_ABSENT]
+        assert len(others) == 3
+        for state in others:
+            for inspected, authorized, sufficient in product((True, False), repeat=3):
+                record = _abs(state, inspected=inspected, inspection_authorization=_abs_auth(authorized=authorized), coverage_sufficient=sufficient)
+                assert record.state == state
+            bare = _abs(state, inspected=False, inspection_authorization=None, coverage_sufficient=False)
+            assert bare.state == state
+
+    def test_observed_absent_is_the_only_gated_state(self):
+        gated = []
+        for state in ObservationAbsenceState:
+            try:
+                _abs(state, inspected=False, inspection_authorization=None, coverage_sufficient=False)
+            except ValueError:
+                gated.append(state)
+        assert gated == [ObservationAbsenceState.OBSERVED_ABSENT]
+
+    def test_absence_is_never_the_default_or_reached_by_omission(self):
+        with pytest.raises(TypeError):
+            ObservationAbsence(surface=_ABS_SURFACE, inspected=False, coverage_sufficient=False)
+        with pytest.raises(TypeError):
+            ObservationAbsence(state=ObservationAbsenceState.NOT_OBSERVED, surface=_ABS_SURFACE)
+        with pytest.raises(TypeError):
+            ObservationAbsence(state=ObservationAbsenceState.OBSERVED_ABSENT, surface=_ABS_SURFACE, inspected=True)
+
+    def test_state_must_be_an_observation_absence_state(self):
+        for bad in ("observed_absent", EvidenceStatus.UNAVAILABLE, VerificationVerdict.VERIFIED, None):
+            with pytest.raises(TypeError):
+                _abs(bad)
+
+    def test_authorization_must_be_the_existing_inspection_authorization_contract(self):
+        assert "InspectionAuthorization" in str(get_type_hints(ObservationAbsence)["inspection_authorization"])
+        with pytest.raises(TypeError):
+            _abs(ObservationAbsenceState.NOT_OBSERVED, inspection_authorization={"surface": _ABS_SURFACE, "authorized": True})
+
+    def test_blank_surface_rejected(self):
+        for bad in ("", "  ", None, 5):
+            with pytest.raises(ValueError):
+                _abs(ObservationAbsenceState.NOT_OBSERVED, surface=bad)
+
+    def test_is_immutable(self):
+        record = _abs()
+        with pytest.raises(FrozenInstanceError):
+            record.state = ObservationAbsenceState.NOT_OBSERVED
+        with pytest.raises(FrozenInstanceError):
+            record.coverage_sufficient = False
+
+    def test_a_weaker_record_cannot_be_promoted_to_observed_absent_by_copying(self):
+        for weak_state in (ObservationAbsenceState.NOT_OBSERVED, ObservationAbsenceState.OBSERVATION_INCOMPLETE,
+                           ObservationAbsenceState.OBSERVATION_COVERAGE_UNKNOWN):
+            weak = _abs(weak_state, inspected=True, coverage_sufficient=False)
+            with pytest.raises(ValueError):
+                dataclass_replace(weak, state=ObservationAbsenceState.OBSERVED_ABSENT)
+
+    def test_a_strong_record_can_be_restated_as_a_weaker_state(self):
+        strong = _abs()
+        weaker = dataclass_replace(strong, state=ObservationAbsenceState.OBSERVATION_INCOMPLETE)
+        assert weaker.state == ObservationAbsenceState.OBSERVATION_INCOMPLETE
+        assert strong.state == ObservationAbsenceState.OBSERVED_ABSENT
+
+    def test_sufficiency_is_a_declared_boolean_not_a_threshold_or_a_coverage_value(self):
+        assert {f.name for f in dataclass_fields(ObservationAbsence)} == {"state", "surface", "inspected", "coverage_sufficient", "inspection_authorization"}
+        with pytest.raises(TypeError):
+            _abs(coverage_sufficient=0.95)
