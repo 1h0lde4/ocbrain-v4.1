@@ -56,6 +56,11 @@ def test_path_traversal_module_name_cannot_delete_outside_modules_dir(tmp_path, 
     monkeypatch.setattr(be, "MODULES", fake_repo / "modules")
     monkeypatch.setattr(be, "DATA", fake_repo / "data")
 
+    # Bundles must sit inside the import root now (PR: /import containment);
+    # put the root at tmp_path so this still exercises the module_name guard
+    # rather than passing because the bundle path was rejected.
+    monkeypatch.setattr(be, "EXPORTS", tmp_path)
+
     decoy = tmp_path / "victim_area" / "decoy_dir"
     decoy.mkdir(parents=True)
     (decoy / "important_file.txt").write_text("irreplaceable decoy content")
@@ -87,6 +92,8 @@ def test_legitimate_module_name_still_imports(tmp_path, monkeypatch):
     (fake_repo / "data").mkdir(parents=True)
     monkeypatch.setattr(be, "MODULES", fake_repo / "modules")
     monkeypatch.setattr(be, "DATA", fake_repo / "data")
+
+    monkeypatch.setattr(be, "EXPORTS", tmp_path)  # bundle lives inside the import root
 
     import core.module_factory as factory_module
     monkeypatch.setattr(factory_module, "MODULES_DIR", fake_repo / "modules")
@@ -222,12 +229,15 @@ class TestZipSlipExtraction:
         fake_repo = tmp_path / "fake_repo"
         (fake_repo / "modules").mkdir(parents=True)
         monkeypatch.setattr(be, "MODULES", fake_repo / "modules")
+        monkeypatch.setattr(be, "EXPORTS", tmp_path)  # bundle inside the import root
 
         decoy = tmp_path / "victim_area"
         decoy.mkdir()
         bundle = self._malicious_bundle(tmp_path / "evil.ocbrain")
 
-        with pytest.raises(ValueError):
+        # match= so this cannot pass merely because the bundle path itself
+        # was rejected (BundlePathError is also a ValueError).
+        with pytest.raises(ValueError, match="resolves outside"):
             be.import_module(bundle)
 
         assert not (decoy / "evil.txt").exists()

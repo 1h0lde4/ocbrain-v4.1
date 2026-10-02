@@ -9,6 +9,10 @@ classifier_model = "mistral"
 web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
+# Directory .ocbrain bundles may be imported from (POST /import, /brain/v2/import).
+# Unset = data/exports, where exports are written. A relative path is resolved
+# against the project root; bundle_path must resolve to a file inside it.
+# import_root = "data/exports"
 
 [runtime]
 use_k42_frontend = true

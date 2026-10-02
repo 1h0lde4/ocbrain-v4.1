@@ -23,6 +23,56 @@ DATA    = ROOT / "data"
 EXPORTS = ROOT / "data" / "exports"
 
 
+class BundlePathError(ValueError):
+    """bundle_path is not a file inside the configured import root."""
+
+
+def import_root() -> Path:
+    """The only directory .ocbrain bundles may be imported from (resolved).
+
+    Set global.import_root in settings.toml; unset/empty means data/exports,
+    where export_module() writes. A relative setting is resolved against the
+    project root.
+    """
+    from core.config import config
+
+    configured = config.get("global.import_root", "")
+    root = Path(configured) if configured else EXPORTS
+    if not root.is_absolute():
+        root = ROOT / root
+    return root.resolve()
+
+
+def resolve_bundle_path(bundle_path) -> Path:
+    """Canonicalize a caller-supplied bundle path and require it to sit
+    inside import_root().
+
+    SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): bundle_path is a
+    server-side file path named by the HTTP caller (ImportRequest.bundle_path,
+    both /import routes), so without this any readable file on the host could
+    be opened as a zip. A relative path is taken relative to the import root.
+    resolve() follows symlinks, so a link inside the root that points outside
+    it is rejected; is_relative_to() compares whole path components, so a
+    sibling such as exports_evil/ is not mistaken for exports/. The error text
+    is fixed and echoes neither the input nor the root.
+    """
+    root = import_root()
+    try:
+        candidate = Path(bundle_path)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+    except (OSError, ValueError):
+        raise BundlePathError(
+            "bundle_path must be a file inside the configured import root."
+        ) from None
+    if not resolved.is_relative_to(root):
+        raise BundlePathError(
+            "bundle_path must be a file inside the configured import root."
+        )
+    return resolved
+
+
 def _safe_read(path: Path, default: str) -> str:
     try:
         return path.read_text(encoding="utf-8").strip() or default
@@ -174,7 +224,10 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
     """
     from core.config import config
 
-    if not bundle_path.exists():
+    # Containment first, existence second: checking existence first would
+    # let a caller probe for files outside the import root.
+    bundle_path = resolve_bundle_path(bundle_path)
+    if not bundle_path.is_file():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}")
 
     with tempfile.TemporaryDirectory() as tmp:
