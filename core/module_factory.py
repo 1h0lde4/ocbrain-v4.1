@@ -43,7 +43,10 @@ def create(
 
     dest = MODULES_DIR / name
     if dest.exists():
-        raise ValueError(f"Module '{name}' already exists at {dest}")
+        # This message is returned verbatim in the 400 body of POST
+        # /modules/new (HTTPException(400, str(e))), so it must not carry the
+        # absolute install path. The module name is enough for the caller.
+        raise ValueError(f"Module '{name}' already exists.")
 
     # 1. Copy template folder
     shutil.copytree(TEMPLATE_DIR, dest)
