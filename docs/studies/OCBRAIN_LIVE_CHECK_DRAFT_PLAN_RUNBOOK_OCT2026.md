@@ -13,8 +13,10 @@ Runs the pipeline's **two real model calls** — `interpret_request()` (module `
 the planner's decomposition (module `planner_decompose`) — on 11 requests that the content-anchor
 detector would escalate (8 form-only, 3 long-form chosen to tempt multi-step plans). Per step it
 reports the content words that appear in neither the request nor the interpretation, then labels the
-plan `redundant` / `generic` / `speculative`. It touches no capability registry, memory, or real event
-log; the prompt cache is in-process only, so no state persists. **Label = word-level proxy; read the steps.**
+plan `redundant` / `generic` / `speculative`. It does not use the capability registry and writes no events to the real
+event log. It **does** use the local memory store: `interpret_request()` falls back to the global memory singleton, so a first run creates
+*empty* databases `.data/memory/unified.db` and `archive.db` (git-ignored; verified 0 rows) and searches them. The prompt cache is
+in-process only. **Label = word-level proxy; read the steps.**
 
 ## Prerequisites (verified from the repo)
 | Need | Fact |
@@ -53,8 +55,8 @@ python scripts/live_check_draft_plan.py --json live.json | tee live.out.txt
 { date -u; git rev-parse HEAD; python --version; ollama list; } > live.meta.txt 2>&1
 ```
 Do **not** edit `config/*.toml`, commit anything, or enable `creative_content_anchor_enabled`.
-(Running the app can rewrite `config/*.toml` and `data/*`; if `git status` shows changes there,
-discard them with `git checkout -- config data` — they are not part of this check.)
+The harness itself only creates the git-ignored `.data/` directory; `git status` should stay clean. If it shows changes under
+`config/` or `data/`, they did not come from this check — discard them with `git checkout -- config data`.
 
 ## Is the run usable as evidence? (run this before sending anything back)
 ```python
@@ -93,3 +95,28 @@ Neither option is applied in the repo. Eleven requests and one model are a **sma
 Record the result as evidence in ADR-KERNEL-07 §10.4 (it does **not** turn the ADR into an acceptance), then reconcile
 `CURRENT_STATE.md`, `KNOWN_ISSUES.md` and the roadmap from the verified state. Keep the failure accounting split: the 16
 sandbox `FAILED` IDs are environment artifacts, the 8 collection errors remain uncharacterized.
+
+## Troubleshooting
+**Every call fails with `404 Not Found` for `http://localhost:11434/api/generate`** (seen in the first Codespace run, 2026-10-02).
+A 404 arriving in ~2 ms means a server **is** answering and rejecting the request — not "connection refused". For Ollama that almost
+always means the model is not installed under the name the code asks for (`llama3`). *(Inference from the error shape; the response
+body was not captured.)* Confirm and fix:
+```bash
+curl -s localhost:11434/                  # expect: "Ollama is running"  (anything else = something else owns port 11434)
+curl -s localhost:11434/api/tags          # lists installed models; is "llama3" there?
+curl -s localhost:11434/api/generate -d '{"model":"llama3","prompt":"hi","stream":false}'   # the error body names the missing model
+ollama pull llama3                        # fix A: install the model the code asks for
+ollama cp <installed-model> llama3        # fix B: you already have another model — alias it; no config edit needed
+```
+Then repeat the **smoke test (step 3)** before the real run. (Fix C — setting `bootstrap_model` under `[intent_interpreter]` and
+`[planner_decompose]` in `config/models.toml` — works but edits tracked config; prefer A or B.)
+
+**The report is buried in `[ProviderMesh]` log lines.** The report starts at the line `MODE:`. View just it: `sed -n '/^MODE:/,$p' live.out.txt`.
+
+**`L1 FTS5 search failed (non-blocking): fts5: syntax error near "."` appears once.** Expected and unrelated to this check: a request
+containing a period (`'Write a 500 word story.'`) hits a pre-existing gap in `_fts_escape()` (documented for `?` in
+`docs/reports/SESSION4B_REPORT.md`; the real scope is broader). It is not a sign the run failed.
+
+## Limitations of the environment
+A fresh Codespace has an **empty memory store**, so no promoted Intent Ontology categories are loaded (`known_categories`). The
+interpretation step may therefore differ from a populated deployment. Record that when you report the result.
