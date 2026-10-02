@@ -2,6 +2,16 @@
 
 > Branch `handoff/codeql-remediation-sep2026` holds this file only. It is a transfer record, **not** an authority, and must **not** be merged into `main` (PROJECT_INSTRUCTIONS §18.4.8.10). Verify everything below against the live repository before relying on it (§18.4.9). No secrets are recorded here; the two GitHub tokens involved are deliberately omitted.
 
+## 0. Update after the first commit (2026-10-02, verified; supersedes conflicting text below)
+
+The repository moved while this handoff was being written, and **another session is already acting on it**. (Commits from sessions of this kind carry the same author string, "Claude (sandboxed session)", so author names cannot tell sessions apart.) Verified against GitHub:
+
+- `main` is now `4ab5345` (verify live). **#40** (merge `9b172d0`) and **#42** (merge `4bb5974`) were merged by `1h0lde4` on 2026-10-02, all five checks green. **#43** (docs, author and merger `1h0lde4`, commit `cc01a61`) registered #36/#39/#40/#42 under DEBT-037 and added the path-injection source classification to DEBT-038 with **no new ID** -- this completes §17 step 4 and R-9.
+- `1h0lde4` dismissed four Code Scanning alerts on 2026-10-02 (00:43-00:44 UTC): the three `py/incomplete-url-substring-sanitization` ones ("used in tests") and `py/path-injection` at `core/brain_export.py:161`, the `extractall` ("false positive: zipfile.extractall() sanitizes ../, absolute and drive-qualified..."). **Open alerts on `main`: 29, all `py/path-injection`, none of any other rule.** That settles R-12 for those four only; the 29 remaining are not individually dispositioned beyond the classification now in DEBT-038.
+- **PR #44** (`fix/import-root-containment-oct2026`, author `1h0lde4`, head `8dec787`) is **open**: it requires `bundle_path` on `/import` and `/brain/v2/import` to resolve inside a configured import root (CTX-EXPORT-001; a behavior change on both import routes; it touches `config/settings.toml`). At last look its `CodeQL` check was **failure** and `mergeable_state` was `unstable`; the other checks passed. It addresses the "by design" `/import` source in §6 (source 481). **It is another session's work in progress: do not edit or merge it, and establish who owns it before acting.**
+- PR #45 (docs: runbook for ADR-KERNEL-07's live draft-plan check) is a different workstream. A new `Graphify` check now appears on PRs; it was not investigated, and `drift-and-ownership` is still green.
+- **Superseded below:** statements that #40/#42 are open, that `main` is `ecddbff`, that #42's CI is unknown, and that 32 alerts are open; the §15 rows on merges and URL dispositions; §17 steps 3-4; §19. They are left in place as the record of the first commit.
+
 ## 1. Handoff Metadata
 
 - Handoff version: 1
@@ -355,13 +365,13 @@ Other workstreams' branches: `feature/intent-sufficiency-slice1`, `feature/verif
 | R-3 | Remove exception text from API responses/SSE | write-up #1 | VERIFIED (merged #34, #36) | 0 `py/stack-trace-exposure` alerts open on `main` | |
 | R-4 | Fix `/distill` + `/brain/v2/distill` traversal | found this session | VERIFIED (merged #37) | 4 traversal tests fail without fix | P2/Medium, DEBT-038 |
 | R-5 | Fix `[Error in <module>: ...]` answer text | found this session | VERIFIED (merged #39) | 6 tests fail without fix | **changed 4 existing tests on purpose, §10 D-7** |
-| R-6 | Fix updater `check_error` | found this session | IMPLEMENTED, CI green, **not merged** (#40) | 3 tests fail without fix | awaits merge instruction |
-| R-7 | Fix factory duplicate-module path in 400 | found this session | IMPLEMENTED, CI **pending**, not merged (#42) | 2 tests fail without fix | low severity |
+| R-6 | Fix updater `check_error` | found this session | VERIFIED (merged #40, `9b172d0`; was open at first commit) | 3 tests fail without fix | §0 |
+| R-7 | Fix factory duplicate-module path in 400 | found this session | VERIFIED (merged #42, `4bb5974`; was pending at first commit) | 2 tests fail without fix | low severity; §0 |
 | R-8 | One register entry for both distill routes, P2/Medium | instruction 9 | VERIFIED (merged #37/#38) | DEBT-038 | ID is **038**, Moncif wrote 039 (§10 D-4) |
-| R-9 | Register entries for R-5/R-6/R-7 | register discipline | OPEN | -- | deferred to avoid same-line conflicts |
-| R-10 | Merge only on explicit instruction | session practice | HELD | -- | #40, #42 not merged |
+| R-9 | Register entries for R-5/R-6/R-7 | register discipline | DONE by another session (#43, `cc01a61`) | -- | recorded under DEBT-037, no new ID; §0 |
+| R-10 | Merge only on explicit instruction | session practice | HELD by this session | -- | #40/#42 were merged by Moncif himself; #44 is not ours |
 | R-11 | Check existing branches before fixing | instruction 10 | VERIFIED | §11 | |
-| R-12 | CodeQL alert dispositions | open | OPEN | §6 | Moncif's call |
+| R-12 | CodeQL alert dispositions | open | PARTIAL | §0 | 3 url + the `extractall` alert dismissed by `1h0lde4`; 29 path-injection open |
 | R-13 | Design question: validate `module_name` in shared primitives | review 2/3 | OPEN | -- | not decided |
 
 ## 6. Current Verified State
@@ -369,10 +379,10 @@ Other workstreams' branches: `feature/intent-sufficiency-slice1`, `feature/verif
 All checked 2026-10-01 against GitHub and a fresh clone.
 
 **VERIFIED**
-- `main` = `ecddbff6968c55ed50661ef28caaef5bb1270bf4` ("Merge pull request #41", a different workstream).
-- Merged to `main` from this workstream: #34, #35, #36, #37, #38, #39. All their CI checks were green before merge.
-- **PR #40** (`fix/updater-check-error-redaction-sep2026`): open, head `d14b4bce6623586bd115e588ca2c8ae139c3fc55` (my commit `10455e8` plus a merge of `main` authored by `N4Z`, i.e. Moncif; how it was made is not known), `mergeable_state: clean`, all five checks `success`.
-- Code Scanning on `main`: **32 open** = 3 `py/incomplete-url-substring-sanitization` + 29 `py/path-injection`; **0 `py/stack-trace-exposure`**. (Latest analysis reports 33 results vs 32 open alerts; the 1 difference is unexplained.)
+- `main` was `ecddbff6968c55ed50661ef28caaef5bb1270bf4` at the first commit ("Merge pull request #41", a different workstream); **now `4ab5345`, see §0**.
+- Merged to `main` from this workstream: #34, #35, #36, #37, #38, #39, and since the first commit #40 and #42 (plus docs PR #43 by another session). All their CI checks were green before merge.
+- **PR #40** (`fix/updater-check-error-redaction-sep2026`): was open at the first commit with head `d14b4bce6623586bd115e588ca2c8ae139c3fc55` (my commit `10455e8` plus a merge of `main` authored by `N4Z`); **now merged** (`9b172d0`, final head `3fa6bef`).
+- Code Scanning on `main`: **29 open, all `py/path-injection`**; 0 `py/stack-trace-exposure`; 4 dismissed by `1h0lde4` (§0). (At the first commit it was 32 open: those 29 plus the 3 url-substring alerts. The latest analysis reports 33 results against 29 open; the difference is dismissed alerts plus at least one unexplained.)
 - All path-injection alerts flow from 5 HTTP sources in `interface/api.py` (SARIF analysis 1862152239 on `2e5cfc0`):
 
   | Source (api.py line) | Route | Reaches | Guard | Status |
@@ -390,13 +400,13 @@ All checked 2026-10-01 against GitHub and a fresh clone.
 - Dependabot: 3 open alerts, **all `chromadb`** -- critical GHSA-36p7-vc44-83pf (CVE-2026-45833, code injection, `>= 0.4.17, <= 1.5.9`), high GHSA-xph7-9rjv-w5fr (CVE-2026-45831, RBAC provider tenant/db checks, `>= 0.5.0, <= 1.5.9`), high GHSA-2wm9-hf6c-p5cr (CVE-2026-45830, authenticated users read/write/delete, `>= 0.4.17, <= 1.5.9`). **No patched version is listed for any.** `requirements.txt` pins `chromadb==0.5.3` (deliberate, DEBT-032), which is inside every range.
 
 **IMPLEMENTED BUT NOT VERIFIED**
-- **PR #42** (`fix/module-factory-path-in-error-sep2026`): open, head `57dde35887bed57c05044f487b7a0d026ca75416`; at last check `drift-and-ownership` success, `tests` and both `Analyze` jobs **in progress**, `mergeable_state: blocked` (pending checks). Result unknown.
+- None from this session. (#42 was pending at the first commit; it merged with all checks green, final head `57dde35`.) **PR #44** is another session's unmerged work with a failing `CodeQL` check -- see §0.
 
 **PROPOSED / DEFERRED**
-- Register entries for #39/#40/#42 (R-9), alert dispositions (R-12), design question (R-13), Dependabot decision.
+- Remaining alert dispositions (the 29 path-injection alerts, R-12), the design question (R-13), the Dependabot decision, `_safe_extractall` keep/revert (D-8). The register work (R-9) is done (§0).
 
 **UNKNOWN**
-- #42's CI result.
+- Who owns PR #44, and why its `CodeQL` check fails (not investigated).
 - Whether the chromadb advisories apply to OCBrain's usage (embedded library vs. authenticated server); advisory bodies were not read beyond the summaries above.
 - Whether `PlannerWorker`'s `WorkerResult.error = f"PlannerWorker pipeline error: {e}"` (core/workers/planner.py) ever reaches a caller.
 - `learning/crawler.py`, `cleaner.py`, `gap_detector.py` build paths from `module_name` (found by grep) but have **no CodeQL alerts** and CodeQL found no HTTP flow into them; call paths not traced.
@@ -406,10 +416,10 @@ All checked 2026-10-01 against GitHub and a fresh clone.
 
 - Primary repository: `1h0lde4/ocbrain-v4.1` (**public**); default branch `main`; PR-based merges with merge commits; branch protection requires `tests` and `drift-and-ownership`; admins are exempt (`enforce_admins` false -- Moncif's choice, DEBT-033).
 - Remote: `origin` = `https://github.com/1h0lde4/ocbrain-v4.1.git`
-- Base branch / HEAD at handoff: `main` @ `ecddbff6968c55ed50661ef28caaef5bb1270bf4`
-- Transfer commits (implementation state being transferred = open PR heads):
-  - `fix/updater-check-error-redaction-sep2026` @ `d14b4bce6623586bd115e588ca2c8ae139c3fc55` (PR #40)
-  - `fix/module-factory-path-in-error-sep2026` @ `57dde35887bed57c05044f487b7a0d026ca75416` (PR #42)
+- Base branch / HEAD at the first commit: `main` @ `ecddbff6968c55ed50661ef28caaef5bb1270bf4`; **by 2026-10-02: `4ab5345`** (§0)
+- Transfer commits at the first commit (open PR heads; **both PRs have since merged**, §0):
+  - `fix/updater-check-error-redaction-sep2026` @ `d14b4bce6623586bd115e588ca2c8ae139c3fc55` (PR #40; merged as `9b172d0`)
+  - `fix/module-factory-path-in-error-sep2026` @ `57dde35887bed57c05044f487b7a0d026ca75416` (PR #42; merged as `4bb5974`)
 - Handoff branch: `handoff/codeql-remediation-sep2026`, parent commit `ecddbff` (the handoff commit's own SHA cannot be written inside itself; read it with `git rev-parse origin/handoff/codeql-remediation-sep2026`).
 - Merge commits of this workstream on `main`: #34 `bd290ff`, #35 `2520cb4`, #36 `a949b8d`, #37 `b195ae9`, #38 `2e5cfc0`, #39 `1a1621a`.
 - Working tree status: clean in my sandbox after reverting test-run pollution (see §14). The sandbox is ephemeral and **not** a source of truth.
@@ -506,7 +516,7 @@ Schema/contract changes: error payloads gained `error_id`; `/debug` fields `erro
 - Latest run (on `main` @ `ecddbff` + #42's change): **8 failed / 1628 passed / 1 xfailed** -- the xfail comes from other sessions' merged work, not from these changes.
 - Fail-before checks (new/updated tests run against the unfixed source files): #36 -- 2 of 2 new tests fail; #37 -- 4 of 5 fail (the legitimate-name test passes either way by design; the `/brain/v2` test also fails against sink-guard-only source, `500 != 400`); #39 -- 6 fail (orchestrator, dispatcher, four updated tests; the helper test passes either way); #40 -- 3 of 3; #42 -- 2 of 2. **#34's first batch of tests was not run against unfixed source.**
 - Experiments on unfixed source: `/distill` and `/brain/v2/distill` with `module_name="../../x"` created a directory outside `data/raw` (even with Ollama unreachable, because `mkdir` runs before the pair loop); `zipfile.extractall()` on `..`, nested `..`, and absolute members left nothing outside the destination.
-- CI: #34-#39 all five checks green before merge (CI run #156/#157 were #36's). #40 five checks green at head `d14b4bc`. **#42 pending.**
+- CI: #34-#39 all five checks green before merge (CI run #156/#157 were #36's). #40 and #42 both merged with all checks green (a new `Graphify` check appeared on later PRs).
 - Remote checks: every pushed branch SHA matched via unauthenticated `git ls-remote`.
 - Limitation: CodeQL cannot be run in the sandbox, so whether it accepts a `resolve()` + `is_relative_to()` containment check as a barrier (it does **not** treat `.isidentifier()` as one) is untested.
 
@@ -523,9 +533,9 @@ Schema/contract changes: error payloads gained `error_id`; `/debug` fields `erro
 
 | Issue | Evidence | Options | Safe to continue? |
 |---|---|---|---|
-| #42 CI result unknown | §6 | poll `GET /commits/<sha>/check-runs` | yes |
-| Merge of #40, #42 | needs explicit instruction each | -- | merging is **blocked on Moncif** |
-| Alert dispositions: 3 url-substring (false positives, evidenced) and 29 path-injection (5 sources, 4 guarded/fixed, 1 by-design) | §6 | dismiss with documented reason vs. keep open | **Moncif's call**; dismissal changes his security dashboard |
+| PR #44 (import-root containment) is open with a failing `CodeQL` check, and is not this workstream's | §0 | find its owner; let that session finish it | yes, but do not touch #44 |
+| Merging anything | needs an explicit instruction each time | -- | do not merge without one |
+| Alert dispositions: the 3 url-substring alerts and the `extractall` alert are dismissed (§0); 29 path-injection alerts remain open (5 sources: 4 guarded/fixed, 1 by-design, now targeted by #44) | §0, §6 | dismiss with a documented reason vs. keep open | **Moncif's call**; dismissal changes his security dashboard |
 | `/import` takes a caller-named server-side path | alert source 481 | restrict to an allowed directory (behavior change) vs. leave under CTX-EXPORT-001 | no change without a decision |
 | Keep or revert `_safe_extractall` (D-8) | §10 | keep / revert | yes |
 | Design question: validate `module_name` in every shared filesystem primitive? | review 2/3 lean "eventually yes" | if yes, prefer a containment check (`resolve()` + `is_relative_to()`) over `.isidentifier()` for **internal** sinks -- registry directories need not be identifiers, so an identifier check could break them; CodeQL acceptance untested | undecided |
@@ -546,8 +556,8 @@ Schema/contract changes: error payloads gained `error_id`; `/debug` fields `erro
 
 1. **Verify state** (§18). *Expected:* matches §6/§7.
 2. **Get a token from Moncif** and check it read-only (`GET /user` -> login `1h0lde4`). Do not assume this session's authorization carries over; merges need an explicit instruction every time.
-3. **Check #42's CI** and report it. Report #40's. **Do not merge either** without Moncif's explicit instruction. If `main` has moved, #40's branch may need a merge of `main` first.
-4. **After #40 and #42 merge**, one docs PR from a fresh branch off `main`:
+3. **[SUPERSEDED -- #40 and #42 are merged, §0]** Establish who owns PR #44 and whether its failing `CodeQL` check is understood. **Do not merge anything** without Moncif's explicit instruction.
+4. **[DONE by another session as #43 -- §0; only re-check that it matches the intent below]** After #40 and #42 merge, one docs PR from a fresh branch off `main`:
    - Add register entries for #39, #40, #42. Whether that is one entry (the "exception text in caller-visible responses" class) or three is **Moncif's call**; ask once. Use the next free ID after re-reading `main` and open PRs.
    - Fix DEBT-037's now-stale "not fixed" sentences.
    - Record the §6 path-injection classification table and that crawler/cleaner/gap_detector are untraced.
@@ -568,6 +578,6 @@ Schema/contract changes: error payloads gained `error_id`; `/debug` fields `erro
 
 **TRANSFER READY**, with two stated limits:
 - No token is recorded (by design); a new session needs one from Moncif before it can push anything.
-- #42's CI result is UNKNOWN as of this handoff; everything else in §6 was verified directly.
+- State moved after the first commit; §0 records what changed (#40/#42/#43 merged, #44 open and owned by another session). Verify live before acting.
 
-All material work from this workstream is on `origin`: merged to `main` (#34-#39), or on open PR branches (#40, #42) at the SHAs in §7. This file is on `handoff/codeql-remediation-sep2026`, not merged.
+All material work from this workstream is on `origin` and merged to `main` (#34-#40 and #42; docs #43 came from another session). This file is on `handoff/codeql-remediation-sep2026`, not merged.
