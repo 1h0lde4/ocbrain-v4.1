@@ -64,21 +64,22 @@ python3 - <<'PYEOF'
 import json, sys
 d = json.load(open("live.json"))
 esc = [r for r in d["rows"] if r["would_escalate"]]
-norm = lambda s: " ".join(s.lower().rstrip(".").split())
 degraded = [r["request"] for r in esc if r["degraded"]]
-echoed = [r["request"] for r in esc if norm(r["interpretation"]) == norm(r["request"])]
+counts = [len(r["steps"]) for r in esc]
 print(f"mode={d['mode']} not_evidence={d['not_evidence']} escalating={len(esc)}/{len(d['rows'])}")
 print(f"rows with a degraded model call: {len(degraded)}")
-print(f"rows where interpretation == request verbatim: {len(echoed)}/{len(esc)}"
-      "  (if ALL: the intent step probably fell back to its placeholder; do not trust)")
-ok = d["mode"] == "LIVE" and not d["not_evidence"] and not degraded and len(echoed) < len(esc)
+print(f"steps per plan: {counts}")
+ok = d["mode"] == "LIVE" and not d["not_evidence"] and bool(esc) and not degraded
 print("USABLE AS EVIDENCE" if ok else "NOT USABLE -- see above")
 sys.exit(0 if ok else 1)
 PYEOF
 ```
-**Why the second check exists:** if every provider fails, the intent step does not raise — it returns a
-placeholder hypothesis (`novel`, score 0.1). The harness cannot see that, so "interpretation equals the
-request in every row" is the tell. The check is a heuristic.
+**What makes a run usable:** live mode, and *no degraded model call* in any escalating row (the harness records a failed or empty
+decomposition in `degraded`). **Note — `interpretation` equal to the request is NORMAL, not a warning sign:** the Goal's `description`
+is the user's raw request by design (`structured_form["description"] = intent.raw_request`, `core/cognitive/intent.py:1090`). The
+plan steps are generated from that text, so `interpret_request()`'s own success does not affect what this check measures. (An earlier
+draft of this runbook treated "interpretation == request in every row" as a sign the intent step had fallen back; that was an
+unverified assumption and would have rejected valid runs, including the first real one.)
 
 ## Send back
 `live.json`, `live.out.txt`, `live.meta.txt`. They contain only the 11 prompts and the model's outputs; no secrets.
