@@ -12,8 +12,9 @@ What the frozen architecture says (and how little of it there is):
   collapsing them into one weighted average.  v2 §21 requires that
   ``task_incomplete + some_criteria_verified`` and its relatives stay
   representable without collapsing into each other.
-* v1 §25 / mission §50 / ``verdict.py``: a verifier crash can never become a
-  positive verdict.
+* v1 (Self-Review, Pass 3) and v2 (Review C): a verifier crash can never become
+  a pass -- "fail-closed by principle".  The same sources say "a crash is
+  ``FAILED``", which is not a canonical verdict state (v1 §25).
 
 So this is a LOCAL result contract: what was concluded about ONE criterion, as
 produced by some later layer.  It is not an aggregation engine, not an
@@ -28,7 +29,11 @@ JUDGMENT, marked as such:
 * ``CriterionAttemptState`` and its namespaced string values;
 * what ATTEMPTED / NOT_ATTEMPTED / BLOCKED mean;
 * binding a result to a rubric by ``rubric_fingerprint``;
-* ``finding_ids`` as optional references.
+* ``finding_ids`` as optional references;
+* the crash rule: an ``execution_failure`` requires the verdict UNVERIFIABLE.
+  The architecture only requires that a crash never become a pass (see the
+  class docstring); the stricter mapping is inherited from
+  ``VerificationResult`` and is NOT an architectural requirement.
 
 Deliberately NOT here:
 
@@ -106,9 +111,20 @@ class CriterionResult:
     3. NOT_ATTEMPTED / BLOCKED -> ``verdict`` is None.  An unevaluated
        criterion has no verdict to carry.
     4. ``execution_failure`` is only valid on an ATTEMPTED result whose verdict
-       is UNVERIFIABLE (the rule ``VerificationResult`` already enforces): a
-       verifier crash, timeout or exhausted budget can never become a pass.
-       The reverse is not required -- UNVERIFIABLE without a failure is valid.
+       is UNVERIFIABLE.  The reverse is not required -- UNVERIFIABLE without a
+       failure is valid.
+
+       IMPLEMENTATION JUDGMENT -- this is NOT mandated by the architecture and
+       must not be read as constitutional.  What the architecture requires is
+       narrower: a verifier crash can never become a pass ("fail-closed by
+       principle", v1 Self-Review Pass 3; v2 Review C).  Those same sources say
+       "a crash is ``FAILED``" -- a state that is not in the canonical verdict
+       vocabulary (v1 §25) and is the same unresolved question as Batch 3C-B --
+       and v1 §23 describes UNVERIFIABLE as a "successful abstention outcome,
+       not a verifier failure".  The stricter mapping "execution failure ->
+       UNVERIFIABLE" is inherited from ``VerificationResult`` (verdict.py),
+       which cites no architectural source for it.  It is kept for consistency
+       with that type and stays open to revision once FAILED is reconciled.
 
     ``verdict`` has no default, so "no verdict" must be stated
     (``verdict=None``), never reached by omission.
