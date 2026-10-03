@@ -598,3 +598,45 @@ class TestPerAcquisitionAccounting:
         assert (sem.current_limit, sem._drain_count) == (8, 0), "capacity did not recover to max"
         assert sem.snapshot()["available"] == 8
         await _assert_can_fill(sem, 8)
+
+    async def test_snapshot_reads_one_low_while_a_release_is_handed_to_a_parked_waiter(self):
+        """Pins the one documented window in which ``available + held`` under-reads.
+
+        ``asyncio.Semaphore.release()`` hands the permit straight to a parked waiter
+        (``_value`` is decremented at once), but that waiter records its hold only
+        when it next runs.  Between the two the permit is in neither ``available`` nor
+        ``held``.  Nothing is lost: it is counted again as soon as the waiter resumes
+        and every idle point is exact.  (Reproduced from the Graphify advisory on
+        PR #51; identical on CPython 3.11, 3.12 and 3.13.)
+        """
+        sem = _fixed(1)
+        a_inside, release_a = asyncio.Event(), asyncio.Event()
+        seen = {}
+
+        async def a():
+            async with sem:
+                a_inside.set()
+                await release_a.wait()
+            # A's __aexit__ ran without suspending: B owns the permit but has not run yet.
+            seen["handoff"] = sem.snapshot()
+            await _until(lambda: sem.snapshot()["held"] == 1, what="B resumed and recorded its hold")
+            seen["resumed"] = sem.snapshot()
+
+        async def b():
+            async with sem:
+                await asyncio.sleep(0)
+
+        ta = asyncio.create_task(a())
+        await a_inside.wait()
+        tb = asyncio.create_task(b())
+        await _until(lambda: bool(sem._semaphore._waiters), what="B parked as a waiter")
+        release_a.set()
+        await asyncio.gather(ta, tb)
+
+        h, r = seen["handoff"], seen["resumed"]
+        assert h == {"current_limit": 1, "available": 0, "held": 0, "drain_count": 0}
+        assert h["available"] + h["held"] == h["current_limit"] + h["drain_count"] - 1  # one hand-off pending
+        assert r == {"current_limit": 1, "available": 0, "held": 1, "drain_count": 0}
+        assert r["available"] + r["held"] == r["current_limit"] + r["drain_count"]       # exact once B ran
+        _assert_idle_conserved(sem)
+        assert sem._holds == {}

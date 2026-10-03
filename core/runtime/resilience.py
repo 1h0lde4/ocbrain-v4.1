@@ -78,11 +78,19 @@ class AdaptiveSemaphore:
     Slow responses -> Reduce limit. Fast responses -> Gradually increase limit.
 
     Permit conservation (FZ-04 invariant):
-        available + held == current_limit + drain_count
+        available + held + handoff == current_limit + drain_count
     where ``available`` is the underlying semaphore's free permits, ``held`` is
-    the number of live ``async with`` holders and ``drain_count`` is the number of
-    permits scheduled to be absorbed instead of released.  When idle
-    (``held == 0``) this reduces to ``available == current_limit + drain_count``.
+    the number of live ``async with`` holders, ``drain_count`` is the number of
+    permits scheduled to be absorbed instead of released, and ``handoff`` is the
+    number of permits that ``asyncio.Semaphore.release()`` has already handed to
+    a parked waiter which has not yet resumed to record its hold.  A hand-off
+    permit is in neither ``available`` nor ``held`` for that instant and
+    ``snapshot()`` cannot observe it, so a ``snapshot()`` read inside that window
+    sums ``handoff`` lower than the limit; the permit is counted again as soon as
+    the waiter runs, and nothing is lost.  Hence
+    ``available + held == current_limit + drain_count`` holds exactly whenever
+    no hand-off is pending -- in particular when idle (``held == 0`` and no
+    waiters), where it reduces to ``available == current_limit + drain_count``.
     A holder that exits for ANY reason (success, exception, cancellation,
     timeout) returns or absorbs exactly one permit. ``snapshot()`` exposes these
     numbers read-only.
@@ -130,7 +138,11 @@ class AdaptiveSemaphore:
         """Read-only permit accounting (see the conservation invariant above).
 
         ``available`` reads asyncio.Semaphore's internal counter (``_value``);
-        there is no public accessor for it.
+        there is no public accessor for it.  The numbers are an instantaneous
+        view: while a released permit is being handed to a parked waiter that has
+        not resumed yet, ``available + held`` reads lower by the number of
+        pending hand-offs (exact again once the waiter runs, and at every idle
+        point).
         """
         return {
             "current_limit": self.current_limit,
