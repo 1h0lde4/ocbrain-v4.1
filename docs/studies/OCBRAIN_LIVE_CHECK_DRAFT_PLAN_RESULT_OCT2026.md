@@ -5,19 +5,24 @@ containment; the disposition is Moncif's. Method: `OCBRAIN_LIVE_CHECK_DRAFT_PLAN
 
 > **Read first — limits.** 11 prompts, **one** model, **one** run. These are *observations*, not evidence of
 > general behavior across models, runs, or a populated memory store. The exact model identity could not be
-> recovered (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
+> fully recovered — only partially (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
 
 ## Provenance
 - **Run 1:** every call failed with `404 Not Found` at `/api/generate` (1–3 ms). `mistral` was installed, `llama3`
   was not — confirming the diagnosis in the runbook (a server answering, model not installed under that name).
 - **Run 2 (this record):** `mistral` removed, `llama3` installed. Console output supplied by Moncif in chat.
-- **Exact model identity: NOT RECOVERED.** The only identifier in the supplied output is the name the code asks
-  Ollama for, `llama3` (`Ollama(llama3)`). The tag, digest and quantization are unknown, and "llama3 via Ollama" is
-  **not sufficient to reproduce this run**: Ollama resolves a bare name to whatever its default tag was when the model
-  was pulled. Also not captured: `live.json`, `live.meta.txt` (repo commit, Python version), sampling settings.
-  To recover the identity after the fact (valid only if the installed model is unchanged since the run): `ollama list`
-  and `ollama show llama3` on the Codespace. Until `live.meta.txt` / `live.json` are supplied and committed, this
-  record stands as *name-only* evidence.
+- **Exact model identity: PARTIALLY RECOVERED.** The code asks Ollama for the name `llama3`
+  (`Ollama(llama3)`). Moncif later supplied the *tail* of `ollama show llama3`, run after the experiment (valid for
+  this run only if the installed model is unchanged since):
+  - the license header reads `META LLAMA 3 COMMUNITY LICENSE AGREEMENT` / `Meta Llama 3 Version Release Date:
+    April 18, 2024` — i.e. the **original Meta Llama 3 release (April 2024)**;
+  - parameters: stop tokens `<|start_header_id|>`, `<|end_header_id|>`, `<|eot_id|>` and `num_keep 24`
+    (the Llama 3 chat-template settings).
+  - **Still missing — and deliberately not assumed:** the parameter count (e.g. 8B vs 70B), the quantization, the
+    context length, the tag and the digest (the `Model` block of `ollama show` and the `ollama list` row were not
+    supplied). So the run is still **not fully reproducible**: "Llama 3 (April 2024), size/quantization unknown".
+  - Also not captured: `live.json`, `live.meta.txt` (repo commit, Python version), sampling settings.
+  - To close the gap: send the **complete** output of `ollama show llama3` and `ollama list`, or `live.meta.txt`.
 
 ## Is it valid evidence? (checked against the code, not assumed)
 | Check | Result |

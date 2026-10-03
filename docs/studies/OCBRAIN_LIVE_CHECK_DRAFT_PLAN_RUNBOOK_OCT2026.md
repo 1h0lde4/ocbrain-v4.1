@@ -51,8 +51,9 @@ python scripts/live_check_draft_plan.py --prompts /tmp/one.txt ; echo "exit=$?"
 # 4. The real run
 python scripts/live_check_draft_plan.py --json live.json | tee live.out.txt
 
-# 5. Record WHICH model/environment produced it (the JSON does not)
-{ date -u; git rev-parse HEAD; python --version; ollama list; } > live.meta.txt 2>&1
+# 5. Record WHICH model/environment produced it (the JSON does not). `ollama show` prints the Model block
+#    (architecture, parameters, quantization) FIRST -- capture all of it, not just the tail.
+{ date -u; git rev-parse HEAD; python --version; ollama list; ollama show llama3; } > live.meta.txt 2>&1
 ```
 Do **not** edit `config/*.toml`, commit anything, or enable `creative_content_anchor_enabled`.
 The harness itself only creates the git-ignored `.data/` directory; `git status` should stay clean. If it shows changes under
