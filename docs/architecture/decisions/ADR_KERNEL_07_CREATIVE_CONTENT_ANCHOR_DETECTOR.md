@@ -301,7 +301,9 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
   - **Containment options, none applied** — (A) `plan_steps=[]`; (B) drop both the plan and the echoed
     interpretation, leaving the question only; (C) cap the plan at three steps and fix its formatting.
     D-5 as decided says an ESCALATE *may* surface a question paired with the plan/intent, so (A) and (B)
-    stay inside it. The author's reading of the evidence favors (B). Disposition is Moncif's.
+    stay inside it. The author's reading of the evidence favors (B). The run refutes the hypothesis and shows what the
+    system does; it does **not** by itself establish that the behavior is undesirable or that (B) is the only
+    correct response — that is a product/architecture decision. Disposition is Moncif's.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
 

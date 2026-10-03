@@ -3,19 +3,28 @@
 **Status:** evidence record for ADR-KERNEL-07 §10.4. It does **not** accept the ADR, and it applies no
 containment; the disposition is Moncif's. Method: `OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RUNBOOK_OCT2026.md`.
 
+> **Read first — limits.** 11 prompts, **one** model, **one** run. These are *observations*, not evidence of
+> general behavior across models, runs, or a populated memory store. The exact model identity could not be
+> recovered (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
+
 ## Provenance
 - **Run 1:** every call failed with `404 Not Found` at `/api/generate` (1–3 ms). `mistral` was installed, `llama3`
   was not — confirming the diagnosis in the runbook (a server answering, model not installed under that name).
 - **Run 2 (this record):** `mistral` removed, `llama3` installed. Console output supplied by Moncif in chat.
-- **Not captured:** `live.json`, `live.meta.txt` (exact model tag/digest, repo commit, Python), sampling settings.
-  The harness JSON does not record the model; please keep those files with the run.
+- **Exact model identity: NOT RECOVERED.** The only identifier in the supplied output is the name the code asks
+  Ollama for, `llama3` (`Ollama(llama3)`). The tag, digest and quantization are unknown, and "llama3 via Ollama" is
+  **not sufficient to reproduce this run**: Ollama resolves a bare name to whatever its default tag was when the model
+  was pulled. Also not captured: `live.json`, `live.meta.txt` (repo commit, Python version), sampling settings.
+  To recover the identity after the fact (valid only if the installed model is unchanged since the run): `ollama list`
+  and `ollama show llama3` on the Codespace. Until `live.meta.txt` / `live.json` are supplied and committed, this
+  record stands as *name-only* evidence.
 
 ## Is it valid evidence? (checked against the code, not assumed)
 | Check | Result |
 |---|---|
 | Mode / harness verdict | `LIVE`; no "NOT EVIDENCE" banner; **no `degraded:` line in any of the 11 rows** |
 | Plans model-generated? | yes — every plan is multi-step; the decomposition fallback is a *single* step equal to the request |
-| Model calls | 22 logged = exactly 2 per request: **21 succeeded** (12.4–38.5 s each) and **1 failed** with `TimeoutError` at 60,138 ms. Calls run in order (interpret, then decompose, per request), and the FTS5 warning appears after 12 completed calls, i.e. at the start of request 7 — the only request containing a period — which corroborates that ordering. So the timed-out call was **request 1's interpretation call** (cold-start suspected, **unverified**). It cannot affect the steps (see next row), and request 1's 7-step plan shows its decomposition call succeeded |
+| Model calls | **22 attempts: 21 successful, 1 timeout** (= exactly 2 attempts per request; the attempts are not all completed calls). The 21 successes took 12.4–38.5 s each; the 1 failure was a `TimeoutError` at 60,138 ms. Calls run in order (interpret, then decompose, per request), and the FTS5 warning appears after 12 completed calls, i.e. at the start of request 7 — the only request containing a period — which corroborates that ordering. So the timed-out call was **request 1's interpretation call** (cold-start suspected, **unverified**). It cannot affect the steps (see next row), and request 1's 7-step plan shows its decomposition call succeeded |
 | Does the intent step matter here? | **No.** `structured_form["description"] = intent.raw_request` (`core/cognitive/intent.py:1090`): the plan steps are generated from the raw request, so `interpret_request()`'s own success does not affect what is measured. `interpretation == request` in every row is therefore **normal**, not a failure sign |
 | `FTS5 syntax error near "."` (once) | expected, unrelated: the only request with a period ("Write a 500 word story.") hit the pre-existing `_fts_escape()` gap |
 
@@ -57,9 +66,19 @@ carries no information here; **read the steps, not the label.**
 5. **The first five steps are the ones shown**, and in story plans they are exactly the content-presupposing ones
    (concept → outline with character arcs → character profiles); the generic edit/proofread steps are cut.
 
-**Answer to the narrow question — does exposing draft plan steps add useful context or introduce speculative
-assumptions? Neither, cleanly.** The steps add almost no context toward *what should it be about?*; what they
-introduce is *process/form* assumptions, not *premise* assumptions.
+## Two separate conclusions (do not merge them)
+**1. The hypothesis test — REFUTED.** I expected a single-step, "redundant" plan that merely restates the request.
+This run did not produce one: 0 of 11 plans were single-step (median 7 steps). That is all this experiment tests.
+
+**2. What the system actually does — observed, not judged.** With a request the detector flags as lacking content,
+the model still produces a multi-step generic workflow; it invents no concrete premise, but it fills the missing
+task structure with workflow and form assumptions (characters and backstories, a thesis with researched sources,
+chord progressions, "beta readers", a joke "database"). The steps add almost nothing toward *what should it be
+about?* — the question the response asks.
+
+**Not established: that this behavior is undesirable, or that any specific response to it is correct.** Whether a
+user is better served by seeing the plan, a shorter plan, or none is a product/architecture judgment. This run
+informs that judgment; it does not make it.
 
 ## What the user would actually see (shipped Option C response, fed with this run's real steps)
 ```
@@ -96,7 +115,9 @@ variance across runs, or any effect on user outcomes. My earlier expectation —
 | B | A **and** drop the echoed interpretation → **question only** | removes two lines of noise; the author's reading of this evidence favors it |
 | C | cap at 3 steps and fix the `; ` joining | keeps a (shorter) plan; the first three steps are the most content-presupposing |
 | D | keep as is | the plan does signal that missing content is self-generated, but the question already says so |
-D-5 as decided says an ESCALATE *may* surface a question paired with the plan/intent, so A and B stay inside it.
+The experiment **supports changing** the behavior but does not by itself prove that any one option is the only
+correct implementation — choosing among A–D is a product/architecture decision. D-5 as decided says an ESCALATE
+*may* surface a question paired with the plan/intent, so A and B stay inside it.
 Any of A–C also needs `tests/core/cognitive/test_creative_content_anchor.py` (`TestClarificationResponse`, the
 orchestrator "question and plan" test) updated. Independently of A–D, the question's example text should adapt to the
 artifact (separate, small change). Re-running the harness on a second model, or twice on this one, would address
