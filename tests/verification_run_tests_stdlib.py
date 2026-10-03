@@ -1,10 +1,15 @@
 import os
 import sys
 import unittest
+import ast
+import importlib
+import inspect
 import json
+import pkgutil
 from dataclasses import FrozenInstanceError, fields as dataclass_fields, replace as dataclass_replace
 from itertools import product
 from datetime import datetime, timezone
+from enum import Enum
 from typing import get_type_hints
 
 # Portable repo-root insertion, matching tests/conftest.py's own technique —
@@ -29,6 +34,9 @@ from core.verification.coverage import (
     ObservationCoverage,
 )
 from core.verification.absence import ObservationAbsenceState, ObservationAbsence
+import core.verification as _cv_pkg
+import core.verification.criterion_result as _cr_module
+from core.verification.criterion_result import CriterionAttemptState, CriterionResult
 from core.verification.construct import (
     VerificationConstruct, ConstructValidityStatus, ConstructValidity,
 )
@@ -3036,6 +3044,292 @@ class TestObservationAbsence(unittest.TestCase):
         self.assertEqual({f.name for f in dataclass_fields(ObservationAbsence)}, {"state", "surface", "inspected", "coverage_sufficient", "inspection_authorization"})
         with self.assertRaises(TypeError):
             _abs(coverage_sufficient=0.95)
+
+
+# ---------------------------------------------------------------------------
+# Batch 3C-A -- CriterionResult (criterion_result.py).  Process / outcome
+# results and failure_control are deliberately NOT part of 3C-A (blocked
+# pending architecture reconciliation).
+# ---------------------------------------------------------------------------
+
+_CR_FP = "fp-abc123"
+_CR_ALL_FAILURES = tuple(VerificationExecutionFailure)
+_CR_UNEVALUATED = (CriterionAttemptState.NOT_ATTEMPTED, CriterionAttemptState.BLOCKED)
+
+
+def _cr(state=CriterionAttemptState.ATTEMPTED, verdict=VerificationVerdict.VERIFIED, **over):
+    kwargs = dict(criterion_id="c1", rubric_fingerprint=_CR_FP, attempt_state=state, verdict=verdict)
+    kwargs.update(over)
+    return CriterionResult(**kwargs)
+
+
+def _cr_other_str_enum_values(owner):
+    found = {}
+    for info in pkgutil.iter_modules(_cv_pkg.__path__):
+        module = importlib.import_module("core.verification." + info.name)
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if cls is owner or cls.__module__ != module.__name__:
+                continue
+            if issubclass(cls, Enum) and issubclass(cls, str):
+                for member in cls:
+                    found.setdefault(member.value, []).append(cls.__name__ + "." + member.name)
+    return found
+
+
+class TestCriterionAttemptState(unittest.TestCase):
+    def test_has_exactly_three_states_and_no_skipped(self):
+        self.assertEqual({m.name for m in CriterionAttemptState}, {"NOT_ATTEMPTED", "BLOCKED", "ATTEMPTED"})
+        self.assertFalse(hasattr(CriterionAttemptState, "SKIPPED"))
+
+    def test_string_values_are_namespaced(self):
+        for member in CriterionAttemptState:
+            self.assertTrue(member.value.startswith("criterion_"))
+
+    def test_values_collide_with_no_other_string_enum_in_the_package(self):
+        others = _cr_other_str_enum_values(CriterionAttemptState)
+        # The scan must actually see the neighbouring enums, or this proves nothing.
+        self.assertIn("blocked", others)
+        self.assertIn("not_run", others)
+        self.assertIn("verified", others)
+        for member in CriterionAttemptState:
+            self.assertNotIn(member.value, others)
+
+    def test_no_member_equals_a_method_execution_state_or_a_verdict(self):
+        self.assertNotEqual(CriterionAttemptState.BLOCKED, MethodExecutionState.BLOCKED)
+        self.assertNotEqual(CriterionAttemptState.NOT_ATTEMPTED, MethodExecutionState.NOT_RUN)
+        self.assertNotEqual(CriterionAttemptState.ATTEMPTED, MethodExecutionState.EXECUTED)
+        for member in CriterionAttemptState:
+            for verdict in VerificationVerdict:
+                self.assertNotEqual(member, verdict)
+
+    def test_members_round_trip_by_value(self):
+        for member in CriterionAttemptState:
+            self.assertIs(CriterionAttemptState(json.loads(json.dumps(member.value))), member)
+
+
+class TestCriterionResult(unittest.TestCase):
+    def test_records_its_fields_and_defaults_optional_ones_to_nothing(self):
+        record = _cr()
+        self.assertEqual(record.criterion_id, "c1")
+        self.assertEqual(record.rubric_fingerprint, _CR_FP)
+        self.assertIs(record.attempt_state, CriterionAttemptState.ATTEMPTED)
+        self.assertIs(record.verdict, VerificationVerdict.VERIFIED)
+        self.assertIsNone(record.execution_failure)
+        self.assertEqual(record.finding_ids, ())
+
+    def test_is_immutable(self):
+        record = _cr()
+        with self.assertRaises(FrozenInstanceError):
+            record.verdict = VerificationVerdict.CONTRADICTED
+        with self.assertRaises(FrozenInstanceError):
+            record.attempt_state = CriterionAttemptState.BLOCKED
+
+    def test_blank_criterion_id_rejected(self):
+        for bad in ("", "   ", None, 7):
+            with self.assertRaises(ValueError):
+                _cr(criterion_id=bad)
+
+    def test_blank_rubric_fingerprint_rejected(self):
+        for bad in ("", "   ", None, 7):
+            with self.assertRaises(ValueError):
+                _cr(rubric_fingerprint=bad)
+
+    def test_attempt_state_must_be_a_criterion_attempt_state(self):
+        # Not a verdict, not a method execution state, not a bare string.
+        for bad in (VerificationVerdict.VERIFIED, MethodExecutionState.NOT_RUN, MethodExecutionState.EXECUTED,
+                    ConstructValidityStatus.SUPPORTED, "criterion_attempted", None, 1):
+            with self.assertRaises(TypeError):
+                _cr(state=bad, verdict=None)
+
+    def test_verdict_must_be_a_verification_verdict_or_none_in_every_state(self):
+        for state in CriterionAttemptState:
+            for bad in (FindingDisposition.SUPPORTS, MethodDisposition.CONCLUSIVE, ConstructValidityStatus.SUPPORTED,
+                        "verified", 1.0, True):
+                with self.assertRaises(TypeError):
+                    _cr(state=state, verdict=bad)
+
+    def test_an_attempted_criterion_accepts_every_verdict(self):
+        for verdict in VerificationVerdict:
+            self.assertIs(_cr(verdict=verdict).verdict, verdict)
+
+    def test_an_attempted_criterion_without_a_verdict_is_rejected(self):
+        with self.assertRaises(ValueError):
+            _cr(verdict=None)
+
+    def test_an_attempt_that_cannot_be_established_uses_a_fail_closed_verdict(self):
+        for verdict in (VerificationVerdict.INSUFFICIENT_EVIDENCE, VerificationVerdict.UNVERIFIABLE):
+            self.assertIs(_cr(verdict=verdict).attempt_state, CriterionAttemptState.ATTEMPTED)
+
+    def test_unevaluated_states_accept_none_and_reject_every_verdict(self):
+        for state in _CR_UNEVALUATED:
+            self.assertIsNone(_cr(state=state, verdict=None).verdict)
+            for verdict in VerificationVerdict:
+                with self.assertRaises(ValueError):
+                    _cr(state=state, verdict=verdict)
+
+    def test_a_verdict_must_be_stated_never_reached_by_omission(self):
+        for state in CriterionAttemptState:
+            with self.assertRaises(TypeError):
+                CriterionResult(criterion_id="c1", rubric_fingerprint=_CR_FP, attempt_state=state)
+
+    def test_an_unevaluated_record_cannot_be_promoted_to_attempted_without_a_verdict(self):
+        for state in _CR_UNEVALUATED:
+            with self.assertRaises(ValueError):
+                dataclass_replace(_cr(state=state, verdict=None), attempt_state=CriterionAttemptState.ATTEMPTED)
+
+    def test_an_attempted_verdict_cannot_be_carried_into_an_unevaluated_state_by_copying(self):
+        done = _cr(verdict=VerificationVerdict.VERIFIED)
+        for state in _CR_UNEVALUATED:
+            with self.assertRaises(ValueError):
+                dataclass_replace(done, attempt_state=state)
+
+    def test_a_blocked_criterion_can_be_restated_as_a_new_attempted_record(self):
+        blocked = _cr(state=CriterionAttemptState.BLOCKED, verdict=None)
+        done = dataclass_replace(blocked, attempt_state=CriterionAttemptState.ATTEMPTED, verdict=VerificationVerdict.INSUFFICIENT_EVIDENCE)
+        self.assertIsNone(blocked.verdict)
+        self.assertIs(blocked.attempt_state, CriterionAttemptState.BLOCKED)
+        self.assertIs(done.verdict, VerificationVerdict.INSUFFICIENT_EVIDENCE)
+
+    def test_an_execution_failure_is_accepted_on_an_attempted_unverifiable_result(self):
+        for failure in _CR_ALL_FAILURES:
+            record = _cr(verdict=VerificationVerdict.UNVERIFIABLE, execution_failure=failure)
+            self.assertIs(record.execution_failure, failure)
+
+    def test_a_verifier_crash_can_never_become_a_positive_or_any_other_verdict(self):
+        for failure in _CR_ALL_FAILURES:
+            for verdict in VerificationVerdict:
+                if verdict is VerificationVerdict.UNVERIFIABLE:
+                    continue
+                with self.assertRaises(ValueError):
+                    _cr(verdict=verdict, execution_failure=failure)
+
+    def test_an_execution_failure_cannot_sit_on_an_unevaluated_criterion(self):
+        for state in _CR_UNEVALUATED:
+            for failure in _CR_ALL_FAILURES:
+                with self.assertRaises(ValueError):
+                    _cr(state=state, verdict=None, execution_failure=failure)
+
+    def test_unverifiable_without_an_execution_failure_is_valid(self):
+        self.assertIsNone(_cr(verdict=VerificationVerdict.UNVERIFIABLE).execution_failure)
+
+    def test_execution_failure_must_be_a_verification_execution_failure(self):
+        for bad in ("timeout", MethodExecutionState.EXECUTION_FAILED, 1, True):
+            with self.assertRaises(TypeError):
+                _cr(verdict=VerificationVerdict.UNVERIFIABLE, execution_failure=bad)
+
+    def test_finding_ids_are_optional_in_every_state_and_for_every_verdict(self):
+        for verdict in VerificationVerdict:
+            self.assertEqual(_cr(verdict=verdict).finding_ids, ())
+            self.assertEqual(_cr(verdict=verdict, finding_ids=("f1", "f2")).finding_ids, ("f1", "f2"))
+        for state in _CR_UNEVALUATED:
+            self.assertEqual(_cr(state=state, verdict=None).finding_ids, ())
+            self.assertEqual(_cr(state=state, verdict=None, finding_ids=("f1",)).finding_ids, ("f1",))
+
+    def test_finding_ids_must_be_a_tuple_of_non_blank_strings(self):
+        for bad in (["f1"], {"f1"}, "f1", None):
+            with self.assertRaises(TypeError):
+                _cr(finding_ids=bad)
+        for bad in ((1,), (None,), ("f1", 2)):
+            with self.assertRaises(TypeError):
+                _cr(finding_ids=bad)
+        for bad in (("",), ("f1", "   ")):
+            with self.assertRaises(ValueError):
+                _cr(finding_ids=bad)
+
+
+class TestCriterionResultBoundaries(unittest.TestCase):
+    def test_has_exactly_the_approved_fields(self):
+        self.assertEqual({f.name for f in dataclass_fields(CriterionResult)}, {"criterion_id", "rubric_fingerprint", "attempt_state", "verdict", "execution_failure", "finding_ids"})
+
+    def test_has_no_score_confidence_assurance_coverage_provenance_or_identity_field(self):
+        for extra in ("score", "confidence", "uncertainty", "assurance", "coverage", "stability", "truth_status",
+                      "decision", "aggregate", "weight", "produced_by", "derived_from", "receipt_id",
+                      "supersedes_receipt_id", "execution_id", "attempt_id", "verification_id", "failure_control"):
+            with self.assertRaises(TypeError):
+                _cr(**{extra: 1})
+
+    def test_field_types_reference_none_of_the_other_layers(self):
+        hints = get_type_hints(CriterionResult)
+        self.assertEqual(len(hints), 6)
+        rendered = " ".join(str(t) for t in hints.values())
+        for banned in ("Coverage", "VerificationAssurance", "VerificationReceipt", "VerificationResult", "Rubric",
+                       "ConstructValidity", "Critique"):
+            self.assertNotIn(banned, rendered)
+
+    def test_module_depends_on_nothing_in_the_package_but_identity_and_verdict(self):
+        tree = ast.parse(inspect.getsource(_cr_module))
+        relative = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level == 1}
+        absolute = [n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level == 0 and (n.module or "").startswith("core")]
+        plain = [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
+        self.assertEqual(relative, {"identity", "verdict"})
+        self.assertEqual(absolute, [])
+        self.assertEqual(plain, [])
+
+    def test_exposes_no_behaviour_that_could_aggregate_or_compute_a_verdict(self):
+        public = [n for n in dir(CriterionResult) if not n.startswith("_") and callable(getattr(CriterionResult, n))]
+        properties = [n for n, v in vars(CriterionResult).items() if isinstance(v, property)]
+        self.assertEqual(public, [])
+        self.assertEqual(properties, [])
+
+    def test_each_verdict_is_stored_exactly_as_given_whatever_else_is_stored(self):
+        records = [_cr(verdict=v, criterion_id="c" + str(i)) for i, v in enumerate(VerificationVerdict)]
+        for record, verdict in zip(records, VerificationVerdict):
+            self.assertIs(record.verdict, verdict)
+
+    def test_a_task_level_verdict_and_criterion_verdicts_are_independent_axes(self):
+        for task_verdict in VerificationVerdict:
+            task_result = _c3_result(verdict=task_verdict, confidence=0.5)
+            for criterion_verdict in VerificationVerdict:
+                criterion = _cr(verdict=criterion_verdict)
+                self.assertIs(task_result.verdict, task_verdict)
+                self.assertIs(criterion.verdict, criterion_verdict)
+
+    def test_the_existing_result_and_receipt_types_are_unchanged_and_carry_no_criterion_result(self):
+        self.assertEqual({f.name for f in dataclass_fields(VerificationResult)}, {"verification_id", "task_id", "execution_id", "attempt_id", "verdict", "assurance", "confidence", "execution_failure"})
+        for contract in (VerificationResult, VerificationAssurance, VerificationReceipt):
+            self.assertFalse(any("criterion" in f.name.lower() for f in dataclass_fields(contract)))
+
+    def test_results_compose_into_collections_without_collapsing_or_owning_them(self):
+        verified = _cr(criterion_id="c1")
+        blocked = _cr(criterion_id="c2", state=CriterionAttemptState.BLOCKED, verdict=None)
+        crashed = _cr(criterion_id="c3", verdict=VerificationVerdict.UNVERIFIABLE, execution_failure=VerificationExecutionFailure.VERIFIER_CRASH)
+        bag = frozenset({verified, blocked, crashed, _cr(criterion_id="c1")})
+        by_id = {r.criterion_id: r for r in bag}
+        self.assertEqual(len(bag), 3)
+        self.assertIs(by_id["c1"].verdict, VerificationVerdict.VERIFIED)
+        self.assertIsNone(by_id["c2"].verdict)
+        self.assertIs(by_id["c3"].verdict, VerificationVerdict.UNVERIFIABLE)
+        self.assertEqual({r.attempt_state for r in bag}, {CriterionAttemptState.ATTEMPTED, CriterionAttemptState.BLOCKED})
+
+    def test_the_same_criterion_under_different_rubric_fingerprints_is_not_the_same_result(self):
+        first = _cr(rubric_fingerprint="fp-1")
+        second = _cr(rubric_fingerprint="fp-2")
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, _cr(rubric_fingerprint="fp-1"))
+
+
+class TestCriterionResultAndRubricIdentity(unittest.TestCase):
+    def test_a_result_is_linked_to_a_rubric_only_by_fingerprint_value(self):
+        rubric = _c3_rubric()
+        record = _cr(rubric_fingerprint=rubric.fingerprint)
+        self.assertEqual(record.rubric_fingerprint, rubric.fingerprint)
+        self.assertFalse(any(isinstance(v, Rubric) for v in vars(record).values()))
+
+    def test_neither_type_holds_a_reference_to_the_other(self):
+        rubric_hints = get_type_hints(Rubric)
+        result_hints = get_type_hints(CriterionResult)
+        self.assertFalse(any("CriterionResult" in str(t) for t in rubric_hints.values()))
+        self.assertFalse(any("Rubric" in str(t) for t in result_hints.values()))
+
+    def test_recording_results_leaves_a_locked_rubric_and_its_identity_unchanged(self):
+        rubric = _c3_rubric()
+        locked = (rubric.advance_to(RubricLockState.VALIDATED, criteria=[_c3_criterion("c1")])
+                  .advance_to(RubricLockState.COMPILED).advance_to(RubricLockState.LOCKED))
+        snapshot = (locked, hash(locked), locked.fingerprint, locked.lock_state, locked.criteria)
+        for state in CriterionAttemptState:
+            verdict = VerificationVerdict.VERIFIED if state is CriterionAttemptState.ATTEMPTED else None
+            _cr(state=state, verdict=verdict, rubric_fingerprint=locked.fingerprint)
+        self.assertEqual((locked, hash(locked), locked.fingerprint, locked.lock_state, locked.criteria), snapshot)
 
 
 if __name__ == "__main__":
