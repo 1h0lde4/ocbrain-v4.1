@@ -60,12 +60,37 @@ def _send_and_recv(port: int, data: bytes, recv_len: int = 4096) -> bytes:
     return resp
 
 
+def _recv_to_eof(s: socket.socket, limit: int = 1 << 20) -> bytes:
+    """Read until the peer closes (the proxy relays the upstream's close as a
+    half-close) or `limit` bytes. One recv() is NOT a whole response: the
+    upstream writes headers and body separately and the proxy relays each
+    chunk as it arrives, so a single recv() can return only the headers.
+    The socket's timeout bounds a stall."""
+    chunks: list[bytes] = []
+    total = 0
+    while total < limit:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
+
+
+def _send_and_recv_all(port: int, data: bytes) -> bytes:
+    s = socket.create_connection(("127.0.0.1", port), timeout=3)
+    s.sendall(data)
+    resp = _recv_to_eof(s)
+    s.close()
+    return resp
+
+
 def test_plain_http_to_allowed_host_is_forwarded(proxy, target_server):
     req = (
         f"GET http://127.0.0.1:{target_server}/ HTTP/1.1\r\n"
         f"Host: 127.0.0.1:{target_server}\r\nConnection: close\r\n\r\n"
     ).encode()
-    resp = _send_and_recv(proxy.port, req)
+    resp = _send_and_recv_all(proxy.port, req)
     assert b"200 OK" in resp
     assert resp.endswith(b"ok")
 
@@ -77,7 +102,7 @@ def test_connect_to_allowed_host_tunnels_real_data(proxy, target_server):
     assert b"200 Connection Established" in connect_resp
 
     s.sendall(f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{target_server}\r\nConnection: close\r\n\r\n".encode())
-    tunneled = s.recv(4096)
+    tunneled = _recv_to_eof(s)
     s.close()
     assert b"200 OK" in tunneled
     assert tunneled.endswith(b"ok")
