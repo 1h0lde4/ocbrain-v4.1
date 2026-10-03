@@ -123,6 +123,7 @@ Quoted wording is exact where wording matters; otherwise a faithful summary. Lat
 | S12 | **Resume prompt (2026-10-03).** Resume on the same branch; "Respond in English only." Authority order: `PROJECT_INSTRUCTIONS.md` (§18.4.9), this handoff ("a transfer record, not an authority"), v3-final ("frozen architecture; v2-frozen is history only"). **Step 0, no code changes:** fetch; confirm transfer commit `6428f2e`, that `ef79856` is its child, local HEAD = remote, `main` at `4ab5345`; check the tree; re-run the 385 tests, mypy, the stdlib mirror; explain "13" vs "9" and classify each failure per §16.4; use "no new failures relative to the audited baseline" "only if the comparison actually supports it"; "If the repo contradicts the handoff, correct the handoff, report the mismatch and stop". **Standing constraints:** D-01..D-24; "Do not invent ordinal orderings or vocabularies. Check for an existing authoritative contract first. Label every gap-filling choice IMPLEMENTATION JUDGMENT"; out of scope: runtime integration, C-MoE, verifier stability, scoring/confidence, provenance/lineage, policy precedence, execution-identity infrastructure, G8, unrelated fixes. "Do NOT push, merge main, rewrite history or force-push. The main divergence (89 behind / 46 ahead, KNOWN_ISSUES.md conflict) is a separate decision for me." The pasted GitHub token "is treated as compromised and is not stored anywhere"; if a push is later authorized: fetch first, credentials by environment variable or one-off URL, never persisted in `.git/config`. "Do not rewrite" `dfbeffb`'s "64 tests" message (true count 66). Appendix A is a faithful extraction, not verbatim. **Task: "BATCH 3C SCOPE PROPOSAL ONLY (CriterionResult + process and outcome results)"** — "No code and no commits", nine-step packet through the compliance matrix, then stop for approval; content: study with [FACT]/[ARCH]/[AUDIT]/[INFER]/[REC] tags, existing-code audit, proposed frozen shape and what each type must NOT contain, explicit deferrals, test plan, open questions. | Step 0 and the proposal were delivered; see Update 2 in sections 6, 11, 13 |
 | S13 | **Disposition of the 3C proposal.** "I would **not approve the whole proposed 3C implementation as written**"; split it. **3C-A (`CriterionResult`) — approve after a few corrections:** (1) "Do not allow 'attempted but no verdict'": `NOT_ATTEMPTED → no verdict`, `BLOCKED → no verdict`, `ATTEMPTED → must have a VerificationVerdict`; an attempt that cannot be established uses an existing fail-closed verdict (e.g. `INSUFFICIENT_EVIDENCE`, `UNVERIFIABLE`). (2) "Do not invent 'SKIPPED'." (3) "`CriterionResult` must remain a per-criterion result, not a mini aggregation engine" (no AND/OR, majority, weighted averages, worst-of); "It stores the result produced by a later layer." (4) `rubric_fingerprint` is defensible but must be labeled `IMPLEMENTATION JUDGMENT`. (5) "Do not require `finding_ids` unless source evidence supports it." Added invariant: "`CriterionResult` must be composable into future coverage/aggregation/VerifiedState views, but must not perform or own those aggregations itself." **3C-B (process/outcome) — "do not implement yet":** v1 §20 uses `FAILED`, which is not in `VerificationVerdict`, and it "cannot be silently 'fixed' by mapping" to `CONTRADICTED` or `UNSUPPORTED` ("not necessarily equivalent semantics"); `failure_control` ownership "is not sufficiently established" (the source calls it an "orthogonal verification finding"). Correct conclusion about v3: "V3 does not independently specify the 3C result contracts. V1/V2 contain the relevant semantics. The exact implementation shape remains unresolved." Keep out of 3C: `VerifiedState`, `CoverageResult`, continuous checkpoint verification, C-MoE integration (and `VerificationRun/Step/Trace`, `DecisionTrace`, aggregation, events, escalation). | Batch 3C-A implemented (Update 2); 3C-B blocked |
 | S14 | **Disposition of the 3C-A checkpoint.** `NOT_APPLICABLE` under `ATTEMPTED`: "accept, provisionally and explicitly"; do not add another axis. Tracker row 10's rejection of reusing `VerificationResult` is "well-founded"; the `MethodExecutionState` correction "should stay"; the `INCONCLUSIVE` collision stays "a separate pre-existing finding". Before calling 3C-A closed: an independent adversarial review that "challenge[s] these invariants rather than merely reread the implementation" — state machine (attempt_state × verdict × execution_failure), `NOT_APPLICABLE`, failure semantics ("the one I would scrutinize most": "If it is an implementation judgment, it should remain labeled as such rather than silently becoming constitutional behavior"), findings, fingerprint ("genuinely part of criterion-result identity, or only useful provenance metadata?"), aggregation boundary, mirror parity ("behavior rather than merely test count"), documentation. "I would update handoff.md now" with the four outstanding corrections. 3C-B: "Keep it completely untouched"; next is "a source-reconciliation batch, not an implementation batch" resolving only what `FAILED` means in the frozen architecture, who owns `failure_control`, and what authority v1 §20 has — "No placeholder enum, no speculative owner, no guessed authority model." Sequence: "3C-A → independent adversarial review → resolve/document review findings → close 3C-A → source-reconciliation study for 3C-B → only then design 3C-B." "I would not change the 3C-A code merely to 'perfect' it further unless the independent review finds a concrete architectural contradiction." | Treated as binding (the user phrases dispositions as "I would …"). Handoff updated (this file); a docstring-only label change was made under the failure-semantics instruction (D-29, D-34) |
+| S15 | "You are authorised to push to repo" (2026-10-03). | The work branch `feature/verification-critic-evidence-phase-c` was pushed after `git fetch`: fast-forward `ef79856..d40f000`, no force, `main` not touched. The credential was supplied as a one-off `http.extraHeader` for that command only and was not persisted (checked: nothing in `.git/config`). Remote verified with `git ls-remote`. A status-only follow-up commit records this and is pushed the same way. The authorization is **not standing** |
 
 ---
 
@@ -164,12 +165,12 @@ Runtime integration, `EvaluatorWorker`/`WorkflowRuntime` integration, C-MoE, `Ve
 | R11 | `OBSERVED_ABSENT` gate tested both directions | S10 | VERIFIED | `TestObservationAbsence`; 28 mutants, 27 caught, 1 equivalent | |
 | R12 | Keep work local until asked; separate commits | S9/S10 | VERIFIED | Pushed only on explicit instruction (S4, S6/S7, S11) | |
 | R13 | English only | S8 | VERIFIED | | |
-| R14 | Token must be rotated before further pushes | S5 | **OPEN** | The same token still worked on every push through S11 | Not recorded here; user action required |
+| R14 | Token must be rotated before further pushes | S5 | **OPEN** | The same token still worked on every push through S11 and again for the 2026-10-03 push (S15; taken from the user's claude.ai preferences, passed as a one-off header, not stored here) | User action required: revoke and rotate it, and remove it from the preferences |
 | R15 | Next batches: 3C (`CriterionResult` + process/outcome results) | S7/S9 | IN PROGRESS | [corrected 2026-10-03] Scope proposed (S12), split by S13 into R19 (3C-A) and R20 (3C-B) | |
 | R16 | `VerificationObservation` | S10 | DEFERRED | Needs a definition from the user | |
 | R17 | G8 hardening debt | S5 | DEFERRED | Tracker §9 | Not registered in `KNOWN_ISSUES.md` (see 15) |
 | R18 | Do not merge into `main` | S7 | VERIFIED (not merged) | `origin/main` untouched | |
-| R19 | Batch 3C-A: `CriterionResult` exactly as approved (S13) | S13 | IMPLEMENTED (self-verified only; independent review pending) | Local commits `4c93878`, `99f3acd`, `a0b9da5`; section 13 Update 2 | Not closed (R27) |
+| R19 | Batch 3C-A: `CriterionResult` exactly as approved (S13) | S13 | IMPLEMENTED (self-verified only; independent review pending) | Commits `4c93878`, `99f3acd`, `a0b9da5` (pushed 2026-10-03); section 13 Update 2 | Not closed (R27) |
 | R20 | Batch 3C-B: no code, no placeholder types | S13/S14 | BLOCKED (no code exists) | Tracker §9; `grep` finds no `ProcessVerificationResult`/`OutcomeVerificationResult`/`FailureControl` in code | Needs the source-reconciliation study (R29) |
 | R21 | ATTEMPTED requires a verdict; NOT_ATTEMPTED/BLOCKED carry none; no SKIPPED | S13 | IMPLEMENTED (self-verified) | Oracle over 165 combinations, 0 mismatches; mutants M01–M04, M19 caught | |
 | R22 | `CriterionResult` computes nothing and is composable by later layers | S13 | IMPLEMENTED (self-verified) | No public callables/properties (tested); imports only `identity` and `verdict` (tested); mutants M20, M22, M27 caught; throwaway higher-level view composed results | |
@@ -180,7 +181,7 @@ Runtime integration, `EvaluatorWorker`/`WorkflowRuntime` integration, C-MoE, `Ve
 | R27 | Independent adversarial review of 3C-A across the eight areas before closure | S14 | OPEN | Tracker §9 "Closure conditions" | Cannot be done by the implementer; evidence gathered so far is preparation only |
 | R28 | Update `handoff.md` with the four corrections | S14 | IMPLEMENTED (this update) | Section 11, 13, 14 Update 2 and in-place corrections | |
 | R29 | Source-reconciliation study for 3C-B: meaning of `FAILED`, owner of `failure_control`, authority of v1 §20 | S14 | OPEN (next after R27) | Tracker §9 | No code; no placeholder enum, owner or authority model |
-| R30 | Do not push, merge `main`, rewrite history or force-push in this session | S12 | VERIFIED | Remote branch still `ef79856` (fetch); `main` `4ab5345`; branch 0 behind / ahead only by local commits | Main divergence is the user's separate decision |
+| R30 | Do not push, merge `main`, rewrite history or force-push | S12 (push authorized later by S15) | VERIFIED | Until S15 nothing was pushed (remote `ef79856`). After S15 only the work branch was pushed: fast-forward, no force; `main` untouched by this session; no history rewritten | The `main` divergence remains the user's separate decision (now 91 / 51, one `KNOWN_ISSUES.md` conflict) |
 
 ---
 
@@ -258,22 +259,24 @@ Commits since the audited baseline `ead305d` (oldest first):
 
 Commit-message correction: `dfbeffb`'s message says "64 tests". The real number is **33 tests per file (385 − 352), 66 across the two files**. It is already pushed, so it was not amended. (3A's "30 tests" means 30 per file.)
 
-### Update 2 (2026-10-03) — local checkpoint, NOT pushed
+### Update 2 (2026-10-03) — checkpoint, pushed and verified
 
-- Remote branch `origin/feature/verification-critic-evidence-phase-c`: still `ef79856` (verified by `git fetch`). `main`: `4ab5345`. Divergence from `main` at `ef79856` is 89 behind / 47 ahead; it was 89/46 at `6428f2e` — the extra commit is the handoff commit itself, so the "46" in this file refers to the transfer commit.
-- New commits on top of `ef79856`, all **local only** (oldest first):
+- At resume the remote branch was `ef79856` (verified by `git fetch`) and `main` was `4ab5345`; divergence from `main` at `ef79856` was 89 behind / 47 ahead (89/46 at `6428f2e`; the extra commit is the handoff commit itself, so the "46" in the version-1 text refers to the transfer commit).
+- **`main` moved on its own, not by this session:** `4ab5345` → `69df55f`, two docs commits (PR #47, "register DEBT-039 and update DEBT-021"); only `KNOWN_ISSUES.md` changed (3 lines); no Verification path was touched. Branch vs `main` is now **91 only in `main`, 51 only in the branch**. A read-only `git merge-tree --write-tree` dry run of `origin/main` with the pushed branch reports **one conflict, in `KNOWN_ISSUES.md`** (docs), as before.
+- New commits on top of `ef79856`, **pushed 2026-10-03** (oldest first):
 
 | SHA (at time of writing) | Subject | Notes |
 |---|---|---|
 | `4c93878` | Implement Batch 3C-A: CriterionResult and CriterionAttemptState | Code + 39 tests in each test file |
 | `99f3acd` | docs: record Batch 3C-A in the Phase C tracker; block 3C-B | Tracker only |
 | `a0b9da5` | docs: label the crash rule as implementation judgment; add 3C-A closure conditions | Docstrings in `criterion_result.py` + tracker; the AST is identical with docstrings stripped |
-| (the commit that adds this Update 2) | docs: update the handoff for Batch 3C-A | Find it with `git log -1 -- handoff.md` |
+| `d40f000` | docs: update the handoff for Batch 3C-A (handoff version 2) | The handoff commit for Update 2; **verified on the remote** |
+| (follow-up) | docs: record the push of Batch 3C-A in the handoff | Status-only; find it with `git log -1 -- handoff.md` |
 
 - Patches: the series is exported with `git format-patch ef79856..HEAD` into `/mnt/user-data/outputs/` (outside the repository; regenerate it from the branch if the sandbox is gone). A series applies cleanly onto `ef79856` with `git am`; the tree is identical to the local branch.
-- Remote push status: **not pushed**, by the user's instruction (S12). Remote verification: not applicable.
+- Remote push status: **pushed** on the user's explicit authorization (S15): `ef79856..d40f000`, fast-forward, no force. Remote verification: `git ls-remote origin refs/heads/feature/verification-critic-evidence-phase-c` returned `d40f000`, equal to local HEAD, and `git merge-base --is-ancestor d40f000 origin/feature/verification-critic-evidence-phase-c` is true. The status-only follow-up commit is pushed the same way.
 - Working tree: clean at every commit. After every full-suite run the four rewritten tracked files were restored (`git checkout -- data config`).
-- **Risk:** the sandbox resets between tasks. Until the user applies the patches or authorizes a push, the 3C-A work exists only in this sandbox and in the exported patches.
+- Risk (resolved 2026-10-03): the work was local-only until the push above; the patches are no longer needed for transfer.
 
 ---
 
@@ -372,6 +375,7 @@ Artifacts outside the repo: patch copies in `/mnt/user-data/outputs/verification
 | D-34 | Do not change 3C-A code merely to perfect it; only a concrete architectural contradiction found by the independent review reopens it. (A docstring-only relabel was made under the S14 failure-semantics instruction; behavior is unchanged.) | ACCEPTED | User (S14) | `a0b9da5`: AST identical with docstrings stripped | — |
 | D-35 | The pre-existing `str`-enum value collision (`MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE`; `unknown` also shared) stays a separate finding, out of 3C | ACCEPTED | User (S14) | Tracker §9 deferral table | A dedicated fix batch |
 | D-36 | v3 "does not independently specify the 3C result contracts"; v1/v2 hold the semantics (v1 §20 stays authoritative); the exact shape is unresolved | ACCEPTED | User (S13) | v3 preserves earlier architecture by reference | The 3C-B reconciliation |
+| D-37 | Push the work branch (fast-forward, no force), supplying the credential per command and never persisting it | IMPLEMENTED | User (S15; the conditions came from S12) | `git ls-remote` = `d40f000` = local HEAD; nothing in `.git/config` | One-time authorization; each later push needs a fresh instruction |
 
 ---
 
@@ -474,6 +478,8 @@ Batch 3C-A:
 - Patches: `git format-patch ef79856..HEAD`; applied with `git am` onto a detached worktree at `ef79856` → clean, 424 passed, tree identical to the local branch.
 - `a0b9da5` (docstrings and tracker): AST identical with docstrings stripped (script in Appendix B); 424/424, mypy clean. The broader suite was **not** re-run after `a0b9da5` or this handoff update (documentation only).
 
+- Push (2026-10-03, S15): `git fetch` first; fast-forward confirmed (`git merge-base --is-ancestor origin/<branch> HEAD`); `git push origin HEAD:refs/heads/feature/verification-critic-evidence-phase-c` with a one-off `http.extraHeader` (no URL token, no config) → `ef79856..d40f000`; afterwards `git config --get-regexp 'extraheader|credential'` and `.git/config` held nothing; `git ls-remote` (no credentials) → branch `d40f000`, `main` `69df55f`; `git fetch` then remote branch == local HEAD.
+
 Limitations: self-verification only (the independent review is open); the 12 `chromadb`-dependent tests were not run with `chromadb`; mirror parity is shown by derivation (the converter is validated on 347 pre-existing mirror lines with 0 differences) and by both suites passing, not by an independent re-implementation; the mutation set covers the rules listed above, not every line.
 
 ---
@@ -489,7 +495,7 @@ Limitations: self-verification only (the independent review is open); the 12 `ch
 ### Update 2 (2026-10-03) — environment
 
 - The sandbox was **fresh** on resume (no installed tools). Reinstall with `pip install --break-system-packages pytest pytest-asyncio pytest-mock mypy datasketch fastapi httpx aiohttp pydantic scipy rich PyYAML trafilatura aiofiles beautifulsoup4 click feedparser requests tomli tomli-w "uvicorn[standard]"` — **without** `chromadb` and `sentence-transformers`, which is the origin of the 12 environmental failures. Versions seen: Python 3.12.3, pytest 9.1.1, pytest-asyncio 1.4.0, pytest-mock 3.16.0, **mypy 2.4.0** (version 1 recorded 2.3.1; the results are the same).
-- Network: `git clone` and `git fetch` of the public repo work without credentials. The user's token was **not** used in this session and is not stored; at resume it was still visible in the user's claude.ai preferences (R14 remains open).
+- Network: `git clone` and `git fetch` of the public repo work without credentials. The user's token was used **once**, on the user's explicit authorization (S15), as a one-off `http.extraHeader` for the push; it is not stored here and nothing was written to `.git/config`. It was still visible in the user's claude.ai preferences, and it still authenticated, so R14 remains open (revoke, rotate, and remove it from the preferences).
 - Never run a suite concurrently with another, and keep the string `sleep 50` out of command lines that run beside the suite (section 11).
 - Scratch tooling (`mkmirror.py`, `mutate.py`, the oracle/parity/AST checks) lived in `/home/claude/tools` outside the repository; it is reproduced in Appendix B.
 
@@ -499,7 +505,7 @@ Limitations: self-verification only (the independent review is open); the 12 `ch
 
 | Item | Evidence | Options | Disposition | May work continue? |
 |---|---|---|---|---|
-| Token exposure (R14) | Same token worked at the last push; still visible in the user's claude.ai preferences at resume (2026-10-03), not used and not stored here | User revokes and rotates, and removes it from preferences | OPEN, user action | Yes, but no pushes without explicit instruction |
+| Token exposure (R14) | Same token worked at the last push; still visible in the user's claude.ai preferences at resume (2026-10-03); used once, with authorization (S15), as a one-off header for the push; not stored here | User revokes and rotates, and removes it from preferences | OPEN, user action | Yes, but no pushes without explicit instruction |
 | 3C scope | [corrected 2026-10-03] Proposed and split (S13): 3C-A implemented locally, 3C-B blocked | See the Update 2 rows below | SUPERSEDED | Yes |
 | `VerificationObservation` undefined | Only a name in the v1 contract list | User defines it, or it stays deferred | DEFERRED | Yes |
 | v1 §15 evidence metadata placement | No authoritative vocabulary | Extend `EvidenceItem` or add a companion, after the consuming layer exists | DEFERRED | Yes |
@@ -507,14 +513,14 @@ Limitations: self-verification only (the independent review is open); the 12 `ch
 | Definition of "sufficient" coverage | Architecture silent | Keep producer-declared boolean | DEFERRED | Yes |
 | `VerificationAssurance.coverage` ↔ `VerificationCoverage` relation | Architecture silent | Leave unlinked | DEFERRED | Yes |
 | G8 hardening debt | Tracker §9 | Dedicated hardening pass | DEFERRED | Yes |
-| Merging with `main` | 89 behind, 46 ahead, one docs conflict in `KNOWN_ISSUES.md` | Decide merge path, register debts with non-colliding ids, re-run suites | NOT AUTHORIZED | Yes |
+| Merging with `main` | [updated 2026-10-03] 91 behind, 51 ahead (was 89/46); `main` gained two docs commits (DEBT-039, DEBT-021), only `KNOWN_ISSUES.md` changed; still one docs conflict in `KNOWN_ISSUES.md` | Decide merge path, register debts with non-colliding ids, re-run suites | NOT AUTHORIZED | Yes |
 | The 13 shared failures | [corrected 2026-10-03] Causes established: 12 × `ModuleNotFoundError: chromadb`, 1 × known CTX-AUTH-001 test (section 11) | Install `chromadb<1.0` and re-run to confirm the 12 pass | RESOLVED as to cause; the 12 remain unverified with `chromadb` | Yes |
 | Three ADRs added on `main` | Not read | Read before 3C/provenance-related work | OPEN | Yes |
 | Invisible format characters count as non-blank | Same `str.strip()` rule everywhere in the package | Package-wide decision | Known limitation | Yes |
 | **Crash rule is judgment, not mandated** (`execution_failure` ⇒ ATTEMPTED + UNVERIFIABLE) | Architecture: a crash never becomes a pass; "a crash is `FAILED`"; UNVERIFIABLE is "not a verifier failure" (v1 Self-Review Pass 3, v1 §23, v2 Review C). Code inherits the mapping from `verdict.py`, which cites no source | (a) keep and label — consistent with `VerificationResult`; (b) weaken to "never positive", which needs a definition of "positive" (itself a judgment); (c) drop `execution_failure` from `CriterionResult` until `FAILED` is reconciled | OPEN DECISION (reviewer/user); labeled; code unchanged | Yes; it must be decided or explicitly carried before 3C-A is closed |
 | `FAILED`, `failure_control` ownership, authority of v1 §20 | `FAILED` is not in v1 §25; `failure_control` is an "orthogonal verification finding"; v3 incorporates earlier architecture by reference | Source-reconciliation study (no code) | BLOCKED (3C-B) | Yes, for everything except 3C-B; no placeholder types |
 | Independent adversarial review of 3C-A | Only implementer-produced evidence exists | A reviewer other than the implementer challenges the eight areas in tracker §9 | OPEN | The next step |
-| Local-only commits; sandbox resets | Remote is still `ef79856` | The user applies the patches or authorizes a push | OPEN | Yes |
+| Local-only commits; sandbox resets | [corrected 2026-10-03] Pushed on authorization (S15); remote verified at `d40f000` | — | RESOLVED | Yes |
 | 12 `chromadb`-dependent tests (some security-relevant: `TestA7SystemController`, `test_module_factory_security`) never ran here | `ModuleNotFoundError` | Install `chromadb<1.0` in a full environment | OPEN, optional | Yes |
 | Pre-existing `str`-enum value collisions in `core/verification` | `MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE`; `unknown` shared | Namespace the values in a dedicated batch | DEFERRED | Yes |
 | `CoverageResult` (v1 §42) has no tracker row | Tracker row scan | Add a row on a user decision | OPEN, minor | Yes |
@@ -554,13 +560,13 @@ Update 2 references: v1 "Self-Review — Pass 3 (adversarial)" (crash is `FAILED
 5. **Close 3C-A** in the tracker (status change only after steps 2–4).
 6. **Source-reconciliation study for 3C-B**, no code: what `FAILED` means in the frozen architecture, who owns `failure_control`, what authority v1 §20 has. No placeholder enum, speculative owner or guessed authority model (D-33).
 7. **Only then design 3C-B**, with a scope proposal and approval first.
-8. Items 4–6 of the version-1 list (later clusters, before any merge, G8 hardening) are unchanged. Applying the patches or pushing needs the user's explicit instruction.
+8. Items 4–6 of the version-1 list (later clusters, before any merge, G8 hardening) are unchanged. Pushing needs the user's explicit instruction each time (given on 2026-10-03 for the 3C-A work; not standing).
 
 ---
 
 ## 18. Resume Instructions
 
-> **[Update 2, 2026-10-03]** The remote branch tip is still `ef79856`. The 3C-A work exists only as local commits in the previous sandbox and as exported patches (`git format-patch ef79856..HEAD`). Resuming from the remote alone gives the version-1 state (385 tests); apply the patches with `git am` to reach the Update 2 state (424 / 424 / mypy clean on 28 files). The counts in steps 2 and 4 below describe `ef79856`.
+> **[Update 2, 2026-10-03]** The 3C-A work is on the remote branch (pushed 2026-10-03 and verified; tip `d40f000` plus a status-only follow-up commit). A fresh checkout gives the Update 2 state: 424 tests / 424 mirror / mypy clean on 28 files. The counts in steps 2 and 4 below describe `ef79856` (version 1).
 
 First actions in a fresh session:
 1. Read `PROJECT_INSTRUCTIONS.md`, then this file completely. Answer in English.
@@ -574,7 +580,7 @@ Do not: push, merge into `main`, rewrite published history, or use the exposed t
 
 ### Update 2 (2026-10-03) — additional resume steps
 
-7. If the patches are available, apply them onto `ef79856` (`git am`), then re-run: pytest → 424 passed; stdlib mirror → 424 OK; mypy → no issues in 28 files; import-all → 27 modules. Confirm `git log -1 -- handoff.md` is this update.
+7. Re-run: pytest → 424 passed; stdlib mirror → 424 OK; mypy → no issues in 28 files; import-all → 27 modules. Confirm `git log -1 -- handoff.md` is the latest status commit and that `main` has not moved again (it was `69df55f`).
 8. Begin at Update 2 Next Step 2 (the independent review). Do not re-run the investigations in section 11 (Update 2) unless a revisit trigger fired.
 9. Do not: push, merge `main`, rewrite history, force-push, or use the exposed token, without explicit instruction.
 
@@ -582,7 +588,7 @@ Do not: push, merge into `main`, rewrite published history, or use the exposed t
 
 ## 19. Transfer Status
 
-> **[Update 2, 2026-10-03] Current status: TRANSFER INCOMPLETE — LOCAL COMMIT ONLY.** The Batch 3C-A implementation commit (`4c93878`), the two documentation commits (`99f3acd`, `a0b9da5`) and the commit carrying this update exist only locally; the user instructed not to push (S12). Mitigation: the series is exported as patches and applies cleanly onto `ef79856`. It may be marked `TRANSFER READY` only after the branch is pushed and the remote tip is verified to contain the handoff commit. The status below describes `ef79856`, which is on the remote.
+> **[Update 2, 2026-10-03] Current status: TRANSFER READY**, with one stated condition. Satisfied and verified: the 3C-A implementation commit (`4c93878`), the documentation commits (`99f3acd`, `a0b9da5`) and the handoff-version-2 commit (`d40f000`) were pushed to `origin/feature/verification-critic-evidence-phase-c` on the user's authorization (S15) and verified with `git ls-remote` (remote = local HEAD = `d40f000`; fast-forward, no force). Condition: this status edit is a follow-up, status-only commit; it is pushed the same way and `git ls-remote` must show it as the branch tip. If it is not on the remote, the transfer is still ready through `d40f000` and only this status text is missing. Non-repository state: none required for continuation (the tooling is in Appendix B). Not closed: 3C-A still awaits the independent review.
 
 **TRANSFER READY**, conditional on the post-push verification below. Conditions satisfied at the time of writing: original prompt and later instructions preserved; requirement, decision and investigation ledgers present; verified state recorded with exact commands; implementation checkpoint `6428f2e` committed and pushed (remote verified); no material uncommitted work; next action defined.
 
