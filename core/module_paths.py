@@ -11,7 +11,7 @@ analysis (CodeQL py/path-injection) does not treat it as one.
 
 `module_child()` is the filesystem boundary. It requires the name to be one
 path component and the final path, canonicalized with resolve() (symlinks
-followed), to sit inside `root`:
+followed), to be a *direct child* of `root` -- not merely somewhere below it:
 
   * Deliberately weaker than `.isidentifier()` on *what a name may be*: a
     registry entry is a directory basename (module_registry.load_all), and
@@ -21,13 +21,30 @@ followed), to sit inside `root`:
   * Deliberately independent of it on *where the result may point*: nothing
     that is not a direct child of `root` comes back.
 
-Consequence worth knowing: because resolve() follows symlinks, a module
-directory that is itself a symlink to somewhere outside `root` is rejected.
-Symlinks *below* the module directory (e.g. modules/<name>/weights) are not
-inspected by this helper.
+Consequences worth knowing, all decided on the canonical (symlink-resolved)
+path:
+
+  * A name that is a symlink to somewhere outside `root`, or to a descendant
+    of a sibling (root/nested/x), is rejected: the result is not a direct
+    child of `root`.
+  * A name that is a symlink to *another direct child* (root/alias ->
+    root/real) is accepted and the canonical target (root/real) is returned.
+    Two names can therefore address one directory; both stay inside `root`.
+  * A symlink loop is rejected with the same fixed error on every Python
+    version. resolve() raises RuntimeError on a loop up to 3.12 but, from
+    3.13, silently returns the unresolved path, so loops are also detected
+    by stat() reporting ELOOP (POSIX; Windows loop behaviour is untested).
+    A path that merely does not exist yet is fine: callers create it.
+  * Symlinks *below* the module directory (e.g. modules/<name>/weights) are
+    not inspected by this helper.
+  * The check is a point-in-time answer about the returned path; it does not
+    hold a handle, so it does not defend against the path being swapped
+    afterwards.
 
 The error text is fixed and does not echo the input.
 """
+import errno
+import os
 from pathlib import Path
 
 
@@ -61,11 +78,26 @@ def module_child(root: Path, module_name: str, suffix: str = "") -> Path:
     either.
     """
     validate_module_name(module_name)
-    base = Path(root).resolve()
     try:
+        base = Path(root).resolve()
         child = (base / (module_name + suffix)).resolve()
-    except (OSError, ValueError):
+    except (OSError, ValueError, RuntimeError):  # RuntimeError: symlink loop, <= 3.12
         raise InvalidModuleName(_MESSAGE) from None
-    if child == base or not child.is_relative_to(base):
+    if child == base or child.parent != base:
         raise InvalidModuleName(_MESSAGE)
+    _reject_symlink_loop(child)
     return child
+
+
+def _reject_symlink_loop(path: Path) -> None:
+    """Raise InvalidModuleName if following `path` hits a symlink loop.
+
+    resolve() no longer raises on a loop from Python 3.13, so ask the OS.
+    Only ELOOP is a verdict here; a missing path or any other stat() error
+    says nothing about containment and is left to the caller's own I/O.
+    """
+    try:
+        os.stat(path)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise InvalidModuleName(_MESSAGE) from None
