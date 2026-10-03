@@ -7,8 +7,9 @@ Language rule from the user: **always respond in English, never French** (the us
 
 ## 1. Handoff Metadata
 
-- Handoff version: 1
+- Handoff version: 2 (updated 2026-10-03). Version-1 content is preserved; additions are in sections titled "Update 2", and the few in-place corrections are marked `[corrected 2026-10-03]`.
 - Created at: 2026-10-02 (session date)
+- Updated at: 2026-10-03 (Step 0 re-verification, 3C scope study, Batch 3C-A implementation, review groundwork)
 - Workstream: Verification contract layer (`core/verification/`), audit of side work, repair, and contract Batches 2, 3A, 3B
 - Task identifier: audit of side work `ead305d..` → repair → Batch 2 (Evidence) closeout → Batch 3A → Batch 3B
 - Source session purpose: audit the side-work commits on the Verification branch, repair what the audit found, then implement the next approved contract batches in small, separately committed steps
@@ -119,6 +120,9 @@ Quoted wording is exact where wording matters; otherwise a faithful summary. Lat
 | S9 | 3A "technically complete" but "not merge-ready" until the `Rubric.construct` disposition is closed (Required vs Optional with an explicit statement of when `None` is valid). Then reconcile the tracker, then freeze 3B scope = `VerificationObservation` + five coverage types + absence states at the "observation/evidence-input contract layer", no stability/scoring/confidence/verdict generation/provenance-lineage/C-MoE. "Keep everything unpushed for now." "The immediate next task is not more coding." | Done (D-20) |
 | S10 | **3B approved**: five independent coverage types, each `fraction: Optional[float]` in [0,1] + required `scope: str` (`None` = unknown); four absence states; `OBSERVED_ABSENT` requires `inspected=True` + authorized inspection for the relevant surface + producer-declared `coverage_sufficient=True`, no numeric threshold; test the invariant "in both directions"; **`VerificationObservation` deferred** (named but undefined in the frozen architecture); `VerificationAssurance.coverage` unchanged, no implied equivalence with `VerificationCoverage`. `Rubric.construct` closed as required; the surviving required-construct mutant is equivalent and the contract must not be weakened. Work stays local, separated into its own commits. | Done |
 | S11 | "Push the Done work then create a handoff file so the remaining work can be completed in a new session." | This handoff; push executed (section 7) |
+| S12 | **Resume prompt (2026-10-03).** Resume on the same branch; "Respond in English only." Authority order: `PROJECT_INSTRUCTIONS.md` (§18.4.9), this handoff ("a transfer record, not an authority"), v3-final ("frozen architecture; v2-frozen is history only"). **Step 0, no code changes:** fetch; confirm transfer commit `6428f2e`, that `ef79856` is its child, local HEAD = remote, `main` at `4ab5345`; check the tree; re-run the 385 tests, mypy, the stdlib mirror; explain "13" vs "9" and classify each failure per §16.4; use "no new failures relative to the audited baseline" "only if the comparison actually supports it"; "If the repo contradicts the handoff, correct the handoff, report the mismatch and stop". **Standing constraints:** D-01..D-24; "Do not invent ordinal orderings or vocabularies. Check for an existing authoritative contract first. Label every gap-filling choice IMPLEMENTATION JUDGMENT"; out of scope: runtime integration, C-MoE, verifier stability, scoring/confidence, provenance/lineage, policy precedence, execution-identity infrastructure, G8, unrelated fixes. "Do NOT push, merge main, rewrite history or force-push. The main divergence (89 behind / 46 ahead, KNOWN_ISSUES.md conflict) is a separate decision for me." The pasted GitHub token "is treated as compromised and is not stored anywhere"; if a push is later authorized: fetch first, credentials by environment variable or one-off URL, never persisted in `.git/config`. "Do not rewrite" `dfbeffb`'s "64 tests" message (true count 66). Appendix A is a faithful extraction, not verbatim. **Task: "BATCH 3C SCOPE PROPOSAL ONLY (CriterionResult + process and outcome results)"** — "No code and no commits", nine-step packet through the compliance matrix, then stop for approval; content: study with [FACT]/[ARCH]/[AUDIT]/[INFER]/[REC] tags, existing-code audit, proposed frozen shape and what each type must NOT contain, explicit deferrals, test plan, open questions. | Step 0 and the proposal were delivered; see Update 2 in sections 6, 11, 13 |
+| S13 | **Disposition of the 3C proposal.** "I would **not approve the whole proposed 3C implementation as written**"; split it. **3C-A (`CriterionResult`) — approve after a few corrections:** (1) "Do not allow 'attempted but no verdict'": `NOT_ATTEMPTED → no verdict`, `BLOCKED → no verdict`, `ATTEMPTED → must have a VerificationVerdict`; an attempt that cannot be established uses an existing fail-closed verdict (e.g. `INSUFFICIENT_EVIDENCE`, `UNVERIFIABLE`). (2) "Do not invent 'SKIPPED'." (3) "`CriterionResult` must remain a per-criterion result, not a mini aggregation engine" (no AND/OR, majority, weighted averages, worst-of); "It stores the result produced by a later layer." (4) `rubric_fingerprint` is defensible but must be labeled `IMPLEMENTATION JUDGMENT`. (5) "Do not require `finding_ids` unless source evidence supports it." Added invariant: "`CriterionResult` must be composable into future coverage/aggregation/VerifiedState views, but must not perform or own those aggregations itself." **3C-B (process/outcome) — "do not implement yet":** v1 §20 uses `FAILED`, which is not in `VerificationVerdict`, and it "cannot be silently 'fixed' by mapping" to `CONTRADICTED` or `UNSUPPORTED` ("not necessarily equivalent semantics"); `failure_control` ownership "is not sufficiently established" (the source calls it an "orthogonal verification finding"). Correct conclusion about v3: "V3 does not independently specify the 3C result contracts. V1/V2 contain the relevant semantics. The exact implementation shape remains unresolved." Keep out of 3C: `VerifiedState`, `CoverageResult`, continuous checkpoint verification, C-MoE integration (and `VerificationRun/Step/Trace`, `DecisionTrace`, aggregation, events, escalation). | Batch 3C-A implemented (Update 2); 3C-B blocked |
+| S14 | **Disposition of the 3C-A checkpoint.** `NOT_APPLICABLE` under `ATTEMPTED`: "accept, provisionally and explicitly"; do not add another axis. Tracker row 10's rejection of reusing `VerificationResult` is "well-founded"; the `MethodExecutionState` correction "should stay"; the `INCONCLUSIVE` collision stays "a separate pre-existing finding". Before calling 3C-A closed: an independent adversarial review that "challenge[s] these invariants rather than merely reread the implementation" — state machine (attempt_state × verdict × execution_failure), `NOT_APPLICABLE`, failure semantics ("the one I would scrutinize most": "If it is an implementation judgment, it should remain labeled as such rather than silently becoming constitutional behavior"), findings, fingerprint ("genuinely part of criterion-result identity, or only useful provenance metadata?"), aggregation boundary, mirror parity ("behavior rather than merely test count"), documentation. "I would update handoff.md now" with the four outstanding corrections. 3C-B: "Keep it completely untouched"; next is "a source-reconciliation batch, not an implementation batch" resolving only what `FAILED` means in the frozen architecture, who owns `failure_control`, and what authority v1 §20 has — "No placeholder enum, no speculative owner, no guessed authority model." Sequence: "3C-A → independent adversarial review → resolve/document review findings → close 3C-A → source-reconciliation study for 3C-B → only then design 3C-B." "I would not change the 3C-A code merely to 'perfect' it further unless the independent review finds a concrete architectural contradiction." | Treated as binding (the user phrases dispositions as "I would …"). Handoff updated (this file); a docstring-only label change was made under the failure-semantics instruction (D-29, D-34) |
 
 ---
 
@@ -161,10 +165,22 @@ Runtime integration, `EvaluatorWorker`/`WorkflowRuntime` integration, C-MoE, `Ve
 | R12 | Keep work local until asked; separate commits | S9/S10 | VERIFIED | Pushed only on explicit instruction (S4, S6/S7, S11) | |
 | R13 | English only | S8 | VERIFIED | | |
 | R14 | Token must be rotated before further pushes | S5 | **OPEN** | The same token still worked on every push through S11 | Not recorded here; user action required |
-| R15 | Next batches: 3C (`CriterionResult` + process/outcome results) | S7/S9 | OPEN | Scope not yet proposed or approved | |
+| R15 | Next batches: 3C (`CriterionResult` + process/outcome results) | S7/S9 | IN PROGRESS | [corrected 2026-10-03] Scope proposed (S12), split by S13 into R19 (3C-A) and R20 (3C-B) | |
 | R16 | `VerificationObservation` | S10 | DEFERRED | Needs a definition from the user | |
 | R17 | G8 hardening debt | S5 | DEFERRED | Tracker §9 | Not registered in `KNOWN_ISSUES.md` (see 15) |
 | R18 | Do not merge into `main` | S7 | VERIFIED (not merged) | `origin/main` untouched | |
+| R19 | Batch 3C-A: `CriterionResult` exactly as approved (S13) | S13 | IMPLEMENTED (self-verified only; independent review pending) | Local commits `4c93878`, `99f3acd`, `a0b9da5`; section 13 Update 2 | Not closed (R27) |
+| R20 | Batch 3C-B: no code, no placeholder types | S13/S14 | BLOCKED (no code exists) | Tracker §9; `grep` finds no `ProcessVerificationResult`/`OutcomeVerificationResult`/`FailureControl` in code | Needs the source-reconciliation study (R29) |
+| R21 | ATTEMPTED requires a verdict; NOT_ATTEMPTED/BLOCKED carry none; no SKIPPED | S13 | IMPLEMENTED (self-verified) | Oracle over 165 combinations, 0 mismatches; mutants M01–M04, M19 caught | |
+| R22 | `CriterionResult` computes nothing and is composable by later layers | S13 | IMPLEMENTED (self-verified) | No public callables/properties (tested); imports only `identity` and `verdict` (tested); mutants M20, M22, M27 caught; throwaway higher-level view composed results | |
+| R23 | `rubric_fingerprint` labeled IMPLEMENTATION JUDGMENT | S13 | VERIFIED | Module docstring, tracker §9 rule 9 | Identity-vs-provenance question is in R27 |
+| R24 | `finding_ids` not required | S13 | IMPLEMENTED (self-verified) | Tests pin empty allowed for every state and verdict; mutants M23/M24 caught | |
+| R25 | `NOT_APPLICABLE` under `ATTEMPTED` | S14 | ACCEPTED PROVISIONALLY | Tracker §9 rule 8 | Reviewer to confirm against v1 §25 |
+| R26 | Crash rule (`execution_failure` ⇒ ATTEMPTED + UNVERIFIABLE) labeled as judgment, not constitutional | S14 | LABELED; DECISION OPEN | `a0b9da5` (docstrings, tracker); AST identical without docstrings | Options in tracker §9 (keep and label / weaken / drop the field) |
+| R27 | Independent adversarial review of 3C-A across the eight areas before closure | S14 | OPEN | Tracker §9 "Closure conditions" | Cannot be done by the implementer; evidence gathered so far is preparation only |
+| R28 | Update `handoff.md` with the four corrections | S14 | IMPLEMENTED (this update) | Section 11, 13, 14 Update 2 and in-place corrections | |
+| R29 | Source-reconciliation study for 3C-B: meaning of `FAILED`, owner of `failure_control`, authority of v1 §20 | S14 | OPEN (next after R27) | Tracker §9 | No code; no placeholder enum, owner or authority model |
+| R30 | Do not push, merge `main`, rewrite history or force-push in this session | S12 | VERIFIED | Remote branch still `ef79856` (fetch); `main` `4ab5345`; branch 0 behind / ahead only by local commits | Main divergence is the user's separate decision |
 
 ---
 
@@ -182,11 +198,26 @@ Runtime integration, `EvaluatorWorker`/`WorkflowRuntime` integration, C-MoE, `Ve
 - ❌ rows: 1 `VerificationRequest`, 3 `VerificationContext`, 10 `CriterionResult`, 24 `VerificationObservation` (deferred: undefined), 30 `ProcessVerificationResult`/`OutcomeVerificationResult`, 35 `VerificationRun`, 36 `VerificationStep`, 38 `VerificationTrace`, 39 `DecisionTrace`, 41 `VerificationBudget`, 42 `EscalationRequest`, 43 `AdjudicationRecord`, 50 `BlindVerificationContext`, 51 `PolicyPrecedence`.
 
 **IMPLEMENTED BUT NOT FULLY VERIFIED:** nothing outstanding.
-**PROPOSED:** 3C scope (not yet drafted).
+**PROPOSED:** [corrected 2026-10-03] 3C scope was proposed and split: 3C-A implemented locally, 3C-B BLOCKED (Update 2 below).
 **DEFERRED:** see section 15 and tracker §9.
-**UNKNOWN:** why each of the 13 shared failures fails (probably environment: `chromadb` and `sentence-transformers` are not installed in the sandbox).
+**UNKNOWN:** [corrected 2026-10-03 — RESOLVED, see Update 2 below and section 13] why each of the 13 shared failures fails. Originally: probably environment (`chromadb` and `sentence-transformers` not installed).
 
 Active architectural constraints: frozen V1/V2/V3 architecture; no ordinal ordering of `EvidenceDirectness`; `ConstructValidity` never part of a rubric's identity; absence is never inferred from silence; coverage quantities independent; nothing runtime.
+
+### Update 2 (2026-10-03) — state at local HEAD (code commit `4c93878`; `99f3acd` and `a0b9da5` change only documentation and docstrings)
+
+**VERIFIED:**
+- Contract tests: **424 passed**; stdlib mirror: **424 OK** (39 new tests in each, matching per-class counts 5/21/10/3). mypy on `core/verification`: no issues in **28** files. Import-all: 27 modules OK.
+- Broader suite, sequential: **9 failed, 1918 passed, 4 errors** (1879 + 39 new passes); the failing set is identical to the pre-change HEAD. "No new failures relative to the audited baseline `ead305d`" is supported: the failing sets match, apart from one transient failure in one baseline run (section 13).
+- **"13" versus "9" is one reference point, not 4 new failures:** the 13 entries are **9 `FAILED` + 4 collection `ERROR`s**; the earlier "9" counted only the `FAILED` ones.
+- **Causes of the 13 (established from the tracebacks):** 12 are environmental in this sandbox — `ModuleNotFoundError: chromadb` (the 4 collection errors, 6 `TestA7SystemController` tests and 2 `test_module_factory_security` tests). 1 is a known, registered product defect — the CTX-AUTH-001 test documents itself as "currently expected to fail", and `KNOWN_ISSUES.md` records CTX-AUTH-001 as partially resolved. None touches `core/verification`. `chromadb` was **not** installed, so that those 12 pass once it is available is **unverified**.
+- Tracker (parsed): **39 ✅, 5 ◐, 13 ❌ of 57** (row 10 re-marked ✅; row 30 stays ❌ and is blocked).
+- Mutation checks on `criterion_result.py`: 30 mutants, 29 caught, 1 equivalent (proved equivalent over the full 165-point input domain).
+
+**IMPLEMENTED BUT NOT INDEPENDENTLY VERIFIED:** Batch 3C-A (`core/verification/criterion_result.py`: `CriterionAttemptState`, `CriterionResult`). All evidence so far was produced by the implementer.
+**BLOCKED:** Batch 3C-B (`ProcessVerificationResult`, `OutcomeVerificationResult`, `FailureControl`) pending architecture reconciliation. No code exists for it.
+**OPEN DECISION:** whether the crash rule (`execution_failure` ⇒ ATTEMPTED + UNVERIFIABLE) stays as labeled, is weakened, or the field is dropped (section 15).
+**UNKNOWN:** whether the 12 `chromadb`-dependent tests pass in an environment that has it.
 
 ---
 
@@ -227,6 +258,23 @@ Commits since the audited baseline `ead305d` (oldest first):
 
 Commit-message correction: `dfbeffb`'s message says "64 tests". The real number is **33 tests per file (385 − 352), 66 across the two files**. It is already pushed, so it was not amended. (3A's "30 tests" means 30 per file.)
 
+### Update 2 (2026-10-03) — local checkpoint, NOT pushed
+
+- Remote branch `origin/feature/verification-critic-evidence-phase-c`: still `ef79856` (verified by `git fetch`). `main`: `4ab5345`. Divergence from `main` at `ef79856` is 89 behind / 47 ahead; it was 89/46 at `6428f2e` — the extra commit is the handoff commit itself, so the "46" in this file refers to the transfer commit.
+- New commits on top of `ef79856`, all **local only** (oldest first):
+
+| SHA (at time of writing) | Subject | Notes |
+|---|---|---|
+| `4c93878` | Implement Batch 3C-A: CriterionResult and CriterionAttemptState | Code + 39 tests in each test file |
+| `99f3acd` | docs: record Batch 3C-A in the Phase C tracker; block 3C-B | Tracker only |
+| `a0b9da5` | docs: label the crash rule as implementation judgment; add 3C-A closure conditions | Docstrings in `criterion_result.py` + tracker; the AST is identical with docstrings stripped |
+| (the commit that adds this Update 2) | docs: update the handoff for Batch 3C-A | Find it with `git log -1 -- handoff.md` |
+
+- Patches: the series is exported with `git format-patch ef79856..HEAD` into `/mnt/user-data/outputs/` (outside the repository; regenerate it from the branch if the sandbox is gone). A series applies cleanly onto `ef79856` with `git am`; the tree is identical to the local branch.
+- Remote push status: **not pushed**, by the user's instruction (S12). Remote verification: not applicable.
+- Working tree: clean at every commit. After every full-suite run the four rewritten tracked files were restored (`git checkout -- data config`).
+- **Risk:** the sandbox resets between tasks. Until the user applies the patches or authorizes a push, the 3C-A work exists only in this sandbox and in the exported patches.
+
 ---
 
 ## 8. Active Files / Modified Files / Artifacts
@@ -248,6 +296,14 @@ Docs: `docs/architecture/verification-critic-evidence-system-phase-c-semantic-pi
 
 Artifacts outside the repo: patch copies in `/mnt/user-data/outputs/verification-*` (copies only, not needed; the pushed branch is authoritative). `/tmp/audit/*` scratch scripts are gone with the sandbox; Appendix B reproduces the useful ones.
 
+### Update 2 (2026-10-03) — files
+
+- **Added:** `core/verification/criterion_result.py` — `CriterionAttemptState` (NOT_ATTEMPTED / BLOCKED / ATTEMPTED; values `criterion_not_attempted` / `criterion_blocked` / `criterion_attempted`) and `CriterionResult` (`criterion_id`, `rubric_fingerprint`, `attempt_state`, `verdict`, `execution_failure`, `finding_ids`). Imports only `.identity` and `.verdict`. Its docstrings label which rules are architectural and which are IMPLEMENTATION JUDGMENT.
+- **Modified:** `tests/test_verification_contracts.py` and `tests/verification_run_tests_stdlib.py` (+294 lines each): new imports (`ast`, `importlib`, `inspect`, `pkgutil`, `Enum`, `core.verification as _cv_pkg`, `criterion_result as _cr_module`, `CriterionAttemptState`, `CriterionResult`), helpers `_cr`, `_cr_other_str_enum_values`, and classes `TestCriterionAttemptState` (5), `TestCriterionResult` (21), `TestCriterionResultBoundaries` (10), `TestCriterionResultAndRubricIdentity` (3).
+- **Modified:** the Phase C tracker (rows 10 and 30, count footer, a dated §4 correction, a dated correction to the "exact rule" claim near line 102, and the §9 records: 3C-A, the decision record, the rule-provenance table, the closure conditions, the deferral table, and the 3C-B block).
+- **Unchanged on purpose:** `verdict.py`, `receipt.py`, `rubric.py`, `coverage.py`, `absence.py`, `finding.py`, `method.py` and every other existing contract (asserted for `VerificationResult`, `VerificationAssurance`, `VerificationReceipt`).
+- **Not updated (precedent from 3A/3B):** `CURRENT_STATE.md`, `KNOWN_ISSUES.md`, `PROJECT_INDEX.md`. The pre-existing `INCONCLUSIVE` collision is recorded only in the tracker.
+
 ---
 
 ## 9. Changes Made
@@ -266,6 +322,13 @@ Artifacts outside the repo: patch copies in `/mnt/user-data/outputs/verification
 **3B.** Five coverage types (distinct frozen types, no shared base, no container); `ObservationAbsenceState`; `ObservationAbsence` with the `OBSERVED_ABSENT` gate.
 
 **Tracker.** Corrected the "Built" count (it overstated by one since `ead305d`), re-marked 16 stale ❌ rows as built, recorded decisions and deferral tables in §9.
+
+### Update 2 (2026-10-03) — changes made
+
+- **Behavior / interface:** a new, independent result contract. `ATTEMPTED` requires a `VerificationVerdict`; `NOT_ATTEMPTED` and `BLOCKED` carry none; `verdict` has no default; `execution_failure` is valid only on an ATTEMPTED result whose verdict is UNVERIFIABLE (IMPLEMENTATION JUDGMENT, not mandated); nothing is coerced from a verdict, `MethodExecutionState`, `FindingDisposition`, `ConstructValidityStatus` or a string. No methods or properties; no score, confidence, assurance, coverage, provenance or identity fields.
+- **Schema / architecture / governance / security changes:** none to existing types. No runtime wiring.
+- **Test changes:** 39 new tests in each file; mirror block generated from the pytest block (see Appendix B).
+- **Documentation changes:** tracker as above; this handoff.
 
 ---
 
@@ -297,6 +360,18 @@ Artifacts outside the repo: patch copies in `/mnt/user-data/outputs/verification
 | D-22 | `ObservationAbsenceState`/`ObservationAbsence` names are IMPLEMENTATION JUDGMENT (v1 §21 vs v2 §13 use "Observation Coverage" for two things) | ACCEPTED | S10 | | — |
 | D-23 | `VerificationObservation` deferred | DEFERRED | User (S10) | Only a name in the v1 contract list | The user supplies a definition |
 | D-24 | Process: separate code and docs commits; export patches; do not push unless asked; never merge into `main` | ACCEPTED | User | | — |
+| D-25 | Split Batch 3C into 3C-A (`CriterionResult`) and 3C-B (process/outcome results + `FailureControl`) | ACCEPTED | User (S13) | Tracker §9 | The user reunites them |
+| D-26 | `CriterionResult` is **not** a scoped `VerificationResult` | ACCEPTED | User (S14: "well-founded") | Probe: building a result for a never-inspected criterion through `VerificationResult` needs an authorized `VerificationAssurance` and a numeric `confidence` (`None` raises) — fabricated values | The architecture defines `CriterionResult` as `VerificationResult`-shaped, or `VerificationResult` is redesigned |
+| D-27 | Three attempt states with namespaced values; ATTEMPTED ⇒ verdict required, NOT_ATTEMPTED/BLOCKED ⇒ none; no SKIPPED; no verdict default | ACCEPTED (IMPLEMENTATION JUDGMENT, approved) | User (S13) | Tests; oracle 0/165 mismatches; mutants M01–M04, M16–M19, M25 caught | The frozen architecture defines criterion-level states |
+| D-28 | `NOT_APPLICABLE` counts as an ATTEMPTED verdict (evaluated, applicability determined) | ACCEPTED PROVISIONALLY | User (S14) | Tracker §9 rule 8 | The frozen architecture requires another axis, or the independent review contradicts it |
+| D-29 | Crash rule: `execution_failure` ⇒ ATTEMPTED + UNVERIFIABLE | IMPLEMENTED as IMPLEMENTATION JUDGMENT; **decision open** | User (S14: label it; do not let it become constitutional) | The architecture requires only "a crash never becomes a pass" and says "a crash is `FAILED`"; v1 §23 calls UNVERIFIABLE "not a verifier failure"; the mapping is inherited from `verdict.py`, which cites no source | The 3C-B reconciliation of `FAILED`; the independent review |
+| D-30 | `rubric_fingerprint` is bound by value and participates in equality and hash | IMPLEMENTED (IMPLEMENTATION JUDGMENT) | User (S13: "defensible") | Facts in tracker §9 | The review decides binding vs provenance metadata |
+| D-31 | `finding_ids` optional, unchecked against real findings, not coupled to `attempt_state` | IMPLEMENTED | User (S13) | Tests; mutants M23/M24 caught | The architecture establishes a findings requirement |
+| D-32 | Out of 3C: `CoverageResult`, `VerifiedState`, continuous checkpoint verification, C-MoE integration, Run/Step/Trace, DecisionTrace, aggregation, events, escalation, receipt wiring | ACCEPTED | User (S13) | Tracker §9 deferral table | The user schedules them |
+| D-33 | 3C-B stays untouched; next is a source-reconciliation study only (meaning of `FAILED`, owner of `failure_control`, authority of v1 §20); no placeholder enum, speculative owner or guessed authority | ACCEPTED | User (S14) | Tracker §9 | The user's instruction |
+| D-34 | Do not change 3C-A code merely to perfect it; only a concrete architectural contradiction found by the independent review reopens it. (A docstring-only relabel was made under the S14 failure-semantics instruction; behavior is unchanged.) | ACCEPTED | User (S14) | `a0b9da5`: AST identical with docstrings stripped | — |
+| D-35 | The pre-existing `str`-enum value collision (`MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE`; `unknown` also shared) stays a separate finding, out of 3C | ACCEPTED | User (S14) | Tracker §9 deferral table | A dedicated fix batch |
+| D-36 | v3 "does not independently specify the 3C result contracts"; v1/v2 hold the semantics (v1 §20 stays authoritative); the exact shape is unresolved | ACCEPTED | User (S13) | v3 preserves earlier architecture by reference | The 3C-B reconciliation |
 
 ---
 
@@ -314,7 +389,22 @@ Artifacts outside the repo: patch copies in `/mnt/user-data/outputs/verification
 | `main` divergence | `git merge-tree` dry run (read-only) | One docs conflict: `KNOWN_ISSUES.md` | `main` moves |
 | Broader suite | Sequential runs at several heads vs baseline | Same 13 failing entries every time | Dependencies installed |
 
-Not investigated: the root cause of each of the 13 shared failures; depth of every contract's tests for the 16 re-marked rows; the three `main` ADRs (`ADR_CTX_01_…`, `ADR_INDEX`, `ADR_KERNEL_06_VERIFIABLE_HYPOTHESIS_PROVENANCE`), one of which may bear on Verification provenance.
+Not investigated (the root causes of the 13 shared failures were established on 2026-10-03; see Update 2 below): depth of every contract's tests for the 16 re-marked rows; the three `main` ADRs (`ADR_CTX_01_…`, `ADR_INDEX`, `ADR_KERNEL_06_VERIFIABLE_HYPOTHESIS_PROVENANCE`), one of which may bear on Verification provenance.
+
+### Update 2 (2026-10-03) — investigation already performed
+
+| Area | Inspected | Result | Revisit trigger |
+|---|---|---|---|
+| Branch/commit state at resume | `git fetch`; ancestry of `6428f2e`/`ef79856`; local vs remote HEAD; `main`; tree | Remote tip `ef79856`, parent `6428f2e`; `main` `4ab5345`; divergence 89/47 = 89/46 + the handoff commit; tree clean. No contradiction with the handoff | The remote moves |
+| "13" vs "9" baseline failures | Full suite at HEAD and at `ead305d`, sequential | 13 = 9 `FAILED` + 4 collection `ERROR`s; the "9" counted `FAILED` only; the failing sets are identical; passes 1879 vs 1699 differ by 180 = 385 − 205 contract tests | The baseline changes |
+| Causes of the 13 | Tracebacks | 12 × `ModuleNotFoundError: chromadb` (collection errors in `test_break_concurrency`, `test_break_empty_db`, `test_break_security`, `test_system_ctrl`; 6 `TestA7SystemController`; 2 `test_module_factory_security`). 1 × the CTX-AUTH-001 test, documented as "currently expected to fail", registered in `KNOWN_ISSUES.md` (partially resolved). `chromadb` was not installed to confirm that the 12 pass with it | Install `chromadb<1.0` in an environment and re-run |
+| Flaky `tests/core/sandbox/test_namespace_backend.py::test_cancel_kills_all_descendant_processes` | 10 isolated runs (5 at each commit), a deliberate stray `sleep 50`, the failure message | Passes 10/10 in isolation; the test uses a global `pgrep -f "sleep 50"` and fails with "orphaned process(es)" whenever any other process has that string in its command line (a stray `sleep 50`, or a shell whose command line contains it). One baseline run failed while the investigator's own monitoring command `sleep 50; ls …` was running. **That this was the matched process is likely but not proven** (the mechanism reproduces; the PIDs were not tied to it) | Never run suites concurrently, and keep `sleep 50` out of command lines near a run |
+| 3C architecture study | v1 §13, §20, §23, §25, §42; v2 §9, §11, §19, §21; v3 §1, §5; `verdict.py`, `finding.py`, `dimension.py`, `receipt.py`, `observation.py`, `method.py`, `absence.py`, `coverage.py`, `rubric.py`, `shape.py`, `identity.py`, `epistemic.py` | `CriterionResult`/process/outcome results are *named* in lists only; v1 §20 is the only definition of process/outcome separation and `failure_control`, and v2/v3 neither restate nor revoke it; `FAILED` is not a canonical verdict state (v1 §25); a method-level `MethodExecutionState` already existed (the earlier tracker claim of no such axis was stale); `VerificationResult` reuse forces a fabricated assurance and confidence; `failure_control` appears nowhere in code; `CriterionCoverage` is a rubric-level quantity; no `CoverageResult` tracker row exists although v1 §42 lists it | The architecture text changes |
+| Crash / failure semantics | v1 Self-Review Pass 3 (line 270), v1 §23 (line 124), v2 Review C (line 322), `verdict.py`, tracker line 102 | Architecture: a crash never becomes a pass ("fail-closed") and "a crash is `FAILED`" (not a canonical verdict); UNVERIFIABLE is a "successful abstention outcome, not a verifier failure". Code: `execution_failure` ⇒ UNVERIFIABLE with no cited source. The tracker's "exact rule" claim (line 102) overstated this and now carries a dated correction | The 3C-B reconciliation of `FAILED` |
+| `str`-enum value collisions in `core/verification` | Scan of every `str` enum | `MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE` is `True`; `unknown` is shared (e.g. `ProvenanceCompleteness.UNKNOWN`); `blocked`, `not_run`, `verified`, `not_applicable` are taken, which is why `CriterionAttemptState` values are namespaced | A dedicated fix batch |
+| 3C-A review groundwork (preparation, **not** the independent review) | Oracle over all 165 valid-type combinations; mirror regeneration; throwaway higher-level view; `dataclasses.fields` facts | 0 oracle mismatches (16 accepted: NOT_ATTEMPTED 1, BLOCKED 1, ATTEMPTED 14); the mirror block regenerates byte-for-byte from the pytest block, test names identical and ordered, 55/55 assertions and 18/18 raises preserved; a throwaway view consumed results and needed no change to the type; `rubric_fingerprint` participates in `__eq__` and `__hash__` | The independent review |
+
+Not investigated: whether `CoverageResult` (v1 §42) should get a tracker row; the other v1 §42 names against the tracker (only `CoverageResult` was checked); any v1 §20 text beyond the quoted lines; `KNOWN_ISSUES.md` beyond the CTX-AUTH-001 line.
 
 ---
 
@@ -332,6 +422,11 @@ Not investigated: the root cause of each of the 13 shared failures; depth of eve
 | Converter-based mirror generation with multi-line `assert` | Unsupported | Keep each `assert` on one line in new tests |
 | Stdlib mirror calling `_assurance(...)` | Name does not exist at module level in the mirror | Build the object inline (see `_c3_result`) |
 | Mutation runner with non-unique replacement patterns | Silent no-op risk | Assert `count(old) == 1` before replacing |
+| Mutation runner that lets Python reuse bytecode (2026-10-03) | Two consecutive same-size mutants written within one second can be served the previous `.pyc`: one kill was attributed to the wrong test (the counts happened to match) | Run `python3 -B` with `PYTHONDONTWRITEBYTECODE=1` and delete `core/verification/__pycache__/criterion_result*` before every mutant run; check *which* test killed each mutant, not only the count |
+| `pkill -f "sleep 50"` inside the same shell command | Killed the invoking shell, because its own command line contains the pattern | Do not; wait for processes to exit |
+| Starting the second suite run in the background from a tool call that then ended | The run died partway and produced no result | Run each suite in the foreground, one at a time (or `setsid nohup` and poll) |
+| Loading a mutated copy of a dataclass module with `exec` without registering it in `sys.modules` | The `@dataclass` decorator failed | Register the module in `sys.modules` first (used for the equivalence proof, Appendix B) |
+| Reusing `VerificationResult` as `CriterionResult` (the 2026-09-07 tracker recommendation) | Forces a fabricated authorized assurance and a numeric confidence | Do not retry (D-26) |
 
 ---
 
@@ -365,15 +460,38 @@ FAILED tests/test_module_factory_security.py::test_name_field_also_uses_safe_lit
 
 Limitations: the broader suite was not re-run after the docs-only commit `6428f2e` (it changes only the tracker); the mutation checks cover the rules listed in section 6, not every line.
 
+### Update 2 (2026-10-03) — verification evidence
+
+Step 0 (resume), all from the repo root, no code changes:
+- `git fetch origin`; `git merge-base --is-ancestor 6428f2e origin/feature/verification-critic-evidence-phase-c` → yes; `git rev-parse ef79856^` → `6428f2e`; `git log -1 -- handoff.md` → `ef79856`; remote tip = local HEAD = `ef79856`; `origin/main` = `4ab5345`; `git status` clean.
+- pytest (section 13 command) → **385 passed in 0.63s**; stdlib mirror → **Ran 385 tests, OK**; mypy → **no issues in 27 source files** (mypy 2.4.0 here vs 2.3.1 in version 1); import-all → 26 modules OK.
+- Broader suite at HEAD → **9 failed, 1879 passed, 1 warning, 4 errors in 36.44s** (identical to this file's figures). At `ead305d` (a detached worktree) → **10 failed, 1698 passed, 4 errors in 33.96s**; the extra failure is the flaky `test_cancel_kills_all_descendant_processes` (section 11); a first baseline attempt died partway and was discarded. After the run, `git checkout -- data config` restored four rewritten files (`config/sources.toml` was the one version 1 did not list).
+
+Batch 3C-A:
+- `python3 -m pytest tests/test_verification_contracts.py -q -p no:cacheprovider -o addopts=""` → **424 passed**; `python3 tests/verification_run_tests_stdlib.py` → **Ran 424 tests, OK**; mypy → **no issues in 28 source files**; import-all → **27 modules OK**.
+- Broader suite after the change → **9 failed, 1918 passed, 1 warning, 4 errors in 35.51s**; `comm` of the failing sets against the pre-change HEAD → empty both ways.
+- Mutation (Appendix B harness, 30 mutants): **29 caught, 1 survived (M06), proved equivalent** by running the original and mutated classes over all 165 valid-type combinations (3 states × 11 verdict values × 5 failure values): 0 differences; the original accepts exactly 16. M06 removes the `attempt_state is not ATTEMPTED` clause of the crash check, which is redundant because invariant 3 already forces `verdict=None` for unevaluated states. A "permissive stub" with all validation removed (`__post_init__` does nothing) fails **12 of the 39** new tests (the harness prints it); the remaining 27 are acceptance and structure tests that rightly still pass.
+- Patches: `git format-patch ef79856..HEAD`; applied with `git am` onto a detached worktree at `ef79856` → clean, 424 passed, tree identical to the local branch.
+- `a0b9da5` (docstrings and tracker): AST identical with docstrings stripped (script in Appendix B); 424/424, mypy clean. The broader suite was **not** re-run after `a0b9da5` or this handoff update (documentation only).
+
+Limitations: self-verification only (the independent review is open); the 12 `chromadb`-dependent tests were not run with `chromadb`; mirror parity is shown by derivation (the converter is validated on 347 pre-existing mirror lines with 0 differences) and by both suites passing, not by an independent re-implementation; the mutation set covers the rules listed above, not every line.
+
 ---
 
 ## 14. Environment / Tooling Assumptions
 
 - Python 3.12.3 in the sandbox (repo declares `requires-python >= 3.11`). Installed for the suite: pytest 9.1.1, pytest-asyncio 1.4.0, pytest-mock 3.16.0, mypy 2.3.1, datasketch, fastapi, httpx, aiohttp, pydantic, scipy, rich, PyYAML, trafilatura, and the other lightweight requirements. **Not installed:** `chromadb`, `sentence-transformers` (likely cause of several shared failures). The pytest warning "Unknown config option: asyncio_mode" is expected.
-- A full-suite run **rewrites tracked files** (`data/context.sqlite`, `config/models.toml`, `config/settings.toml`). After every run: `git checkout -- data config` and confirm `git status --short` is empty. Never commit them.
+- A full-suite run **rewrites tracked files** (`data/context.sqlite`, `config/models.toml`, `config/settings.toml`, `config/sources.toml` [corrected 2026-10-03: `sources.toml` was missing from this list]). After every run: `git checkout -- data config` and confirm `git status --short` is empty. Never commit them.
 - `git` commits in the sandbox used `-c user.name="Claude" -c user.email="noreply@anthropic.com"`.
 - The repository is public: `git clone` and `git fetch` need no credentials. Pushing needs a credential; **the user's GitHub token was pasted into their claude.ai preferences and into the chat, so it must be treated as exposed. It still worked for pushes at the end of this session. It is not recorded here. Do not push unless the user explicitly asks, and remind them to revoke and rotate it.** Pass any credential as a one-off `http.extraheader`, never stored in git config, and push only the feature branch, fast-forward, never force.
 - Network in the sandbox was limited to GitHub/npm/pypi style hosts.
+
+### Update 2 (2026-10-03) — environment
+
+- The sandbox was **fresh** on resume (no installed tools). Reinstall with `pip install --break-system-packages pytest pytest-asyncio pytest-mock mypy datasketch fastapi httpx aiohttp pydantic scipy rich PyYAML trafilatura aiofiles beautifulsoup4 click feedparser requests tomli tomli-w "uvicorn[standard]"` — **without** `chromadb` and `sentence-transformers`, which is the origin of the 12 environmental failures. Versions seen: Python 3.12.3, pytest 9.1.1, pytest-asyncio 1.4.0, pytest-mock 3.16.0, **mypy 2.4.0** (version 1 recorded 2.3.1; the results are the same).
+- Network: `git clone` and `git fetch` of the public repo work without credentials. The user's token was **not** used in this session and is not stored; at resume it was still visible in the user's claude.ai preferences (R14 remains open).
+- Never run a suite concurrently with another, and keep the string `sleep 50` out of command lines that run beside the suite (section 11).
+- Scratch tooling (`mkmirror.py`, `mutate.py`, the oracle/parity/AST checks) lived in `/home/claude/tools` outside the repository; it is reproduced in Appendix B.
 
 ---
 
@@ -381,8 +499,8 @@ Limitations: the broader suite was not re-run after the docs-only commit `6428f2
 
 | Item | Evidence | Options | Disposition | May work continue? |
 |---|---|---|---|---|
-| Token exposure (R14) | Same token worked at the last push | User revokes and rotates | OPEN, user action | Yes, but no pushes without explicit instruction |
-| 3C scope not drafted | S7/S9 name `CriterionResult` + process/outcome results | Read the architecture text for rows 10 and 30, draft a bounded scope, get approval | OPEN | This is the next step |
+| Token exposure (R14) | Same token worked at the last push; still visible in the user's claude.ai preferences at resume (2026-10-03), not used and not stored here | User revokes and rotates, and removes it from preferences | OPEN, user action | Yes, but no pushes without explicit instruction |
+| 3C scope | [corrected 2026-10-03] Proposed and split (S13): 3C-A implemented locally, 3C-B blocked | See the Update 2 rows below | SUPERSEDED | Yes |
 | `VerificationObservation` undefined | Only a name in the v1 contract list | User defines it, or it stays deferred | DEFERRED | Yes |
 | v1 §15 evidence metadata placement | No authoritative vocabulary | Extend `EvidenceItem` or add a companion, after the consuming layer exists | DEFERRED | Yes |
 | `DIRECT → DIRECT` per-type table | Architecture silent | Add only on a user decision | DEFERRED | Yes |
@@ -390,9 +508,16 @@ Limitations: the broader suite was not re-run after the docs-only commit `6428f2
 | `VerificationAssurance.coverage` ↔ `VerificationCoverage` relation | Architecture silent | Leave unlinked | DEFERRED | Yes |
 | G8 hardening debt | Tracker §9 | Dedicated hardening pass | DEFERRED | Yes |
 | Merging with `main` | 89 behind, 46 ahead, one docs conflict in `KNOWN_ISSUES.md` | Decide merge path, register debts with non-colliding ids, re-run suites | NOT AUTHORIZED | Yes |
-| The 13 shared failures | Not investigated | Install missing deps and re-run, or investigate individually | OPEN, optional | Yes |
+| The 13 shared failures | [corrected 2026-10-03] Causes established: 12 × `ModuleNotFoundError: chromadb`, 1 × known CTX-AUTH-001 test (section 11) | Install `chromadb<1.0` and re-run to confirm the 12 pass | RESOLVED as to cause; the 12 remain unverified with `chromadb` | Yes |
 | Three ADRs added on `main` | Not read | Read before 3C/provenance-related work | OPEN | Yes |
 | Invisible format characters count as non-blank | Same `str.strip()` rule everywhere in the package | Package-wide decision | Known limitation | Yes |
+| **Crash rule is judgment, not mandated** (`execution_failure` ⇒ ATTEMPTED + UNVERIFIABLE) | Architecture: a crash never becomes a pass; "a crash is `FAILED`"; UNVERIFIABLE is "not a verifier failure" (v1 Self-Review Pass 3, v1 §23, v2 Review C). Code inherits the mapping from `verdict.py`, which cites no source | (a) keep and label — consistent with `VerificationResult`; (b) weaken to "never positive", which needs a definition of "positive" (itself a judgment); (c) drop `execution_failure` from `CriterionResult` until `FAILED` is reconciled | OPEN DECISION (reviewer/user); labeled; code unchanged | Yes; it must be decided or explicitly carried before 3C-A is closed |
+| `FAILED`, `failure_control` ownership, authority of v1 §20 | `FAILED` is not in v1 §25; `failure_control` is an "orthogonal verification finding"; v3 incorporates earlier architecture by reference | Source-reconciliation study (no code) | BLOCKED (3C-B) | Yes, for everything except 3C-B; no placeholder types |
+| Independent adversarial review of 3C-A | Only implementer-produced evidence exists | A reviewer other than the implementer challenges the eight areas in tracker §9 | OPEN | The next step |
+| Local-only commits; sandbox resets | Remote is still `ef79856` | The user applies the patches or authorizes a push | OPEN | Yes |
+| 12 `chromadb`-dependent tests (some security-relevant: `TestA7SystemController`, `test_module_factory_security`) never ran here | `ModuleNotFoundError` | Install `chromadb<1.0` in a full environment | OPEN, optional | Yes |
+| Pre-existing `str`-enum value collisions in `core/verification` | `MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE`; `unknown` shared | Namespace the values in a dedicated batch | DEFERRED | Yes |
+| `CoverageResult` (v1 §42) has no tracker row | Tracker row scan | Add a row on a user decision | OPEN, minor | Yes |
 
 ---
 
@@ -405,9 +530,13 @@ Limitations: the broader suite was not re-run after the docs-only commit `6428f2
 - Conventions to keep: frozen dataclasses; identity wrappers are `NewType("...", str)` in `identity.py`, added only for independently addressable objects; no re-exports in `__init__.py`; label non-architectural choices `IMPLEMENTATION JUDGMENT`; never claim more than the evidence shows; a `str`-Enum member compares equal to any other `str`-Enum member with the same value, so check for value collisions when adding enums.
 - Repository cautions: `check_not_circular` has no callers outside the new evidence contracts' `verify_against` methods and tests (pre-existing).
 
+Update 2 references: v1 "Self-Review — Pass 3 (adversarial)" (crash is `FAILED`), v1 §20 (process/outcome separation, `failure_control`), v1 §23 (UNVERIFIABLE is a successful abstention outcome), v1 §25 (canonical verdicts), v2 "Review C", v3 Part 1 §5; tracker §9 for the 3C-A rule-provenance table, closure conditions and deferral table; `core/verification/criterion_result.py` docstrings.
+
 ---
 
 ## 17. Next Steps
+
+> **[Update 2, 2026-10-03]** Items 2 and 3 below are superseded by the Update 2 list at the end of this section (3C-A is implemented; 3C-B is blocked). Items 1 and 4–6 still stand.
 
 1. **Resume and verify** (section 18). Do not change code until the state matches this handoff.
 2. **Batch 3C scope (rows 10 and 30: `CriterionResult`, `ProcessVerificationResult`/`OutcomeVerificationResult`).** Where: read the frozen architecture text for these (grep the three architecture docs and the tracker rows), plus existing `VerificationResult`/`VerificationVerdict` in `verdict.py` and `Criterion*` in `rubric.py`. Why: it is the next step the user ordered. Prerequisite: the user's approval of a bounded scope before any code; expect `VerificationObservation`-style gaps where the architecture only names a type. Verification: a short scope proposal listing what is architecture, what is judgment, what is deferred, and one question for the user.
@@ -416,9 +545,22 @@ Limitations: the broader suite was not re-run after the docs-only commit `6428f2
 5. **Before any merge:** user revokes/rotates the token; decide the merge path with `main`; register G8 and any other debts in `KNOWN_ISSUES.md` with non-colliding `DEBT-` ids; re-run the Verification suites and the broader suite after merging `main`; keep the code/docs commit separation.
 6. **Optional hardening (G8)** once the user schedules it: replace string-blacklist tests in Batch 1 with field-level rejection tests, add runtime enum checks for `Assumption.status` / `Reference.quality` (as 3A does for `ConstructValidity.status`), decide a consumer for `ClaimDependency`.
 
+### Update 2 (2026-10-03) — current next steps, in order
+
+1. **Resume and verify** (section 18, Update 2). Do not change code until the state matches this file.
+2. **Independent adversarial review of 3C-A**, by someone other than the implementer, challenging the eight areas in tracker §9 "Closure conditions" (state machine, `NOT_APPLICABLE`, failure semantics, findings, fingerprint, aggregation boundary, mirror parity, documentation). Use the oracle in Appendix B (edit its crash line to test alternatives). Expected verification: the reviewer's findings, each with evidence.
+3. **Decide the crash rule** (section 15): keep and label, weaken, or drop the field. Prerequisite: the review, and awareness that the `FAILED` question is the same one 3C-B must reconcile.
+4. **Resolve or document each review finding. Do not change 3C-A code** unless the review finds a concrete architectural contradiction (D-34).
+5. **Close 3C-A** in the tracker (status change only after steps 2–4).
+6. **Source-reconciliation study for 3C-B**, no code: what `FAILED` means in the frozen architecture, who owns `failure_control`, what authority v1 §20 has. No placeholder enum, speculative owner or guessed authority model (D-33).
+7. **Only then design 3C-B**, with a scope proposal and approval first.
+8. Items 4–6 of the version-1 list (later clusters, before any merge, G8 hardening) are unchanged. Applying the patches or pushing needs the user's explicit instruction.
+
 ---
 
 ## 18. Resume Instructions
+
+> **[Update 2, 2026-10-03]** The remote branch tip is still `ef79856`. The 3C-A work exists only as local commits in the previous sandbox and as exported patches (`git format-patch ef79856..HEAD`). Resuming from the remote alone gives the version-1 state (385 tests); apply the patches with `git am` to reach the Update 2 state (424 / 424 / mypy clean on 28 files). The counts in steps 2 and 4 below describe `ef79856`.
 
 First actions in a fresh session:
 1. Read `PROJECT_INSTRUCTIONS.md`, then this file completely. Answer in English.
@@ -430,9 +572,17 @@ First actions in a fresh session:
 
 Do not: push, merge into `main`, rewrite published history, or use the exposed token without the user's explicit instruction.
 
+### Update 2 (2026-10-03) — additional resume steps
+
+7. If the patches are available, apply them onto `ef79856` (`git am`), then re-run: pytest → 424 passed; stdlib mirror → 424 OK; mypy → no issues in 28 files; import-all → 27 modules. Confirm `git log -1 -- handoff.md` is this update.
+8. Begin at Update 2 Next Step 2 (the independent review). Do not re-run the investigations in section 11 (Update 2) unless a revisit trigger fired.
+9. Do not: push, merge `main`, rewrite history, force-push, or use the exposed token, without explicit instruction.
+
 ---
 
 ## 19. Transfer Status
+
+> **[Update 2, 2026-10-03] Current status: TRANSFER INCOMPLETE — LOCAL COMMIT ONLY.** The Batch 3C-A implementation commit (`4c93878`), the two documentation commits (`99f3acd`, `a0b9da5`) and the commit carrying this update exist only locally; the user instructed not to push (S12). Mitigation: the series is exported as patches and applies cleanly onto `ef79856`. It may be marked `TRANSFER READY` only after the branch is pushed and the remote tip is verified to contain the handoff commit. The status below describes `ef79856`, which is on the remote.
 
 **TRANSFER READY**, conditional on the post-push verification below. Conditions satisfied at the time of writing: original prompt and later instructions preserved; requirement, decision and investigation ledgers present; verified state recorded with exact commands; implementation checkpoint `6428f2e` committed and pushed (remote verified); no material uncommitted work; next action defined.
 
@@ -529,3 +679,185 @@ import re; from collections import Counter
 rows = [re.split(r"\s*\|\s*", l) for l in open(F, encoding="utf-8") if re.match(r"^\| \d+ \|", l)]
 print(Counter(r[3] for r in rows))        # expect {'✅': 38, '◐': 5, '❌': 14}
 ```
+
+### Update 2 (2026-10-03) — tooling used (these lived in `/home/claude/tools`, outside the repo)
+
+**`mkmirror.py` — pytest → stdlib-mirror converter.** Supersedes the version-1 converter. Validated by regenerating 347 existing mirror lines (`TestConstructValidityStatus`, `TestConstructValidity`, `TestConstructValidityAndRubricIdentity`, `TestCoverageTypes`, `TestCoverageIndependence`, `TestObservationAbsenceState`, `TestObservationAbsence`): **0 differences**. It refuses ambiguous asserts and unhandled `pytest` usage. Usage: `convert(block)` on the new pytest classes, then insert the result before `if __name__ == "__main__":` in the mirror.
+
+```python
+"""pytest-style test source -> unittest mirror source. Refuses anything it cannot convert unambiguously."""
+import re, sys
+
+OPS = [" is not ", " not in ", " == ", " != ", " is ", " in "]
+
+def top_level_ops(e):
+    depth, quote, i, hits = 0, None, 0, []
+    while i < len(e):
+        ch = e[i]
+        if quote:
+            if ch == "\\": i += 2; continue
+            if ch == quote: quote = None
+        elif ch in "\"'": quote = ch
+        elif ch in "([{": depth += 1
+        elif ch in ")]}": depth -= 1
+        elif depth == 0:
+            for op in OPS:
+                if e.startswith(op, i):
+                    hits.append((i, op)); i += len(op) - 1; break
+        i += 1
+    return hits
+
+def split_top(e, op, idx):
+    return e[:idx].strip(), e[idx+len(op):].strip()
+
+def conv_assert(expr):
+    e = expr.strip()
+    for bad in (" and ", " or "):
+        if bad in _strip_nested(e): return f"self.assertTrue({e})"
+    if e.startswith("not "): return f"self.assertFalse({e[4:].strip()})"
+    hits = top_level_ops(e)
+    if len(hits) == 0: return f"self.assertTrue({e})"
+    if len(hits) > 1: raise SystemExit(f"ambiguous assert ({len(hits)} top-level operators): {e}")
+    idx, op = hits[0]; a, b = split_top(e, op, idx)
+    if op == " == ": return f"self.assertEqual({a}, {b})"
+    if op == " != ": return f"self.assertNotEqual({a}, {b})"
+    if op == " is not ": return f"self.assertIsNotNone({a})" if b == "None" else f"self.assertIsNot({a}, {b})"
+    if op == " is ": return f"self.assertIsNone({a})" if b == "None" else f"self.assertIs({a}, {b})"
+    if op == " not in ": return f"self.assertNotIn({a}, {b})"
+    if op == " in ": return f"self.assertIn({a}, {b})"
+    raise SystemExit("unreachable")
+
+def _strip_nested(e):
+    out, depth, quote = [], 0, None
+    for ch in e:
+        if quote:
+            if ch == quote: quote = None
+            continue
+        if ch in "\"'": quote = ch; continue
+        if ch in "([{": depth += 1; continue
+        if ch in ")]}": depth -= 1; continue
+        if depth == 0: out.append(ch)
+    return "".join(out)
+
+def convert(text):
+    out = []
+    for line in text.split("\n"):
+        m = re.match(r"^(\s*)assert (.+)$", line)
+        if m:
+            e = m.group(2)
+            if e.rstrip().endswith(("(", "[", "{", ",", "\\")) : raise SystemExit(f"multi-line assert not supported: {line}")
+            out.append(f"{m.group(1)}{conv_assert(e)}"); continue
+        m = re.match(r"^(\s*)with pytest\.raises\((.+)\):\s*$", line)
+        if m: out.append(f"{m.group(1)}with self.assertRaises({m.group(2)}):"); continue
+        m = re.match(r"^class (Test\w+):\s*$", line)
+        if m: out.append(f"class {m.group(1)}(unittest.TestCase):"); continue
+        if "pytest" in line and not line.lstrip().startswith("#"): raise SystemExit(f"unhandled pytest usage: {line}")
+        out.append(line)
+    return "\n".join(out)
+
+if __name__ == "__main__":
+    sys.stdout.write(convert(open(sys.argv[1], encoding="utf-8").read()))
+```
+
+**`mutate.py` — mutation harness for `criterion_result.py`** (30 mutants; M06 is the proven-equivalent one). It asserts a unique match before each replacement, deletes `__pycache__/criterion_result*` and runs `python3 -B` with `PYTHONDONTWRITEBYTECODE=1` before every run (see section 12), restores the source and checks its SHA-256 at the end. Adapt `SRC` and the `-k` filter for a new module.
+
+```python
+import subprocess, shutil, hashlib, sys
+SRC="/home/claude/ocbrain/core/verification/criterion_result.py"
+orig=open(SRC,encoding="utf-8").read(); h0=hashlib.sha256(orig.encode()).hexdigest()
+def sub(old,new): return ("sub",old,new)
+M=[
+("M01 ATTEMPTED may have no verdict (the ruled-out third state)", sub('            if self.verdict is None:\n                raise ValueError(\n                    "an ATTEMPTED','            if False:\n                raise ValueError(\n                    "an ATTEMPTED')),
+("M02 unevaluated states may carry any verdict", sub('        elif self.verdict is not None:\n            raise ValueError(\n                f"a {self.attempt_state.name}','        elif False:\n            raise ValueError(\n                f"a {self.attempt_state.name}')),
+("M03 BLOCKED may carry a verdict", sub('        elif self.verdict is not None:\n            raise','        elif self.verdict is not None and self.attempt_state is CriterionAttemptState.NOT_ATTEMPTED:\n            raise')),
+("M04 NOT_ATTEMPTED may carry a verdict", sub('        elif self.verdict is not None:\n            raise','        elif self.verdict is not None and self.attempt_state is CriterionAttemptState.BLOCKED:\n            raise')),
+("M05 crash coupling removed entirely", sub('        if self.execution_failure is not None and (\n            self.attempt_state is not CriterionAttemptState.ATTEMPTED\n            or self.verdict is not VerificationVerdict.UNVERIFIABLE\n        ):','        if False:')),
+("M06 crash coupling: ATTEMPTED-state clause dropped", sub('            self.attempt_state is not CriterionAttemptState.ATTEMPTED\n            or self.verdict is not VerificationVerdict.UNVERIFIABLE\n','            self.verdict is not VerificationVerdict.UNVERIFIABLE\n')),
+("M07 crash coupling inverted", sub('or self.verdict is not VerificationVerdict.UNVERIFIABLE','or self.verdict is VerificationVerdict.UNVERIFIABLE')),
+("M08 criterion_id check removed", sub('if not isinstance(self.criterion_id, str) or not self.criterion_id.strip():','if False:')),
+("M09 rubric_fingerprint check removed", sub('if not isinstance(self.rubric_fingerprint, str) or not self.rubric_fingerprint.strip():','if False:')),
+("M10 attempt_state type check removed", sub('if not isinstance(self.attempt_state, CriterionAttemptState):','if False:')),
+("M11 verdict type check removed", sub('if self.verdict is not None and not isinstance(self.verdict, VerificationVerdict):','if False:')),
+("M12 execution_failure type check removed", sub('if self.execution_failure is not None and not isinstance(\n            self.execution_failure, VerificationExecutionFailure\n        ):','if False:')),
+("M13 finding_ids tuple check removed", sub('if not isinstance(self.finding_ids, tuple):','if False:')),
+("M14 finding_ids element type check removed", sub('if not isinstance(finding_id, str):','if False:')),
+("M15 finding_ids blank element check removed", sub('if not finding_id.strip():','if False:')),
+("M16 BLOCKED value collides with MethodExecutionState", sub('BLOCKED = "criterion_blocked"','BLOCKED = "blocked"')),
+("M17 NOT_ATTEMPTED value collides with MethodExecutionState", sub('NOT_ATTEMPTED = "criterion_not_attempted"','NOT_ATTEMPTED = "not_run"')),
+("M18 ATTEMPTED value collides with VerificationVerdict", sub('ATTEMPTED = "criterion_attempted"','ATTEMPTED = "verified"')),
+("M19 SKIPPED invented", sub('    ATTEMPTED = "criterion_attempted"\n','    ATTEMPTED = "criterion_attempted"\n    SKIPPED = "criterion_skipped"\n')),
+("M20 mini-aggregator method added", sub('    def __post_init__(self) -> None:','    def worst_of(self):\n        return self.verdict\n\n    def __post_init__(self) -> None:')),
+("M21 confidence field added", sub('    finding_ids: Tuple[VerificationFindingId, ...] = ()\n','    finding_ids: Tuple[VerificationFindingId, ...] = ()\n    confidence: float = 0.0\n')),
+("M22 computed property added", sub('    def __post_init__(self) -> None:','    @property\n    def is_positive(self) -> bool:\n        return self.verdict is VerificationVerdict.VERIFIED\n\n    def __post_init__(self) -> None:')),
+("M23 finding_ids required for ATTEMPTED (ruled out)", sub('        if not isinstance(self.finding_ids, tuple):','        if self.attempt_state is CriterionAttemptState.ATTEMPTED and not self.finding_ids:\n            raise ValueError("findings required")\n        if not isinstance(self.finding_ids, tuple):')),
+("M24 invented invariant: unevaluated cannot have findings", sub('        if not isinstance(self.finding_ids, tuple):','        if self.attempt_state is not CriterionAttemptState.ATTEMPTED and self.finding_ids:\n            raise ValueError("no findings when unevaluated")\n        if not isinstance(self.finding_ids, tuple):')),
+("M25 verdict gets a default (reached by omission)", sub('    verdict: Optional[VerificationVerdict]\n    execution_failure','    verdict: Optional[VerificationVerdict] = None\n    execution_failure')),
+("M26 verdict check loosened to any str", sub('not isinstance(self.verdict, VerificationVerdict):','not isinstance(self.verdict, str):')),
+("M27 coverage import added (boundary)", sub('from .identity import CriterionId, VerificationFindingId\n','from .identity import CriterionId, VerificationFindingId\nfrom .coverage import CriterionCoverage\n')),
+("M28 criterion_id: whitespace accepted", sub('or not self.criterion_id.strip():','or not self.criterion_id:')),
+("M29 rubric_fingerprint: whitespace accepted", sub('or not self.rubric_fingerprint.strip():','or not self.rubric_fingerprint:')),
+("M30 attempt_state coercion from str", sub('        if not isinstance(self.attempt_state, CriterionAttemptState):','        if isinstance(self.attempt_state, str) and not isinstance(self.attempt_state, CriterionAttemptState):\n            object.__setattr__(self, "attempt_state", CriterionAttemptState(self.attempt_state))\n        if not isinstance(self.attempt_state, CriterionAttemptState):')),
+]
+def _clean():
+    import glob, os
+    for f in glob.glob("/home/claude/ocbrain/core/verification/__pycache__/criterion_result*"): os.remove(f)
+def run():
+    _clean()
+    r=subprocess.run(["python3","-B","-m","pytest","tests/test_verification_contracts.py","-q","-x","--tb=no","-p","no:cacheprovider","-o","addopts=","-k","CriterionAttemptState or CriterionResult"],cwd="/home/claude/ocbrain",capture_output=True,text=True,env={**__import__("os").environ,"PYTHONDONTWRITEBYTECODE":"1"})
+    out=r.stdout+r.stderr; fails=[l for l in out.split("\n") if l.startswith("FAILED") or l.startswith("ERROR")]
+    return r.returncode, (fails[0][:110] if fails else out.strip().split("\n")[-1][:80])
+killed=0; survived=[]
+try:
+    for name,(kind,old,new) in M:
+        assert orig.count(old)==1, f"pattern not unique/found for {name}: {orig.count(old)}"
+        open(SRC,"w",encoding="utf-8").write(orig.replace(old,new))
+        rc,info=run()
+        if rc!=0: killed+=1; print(f"KILLED   {name}\n           by {info.replace('FAILED tests/test_verification_contracts.py::','')}")
+        else: survived.append(name); print(f"SURVIVED {name}")
+    # permissive stub: __post_init__ does nothing
+    i=orig.index("    def __post_init__"); open(SRC,"w",encoding="utf-8").write(orig[:i]+"    def __post_init__(self) -> None:\n        pass\n")
+    _clean()
+    r=subprocess.run(["python3","-B","-m","pytest","tests/test_verification_contracts.py","-q","--tb=no","-p","no:cacheprovider","-o","addopts=","-k","CriterionAttemptState or CriterionResult"],cwd="/home/claude/ocbrain",capture_output=True,text=True)
+    print("\nPERMISSIVE STUB (all validation removed):", r.stdout.strip().split("\n")[-1])
+finally:
+    open(SRC,"w",encoding="utf-8").write(orig)
+assert hashlib.sha256(open(SRC,encoding="utf-8").read().encode()).hexdigest()==h0
+print(f"\nmutants: {len(M)}  killed: {killed}  survived: {len(survived)} {survived}\nsource restored byte-identical: True")
+```
+
+**State-machine oracle (independent of the implementation; vary the crash line to test alternatives):**
+
+```python
+import itertools
+from core.verification.criterion_result import CriterionResult as R, CriterionAttemptState as S
+from core.verification.verdict import VerificationVerdict as V, VerificationExecutionFailure as F
+def oracle(state, verdict, failure):
+    if state is S.ATTEMPTED and verdict is None: return False
+    if state is not S.ATTEMPTED and verdict is not None: return False
+    if failure is not None and not (state is S.ATTEMPTED and verdict is V.UNVERIFIABLE): return False  # IMPLEMENTATION JUDGMENT
+    return True
+def impl(state, verdict, failure):
+    try: R("c1", "fp", state, verdict, failure); return True
+    except (ValueError, TypeError): return False
+dom = list(itertools.product(S, [None] + list(V), [None] + list(F)))
+print(len(dom), sum(impl(*d) for d in dom), [d for d in dom if oracle(*d) != impl(*d)])   # expect 165 16 []
+```
+
+**Docstring-only proof (AST identical once docstrings are stripped):**
+
+```python
+import ast
+def stripped(path):
+    t = ast.parse(open(path, encoding="utf-8").read())
+    for n in ast.walk(t):
+        if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            b = n.body
+            if b and isinstance(b[0], ast.Expr) and isinstance(getattr(b[0], "value", None), ast.Constant) and isinstance(b[0].value.value, str):
+                n.body = b[1:] or [ast.Pass()]
+    return ast.dump(t)
+# git show <old>:core/verification/criterion_result.py > /tmp/before.py ; compare stripped(before) == stripped(after)
+```
+
+**Mirror parity check:** regenerate the mirror block with `convert()` from the 3C-A section of `tests/test_verification_contracts.py` (from the `# Batch 3C-A -- CriterionResult` banner to the end of the file) and compare it byte for byte with the same section of `tests/verification_run_tests_stdlib.py`; compare the ordered `test_*` names; compare the counts of `assert` lines with `self.assert*` calls (55/55) and of `pytest.raises` with `assertRaises` (18/18).
+
+**Equivalence proof for a surviving mutant:** load the original and the mutated source as modules registered in `sys.modules` (section 12), then compare outcomes (`ok` or the exception type) over the full finite domain, as in the oracle above.
