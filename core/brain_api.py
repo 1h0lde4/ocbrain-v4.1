@@ -151,8 +151,13 @@ def register(app, orchestrator_ref: dict):
     @router.post("/import")
     async def import_module(req: ImportRequest):
         from pathlib import Path
-        from core.brain_export import import_module
-        name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+        from core.brain_export import BundlePathError, import_module
+        try:
+            name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+        except BundlePathError:
+            raise HTTPException(
+                400, "bundle_path must be a file inside the configured import root."
+            )
         return {"status": "imported", "module": name}
 
     @router.get("/version")
