@@ -1,8 +1,8 @@
 # Sandbox network-redesign study (DEBT-039): evidence and reconciliation
 
 - **Date:** October 3 2026
-- **Status:** evidence phase complete. **No design is chosen, nothing is implemented, and no repository code, test, capability or contract was changed.** The only file this study adds is this document.
-- **Base:** `sandbox-fabric` at `1b829fc`. **Location and branch of this document are pending the user's confirmation** (it sits on a local branch, `study/sandbox-network-redesign`, not pushed).
+- **Status:** evidence phase complete; the user's decisions are recorded in section 7. **No design is chosen, nothing is implemented, and no repository code, test, capability or contract was changed.** The only file this study adds is this document.
+- **Base:** `sandbox-fabric` at `1b829fc`. **Location decided by the user (October 3 2026, section 7):** branch `study/sandbox-network-redesign`, pushed; not to be merged into `main` yet.
 - **Environment:** Ubuntu 24.04, kernel `6.18.44-fc-v64` (a Firecracker microVM), Docker Engine 29.1.3, cgroup v1, no `/etc/docker/daemon.json`, the `docker import`-built test image `ocbrain-test/base:local`. Everything below was observed on this one host.
 - **Status vocabulary:** VERIFIED (observed in a run recorded here), CODE-READ (established by reading the source, no run), HYPOTHESIS, NOT TESTED.
 
@@ -16,7 +16,7 @@ Carried constraints: the invariant of reconciliation §17.4 (quoted in section 4
 
 1. **DEBT-039 is resolved as a finding.** It is reproducible (3 of 3 baseline runs), its mechanism is established from the code and consistent with every probe, and it is exploitable **without being handed the port** (a 2.3 s scan of the ephemeral range found the sibling's proxy) and on **both request paths** (`CONNECT` and plain HTTP). Two caveats left open in reconciliation §17.2 are closed.
 2. **The cause is two facts together:** every networked sandbox's `AllowlistProxy` listens on the one shared network's gateway (`docker_backend.py`, `create()`), and the proxy discards the caller's address (`_net_proxy.py:82`, `client, _addr = server_sock.accept()`), so it cannot tell whose request it is serving. Its allowlist is per instance, so using the sibling's proxy means using the sibling's policy.
-3. **A per-sandbox network alone does not meet "the proxy is the only path out".** A scratch experiment shows it removes the sibling-proxy path (the sibling's gateway is unreachable), but a container can still reach **any host service bound to `0.0.0.0`** through its own gateway. That is a distinct fact (F6), and it is true of the current topology too.
+3. **A per-sandbox network alone does not meet "the proxy is the only path out".** A scratch experiment shows it removes the sibling-proxy path (the sibling's gateway is unreachable), but a container can still reach **any host service bound to `0.0.0.0`** through its own gateway. That is a distinct fact (F6), and it is true of the current topology too. The user has since ruled that F6 is in C2's scope (section 7), so a per-sandbox network by itself is insufficient.
 4. **Per-sandbox networks have a capacity ceiling:** with Docker's default address pools, 29 additional internal networks were created before the daemon refused (F8).
 5. **A1 needs no code change of its own.** It is blocked behind two other gates: the direct `NET_NAMESPACE` test (test-only) and the C2 network gate (needs the redesign). See section 5.
 6. **Two behaviors listed as unexplained in reconciliation §17.5 are explained and are not defects in `AllowlistProxy`:** the plain-HTTP `403` is the host's upstream (F10), and the `test_net_proxy.py` flake is a test that assumes one `recv()` returns a whole response (F9).
@@ -46,7 +46,7 @@ The invariant (reconciliation §17.4): "A sandbox must not be able to reach or u
 | C2 bullet | Where it stands | Basis |
 |---|---|---|
 | Raw connection bypassing `HTTP_PROXY` fails | Not re-examined here; previously tested (reconciliation §14) | n/a |
-| Docker bridge/gateway isn't a usable route | The earlier test covered the gateway as a route **beyond the host**. F6 shows the gateway also reaches **host-local services**. Whether C2's wording covers that is an **interpretation the user must make** (section 7, decision 2) | F6 |
+| Docker bridge/gateway isn't a usable route | The earlier test covered the gateway as a route **beyond the host**. F6 shows the gateway also reaches **host-local services**. The user has ruled that C2 **does** cover it (section 7, decision 2): F6 is in scope | F6 |
 | Another reachable container can't relay egress | Containers cannot reach each other (ICC off), but a sibling's **proxy** is a relay: this is DEBT-039 | F1 to F4 |
 | `request.env` proxy values are overridden | Not re-examined here | n/a |
 
@@ -63,8 +63,8 @@ The invariant (reconciliation §17.4): "A sandbox must not be able to reach or u
 
 **Required, derived from the evidence:**
 
-1. **R1.** No sandbox may have a network path to another sandbox's proxy listener, or the proxy must refuse every caller but its own sandbox. F1 to F4 show the current topology does neither. F7 shows R1 is achievable at topology level with per-sandbox networks.
-2. **R2.** A decision on F6: whether "the proxy is the only path out" means the proxy is the only **reachable listener** for a networked sandbox. If yes, R1 alone is not enough, because F6 survives a per-sandbox network (F7). If no, C2's wording must be read narrowly and F6 needs separate registration.
+1. **R1 (mandatory, section 7).** No sandbox may have a network path to another sandbox's proxy listener, or the proxy must refuse every caller but its own sandbox. F1 to F4 show the current topology does neither. F7 shows R1 is achievable at topology level with per-sandbox networks.
+2. **R2 (mandatory; decided by the user, section 7).** F6 is in C2's scope: a networked sandbox must have no network path other than its proxy, so host-local services reachable through the gateway must be closed. R1 alone is not enough, because F6 survives a per-sandbox network (F7).
 3. **R3.** If per-sandbox networks are used: a lifecycle that fits the existing invariants (D10: every acquired resource is cleaned or retained in a destroyable handle; D11: race-safe bookkeeping), and a capacity answer for F8 (an address-pool setting or an explicit small subnet per sandbox, or a stated concurrency limit). The shared network's lifecycle (reconciliation DEC-4, still undecided) is subsumed by this.
 4. **R4.** If caller identity at the proxy is used instead: a source identity that an in-sandbox process cannot forge. F9 shows sandboxes run as uid 0 with `NET_RAW`, so a source-address check alone is weak until that is tested or the capability is dropped.
 5. **R5.** The regression gates in section 6, none of which exists yet.
@@ -76,7 +76,7 @@ The invariant (reconciliation §17.4): "A sandbox must not be able to reach or u
 - No fix inside `AllowlistProxy` for the plain-HTTP `403` (F10) or for the flake (F11): the first is the host's upstream, the second is the test.
 - `NamespaceBackend` was **not examined**; this study concerns `DockerBackend`'s topology only.
 
-**Option space (considerations, not decisions):**
+**Option space (considerations, not decisions).** O1 by itself is insufficient, because F6 persists (R2). The user has asked that no option be chosen yet (section 7).
 
 | Option | Sibling-proxy path (F1 to F4) | Other effects (evidence) | Open |
 |---|---|---|---|
@@ -89,17 +89,25 @@ The invariant (reconciliation §17.4): "A sandbox must not be able to reach or u
 
 - **G1, the concurrent A/B regression.** Two concurrent networked sandboxes with deliberately different allowlists; B must not obtain A's egress by any of: a port it was handed, a port it found by scanning, `CONNECT`, plain HTTP. The shape is Appendix A.1 to A.3. This is the gate for DEBT-039 and C2.
 - **G2, `NET_NAMESPACE`.** Reconciliation §17.8. Passing it re-earns `NET_NAMESPACE` only; it does not resurrect `NETWORK_ALLOWLIST` or C2.
-- **G3, host-service scope** (only if decision 2 puts F6 in scope): a networked sandbox cannot reach a `0.0.0.0`-bound host listener, with a loopback control.
+- **G3, host-service scope (required; F6 is in C2's scope, section 7):** a networked sandbox cannot reach a `0.0.0.0`-bound host listener, with a loopback control.
 - **G4, lifecycle and capacity** (if per-sandbox networks): no leaked network after each D10 failure point; behavior at and beyond the pool limit is defined and tested.
 - **Separately,** and not a redesign gate: the two `test_net_proxy.py` tests should read the response to EOF or to `Content-Length`.
 
-## 7. Decisions needed from the user
+## 7. Decisions
 
-1. **Where this study lives.** Which branch (a new branch from `sandbox-fabric`, which has `docker_backend.py` and the reconciliation document, or from `main`, which does not), and whether to push it.
-2. **F6.** Does C2's "the proxy is the only path out" include host-local services reachable through the gateway? If yes, F6 is in the redesign's scope. If no, F6 is a separate finding to register. Either way it should be recorded.
-3. **B3.** May a host firewall rule be used as a *supplement* that only narrows which ports a sandbox reaches, with `AllowlistProxy` still owning the policy?
-4. **The flake.** Fix the two tests in a separate small change?
-5. **Hardening, separate from this study.** F9 shows no capability dropping. It is relevant here only to option O2. Whether to open it as its own item is the user's call.
+**Decided by the user (October 3 2026), with the wording kept where it matters:**
+
+1. **Where the study lives.** "Keep it on a new branch from `sandbox-fabric`, not `main`." The branch is `study/sandbox-network-redesign`, from `sandbox-fabric` at `1b829fc`. **Push: yes. Merge into `main`: no, not yet**: it "should remain an explicit study branch until the redesign decision and implementation work are separately authorized".
+2. **F6 is in C2's scope.** The recorded decision: "C2 includes host-local services reachable through the sandbox gateway. F6 is therefore in redesign scope and must be closed before `NETWORK_ALLOWLIST` can be re-supported." The user drew these consequences: R1 and R2 are both mandatory; G3 is a required regression gate; **O1 by itself is insufficient**; F6 is "not another manifestation of DEBT-039" but a separate topology-level bypass that C2 still covers.
+3. **No option is chosen.** O1 to O4 stay undecided "pending the next design study": "the study establishes what must be true; a subsequent design workstream chooses how to make it true."
+4. **A1 stays blocked, not broken.** No change to `admission.py`, `contracts.py` or the `NET_NAMESPACE` implementation follows from this study. A1's remaining prerequisites are the direct `NET_NAMESPACE` test and a C2-compliant network design.
+
+**Still open (the user's reply did not address them):**
+
+- **B3.** May a host firewall rule be a supplement that only narrows which ports a sandbox can reach, with `AllowlistProxy` still owning the policy?
+- **The flake.** Fix the two `test_net_proxy.py` tests (read the response to EOF or to `Content-Length`) in a separate small change?
+- **Hardening.** F9 (no capability dropping) as its own item?
+- **Registration.** F6 is separate from DEBT-039, so should it be registered as its own debt in `KNOWN_ISSUES.md`? Until it is, DEBT-039's text does not mention it.
 
 ## 8. Corrections to earlier records (the earlier text is not edited)
 
