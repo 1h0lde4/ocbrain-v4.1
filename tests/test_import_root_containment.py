@@ -9,9 +9,11 @@ requires the path to resolve (symlinks followed) to a file inside
 global.import_root, defaulting to data/exports where export_module() writes.
 
 CodeQL's py/path-injection alerts on the /import sources (interface/api.py:481,
-core/brain_api.py:152) are the scanner view of the same boundary. Whether
-CodeQL treats resolve() + is_relative_to() as a barrier is untested; these
-tests establish the actual behavior.
+core/brain_api.py:152) are the scanner view of the same boundary. An earlier
+resolve() + is_relative_to() form of the check was itself flagged by CodeQL
+(PR #44); the check now resolves both sides with os.path.realpath and requires
+commonpath([real_root, real_candidate]) == real_root. These tests establish the
+actual behavior.
 """
 import json
 import zipfile
@@ -80,6 +82,30 @@ def test_dotdot_traversal_is_rejected(tmp_path, root, make):
     outside = _bundle(tmp_path / "outside.ocbrain")
     with pytest.raises(be.BundlePathError):
         be.resolve_bundle_path(make(root, outside))
+
+
+def test_dotdot_that_normalizes_back_inside_the_root_is_accepted(root):
+    # Containment is judged on the resolved path, not on how it was spelled.
+    b = _bundle(root / "ok.ocbrain")
+    assert be.resolve_bundle_path("sub/../ok.ocbrain") == b.resolve()
+
+
+def test_symlinked_import_root_is_resolved_on_both_sides(tmp_path, monkeypatch):
+    real = tmp_path / "real_exports"
+    real.mkdir()
+    link = tmp_path / "exports_link"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this platform")
+    monkeypatch.setattr(
+        config_module.config, "get",
+        lambda key, default=None: str(link) if key == "global.import_root" else default,
+    )
+    b = _bundle(real / "ok.ocbrain")
+    # Reached through the link or by its real path: same resolved root.
+    assert be.resolve_bundle_path(link / "ok.ocbrain") == b.resolve()
+    assert be.resolve_bundle_path(b) == b.resolve()
 
 
 def test_sibling_directory_sharing_a_prefix_is_rejected(tmp_path, root):

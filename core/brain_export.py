@@ -10,6 +10,7 @@ Bundle format (.ocbrain = zip):
     pairs_sample.jsonl   — 100 training pair samples (for inspection)
 """
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -51,26 +52,36 @@ def resolve_bundle_path(bundle_path) -> Path:
     server-side file path named by the HTTP caller (ImportRequest.bundle_path,
     both /import routes), so without this any readable file on the host could
     be opened as a zip. A relative path is taken relative to the import root.
-    resolve() follows symlinks, so a link inside the root that points outside
-    it is rejected; is_relative_to() compares whole path components, so a
-    sibling such as exports_evil/ is not mistaken for exports/. The error text
-    is fixed and echoes neither the input nor the root.
+
+    Both the root and the candidate are fully resolved first (os.path.realpath
+    follows symlinks, so a link inside the root that points outside it is
+    rejected), and the candidate is accepted only if
+
+        commonpath([real_root, real_candidate]) == real_root
+
+    commonpath() compares whole path components, so a sibling such as
+    exports_evil/ is not mistaken for exports/ (the prefix collision a bare
+    str.startswith() check has). The error text is fixed and echoes neither
+    the input nor the root.
     """
-    root = import_root()
+    real_root = os.path.realpath(import_root())
     try:
-        candidate = Path(bundle_path)
-        if not candidate.is_absolute():
-            candidate = root / candidate
-        resolved = candidate.resolve()
+        # os.path.join anchors a relative bundle_path at the root and lets an
+        # absolute one stand on its own; the containment check below then
+        # decides whether the result is acceptable either way.
+        real_candidate = os.path.realpath(
+            os.path.join(real_root, os.fspath(bundle_path))
+        )
+        common = os.path.commonpath([real_root, real_candidate])
     except (OSError, ValueError):
         raise BundlePathError(
             "bundle_path must be a file inside the configured import root."
         ) from None
-    if not resolved.is_relative_to(root):
+    if os.path.normcase(common) != os.path.normcase(real_root):
         raise BundlePathError(
             "bundle_path must be a file inside the configured import root."
         )
-    return resolved
+    return Path(real_candidate)
 
 
 def _safe_read(path: Path, default: str) -> str:
