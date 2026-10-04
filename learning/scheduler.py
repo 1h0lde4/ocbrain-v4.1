@@ -124,12 +124,13 @@ class Scheduler:
         for job in self._jobs:
             self._crashes[job.name].clear()
             self._state[job.name].status = "idle"
-        self._tasks = [
+        tasks = [
             asyncio.create_task(self._supervise(job), name=f"scheduler:{job.name}")
             for job in self._jobs
         ]
+        self._tasks = tasks
         try:
-            results = await asyncio.gather(*self._tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             for job, res in zip(self._jobs, results):
                 if isinstance(res, Exception):   # a supervisor itself failed: report it, never raise
                     ref = log_and_ref(log, f"scheduler supervisor '{job.name}'", res)
@@ -141,8 +142,11 @@ class Scheduler:
         finally:
             # If start() is cancelled, gather() cancels every supervisor AND does not finish until they
             # have all finished, so no child outlives start() (pinned by test_9b).
-            self._tasks = []
-            self._running = False
+            # Only clean up state this call still owns: once our children are done a newer start() may
+            # already have taken over, and our late cleanup must not stop it.
+            if self._tasks is tasks:
+                self._tasks = []
+                self._running = False
 
     def stop(self) -> None:
         self._running = False

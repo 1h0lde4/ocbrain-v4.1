@@ -422,6 +422,38 @@ class TestContainment:
         await asyncio.wait_for(task, 3.0)          # completes normally, no exception
         assert _scheduler_tasks() == []
 
+    async def test_9d_late_cleanup_of_a_finished_start_does_not_stop_a_newer_start(self, monkeypatch):
+        """Found in review of PR #53: A's children are all done, a second start() B takes over, then A's
+        start() resumes and runs its cleanup.  That cleanup used to reset ``_running`` and drop B's tasks."""
+        _ok_modules(monkeypatch)
+        s = _scheduler(monkeypatch)
+        real_supervise, loop, spawned = s._supervise, asyncio.get_running_loop(), {}
+
+        async def supervise(job):
+            try:
+                await real_supervise(job)
+            finally:
+                if job.name == "gap_detector" and "b" not in spawned:          # the last child to finish
+                    # Queued before this child's completion callbacks, so B's first step runs between
+                    # "all of A's children are done" and "A's start() resumes".
+                    loop.call_soon(lambda: spawned.setdefault("b", asyncio.ensure_future(s.start())))
+
+        monkeypatch.setattr(s, "_supervise", supervise)
+        a = asyncio.create_task(s.start())
+        await _until(lambda: len(_scheduler_tasks()) == 5, what="first start() running")
+        s.stop()
+        await _until(lambda: "b" in spawned, what="second start() spawned")
+        await asyncio.wait_for(a, 2.0)                       # A's late cleanup has now run
+        b = spawned["b"]
+        await asyncio.sleep(0.15)
+        assert not b.done(), "the newer start() was stopped by the older start()'s late cleanup"
+        assert s._running and len(_scheduler_tasks()) == 5
+        before = s.cycles["gap"]
+        await _until(lambda: s.cycles["gap"] > before, what="the newer run keeps working")
+        monkeypatch.setattr(s, "_supervise", real_supervise)
+        s.stop()
+        await asyncio.wait_for(b, 2.0)
+
     async def test_10_job_recovers_by_itself_once_the_cause_is_restored(self, monkeypatch, events):
         counters = _ok_modules(monkeypatch)
         _poison(monkeypatch, "cleaner")
