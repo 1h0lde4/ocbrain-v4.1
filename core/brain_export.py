@@ -17,6 +17,8 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
+from core.module_paths import module_child
+
 ROOT    = Path(__file__).parent.parent
 MODULES = ROOT / "modules"
 DATA    = ROOT / "data"
@@ -59,14 +61,16 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
             f"Use only letters, digits, underscores."
         )
 
-    mod_dir = MODULES / module_name
+    # .isidentifier() above is the naming rule; module_child() is the
+    # filesystem boundary (single component, resolved path inside the root).
+    mod_dir = module_child(MODULES, module_name)
     if not mod_dir.exists():
         raise ValueError(f"Module '{module_name}' not found.")
 
     EXPORTS.mkdir(parents=True, exist_ok=True)
     if output_path is None:
         ts = time.strftime("%Y%m%d_%H%M%S")
-        output_path = EXPORTS / f"{module_name}_{ts}.ocbrain"
+        output_path = module_child(EXPORTS, module_name, f"_{ts}.ocbrain")
 
     state      = config.get_module_state(module_name)
     brain_info = brain_version_manager.get_state().modules.get(module_name, {})
@@ -108,12 +112,12 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
                 shutil.copy2(kb_src, kb_dest / "knowledge.db")
 
         # 4. Eval set
-        eval_src = DATA / "evals" / f"{module_name}.json"
+        eval_src = module_child(DATA / "evals", module_name, ".json")
         if eval_src.exists():
             shutil.copy2(eval_src, tmp_path / "evals.json")
 
         # 5. Training pair sample (100 pairs max)
-        raw_dir = DATA / "raw" / module_name
+        raw_dir = module_child(DATA / "raw", module_name)
         if raw_dir.exists():
             pairs = []
             for f in sorted(raw_dir.glob("*.json"))[:100]:
@@ -207,7 +211,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
                 f"Use only letters, digits, underscores."
             )
 
-        mod_dir = MODULES / name
+        mod_dir = module_child(MODULES, name)
 
         if mod_dir.exists() and not overwrite:
             raise ValueError(
@@ -254,7 +258,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
         # Restore eval set
         eval_src = tmp_path / "evals.json"
         if eval_src.exists():
-            eval_dest = DATA / "evals" / f"{name}.json"
+            eval_dest = module_child(DATA / "evals", name, ".json")
             eval_dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(eval_src, eval_dest)
 
