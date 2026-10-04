@@ -17,6 +17,7 @@ Two properties are pinned, on purpose separately:
 """
 import asyncio  # noqa: F401  (pytest-asyncio auto mode)
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -240,10 +241,12 @@ def test_export_refuses_a_module_directory_that_is_a_symlink_out_of_modules(tmp_
 
 def test_import_refuses_to_replace_a_module_directory_that_is_a_symlink_out(tmp_path, monkeypatch):
     repo = _fake_repo(tmp_path, monkeypatch)
-    # Bundle sits inside the exports dir so this keeps testing the module_name
-    # boundary even when an import root is enforced (default root = EXPORTS).
+    # The bundle sits in the exports dir and the import root (issue #54: no
+    # root configured => refused, there is no default) is pointed at it, so this
+    # keeps testing the module_name boundary rather than the /import boundary.
     exports = repo / "data" / "exports"
     exports.mkdir(parents=True)
+    monkeypatch.setattr(be, "import_root", lambda: os.path.realpath(exports))
     outside = tmp_path / "victim_area"
     outside.mkdir()
     (outside / "important.txt").write_text("irreplaceable")
