@@ -295,8 +295,9 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     carries no information here and the printed steps are the evidence. The runbook's validity checker was
     also wrong at first (it treated an echoed interpretation as a sign of failure); corrected and tested.
   - **Limits:** 11 requests; one model; one run (sampling variance unknown); a fresh, empty memory store; one
-    human reader; model identity only partially recovered (Meta Llama 3, April 2024 release, per the license header; size,
-    quantization and digest not captured) and the repo commit not captured. It does **not** establish
+    human reader; model identity recovered after the fact (`llama3:latest`, 8.0B, Q4_0, ID `365c0bd3c000`), sampling
+    uncontrolled (the code sets no temperature or seed, so a re-run is expected to differ), and the repo commit
+    not captured. It does **not** establish
     behavior with other models, with populated memory, or any effect on user outcomes. It does not accept
     this ADR.
   - **Containment options, none applied** — (A) `plan_steps=[]`; (B) drop both the plan and the echoed

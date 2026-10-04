@@ -4,25 +4,32 @@
 containment; the disposition is Moncif's. Method: `OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RUNBOOK_OCT2026.md`.
 
 > **Read first — limits.** 11 prompts, **one** model, **one** run. These are *observations*, not evidence of
-> general behavior across models, runs, or a populated memory store. The exact model identity could not be
-> fully recovered — only partially (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
+> general behavior across models, runs, or a populated memory store. The model identity was recovered only after the
+> fact and sampling was uncontrolled, so a re-run is expected to differ (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
 
 ## Provenance
 - **Run 1:** every call failed with `404 Not Found` at `/api/generate` (1–3 ms). `mistral` was installed, `llama3`
   was not — confirming the diagnosis in the runbook (a server answering, model not installed under that name).
 - **Run 2 (this record):** `mistral` removed, `llama3` installed. Console output supplied by Moncif in chat.
-- **Exact model identity: PARTIALLY RECOVERED.** The code asks Ollama for the name `llama3`
-  (`Ollama(llama3)`). Moncif later supplied the *tail* of `ollama show llama3`, run after the experiment (valid for
-  this run only if the installed model is unchanged since):
-  - the license header reads `META LLAMA 3 COMMUNITY LICENSE AGREEMENT` / `Meta Llama 3 Version Release Date:
-    April 18, 2024` — i.e. the **original Meta Llama 3 release (April 2024)**;
-  - parameters: stop tokens `<|start_header_id|>`, `<|end_header_id|>`, `<|eot_id|>` and `num_keep 24`
-    (the Llama 3 chat-template settings).
-  - **Still missing — and deliberately not assumed:** the parameter count (e.g. 8B vs 70B), the quantization, the
-    context length, the tag and the digest (the `Model` block of `ollama show` and the `ollama list` row were not
-    supplied). So the run is still **not fully reproducible**: "Llama 3 (April 2024), size/quantization unknown".
-  - Also not captured: `live.json`, `live.meta.txt` (repo commit, Python version), sampling settings.
-  - To close the gap: send the **complete** output of `ollama show llama3` and `ollama list`, or `live.meta.txt`.
+- **Model identity: RECOVERED AFTER THE FACT.** Moncif supplied the complete output of `ollama show llama3` and
+  `ollama list`, run *after* the experiment:
+  - **`llama3:latest`, ID `365c0bd3c000`, 4.7 GB**; architecture `llama`; **8.0B parameters**; context length 8192;
+    embedding length 4096; **quantization Q4_0**; capability `completion`; the Llama 3 chat-template parameters
+    (`num_keep 24`, stop tokens `<|start_header_id|>`, `<|end_header_id|>`, `<|eot_id|>`); license
+    `META LLAMA 3 COMMUNITY LICENSE AGREEMENT`, `Meta Llama 3 Version Release Date: April 18, 2024` (the original
+    Llama 3 release).
+  - **It applies to the run only if the installed model is unchanged since.** `ollama list` showed `MODIFIED 37 hours
+    ago` (relative to the listing). The model was installed before the experiment, and a re-pull afterwards would have
+    reset that time, so the listing is consistent with this being the model that ran — but it is **not proof**,
+    because the experiment's own timestamp was not captured. (Optional: compare `ls -l --time-style=full-iso
+    live.json` with the date implied by "37 hours ago".)
+  - **Sampling was uncontrolled.** The code sends only `{"model", "prompt", "stream": false}` to `/api/generate`
+    (`core/provider_mesh.py:90`); no temperature, seed, top_p or token cap is set anywhere on the two call paths, and
+    the model's own parameters set only `num_keep` and the stop tokens. Ollama's runtime defaults therefore applied
+    (sampling is stochastic; Ollama's documented default temperature is 0.8 — from its docs, not verified here). A
+    re-run is **expected to differ in wording**; whether the structural findings (multi-step generic workflow) are
+    stable across runs is unknown.
+  - **Still not captured:** repo commit, Python version, run date/time (`live.meta.txt`), and `live.json`.
 
 ## Is it valid evidence? (checked against the code, not assumed)
 | Check | Result |
