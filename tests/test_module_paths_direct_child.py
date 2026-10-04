@@ -8,6 +8,10 @@ a symlink to a nested descendant through, and symlink loops either leaked a
 bare RuntimeError (Python <= 3.12, from Path.resolve) or were silently accepted
 (Python >= 3.13, where Path.resolve no longer raises on a loop).
 
+The helper now canonicalizes with os.path.realpath() and decides containment on
+strings: candidate.startswith(base + os.sep), then exactly one component below
+the base, then an os.stat() probe that treats ELOOP as a loop.
+
 This file imports nothing but the helper, so it runs on any interpreter that
 has pytest. Behaviour must be identical on every supported Python version.
 """
@@ -147,27 +151,24 @@ def test_loop_in_the_root_path_is_rejected(tmp_path):
     _rejected(tmp_path / "loop_root", "foo")
 
 
-def test_resolve_runtime_error_is_converted(root, monkeypatch):
-    """The Python <= 3.12 failure mode, exercised on any interpreter."""
-    def boom(self, strict=False):
-        raise RuntimeError("Symlink loop from %r" % str(self))
-
-    monkeypatch.setattr(Path, "resolve", boom)
+def test_realpath_hands_a_loop_back_so_stat_is_the_detector(root):
+    """Premise of the probe, checked on this interpreter: the canonicalizer
+    neither raises on a loop nor moves it out of root -- only the OS can say."""
+    _link(root / "foo", "foo")
+    canonical = os.path.realpath(root / "foo")
+    assert os.path.dirname(canonical) == os.path.realpath(root)
     _rejected(root, "foo")
 
 
-def test_loop_is_detected_by_stat_when_resolve_does_not_raise(root, monkeypatch):
-    """The Python >= 3.13 failure mode: resolve() hands back a loop untouched."""
-    _link(root / "foo", "foo")
-    real_resolve = Path.resolve
+@pytest.mark.parametrize("make_exc", [
+    lambda: OSError(errno.EIO, "boom"),
+    lambda: ValueError("boom"),
+])
+def test_canonicalization_failure_is_converted(root, monkeypatch, make_exc):
+    def boom(*args, **kwargs):
+        raise make_exc()
 
-    def lenient(self, strict=False):
-        try:
-            return real_resolve(self, strict=strict)
-        except RuntimeError:
-            return Path(os.path.abspath(self))  # what >= 3.13 effectively does
-
-    monkeypatch.setattr(Path, "resolve", lenient)
+    monkeypatch.setattr(module_paths.os.path, "realpath", boom)
     _rejected(root, "foo")
 
 
@@ -182,6 +183,85 @@ def test_only_eloop_is_a_loop_verdict(root, monkeypatch):
 
     monkeypatch.setattr(module_paths.os, "stat", denied)
     assert module_child(root, "finance_helper") == (root / "finance_helper").resolve()
+
+
+# ── containment on canonical strings ──────────────────────────────────────
+
+@pytest.fixture
+def allowed(tmp_path) -> Path:
+    r = tmp_path / "allowed_root"
+    r.mkdir()
+    (tmp_path / "allowed_root_evil" / "inner").mkdir(parents=True)
+    return r
+
+
+def test_sibling_directory_sharing_the_root_prefix_is_rejected(allowed, tmp_path):
+    # "<root>_evil" starts with "<root>" but is not inside it.
+    _link(allowed / "foo", tmp_path / "allowed_root_evil")
+    _rejected(allowed, "foo")
+
+
+def test_directory_inside_a_prefix_sibling_is_rejected(allowed, tmp_path):
+    _link(allowed / "foo", tmp_path / "allowed_root_evil" / "inner")
+    _rejected(allowed, "foo")
+
+
+def test_suffix_traversal_into_a_prefix_sibling_is_rejected(allowed):
+    (allowed / "bar").mkdir()
+    _rejected(allowed, "bar", "/../../allowed_root_evil")
+    _rejected(allowed, "bar", "/../../allowed_root_evil/inner")
+
+
+def test_prefix_root_still_accepts_its_real_children(allowed):
+    got = module_child(allowed, "foo")
+    assert got == (allowed / "foo").resolve()
+    _assert_direct_child(allowed, got)
+
+
+def test_name_and_suffix_resolving_to_the_root_itself_are_rejected(root):
+    (root / "bar").mkdir()
+    _rejected(root, "bar", "/..")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filesystem root")
+def test_filesystem_root_as_base_still_yields_direct_children():
+    name = "ocbrain_no_such_entry_for_module_paths_tests"
+    assert not os.path.lexists("/" + name)
+    got = module_child(Path("/"), name)
+    assert got == Path("/" + name)
+    assert module_child("/", name) == got
+    _rejected(Path("/"), name, "/..")      # resolves to "/" itself
+    _rejected(Path("/"), name, "/sub")     # deeper than one component
+
+
+def test_root_may_be_a_str_or_a_path(root):
+    assert module_child(str(root), "foo") == module_child(root, "foo")
+
+
+def test_root_reached_through_a_symlink_is_canonicalized(tmp_path):
+    real_root = tmp_path / "real_root"
+    real_root.mkdir()
+    _link(tmp_path / "link_root", real_root)
+    got = module_child(tmp_path / "link_root", "foo")
+    assert got == (real_root / "foo").resolve()
+    _assert_direct_child(real_root, got)
+
+
+def test_stat_probe_runs_only_on_the_validated_path(root, tmp_path, monkeypatch):
+    _link(root / "esc", tmp_path / "outside")
+    seen = []
+    real_stat = os.stat
+
+    def spy(path, *args, **kwargs):
+        seen.append(os.fspath(path))
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(module_paths.os, "stat", spy)
+    _rejected(root, "esc")        # escapes the root: rejected before any probe
+    _rejected(root, "..")         # hostile name: rejected before any probe
+    assert seen == []
+    good = module_child(root, "finance_helper")
+    assert seen == [str(good)]
 
 
 # ── hostile names ─────────────────────────────────────────────────────────

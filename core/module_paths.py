@@ -10,8 +10,11 @@ having validated the name first. `.isidentifier()` at the entry points
 analysis (CodeQL py/path-injection) does not treat it as one.
 
 `module_child()` is the filesystem boundary. It requires the name to be one
-path component and the final path, canonicalized with resolve() (symlinks
-followed), to be a *direct child* of `root` -- not merely somewhere below it:
+path component and the final path, canonicalized with os.path.realpath()
+(symlinks followed), to be a *direct child* of `root` -- not merely somewhere
+below it. Containment is decided on those canonical strings: normalize the
+base, normalize the candidate, require candidate.startswith(base + os.sep),
+then require exactly one component below the base:
 
   * Deliberately weaker than `.isidentifier()` on *what a name may be*: a
     registry entry is a directory basename (module_registry.load_all), and
@@ -31,10 +34,12 @@ path:
     root/real) is accepted and the canonical target (root/real) is returned.
     Two names can therefore address one directory; both stay inside `root`.
   * A symlink loop is rejected with the same fixed error on every Python
-    version. resolve() raises RuntimeError on a loop up to 3.12 but, from
-    3.13, silently returns the unresolved path, so loops are also detected
-    by stat() reporting ELOOP (POSIX; Windows loop behaviour is untested).
-    A path that merely does not exist yet is fine: callers create it.
+    version. realpath() never raises on a loop (and Path.resolve() stopped
+    raising in 3.13), so loops are detected by asking the OS: stat() on the
+    validated canonical path reports ELOOP (POSIX; Windows loop behaviour is
+    untested). A path that merely does not exist yet is fine: callers create
+    it. Only ELOOP is a verdict; any other stat() error says nothing about
+    containment.
   * Symlinks *below* the module directory (e.g. modules/<name>/weights) are
     not inspected by this helper.
   * The check is a point-in-time answer about the returned path; it does not
@@ -79,25 +84,24 @@ def module_child(root: Path, module_name: str, suffix: str = "") -> Path:
     """
     validate_module_name(module_name)
     try:
-        base = Path(root).resolve()
-        child = (base / (module_name + suffix)).resolve()
-    except (OSError, ValueError, RuntimeError):  # RuntimeError: symlink loop, <= 3.12
+        base = os.path.realpath(os.fspath(root))
+        candidate = os.path.realpath(os.path.join(base, module_name + suffix))
+    except (OSError, ValueError):
         raise InvalidModuleName(_MESSAGE) from None
-    if child == base or child.parent != base:
+    # Strictly below the base. The separator keeps a sibling such as
+    # "<base>_evil" out; stripping first keeps a base of "/" working.
+    if not candidate.startswith(base.rstrip(os.sep) + os.sep):
         raise InvalidModuleName(_MESSAGE)
-    _reject_symlink_loop(child)
-    return child
-
-
-def _reject_symlink_loop(path: Path) -> None:
-    """Raise InvalidModuleName if following `path` hits a symlink loop.
-
-    resolve() no longer raises on a loop from Python 3.13, so ask the OS.
-    Only ELOOP is a verdict here; a missing path or any other stat() error
-    says nothing about containment and is left to the caller's own I/O.
-    """
+    # Exactly one component below it (also excludes the base itself, which
+    # only matters for "/": every other base fails the check above).
+    if candidate == base or os.path.dirname(candidate) != base:
+        raise InvalidModuleName(_MESSAGE)
+    # Loop probe, on the validated path only. realpath() hands a loop back
+    # unresolved, so the OS has to be asked; ELOOP is the only verdict, a
+    # path that does not exist yet (ENOENT) is legitimate.
     try:
-        os.stat(path)
+        os.stat(candidate)
     except OSError as exc:
         if exc.errno == errno.ELOOP:
             raise InvalidModuleName(_MESSAGE) from None
+    return Path(candidate)
