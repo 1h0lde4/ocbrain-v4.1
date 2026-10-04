@@ -3,7 +3,8 @@
 `DEBT-039 + F6 → C2 → NETWORK_ALLOWLIST → A1`
 
 - **Date:** October 3 2026
-- **Status:** **PROPOSED.** This is a specification, not an implementation. Nothing here is ACCEPTED until the user ratifies it, and nothing is IMPLEMENTED or VERIFIED by this document. **No repository code, test, capability or contract was changed**; the branch adds this file only.
+- **Status:** **ACCEPTED as the baseline specification of the workstream `sandbox-network-isolation`** (user ruling OD-1, October 4 2026, after one editorial correction: the claim that port 3128 is "less common" was removed). **Decision gates DG-1 (mechanism) and DG-2 (`NamespaceBackend`) are preserved and not pre-decided.** This is a specification, not an implementation: nothing here is IMPLEMENTED or VERIFIED by it. **No repository code, test, capability or contract was changed**; the branch adds this file only.
+- **Rulings of October 4 2026 (OD-1 to OD-9):** recorded in section 19 and applied where they change the text below (port, canary image, provisioning path, capacity, evidence protocol, file boundary, DEBT-041 schedule, firewall-manager scope, TC-04 fixture).
 - **Base:** `study/b3-host-firewall-supplement` at `34f4b38`, which sits on `study/sandbox-network-redesign` (`ee525d9`) and `sandbox-fabric` (`1b829fc`). Branch: `spec/sandbox-network-isolation-master`.
 - **Authority order for this document:** the user's rulings (section 2; they interpret and do not amend the frozen base prompt, addendum and checklist, which are not modified), then those frozen documents, then the two studies (`docs/architecture/sandbox-network-redesign-study.md`, `docs/architecture/sandbox-b3-host-firewall-supplement-study.md`; findings F1 to F28), over this specification.
 - **Status vocabulary used in tables:** VERIFIED (observed in a study run), SPECIFIED (a requirement of this design, not yet built), UNVERIFIED (could not be tested), OPEN (needs a ruling).
@@ -57,7 +58,7 @@ From the user's rulings of October 3 2026 and the earlier study decisions:
 ### 4.1 Topology
 
 1. **One internal Docker network per networked sandbox.** Options: `--internal`, ICC off (`enable_icc=false`), and an explicit bridge name `ocbsbx` + 8 hex characters of the handle id (14 characters, within the 15-character interface-name limit; VERIFIED that Docker honors `com.docker.network.bridge.name` and creates the interface at network creation, before any container, F20). Labeled `ocbrain.sandbox=1` and with the handle id. Docker's default address pools allocate the subnet. The shared network `ocbrain-sandbox-net` is **retired** for new sandboxes (this resolves DEC-4: no new sandbox uses it; the controller does not delete a pre-existing instance without a ruling).
-2. **The proxy binds that network's own gateway address on one fixed port** (`AllowlistProxy(bind_ip=<own gateway>, …).start(PORT)`). `PORT` is a single constant shared by the backend, the provisioning artifact and the canary. The tested value was 3128; a less common value reduces collisions with host services and is a free choice in batch B10 (a collision fails closed in both directions, VERIFIED, F21).
+2. **The proxy binds that network's own gateway address on one fixed port** (`AllowlistProxy(bind_ip=<own gateway>, …).start(PORT)`). `PORT` is a single constant shared by the backend, the provisioning artifact and the canary. `PORT` is **3128** (ruled, OD-4; it is the value that was tested). A collision with a host service on that port fails closed in both directions (VERIFIED, F21) and is a deployment concern to document, not a reason to change the value.
 3. **Host `INPUT` rules provisioned once, static, with no per-sandbox rule:**
 
 ```
@@ -83,7 +84,7 @@ iptables -w -I INPUT 1 -i ocbsbx+ -p tcp --dport <PORT> -m addrtype --dst-type L
 
 ### 4.3 What is deliberately not required
 
-- **DEBT-041 (dropping `NET_RAW`)** is not a prerequisite of T-FW: with the destination match, the `NET_RAW` attack of F28 fails. It stays recommended defense in depth and is a prerequisite of any source-address design (O2, and O4 on a shared network, F16). If a later change removes or weakens the destination match, DEBT-041 becomes a prerequisite again; TC-04 runs with `NET_RAW` present precisely so that it would catch that.
+- **DEBT-041 (dropping `NET_RAW`)** is not on the critical path and is **scheduled after B13 and B21** (ruling OD-8). It is not a prerequisite of T-FW: with the destination match, the `NET_RAW` attack of F28 fails. It stays recommended defense in depth and is a prerequisite of any source-address design (O2, and O4 on a shared network, F16). If a later change removes or weakens the destination match, DEBT-041 becomes a prerequisite again; TC-04 runs with `NET_RAW` present, granted explicitly by its fixture so that it survives DEBT-041, precisely so that it would catch that.
 - **No firewall code in the controller**, and no `CAP_NET_ADMIN` there (ruling D2, test TC-21).
 
 ## 5. Invariants
@@ -119,14 +120,14 @@ D1 says a firewall supplement is a valid B3 mechanism **only when S1 to S7 are s
 1. **Provisioning is a distinct act performed by a privileged operator or deployment step**, outside the controller process: it installs the two rules of section 4.1 (idempotently), can verify them, and can remove them. The tested privilege is `CAP_NET_ADMIN` in the host network namespace (F13).
 2. **The controller verifies enforcement by behavior only**, because even listing the rules needs `CAP_NET_ADMIN` (F13). The canary is therefore the controller's only enforcement check and cannot be skipped by configuration.
 3. **Canary.** On the sandbox's own network, after the proxy is started and before the workload container is created, a throwaway container: (a) positive control: connects to `<own gateway>:<PORT>` and must succeed; (b) negative probe: connects to a controller-owned ephemeral listener bound to `0.0.0.0` on the host and must fail within a bounded time. Anything other than "positive succeeded and negative failed" refuses the create. A canary whose positive control fails never reports "enforced" (so a dead network is not mistaken for a working rule). Measured cost: 2.3 s including a container start (F22). Per-create execution is required in v1 (priority order: governance and isolation before performance); caching is a later, evidence-backed change.
-4. **Canary image.** The canary needs a TCP-connect capability inside the container. The sandbox image is caller-supplied and may lack one. The canary image is therefore a pinned, provisioned image (OPEN: OD-3; candidate: the same base image used for sandboxes, if it contains the tool).
+4. **Canary image.** The canary needs a TCP-connect capability inside the container. The sandbox image is caller-supplied and may lack one. The canary image is therefore (ruled, OD-3) a **dedicated, minimal, immutable-digest-pinned image provisioned in advance, with a deterministic TCP-connect primitive, and never pulled during `create()`**. Positive and negative controls run on **every** create in v1. The exact digest is fixed in batch B12, after it has been verified against the repository and the host.
 5. **Residual risk, stated plainly:** rules can be flushed or reordered after the canary by another host tool (a firewall-manager reload was not tested, F18). The canary detects this at the next create; it cannot close the window in between. Mitigation: re-run the canary on a timer and after a daemon-restart signal; treat a failure as "refuse new networked sandboxes".
-6. **Provisioning artifact.** A script or document with install, verify and remove modes, an exact expected-rules constant, and an evidence record of the kernel, Docker and iptables variant it was verified on (nf_tables variant tested; legacy untested). Proposed path `scripts/sandbox/` (to be confirmed against repository layout in B10).
+6. **Provisioning artifact.** A script or document with install, verify and remove modes, an exact expected-rules constant, and an evidence record of the kernel, Docker and iptables variant it was verified on (nf_tables variant tested; legacy untested). Path (ruled, OD-4): `scripts/sandbox/provision_network_isolation.sh`, with `install`, `verify` and `remove` modes; `PORT` and the interface prefix have a single source of truth shared with the backend. Firewall-manager coexistence (ufw, firewalld, manager reloads, reboot persistence) is **out of scope for v1** (OD-9): it is documented as unverified or unsupported, the behavioral canary is the fail-closed detector when the expected enforcement disappears, and B10 verifies only the exact firewall backend and variant it was tested on. A manager-integration design is a separate workstream.
 
 ## 8. Capacity requirement (ruling D5)
 
 - **Requirement.** `MAX_CONCURRENT_SANDBOX_NETWORKS = 29`: a named constant, enforced by a counting limiter that reserves a slot before the network is created and releases it only after removal is confirmed. A request beyond the limit raises a defined error (`DockerBackendError` family) and leaves no network, container, proxy or workspace behind.
-- **What 29 is and is not (so the test is honest).** It was measured on one host as the number of additional internal networks Docker accepted under its default address pools with two networks already present (study F8: `all predefined address pools have been fully subnetted` at the 30th). It is a property of the pool configuration and of the networks already present, not a Docker constant. The specification therefore requires: (a) the constant is the supported maximum, as ruled; (b) a start-up or provisioning **capacity probe** confirms the daemon can actually create that many on this host, and a host that cannot is refused for networked sandboxes; (c) the effective limit is the lower of the constant and what the probe found. Raising the ceiling (an explicit dedicated address pool) is out of scope and needs a ruling (OD-5).
+- **What 29 is and is not (so the test is honest).** It was measured on one host as the number of additional internal networks Docker accepted under its default address pools with two networks already present (study F8: `all predefined address pools have been fully subnetted` at the 30th). It is a property of the pool configuration and of the networks already present, not a Docker constant. The specification therefore requires: (a) the constant is the supported maximum, as ruled; (b) a start-up or provisioning **capacity probe** confirms the daemon can actually create that many on this host, and a host that cannot is refused for networked sandboxes; (c) the effective limit is the lower of the constant and what the probe found. Ruled (OD-5): the effective limit is `min(29, probe result)`; raising the ceiling (an explicit dedicated address pool) is out of scope and needs a new ruling.
 - **Applies to** every per-sandbox-network design (the T-FW baseline and H2). `NamespaceBackend` allocates /30s from `10.200.0.0/16` and has its own limit, which is not covered by this constant.
 
 ## 9. IPv6 requirement (ruling D5)
@@ -204,7 +205,7 @@ Host requirements: **D** = reachable Docker daemon and the test image; **P** = p
 | TC-01 | A `0.0.0.0` TCP listener is unreachable from a networked sandbox through its gateway; a `127.0.0.1` listener is a negative control; the sandbox's own proxy still answers; passes with `DOCKER-USER` empty (F12) | D P | G3 |
 | TC-02 | A `0.0.0.0` UDP listener receives no datagram from the sandbox | D P | G3 |
 | TC-03 | Two concurrent sandboxes with different allowlists: B cannot reach A's proxy by a handed port, by scanning the gateway ranges, by `CONNECT`, or by plain HTTP; A's allowed host `200`, B's disallowed host `403` | D P | G1 |
-| TC-04 | With `NET_RAW` present: a crafted frame (`AF_PACKET`) to the sibling's gateway and to the host's primary address on the proxy port gets no reply; the same probe to the own gateway gets a SYN-ACK (F28) | D P | G1 |
+| TC-04 | The attacker is a test-owned container joined to the sandbox's own network with `NET_RAW` **explicitly added by the test fixture** (the backend itself forbids `--cap-add`, A6), so the case stays valid after DEBT-041 drops `NET_RAW` from normal sandboxes: a crafted frame (`AF_PACKET`) to the sibling's gateway and to the host's primary address on the proxy port gets no reply; the same probe to the own gateway gets a SYN-ACK (F28) | D P | G1 |
 | TC-05 | Rule ownership: the provisioning artifact's rule text equals the expected constant; it contains no hostname and takes no allowlist input; its port equals the backend's `PORT`; its interface prefix equals the backend's naming prefix | none | G5 |
 | TC-06 | Fail closed: with the rules absent, or a canary forced to fail, `create()` raises and no network, container, proxy or workspace remains | D (R for the real-absent case) | G4 |
 | TC-07 | Canary controls: a failing positive control never reports "enforced"; a negative probe that connects reports "not enforced"; the canary is bounded in time; a `PORT` drift makes the positive control fail | D P | G4 |
@@ -223,9 +224,9 @@ Host requirements: **D** = reachable Docker daemon and the test image; **P** = p
 | TC-20 | Provisioning: installing twice yields exactly one rule pair; removal restores the baseline snapshot; verify mode exits non-zero when the rules are absent | R | G5 |
 | TC-21 | The controller runs with `net_admin` removed from its bounding set and still completes create, run and destroy on a provisioned host (proves ruling D2) | D P R | G4 |
 
-**Evidence procedure.** The repository's `tests` job runs `pytest tests/` and compares failures with a manifest; Docker-gated tests skip when no daemon is reachable, and none of the P or R tests can pass on an unprovisioned runner. The gates are therefore **host-evidenced**: each batch that earns a gate records, in the reconciliation document, the host fingerprint (kernel, Docker, iptables variant, provisioning state) and the command and result of the run. A failing gate must never be hidden by adding it to the known-failure manifest; expected failures use strict markers that name the debt (`PROJECT_INSTRUCTIONS` §16.4).
+**Evidence procedure.** The repository's `tests` job runs `pytest tests/` and compares failures with a manifest; Docker-gated tests skip when no daemon is reachable, and none of the P or R tests can pass on an unprovisioned runner. The gates are therefore **host-evidenced**: each batch that earns a gate records, in the reconciliation document (the canonical evidence record, ruling OD-6): the final commit SHA, the branch and base, the host fingerprint (kernel, Docker, iptables variant), the provisioning state, the exact command, the result, a timestamp, the cleanup and baseline check, and any artifact or hash needed to reproduce the observation. A failing gate must never be hidden by adding it to the known-failure manifest; expected failures use strict markers that name the debt (`PROJECT_INSTRUCTIONS` §16.4).
 
-## 15. File-touch boundary for this workstream (proposed; needs ratification, OD-7)
+## 15. File-touch boundary for the workstream `sandbox-network-isolation` (ratified, OD-7; anything outside it needs a fresh ruling)
 
 | Allowed | Not allowed (without a new ruling) |
 |---|---|
@@ -255,6 +256,9 @@ Every batch also runs `python3 scripts/check_drift.py` and keeps it green.
 | B21 | B02, B13 | B22 |
 | B22 | B21 | none |
 | B30 | B04, DG-2 | none |
+| DEBT-041 hardening (a separate item, not a batch of this chain) | B13 and B21 (ruling OD-8) | none |
+
+**Ruled execution order (October 4 2026):** B00; then B01, B02, B03 and B05; then B04; then DG-1. Only if DG-1 selects T-FW: B10, B11, B12, B13, B21, B22. B14 stays optional and needs a real IPv6-capable host. B30 is gated separately by DG-2. No effort goes into the firewall path before H2 has been evaluated.
 
 
 ### Phase P0: preconditions (the user's actions, no code)
@@ -269,7 +273,7 @@ Every batch also runs `python3 scripts/check_drift.py` and keeps it green.
 | Scope | Merge or not PRs #48, #49, #50; decide whether `main` is merged into `sandbox-fabric` (36 ahead, 27 behind at last count); choose the base branch for P1 to P3 (expected: a new branch from `sandbox-fabric` after PR #50) |
 | Out of scope | Any code change |
 | Files | none |
-| Requirements | Each merge is an explicit instruction; the second `KNOWN_ISSUES.md` PR needs a branch update for the shared insertion point |
+| Requirements | Each merge is an explicit instruction; the second `KNOWN_ISSUES.md` PR needs a branch update for the shared insertion point; **`main` is not merged wholesale into `sandbox-fabric` to simplify the graph without first checking the resulting tree against the intended baseline** (the user's caution of October 4 2026) |
 | Tests | CI on each PR (checks were green at opening) |
 | Acceptance | The base branch for B01 is named and verified (`git ls-remote`) |
 | Invariants | No force-push, no history rewrite |
@@ -295,7 +299,7 @@ Every batch also runs `python3 scripts/check_drift.py` and keeps it green.
 | Acceptance | On a Docker host without provisioning the cases fail for the documented reason (the marker's `raises` and message match) and not for a harness error; on a host without Docker they skip with the reason; the suite is collected by `pytest` |
 | Invariants | INV-1 as the thing under test |
 | Risks | A case that fails for the wrong reason would be hidden by a loose marker; mitigated by `raises=` and a reason match |
-| Evidence | Run output on this kind of host, recorded in the reconciliation document |
+| Evidence | Run output on this kind of host, recorded in the reconciliation document with the OD-6 fields |
 | Resulting state | Red, executable gates for G1 and G3; no behavior change |
 | Eligible next | B04, DG-1 (together with B05) |
 
@@ -328,7 +332,7 @@ Every batch also runs `python3 scripts/check_drift.py` and keeps it green.
 | Scope | New `core/sandbox/backends/_sandbox_network.py` holding: the counting limiter and `MAX_CONCURRENT_SANDBOX_NETWORKS = 29`; the capacity probe interface; the IPv6 detection and decision function with injectable sources. Not wired into `create()` |
 | Out of scope | Network creation, rules, canary, wiring |
 | Files | the new module; new unit tests |
-| Requirements | Section 8 (limit, reservation before create, release after confirmed removal, defined error) and section 9 (detection matrix, refuse by default) |
+| Requirements | Section 8 (limit, effective limit `min(29, probe result)` per OD-5, reservation before create, release after confirmed removal, defined error) and section 9 (detection matrix, refuse by default) |
 | Tests | TC-14; limiter unit tests (limit, release, concurrent reservation without exceeding) |
 | Acceptance | Unit tests pass; mypy clean; no import cycle; `check_drift.py` green |
 | Invariants | INV-7, INV-8 |
@@ -393,9 +397,9 @@ Inputs: B04. Outcomes: (a) remediate to the isolation contract (B30); (b) withdr
 | Purpose | Make the host rules a reviewed, idempotent, removable, verifiable artifact outside the controller |
 | Dependencies | DG-1, B03 |
 | Scope | Install, verify and remove modes for the two rules of section 4.1 (or a re-verified chain form); the `PORT` constant and the interface prefix as the single shared source; the evidence record format; documentation of the privilege, of the nf_tables variant tested, and of the untested items (legacy iptables, firewall managers, reboot persistence) |
-| Out of scope | Controller code; the canary |
-| Files | `scripts/sandbox/` (path to confirm), tests for TC-05 and TC-20, the reconciliation document |
-| Requirements | The rule text has no destination, host or allowlist input (S1); the destination match is present (F28); installation is idempotent; removal restores the baseline; verify mode returns non-zero when the rules are absent |
+| Out of scope | Controller code; the canary; firewall-manager coexistence (OD-9) |
+| Files | `scripts/sandbox/provision_network_isolation.sh` (ruled path), tests for TC-05 and TC-20, the reconciliation document |
+| Requirements | The rule text has no destination, host or allowlist input (S1); the destination match is present (F28); installation is idempotent; removal restores the baseline; verify mode returns non-zero when the rules are absent; the exact firewall backend and variant it was tested on are verified and recorded; `PORT` is 3128 and shared with the backend |
 | Tests | TC-05, TC-20; a re-run of E9 as TC-04's precondition |
 | Acceptance | Both tests pass on a host with root; exact rule text recorded; the evidence record lists kernel, Docker and iptables variant |
 | Invariants | INV-2, INV-4, S1 to S4 |
@@ -430,14 +434,14 @@ Inputs: B04. Outcomes: (a) remediate to the isolation contract (B30); (b) withdr
 | Baseline | B11 merged |
 | Purpose | Make enforcement verified at every create and make absent enforcement a refusal |
 | Dependencies | B11 |
-| Scope | `AllowlistProxy.start(PORT)` on the sandbox's own gateway; the canary of section 7 (image, controls, bound); refusal paths; structured logging of each decision; canary re-run policy |
+| Scope | `AllowlistProxy.start(PORT)` on the sandbox's own gateway; the canary of section 7 (a pre-provisioned, immutable-digest-pinned image that is never pulled during `create()`, positive and negative controls on every create, a time bound; the digest is fixed here after verification against the repository and host); refusal paths; structured logging of each decision; canary re-run policy |
 | Out of scope | `_net_proxy.py` (unchanged); rule installation |
 | Files | `docker_backend.py`, `_sandbox_network.py`, tests |
 | Requirements | Sections 4.1, 7 and 10; the canary cannot be disabled by configuration |
 | Tests | TC-06, TC-07, TC-09 (the remaining steps), TC-12, TC-21 |
 | Acceptance | On a provisioned host `create()` succeeds and the canary reports enforced; with rules removed `create()` refuses and leaves nothing; with the controller's `net_admin` removed the full cycle still works |
 | Invariants | INV-3, INV-4, S4, S6 |
-| Risks | The canary image (OD-3); a canary that is too permissive; extra per-create latency (2.3 s measured); a collision with a host service on `PORT` fails closed and is a deployment concern to document |
+| Risks | The canary digest must be verified before it is fixed; a canary that is too permissive; extra per-create latency (2.3 s measured); a collision with a host service on `PORT` fails closed and is a deployment concern to document |
 | Evidence | Test run on a provisioned host; mutation check that a no-op canary is caught |
 | Resulting state | Enforcement is verified per sandbox; the contract cases of B01 can now pass |
 | Eligible next | B13 |
@@ -576,19 +580,25 @@ Inputs: B04. Outcomes: (a) remediate to the isolation contract (B30); (b) withdr
 | R11 | A fixed-port collision with a host service | Low / medium | Fails closed (F21); documented | Deployment concern |
 | R12 | The static rule has other bypasses not yet tested (fragments, other protocols, ARP) | Unknown / high | Catch-all drop covers protocols; an adversarial pass is part of B13; F28 shows a first design can look right and be wrong | Open until B13 |
 
-## 19. Decisions needed
+## 19. Decisions: rulings of October 4 2026, and what is still open
 
-| ID | Decision | Needed before |
+| ID | Ruling | Applied in |
 |---|---|---|
-| OD-1 | Ratify this specification as the baseline (status PROPOSED to ACCEPTED), with or without changes | B00 |
-| OD-2 | DG-1 (after B05) and DG-2 (after B04), as defined above | B10 and B30 |
-| OD-3 | The canary image: pinned and provisioned; confirm the requirement and the per-create cadence | B12 |
-| OD-4 | The `PORT` value and the provisioning artifact's location | B10 |
-| OD-5 | Confirm that 29 is a constant validated by a capacity probe (the lower of the two applies) and that raising it is out of scope | B03 |
-| OD-6 | The evidence-recording protocol for host-gated tests (section 14) | B01 |
-| OD-7 | The file-touch boundary of section 15 and a name for the implementation workstream | B01 |
-| OD-8 | Scheduling of DEBT-041 as recommended hardening | optional |
-| OD-9 | Whether firewall-manager coexistence (ufw, firewalld, nft rulesets) is in scope for B10 or documented as unsupported | B10 |
+| OD-1 | **YES, with one editorial correction before ACCEPTED.** T-FW is ratified as the proposed baseline; DG-1 stays the final mechanism-selection gate. The claim that port 3128 is "less common" is removed; 3128 stays because it is already tested | Status line; section 4.1 |
+| OD-2 | **YES, the sequencing is correct.** B05 completes before DG-1; B04 completes before DG-2. This specification pre-decides neither gate | Section 16, dependency table |
+| OD-3 | **YES.** A dedicated, minimal, immutable-digest-pinned, pre-provisioned canary image with a deterministic TCP-connect primitive; not pulled during `create()`; positive and negative controls on every create in v1; the digest is fixed in B12 after repository and host verification | Section 7.4; B12 |
+| OD-4 | **PORT = 3128.** Provisioning artifact `scripts/sandbox/provision_network_isolation.sh` with install, verify and remove modes. The shared constant is the single source of truth | Sections 4.1, 7.6; B10 |
+| OD-5 | **YES.** `MAX_CONCURRENT_SANDBOX_NETWORKS = 29` is the supported constant, validated by the capacity probe; the effective limit is `min(29, probe result)`; raising it is out of scope and needs a new ruling | Section 8; B03 |
+| OD-6 | **YES.** The reconciliation document is the canonical evidence record. Each gated run records: final commit SHA, branch and base, host fingerprint, kernel, Docker and iptables variant, provisioning state, exact command, result, timestamp, cleanup and baseline check, and any artifact or hash needed to reproduce. Strict expected-failure markers remain the mechanism for red states; the known-failures manifest is never used to hide a gate | Section 14; B01 |
+| OD-7 | **RATIFIED.** `contracts.py`, `admission.py`, `_net_proxy.py` and the frozen documents stay untouched. Allowed: the listed backend and network module, sandbox tests, the provisioning artifact, architecture documents, and `KNOWN_ISSUES.md` only through its own PR. Workstream name: `sandbox-network-isolation`. Anything outside needs a fresh ruling | Section 15 |
+| OD-8 | **Not on the critical path.** DEBT-041 is defense in depth, scheduled after B13 and B21. The proof deliberately tests with `NET_RAW` present so that F28 stays a meaningful regression; the test fixture grants `NET_RAW` explicitly | Section 4.3; TC-04; dependency table |
+| OD-9 | **Out of scope for B10.** ufw, firewalld, manager reloads and reboot persistence are documented as unverified or unsupported for v1; B10 verifies the exact firewall backend and variant it tested; the canary is the fail-closed detector; a manager-integration design is a separate workstream | Section 7.6; B10 |
+
+**One technical point recorded with the rulings.** The F28 correction confirms the central principle: the firewall rule constrains the transport path and does not duplicate proxy policy. The mandatory `--dst-type LOCAL --limit-iface-in` match is part of the security invariant, not an implementation detail, and TC-04 must keep actively attempting the forged Ethernet path with `NET_RAW` granted by its fixture.
+
+**Still open (user decisions, not pre-decided here):**
+- **B00's merge decisions** for PRs #48, #49 and #50, and the choice of the implementation base branch (section 16, B00). Each merge needs its own explicit instruction.
+- **DG-1** (after B01 and B05) and **DG-2** (after B04).
 
 ## 20. What this specification does not claim
 
