@@ -20,7 +20,7 @@ Carried decisions (study §7): F6 is in C2's scope; R1 and R2 are mandatory; G3 
 3. **The traffic that matters never reaches Docker's documented hook.** Container-to-gateway packets traverse `INPUT`, not `FORWARD`/`DOCKER-USER`: a `DOCKER-USER` drop rule matched 0 packets and the connection succeeded (F12). `INPUT` is not managed by Docker.
 4. **Whether this satisfies B3 is an interpretation the user must rule on.** The supplement does not "stand in for" the proxy (the proxy is still what produces every allow and deny), and the responsibility it carries (which host-local endpoints a sandbox can reach) is not owned by the proxy today, which is the gap F6 exposes. But the base prompt says a Docker-idiomatic mechanism that needs a second policy surface is a design question to raise, not decide silently, and B3's "duplicates a responsibility" test is a judgment. Section 3 states seven conditions (S1 to S7) under which the study considers a supplement consistent with B3.
 5. **A firewall adds an authority boundary and global host state.** Installing a rule needs `CAP_NET_ADMIN` in the host network namespace (F13); the Docker socket alone suffices through a helper container, so it is not new capability on a Docker host but it is a new actor and a governance decision (LAW 1, `PROJECT_INSTRUCTIONS` §6.1). Rules outlive the controller, the daemon and the network (F18); stale rules can be inherited by a recycled bridge name (F19); and no firewall code exists anywhere in the repository (F25).
-6. **A static design removes most of that lifecycle cost.** One wildcard rule pair installed once (`-i ocbsbx+`: accept the proxy port, drop the rest), each sandbox on its own network with a bridge named `ocbsbx<id>`, and every proxy bound to a fixed port on its own gateway worked, with no per-sandbox rules to create or reap (F20). Its hazards are real and tested: a bridge whose name misses the prefix is **not covered and fails open** (F21), and the rules must be verified present, which a behavioral canary can do without firewall privilege (2.3 s here, F22).
+6. **A static design removes most of that lifecycle cost.** One wildcard rule pair installed once (`-i ocbsbx+`: accept the proxy port, drop the rest), each sandbox on its own network with a bridge named `ocbsbx<id>`, and every proxy bound to a fixed port on its own gateway worked, with no per-sandbox rules to create or reap (F20). Its hazards are real and tested: a bridge whose name misses the prefix is **not covered and fails open** (F21), and the rules must be verified present, which a behavioral canary can do without firewall privilege (2.3 s here, F22). **Correction found afterwards (F28): the static rule as first tested had no destination match, and a sandbox with `NET_RAW` could use it to reach a sibling's gateway and the host's primary address on the proxy port. The corrected rule adds `-m addrtype --dst-type LOCAL --limit-iface-in`, which closed both while the sandbox's own proxy stayed reachable.**
 7. **A non-firewall route to closing F6 appeared in the evidence.** Docker's `inhibit_ipv4` and `gateway_mode_ipv4=isolated` options leave the host bridge with no IPv4 address, so there is nothing for a sandbox to reach (F23). That removes the host-side address the proxy binds to today, so the proxy would have to run elsewhere (for example in a sidecar container). This is **unevaluated**; it is listed because it would avoid the B3 question altogether.
 8. **`NamespaceBackend` on `main` shows F6 too** (F24): a sandbox run with `allowed_hosts` connected to a `0.0.0.0` listener through its gateway. DEBT-040 (PR #48) was updated to say so. This study does not examine that backend further.
 9. **IPv6 could not be tested here** (the host boots with `ipv6.disable=1`). The decision does not hinge on it, but a design must assert it (F26, section 5, question 9).
@@ -47,7 +47,7 @@ Carried decisions (study §7): F6 is in C2's scope; R1 and R2 are mandatory; G3 
 **Conditions the study considers sufficient for a supplement (S1 to S7).**
 - **S1.** The rule carries no destination, hostname or protocol-level policy. The proxy remains the only component that decides destinations.
 - **S2.** The rule is keyed on the sandbox's own ingress bridge interface, never on a source address that a sandbox could forge (F16).
-- **S3.** Its only permit is TCP to the proxy's bound address and port; everything else from that interface is dropped (all protocols, by a catch-all).
+- **S3.** Its only permit is TCP to the proxy's bound address and port, and the destination must be an address of the sandbox's own ingress interface (a per-sandbox `-d`, or in a static rule `-m addrtype --dst-type LOCAL --limit-iface-in`: F28); everything else from that interface is dropped (all protocols, by a catch-all).
 - **S4.** The proxy port in the rule comes from the same constant or object as the proxy's bind, and a mismatch fails closed (F15).
 - **S5.** Installation and removal are fail-closed in order (drop first, accept above it; accept removed first, drop last) and tied to the sandbox handle (D10/D11, section 5, question 7).
 - **S6.** Enforcement is verified by behavior, not by the existence of a rule (`PROJECT_INSTRUCTIONS` §14.1, §14.4): a canary must fail closed (F22).
@@ -75,6 +75,7 @@ Carried decisions (study §7): F6 is in C2's scope; R1 and R2 are mandatory; G3 
 | F25 | No file in `core/` uses `iptables`, `ip6tables` or `nft`; `NamespaceBackend` performs root-only host-network changes through `ip` (6 call sites) | CODE-READ | `grep` over `core/`; `namespace_backend.py` |
 | F26 | **IPv6 is unavailable on this host**: the kernel command line has `ipv6.disable=1`, `/proc/sys/net/ipv6` does not exist, and a container has no `/proc/net/if_inet6`. IPv6 behavior could not be tested | VERIFIED (absence); NOT TESTED (behavior) | B.5 (E6a) |
 | F27 | During the study the author's own experiment script left five stray `INPUT` rules behind (it deleted a rule by position number instead of by specification). The baseline-versus-after snapshot comparison reported `False`, the rules were found and removed, and the corrected script ended `True` on every later run. This is a small live demonstration of the orphan hazard in F18 and of why rules must be tracked by specification, never by position | VERIFIED | session record; B.2 |
+| F28 | **The static rule of F20 had a hole.** With `-i ocbsbx+ -p tcp --dport 3128 -j ACCEPT` and no destination match, a sandbox with default capabilities (incl. `NET_RAW`) that crafted a raw Ethernet frame (`AF_PACKET`, addressed to its gateway's MAC) to the **sibling's gateway:3128** and to the **host's primary address:3128** received a SYN-ACK from each, i.e. it reached a sibling's proxy listener: the DEBT-039 reach through the very rule meant to prevent it. An IP-level raw send does not work (the sandbox has no route beyond its own subnet: `ENETUNREACH`), which is why E7's honest-traffic test missed it. Adding `-m addrtype --dst-type LOCAL --limit-iface-in` (destination must be an address of the ingress interface) left the own-gateway handshake working and produced no reply from either target. With `--cap-drop NET_RAW` the `AF_PACKET` socket failed with `PermissionError` and an ordinary connect failed. Transport-level reach only: a full forged session was not attempted. The per-sandbox rules of F14 carry `-d <own gateway>` and are not affected | VERIFIED | B.6 (E9) |
 
 ## 5. The questions, answered
 
@@ -82,7 +83,7 @@ Carried decisions (study §7): F6 is in C2's scope; R1 and R2 are mandatory; G3 
 
 **2. What privileges does it require?** `CAP_NET_ADMIN` in the host network namespace, to install or even list rules (F13). Today's `DockerBackend` needs only Docker access. Three ways to hold it: the controller runs with `CAP_NET_ADMIN`; a helper container started through the Docker socket (F13 shows it works; the sandbox containers themselves are forbidden `--cap-add` and host namespaces by checklist A6); or **one-time host provisioning** of a static rule set (F20), after which the controller needs no firewall privilege and checks enforcement by canary (F22). Each is a governance question (section 8, D2).
 
-**3. Can it distinguish sandbox traffic reliably?** By **ingress interface**, yes, on per-sandbox networks (F14, F20): the interface is assigned by the kernel and a container cannot forge it. By **source address** on a shared network, no, while `NET_RAW` is present (F16). By a **wildcard on the bridge name**, yes, but only for bridges that carry the prefix (F21).
+**3. Can it distinguish sandbox traffic reliably?** By **ingress interface**, yes, on per-sandbox networks (F14, F20): the interface is assigned by the kernel and a container cannot forge it. By **source address** on a shared network, no, while `NET_RAW` is present (F16). By a **wildcard on the bridge name**, yes, but only for bridges that carry the prefix (F21) and only with a destination match, without which a `NET_RAW` sandbox reaches siblings and the host (F28).
 
 **4. Does it create a second policy surface?** Not under S1 to S7 (section 3); this is an interpretation for the user to ratify.
 
@@ -107,7 +108,7 @@ Carried decisions (study §7): F6 is in C2's scope; R1 and R2 are mandatory; G3 
 |---|---|---|---|---|
 | O1 alone (per-sandbox network) | Yes (study F7) | **No** | none | Insufficient (user's ruling) |
 | **H1: O1 + per-sandbox bridge-keyed `INPUT` rules** | Yes | Yes (F14) | `CAP_NET_ADMIN` at run time; per-handle rules; reaper | Viable; heavier lifecycle |
-| **H1-static: O1 + one wildcard rule pair, fixed proxy port, naming guard, canary** | Yes | Yes (F20) | privilege only at provisioning; naming guard; collision fails closed | Viable; **lightest firewall-based candidate** |
+| **H1-static: O1 + one wildcard rule pair with a destination match, fixed proxy port, naming guard, canary** | Yes | Yes (F20) | privilege only at provisioning; naming guard; collision fails closed | Viable; **lightest firewall-based candidate** |
 | O4 alone (shared network, source-address rules) | Honest traffic only | Honest traffic only | `CAP_NET_ADMIN`; growing rule set | **Not viable** while `NET_RAW` is present (F16); with it dropped, equivalent to O2 |
 | O2 (shared network, caller identity in the proxy) | If identity unforgeable | No | none | Still depends on DEBT-041; F6 still open |
 | H2: O1 + Docker `inhibit_ipv4`/`isolated` bridge + proxy in a sidecar | Yes | Yes by construction (F23) | a second container per sandbox, with its own egress network; no firewall | **Unevaluated**; would avoid the B3 question |
@@ -133,6 +134,7 @@ Every test below ends by comparing the host firewall (`iptables-save` without co
 - **T12 (IPv6, F26).** On an IPv6-capable host a `::`-bound listener is unreachable from a sandbox; on a host with IPv6 disabled the test is skipped and says why. A separate assertion checks that the sandbox network has IPv6 disabled.
 - **T13 (forged source).** Only if a source-address design (O4 on a shared network, or O2) is ever chosen: forged-source packets from a sandbox are not accepted. It is expected to require `--cap-drop NET_RAW`.
 - **T14 (`NamespaceBackend`).** Only if the user extends scope to F24: the same T1 against that backend.
+- **T15 (F28).** A sandbox with default capabilities that sends a crafted frame (`AF_PACKET`) addressed to its gateway's MAC, with destination `<sibling gateway>:<proxy port>` and `<host primary address>:<proxy port>`, receives no reply, while the same probe to its own gateway receives a SYN-ACK. It must run with `NET_RAW` present so that it does not depend on DEBT-041.
 - **A1 (unchanged).** The direct `NET_NAMESPACE` gate of study §6 (G2) is independent of all of the above.
 
 ## 8. Decisions needed from the user
@@ -149,6 +151,8 @@ Every test below ends by comparing the host firewall (`iptables-save` without co
 - Network-redesign study §9 lists "`NamespaceBackend`" as not examined: one scratch probe now exists (F24); it remains unaudited.
 - Network-redesign study §5, option O4: "Needs host privilege; B3 limits its role" is refined here: bridge-keyed O4 is viable as a supplement to per-sandbox networks; source-address O4 is not.
 - Study F9 (no capability dropping) is a prerequisite for O2 and for any source-address design, not for H1 or H1-static.
+- **Correction to F20 and to summary item 6 (the author's):** the static design was reported as working on the basis of honest-traffic tests only. F28 shows its first form was bypassable by a `NET_RAW` sandbox. The text above was amended in place and marked; the original wording is in the first commit of this file (`d143dd5`).
+- **Study F9 and DEBT-041:** with the corrected rule, DEBT-041 is **not** a prerequisite of H1-static either (F28, V2). It remains a recommended defense in depth.
 
 ## 10. Not examined
 
@@ -514,6 +518,82 @@ async def main():
 asyncio.run(main())
 ```
 
+### A.E9: Static rule destination test (F28)
+
+```python
+"""Scratch E9 (NOT in the repo): does the STATIC rule (no destination match) let a sandbox with NET_RAW reach a SIBLING's gateway:port?
+Variants: V1 = static rule as tested in E7; V2 = V1 + `-m addrtype --dst-type LOCAL --limit-iface-in` (destination must be an address of the INGRESS interface).
+Packets are crafted as raw Ethernet frames (AF_PACKET, needs CAP_NET_RAW) because an IP-level raw send needs a route and the sandbox has none beyond its own subnet. Evidence of reach = the sandbox RECEIVES a SYN-ACK from <target>:3128 (transport-level reachability; a full session is not attempted)."""
+import sys; sys.path.insert(0, "/tmp/b3"); from common import *
+PORT = 3128
+SYN_PROBE = r'''
+import socket, struct, random, time, sys, os
+src, dst, dport, gw_own = "@SRC@", "@DST@", @PORT@, "@GW@"
+def cs(b):
+    if len(b) % 2: b += b"\0"
+    s = sum(struct.unpack("!%dH" % (len(b)//2), b)); s = (s >> 16) + (s & 0xffff); s += s >> 16; return ~s & 0xffff
+try:
+    pk = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0800)); pk.bind(("eth0", 0)); pk.settimeout(0.4)
+except Exception as e:
+    print("NO-AF_PACKET", type(e).__name__); sys.exit()
+try: socket.create_connection((gw_own, 9), timeout=1)
+except Exception: pass
+mac_me = bytes.fromhex(open("/sys/class/net/eth0/address").read().strip().replace(":", ""))
+gm = [l.split() for l in open("/proc/net/arp").read().splitlines()[1:] if l.split()[0] == gw_own]
+if not gm: print("no ARP entry for own gateway"); sys.exit()
+mac_gw = bytes.fromhex(gm[0][3].replace(":", ""))
+sport = random.randint(20000, 60000); seq = random.getrandbits(32)
+t0 = struct.pack("!HHLLBBHHH", sport, dport, seq, 0, 5 << 4, 2, 65535, 0, 0)
+ph = socket.inet_aton(src) + socket.inet_aton(dst) + struct.pack("!BBH", 0, 6, len(t0))
+t = struct.pack("!HHLLBBHHH", sport, dport, seq, 0, 5 << 4, 2, 65535, cs(ph + t0), 0)
+i0 = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(t), random.getrandbits(16), 0, 64, 6, 0, socket.inet_aton(src), socket.inet_aton(dst))
+i = i0[:10] + struct.pack("!H", cs(i0)) + i0[12:]
+pk.send(mac_gw + mac_me + b"\x08\x00" + i + t)
+end = time.time() + 2.5; got = "no reply"
+while time.time() < end:
+    try: f = pk.recv(2048)
+    except socket.timeout: continue
+    if f[12:14] != b"\x08\x00" or f[23] != 6: continue
+    ihl = (f[14] & 15) * 4; s_ip = socket.inet_ntoa(f[26:30]); o = 14 + ihl
+    sp, dp, _, ack, off, flags = struct.unpack("!HHLLBB", f[o:o+14])
+    if s_ip == dst and sp == dport and dp == sport and (flags & 0x12) == 0x12: got = "SYN-ACK received from %s:%d" % (s_ip, sp); break
+print(got)
+'''
+GWOWN = {}
+def reach(c, src, dst): return cexec(c, SYN_PROBE.replace("@SRC@", src).replace("@DST@", dst).replace("@PORT@", str(PORT)).replace("@GW@", GWOWN["B"]), timeout=20)
+base = snapshot(); assert "ocb" not in base
+hostip = sh("sh", "-c", "ip -4 route get 1.1.1.1 | sed -n 's/.* src \\([0-9.]*\\).*/\\1/p'").stdout.strip()
+socks = []
+def srv(ip):
+    s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind((ip, PORT)); s.listen(8); socks.append(s)
+try:
+    gwA = mknet("b3-x1", "ocbsbx1", "10.231.11.0/24"); gwB = mknet("b3-x2", "ocbsbx2", "10.231.12.0/24"); ipA = mkc("b3x1", "b3-x1"); ipB = mkc("b3x2", "b3-x2")
+    GWOWN["B"] = gwB; srv(gwA); srv(gwB); srv(hostip)
+    print("setup: A=%s (gw %s) B=%s (gw %s) | host primary address %s | listeners bound to each of the three addresses on :%d" % (ipA, gwA, ipB, gwB, hostip, PORT))
+    for label, extra in (("V0 no rules (control)", None), ("V1 static rule, no destination match", []), ("V2 static rule + addrtype LOCAL --limit-iface-in", ["-m", "addrtype", "--dst-type", "LOCAL", "--limit-iface-in"])):
+        rules = []
+        if extra is not None:
+            acc = ["INPUT", "1", "-i", "ocbsbx+", "-p", "tcp", "--dport", str(PORT), *extra, "-j", "ACCEPT"]; drp = ["INPUT", "-i", "ocbsbx+", "-j", "DROP"]
+            r1 = ipt("-I", *drp); r2 = ipt("-I", *acc)
+            if r1.returncode or r2.returncode: print("  %s: rule install FAILED: %s" % (label, (r1.stderr + r2.stderr).strip()[:120])); ipt("-D", "INPUT", "-i", "ocbsbx+", "-j", "DROP"); continue
+        print("  %s" % label)
+        print("     B (default caps) -> OWN gateway   %s:%d : %s" % (gwB, PORT, reach("b3x2", ipB, gwB)))
+        print("     B (default caps) -> SIBLING gw    %s:%d : %s" % (gwA, PORT, reach("b3x2", ipB, gwA)))
+        print("     B (default caps) -> HOST address  %s:%d : %s" % (hostip, PORT, reach("b3x2", ipB, hostip)))
+        if extra is not None:
+            ipt("-D", "INPUT", "-i", "ocbsbx+", "-p", "tcp", "--dport", str(PORT), *extra, "-j", "ACCEPT"); ipt("-D", "INPUT", "-i", "ocbsbx+", "-j", "DROP")
+    sh("docker", "rm", "-f", "b3x3"); sh("docker", "run", "-d", "--name", "b3x3", "--network", "b3-x2", "--cap-drop", "NET_RAW", "--read-only", "--security-opt", "no-new-privileges", IMG, "sleep", "300")
+    ipt("-I", "INPUT", "-i", "ocbsbx+", "-j", "DROP"); ipt("-I", "INPUT", "1", "-i", "ocbsbx+", "-p", "tcp", "--dport", str(PORT), "-j", "ACCEPT")
+    print("  V1 static rule, no destination match, sandbox with --cap-drop NET_RAW:")
+    print("     raw probe -> SIBLING gw:", cexec("b3x3", SYN_PROBE.replace("@SRC@", ipB).replace("@DST@", gwA).replace("@PORT@", str(PORT)).replace("@GW@", gwB)))
+    print("     ordinary connect -> SIBLING gw:", tcp_probe("b3x3", gwA, PORT))
+    ipt("-D", "INPUT", "-i", "ocbsbx+", "-p", "tcp", "--dport", str(PORT), "-j", "ACCEPT"); ipt("-D", "INPUT", "-i", "ocbsbx+", "-j", "DROP")
+finally:
+    for s in socks: s.close()
+    cleanup(["b3-x1", "b3-x2"], ["b3x1", "b3x2", "b3x3"])
+    print("== host firewall back to baseline after cleanup:", snapshot() == base)
+```
+
 ## Appendix B. Observed output (this host, October 3 2026)
 
 ### B.1 E0 to E2
@@ -582,4 +662,16 @@ gateway_mode_ipv4=isolated:   host bridge has an IPv4 address: False | recorded 
 control (default internal):   host bridge has an IPv4 address: True  | recorded gateway: 10.231.9.1 | reach 0.0.0.0 host svc via gateway: CONNECTED
 E8 NamespaceBackend (allowed_hosts): own proxy 10.200.0.1:37805 -> CONNECTED | 0.0.0.0-bound host service via gateway 10.200.0.1 -> CONNECTED | 127.0.0.1-bound host service via gateway -> ConnectionRefusedError
 E8 host-side: 0.0.0.0 listener saw connections from [('10.200.0.2', 36338)] | NamespaceBackend capabilities include NETWORK_ALLOWLIST: True
+```
+
+### B.6 E9 (F28)
+
+```
+setup: A=10.231.11.2 (gw 10.231.11.1) B=10.231.12.2 (gw 10.231.12.1) | host primary address 192.0.2.2 | listeners bound to each of the three addresses on :3128
+V0 no rules (control):  B -> OWN gw: SYN-ACK | B -> SIBLING gw 10.231.11.1:3128: SYN-ACK | B -> HOST address 192.0.2.2:3128: SYN-ACK
+V1 static rule, no destination match:  B -> OWN gw: SYN-ACK | B -> SIBLING gw: SYN-ACK received from 10.231.11.1:3128 | B -> HOST address: SYN-ACK received from 192.0.2.2:3128
+V2 static rule + addrtype LOCAL --limit-iface-in:  B -> OWN gw: SYN-ACK | B -> SIBLING gw: no reply | B -> HOST address: no reply
+V1 with --cap-drop NET_RAW: raw probe -> NO-AF_PACKET PermissionError | ordinary connect -> SIBLING gw: OSError
+(first attempt used IP-level raw sockets: sibling and host targets failed with OSError [Errno 101] Network is unreachable, own gateway succeeded; the probe was rewritten to craft Ethernet frames)
+host firewall back to baseline after cleanup: True
 ```
