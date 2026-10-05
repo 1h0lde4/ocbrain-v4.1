@@ -119,7 +119,7 @@ D1 says a firewall supplement is a valid B3 mechanism **only when S1 to S7 are s
 
 1. **Provisioning is a distinct act performed by a privileged operator or deployment step**, outside the controller process: it installs the two rules of section 4.1 (idempotently), can verify them, and can remove them. The tested privilege is `CAP_NET_ADMIN` in the host network namespace (F13).
 2. **The controller verifies enforcement by behavior only**, because even listing the rules needs `CAP_NET_ADMIN` (F13). The canary is therefore the controller's only enforcement check and cannot be skipped by configuration.
-3. **Canary.** On the sandbox's own network, after the proxy is started and before the workload container is created, a throwaway container: (a) positive control: connects to `<own gateway>:<PORT>` and must succeed; (b) negative probe: connects to **the sandbox network's own gateway address** at the port of a controller-owned ephemeral listener that is bound to `0.0.0.0` on the host (a port other than `PORT`), and must fail within a bounded time. The gateway address is the only host-local address the sandbox has a route to, so it is the only destination for which an ordinary-socket failure is caused by the firewall and not by routing. A probe to the host's primary IPv4 address or to a sibling's gateway fails on routing alone with no rule installed (`ENETUNREACH`, VERIFIED, E10), so it can never show that enforcement exists, and it is **not** used by the canary; those targets, reached by crafted frames, belong to TC-04 Anything other than "positive succeeded and negative failed" refuses the create. A canary whose positive control fails never reports "enforced" (so a dead network is not mistaken for a working rule). Measured cost: 2.3 s including a container start (F22). Per-create execution is required in v1 (priority order: governance and isolation before performance); caching is a later, evidence-backed change.
+3. **Canary.** On the sandbox's own network, after the proxy is started and before the workload container is created, a throwaway container: (a) positive control: connects to `<own gateway>:<PORT>` and must succeed; (b) negative probe: connects to **the sandbox network's own gateway address** at the port of a controller-owned ephemeral listener that is bound to `0.0.0.0` on the host (a port other than `PORT`), and must fail within a bounded time. The gateway address is the only host-local address the sandbox has a route to, so it is the only destination for which an ordinary-socket failure is caused by the firewall and not by routing. A probe to the host's primary IPv4 address or to a sibling's gateway fails on routing alone with no rule installed (`ENETUNREACH`, VERIFIED, appendix A.E10), so it can never show that enforcement exists, and it is **not** used by the canary; those targets, reached by crafted frames, belong to TC-04 Anything other than "positive succeeded and negative failed" refuses the create. A canary whose positive control fails never reports "enforced" (so a dead network is not mistaken for a working rule). Measured cost: 2.3 s including a container start (F22). Per-create execution is required in v1 (priority order: governance and isolation before performance); caching is a later, evidence-backed change.
 4. **Canary image.** The canary needs a TCP-connect capability inside the container. The sandbox image is caller-supplied and may lack one. The canary image is therefore (ruled, OD-3) a **dedicated, minimal, immutable-digest-pinned image provisioned in advance, with a deterministic TCP-connect primitive, and never pulled during `create()`**. Positive and negative controls run on **every** create in v1. The exact digest is fixed in batch B12, after it has been verified against the repository and the host.
 5. **Residual risk, stated plainly:** rules can be flushed or reordered after the canary by another host tool (a firewall-manager reload was not tested, F18). The canary detects this at the next create; it cannot close the window in between. Mitigation: re-run the canary on a timer and after a daemon-restart signal; treat a failure as "refuse new networked sandboxes".
 6. **Provisioning artifact.** A script or document with install, verify and remove modes, an exact expected-rules constant, and an evidence record of the kernel, Docker and iptables variant it was verified on (nf_tables variant tested; legacy untested). Path (ruled, OD-4): `scripts/sandbox/provision_network_isolation.sh`, with `install`, `verify` and `remove` modes; `PORT` and the interface prefix have a single source of truth shared with the backend. Firewall-manager coexistence (ufw, firewalld, manager reloads, reboot persistence) is **out of scope for v1** (OD-9): it is documented as unverified or unsupported, the behavioral canary is the fail-closed detector when the expected enforcement disappears, and B10 verifies only the exact firewall backend and variant it was tested on. A manager-integration design is a separate workstream.
@@ -618,3 +618,47 @@ Inputs: B04. Outcomes: (a) remediate to the isolation contract (B30); (b) withdr
 - That a forged *session* (as opposed to the first packets, F16 and F28) is possible or impossible.
 - That `NamespaceBackend`'s sibling reach exists (not yet evaluated); only its F6 reach was observed, once.
 - That `sandbox-fabric` is complete: A9, C3 and D9 remain open whatever happens here.
+
+## Appendix A. Scratch evidence cited by this specification
+
+### A.E10: which destinations can an ordinary-socket canary probe use? (October 4 2026)
+
+No firewall rules installed; the helper module `common.py` is the one listed in appendix A of `docs/architecture/sandbox-b3-host-firewall-supplement-study.md`. Environment as in that study (kernel `6.18.44-fc-v64`, Docker 29.1.3).
+
+```python
+"""Scratch E10 (NOT in the repo): which destinations can a canary's ORDINARY-socket negative probe use to show that the firewall (not routing) is what blocks?
+No firewall rules are installed. A destination that fails here already fails on routing alone, so it cannot demonstrate enforcement."""
+import sys; sys.path.insert(0, "/tmp/b3"); from common import *
+PROBE = r'''
+import socket, errno
+def t(ip, port):
+    try:
+        s = socket.create_connection((ip, port), timeout=3); s.close(); return "CONNECTED"
+    except OSError as e:
+        return "%s(%s)" % (type(e).__name__, errno.errorcode.get(e.errno, e.errno))
+for label, ip, port in @TARGETS@:
+    print("%-58s %s" % (label, t(ip, port)))
+'''
+base = snapshot(); assert "ocb" not in base
+hostip = sh("sh", "-c", "ip -4 route get 1.1.1.1 | sed -n 's/.* src \\([0-9.]*\\).*/\\1/p'").stdout.strip()
+ls, P, hits = listener()
+try:
+    gwA = mknet("b3-e1", "ocbsbx1", "10.231.21.0/24"); gwB = mknet("b3-e2", "ocbsbx2", "10.231.22.0/24"); mkc("b3e1", "b3-e1")
+    targets = [("own gateway %s : controller listener on 0.0.0.0 (ephemeral port)" % gwA, gwA, P),
+               ("sibling gateway %s : same port" % gwB, gwB, P),
+               ("host primary address %s : same port" % hostip, hostip, P)]
+    print("NO firewall rules installed; listener bound to 0.0.0.0:%d; ordinary sockets only:" % P)
+    print(cexec("b3e1", PROBE.replace("@TARGETS@", repr(targets))))
+finally:
+    cleanup(["b3-e1", "b3-e2"], ["b3e1"]); print("host firewall back to baseline:", snapshot() == base)
+```
+
+Observed output:
+
+```
+NO firewall rules installed; listener bound to 0.0.0.0:34107; ordinary sockets only:
+own gateway 10.231.21.1 : controller listener on 0.0.0.0 (ephemeral port) CONNECTED
+sibling gateway 10.231.22.1 : same port                    OSError(ENETUNREACH)
+host primary address 192.0.2.2 : same port                 OSError(ENETUNREACH)
+host firewall back to baseline: True
+```
