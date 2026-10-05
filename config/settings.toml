@@ -9,6 +9,10 @@ classifier_model = "mistral"
 web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
+# /import boundary (CTX-EXPORT-001, issue #54): the ONLY directory /import and
+# /brain/v2/import may read a bundle from. Absolute, or relative to the project
+# root. Unset = imports are refused. Bundle files must end in ".ocbrain".
+# import_root = "data/exports"
 
 [runtime]
 use_k42_frontend = true

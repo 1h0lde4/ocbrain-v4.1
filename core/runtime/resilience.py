@@ -2,7 +2,7 @@ import asyncio
 import time
 import logging
 from enum import Enum
-from typing import Callable, Any, Awaitable
+from typing import Awaitable, Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("ocbrain.runtime.resilience")
 
@@ -56,22 +56,72 @@ class CircuitBreaker:
                     self.state = CircuitState.OPEN
             raise e
 
+class _Hold:
+    """Per-acquisition record: one successful acquisition of one permit.
+
+    FZ-04: this state used to live on the AdaptiveSemaphore instance
+    (``_acquired`` / ``_start_time``), i.e. it was shared by every concurrent
+    holder. With two or more holders, the first ``__aexit__`` cleared the shared
+    flag and every later ``__aexit__`` then returned early *without releasing its
+    permit*, so capacity was lost permanently. Each acquisition now owns its own
+    record, so a release can never depend on another holder's state.
+    """
+    __slots__ = ("start",)
+
+    def __init__(self, start: float) -> None:
+        self.start = start
+
+
 class AdaptiveSemaphore:
     """
     Adjusts concurrency limit based on observed latency (EMA-smoothed AIMD).
     Slow responses -> Reduce limit. Fast responses -> Gradually increase limit.
 
+    Permit conservation (FZ-04 invariant):
+        available + held + handoff == current_limit + drain_count
+    where ``available`` is the underlying semaphore's free permits, ``held`` is
+    the number of live ``async with`` holders, ``drain_count`` is the number of
+    permits scheduled to be absorbed instead of released, and ``handoff`` is the
+    number of permits that ``asyncio.Semaphore.release()`` has already handed to
+    a parked waiter which has not yet resumed to record its hold.  A hand-off
+    permit is in neither ``available`` nor ``held`` for that instant and
+    ``snapshot()`` cannot observe it, so a ``snapshot()`` read inside that window
+    sums ``handoff`` lower than the limit; the permit is counted again as soon as
+    the waiter runs, and nothing is lost.  Hence
+    ``available + held == current_limit + drain_count`` holds exactly whenever
+    no hand-off is pending -- in particular when idle (``held == 0`` and no
+    waiters), where it reduces to ``available == current_limit + drain_count``.
+    A holder that exits for ANY reason (success, exception, cancellation,
+    timeout) returns or absorbs exactly one permit. ``snapshot()`` exposes these
+    numbers read-only.
+
+    Per-acquisition state:
+        ``async with sem`` records one ``_Hold`` per successful acquisition, keyed
+        by the owning asyncio task as a LIFO stack (so nested use inside one task
+        is correct too). ``__aexit__`` pops the hold that its own ``__aenter__``
+        pushed. Nothing about one holder is stored on the shared instance.
+        Limitation: ``__aenter__`` and ``__aexit__`` must run in the same task
+        (always true for a plain ``async with`` inside a coroutine; not true if
+        the ``async with`` is suspended inside an async generator that is later
+        finalized by the event loop in a different task). An exit with no
+        matching hold is logged as an error and releases nothing.
+
     Shrinking correctness:
         When the limit decreases, _drain_count is incremented.  Finishing
-        tasks consult _drain_count under the adaptation lock: if positive,
-        the finishing task absorbs its permit (skips release()) and
-        decrements _drain_count, effectively removing one slot from the
-        semaphore.  This is race-safe because:
-          - _drain_count is only read/written under self._lock (asyncio.Lock)
+        tasks consult _drain_count: if positive, the finishing task absorbs its
+        permit (skips release()) and decrements _drain_count, effectively
+        removing one slot from the semaphore.  This is race-safe because:
+          - the whole release/adapt section of __aexit__ contains no ``await``
+            (the ``async with self._lock`` below is uncontended and does not
+            suspend), so it runs atomically on the event loop and cannot be
+            interleaved with, or cancelled in the middle of, another holder's
+            release; tests/test_adaptive_semaphore_permit_conservation.py pins
+            this non-suspending property
           - No task is interrupted — only finishing tasks participate
           - The underlying asyncio.Semaphore is never replaced
     """
-    def __init__(self, min_limit: int = 1, max_limit: int = 10, target_latency_ms: float = 5000):
+    def __init__(self, min_limit: int = 1, max_limit: int = 10, target_latency_ms: float = 5000,
+                 *, clock: Callable[[], float] = time.perf_counter):
         self.min_limit = min_limit
         self.max_limit = max_limit
         self.target_latency = target_latency_ms / 1000.0
@@ -80,20 +130,53 @@ class AdaptiveSemaphore:
         self._lock = asyncio.Lock()
         self._avg_latency = self.target_latency # EMA seed
         self._alpha = 0.4 # Faster reaction to latency spikes
-        self._acquired = False  # BUG FIX: track acquisition state
-        self._start_time = 0.0
+        self._clock = clock      # injectable only so latency-driven tests are deterministic
+        self._holds: Dict[Optional[asyncio.Task], List[_Hold]] = {}  # per-task LIFO of live holds
         self._drain_count = 0   # permits to absorb on release
 
+    def snapshot(self) -> Dict[str, int]:
+        """Read-only permit accounting (see the conservation invariant above).
+
+        ``available`` reads asyncio.Semaphore's internal counter (``_value``);
+        there is no public accessor for it.  The numbers are an instantaneous
+        view: while a released permit is being handed to a parked waiter that has
+        not resumed yet, ``available + held`` reads lower by the number of
+        pending hand-offs (exact again once the waiter runs, and at every idle
+        point).
+        """
+        return {
+            "current_limit": self.current_limit,
+            "available": self._semaphore._value,
+            "held": sum(len(stack) for stack in self._holds.values()),
+            "drain_count": self._drain_count,
+        }
+
     async def __aenter__(self):
+        # If this await is cancelled, no permit was taken and nothing was
+        # recorded (asyncio.Semaphore.acquire undoes its own bookkeeping).
         await self._semaphore.acquire()
-        self._acquired = True    # BUG FIX: only set after successful acquire
-        self._start_time = time.perf_counter()
+        # From here to the end of this method there is no await: a permit that
+        # has been taken is recorded in the same uninterrupted step.
+        try:
+            hold = _Hold(self._clock())
+            self._holds.setdefault(asyncio.current_task(), []).append(hold)
+        except BaseException:
+            self._semaphore.release()
+            raise
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if not self._acquired:   # BUG FIX: guard release before checking acquired
+        task = asyncio.current_task()
+        stack = self._holds.get(task)
+        if not stack:
+            logger.error(
+                "[AdaptiveSemaphore] __aexit__ with no matching hold in this task "
+                "(cross-task exit or unbalanced use); no permit released"
+            )
             return
-        self._acquired = False
-        latency = time.perf_counter() - self._start_time
+        hold = stack.pop()          # this acquisition's own record
+        if not stack:
+            del self._holds[task]
+        latency = self._clock() - hold.start
 
         async with self._lock:
             # Drain: absorb permit instead of releasing to shrink capacity
