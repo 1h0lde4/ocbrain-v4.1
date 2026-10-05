@@ -3,10 +3,14 @@ core/dispatcher.py — Async parallel + serial task executor.
 Resolves the DAG from decomposer and fires tasks in correct order.
 """
 import asyncio
+import logging
 from dataclasses import dataclass
 
 from .decomposer import Task
+from .error_ref import log_and_ref
 from .model_router import ModelRouter, RouteResult
+
+logger = logging.getLogger("ocbrain.dispatcher")
 
 
 @dataclass
@@ -58,13 +62,17 @@ async def run(
 
         for (task, _), res in zip(enriched, results):
             if isinstance(res, Exception):
-                # Wrap exception in a fallback result so pipeline continues
+                # Wrap exception in a fallback result so pipeline continues.
+                # The text is caller-visible, so detail goes to the log.
                 from .model_router import RouteResult
+                ref = log_and_ref(
+                    logger, f"[Dispatcher] Task {task.id} ({task.module})", res)
                 res = TaskResult(
                     task_id=task.id,
                     module=task.module,
                     result=RouteResult(
-                        answer=f"[Module {task.module} error: {res}]",
+                        answer=(f"[Module {task.module} error: "
+                                f"{type(res).__name__} (ref {ref})]"),
                         source="error",
                     ),
                 )
