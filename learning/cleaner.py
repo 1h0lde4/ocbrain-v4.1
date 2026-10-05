@@ -7,6 +7,7 @@ from pathlib import Path
 
 from learning.chunker import Chunk, chunk, deduplicate
 from learning.embedder import ingest_chunks
+from core.module_paths import module_child
 
 DATA_RAW    = Path(__file__).parent.parent / "data" / "raw"
 DATA_CHUNKS = Path(__file__).parent.parent / "data" / "chunks"
@@ -18,7 +19,7 @@ def run_all(registry: dict):
 
 
 def run_module(module_name: str, registry: dict):
-    in_dir = DATA_RAW / module_name
+    in_dir = module_child(DATA_RAW, module_name)
     if not in_dir.exists():
         return
 
@@ -44,7 +45,7 @@ def run_module(module_name: str, registry: dict):
     print(f"[cleaner] {module_name}: {len(all_chunks)} → {len(unique)} unique chunks")
 
     # Move processed files to chunks dir
-    done_dir = DATA_CHUNKS / module_name
+    done_dir = module_child(DATA_CHUNKS, module_name)
     done_dir.mkdir(parents=True, exist_ok=True)
     for fpath in in_dir.glob("*.txt"):
         fpath.rename(done_dir / fpath.name)
