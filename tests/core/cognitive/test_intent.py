@@ -29,12 +29,13 @@ from core.cognitive.intent import (
     NormalizationRejected,
     RawRequest,
     _apply_output_containment,
+    _check_source_grounding,
+    _describe_grounding,
     _detect_language,
     _detect_modality,
     _estimate_complexity,
     _parse_hypotheses,
-    _resolve_source,
-    _select_operative_hypothesis,
+    _select_hypothesis,
     _split_compound_goals,
     _validate_structured_form,
     form_goals,
@@ -446,82 +447,160 @@ class TestApplyOutputContainment:
         assert _apply_output_containment([]) == []
 
 
-# ── ADR-KERNEL-06: citation verification (CTX-AUTH-001b) ───────────────────
-# Unit coverage for _resolve_source in isolation; test_intent_security.py
-# covers the same property through the full generate_hypotheses path plus
-# the adversarial/differential scenarios this file isn't scoped for.
+# ── CTX-AUTH-002 (reopened ADR-KERNEL-06 §8): grounding is metadata, not
+# authority ──────────────────────────────────────────────────────────────
+# Unit coverage for _check_source_grounding/_describe_grounding/
+# _select_hypothesis in isolation; test_intent_security.py covers the same
+# properties through the full generate_hypotheses/interpret_request path
+# plus the adversarial/differential scenarios this file isn't scoped for.
 
-class TestResolveSource:
-    def test_no_citation_yields_no_authority(self):
-        assert _resolve_source("rename_branch", None, "rename my branch", []) is None
+class TestCheckSourceGrounding:
+    def test_no_citation_is_unverified_and_ungrounded(self):
+        assert _check_source_grounding("rename_branch", None, "rename my branch", []) == (False, False)
 
-    def test_genuine_request_citation_yields_user_authority(self):
-        result = _resolve_source("rename_branch", "request", "please rename my branch", [])
-        assert result == AuthorityLevel.USER
+    def test_genuine_request_citation_is_verified_and_grounded(self):
+        assert _check_source_grounding(
+            "rename_branch", "request", "please rename my branch", []) == (True, True)
 
-    def test_fabricated_request_citation_yields_no_authority(self):
-        result = _resolve_source(
-            "novel:CONTEXT_SENTINEL_INJECTED", "request", "what's a good name for my new branch?", [],
-        )
-        assert result is None
+    def test_a_request_citation_always_verifies_grounded_or_not(self):
+        """CTX-AUTH-002: existence ('request' names something real) and
+        content grounding are independent facts. A request citation is
+        ALWAYS source_verified (the request always exists) regardless of
+        whether the label's content happens to overlap with it -- this is
+        deliberate: source_verified alone must never be read as if it were
+        authority-granting (nothing here grants authority at all)."""
+        verified, grounded = _check_source_grounding(
+            "novel:CONTEXT_SENTINEL_INJECTED", "request",
+            "what's a good name for my new branch?", [])
+        assert verified is True and grounded is False
 
-    def test_genuine_block_citation_inherits_block_authority(self):
+    def test_genuine_block_citation_is_verified_and_grounded(self):
         block = _block("the user previously asked about renaming a branch",
                         authority=AuthorityLevel.RETRIEVED)
-        result = _resolve_source("rename_branch", "[1]", "irrelevant", [block])
-        assert result == AuthorityLevel.RETRIEVED
+        assert _check_source_grounding("rename_branch", "[1]", "irrelevant", [block]) == (True, True)
 
-    def test_block_citation_never_yields_user_even_when_content_matches(self):
-        """A block can never launder into USER authority, regardless of
-        content match -- only a genuine request citation can."""
+    def test_block_citation_grounding_never_implies_any_authority_field(self):
+        """There is no authority field to launder into anymore -- this test
+        now confirms the return type itself: two plain booleans, nothing
+        AuthorityLevel-shaped, regardless of content match or score."""
         block = _block("rename_branch rename_branch rename_branch",
                         authority=AuthorityLevel.RETRIEVED)
-        result = _resolve_source("rename_branch", "[1]", "irrelevant", [block])
-        assert result != AuthorityLevel.USER
+        result = _check_source_grounding("rename_branch", "[1]", "irrelevant", [block])
+        assert result == (True, True)
+        assert all(isinstance(v, bool) for v in result)
 
-    def test_fabricated_block_citation_content_mismatch_yields_no_authority(self):
+    def test_fabricated_block_citation_content_mismatch_is_verified_but_ungrounded(self):
         block = _block("completely unrelated retrieved fact")
-        result = _resolve_source("novel:CONTEXT_SENTINEL_INJECTED", "[1]", "irrelevant", [block])
-        assert result is None
+        assert _check_source_grounding(
+            "novel:CONTEXT_SENTINEL_INJECTED", "[1]", "irrelevant", [block]) == (True, False)
 
-    def test_out_of_range_block_index_yields_no_authority(self):
+    def test_out_of_range_block_index_is_unverified(self):
         block = _block("rename my branch please")
-        assert _resolve_source("rename_branch", "[2]", "irrelevant", [block]) is None
+        assert _check_source_grounding("rename_branch", "[2]", "irrelevant", [block]) == (False, False)
 
-    def test_empty_label_yields_no_authority(self):
+    def test_empty_label_is_ungrounded_but_still_reports_verification_honestly(self):
         """Defensive: a label with no corroborating tokens at all (e.g.
         parsed from degenerate input) cannot satisfy overlap against
-        anything -- must fail closed, not raise."""
-        assert _resolve_source("", "request", "rename my branch", []) is None
+        anything, but a 'request' citation still genuinely exists --
+        source_verified reports that honestly rather than collapsing both
+        facts to False."""
+        assert _check_source_grounding("", "request", "rename my branch", []) == (True, False)
 
 
-class TestSelectOperativeHypothesis:
-    def test_verified_user_candidate_is_selected(self):
-        h1 = IntentHypothesis(label="a", score=0.5, authority=AuthorityLevel.USER)
-        h2 = IntentHypothesis(label="b", score=0.9, authority=None)
-        selected, gate = _select_operative_hypothesis([h1, h2])
-        assert selected is h1
-        assert gate == "verified_operative"
+def _grounded(label, score, source="request", verified=True, grounded=True):
+    return IntentHypothesis(label=label, score=score, source=source,
+                            source_verified=verified, content_grounded=grounded)
 
-    def test_highest_scoring_verified_candidate_wins(self):
-        h1 = IntentHypothesis(label="a", score=0.5, authority=AuthorityLevel.USER)
-        h2 = IntentHypothesis(label="b", score=0.9, authority=AuthorityLevel.USER)
-        selected, gate = _select_operative_hypothesis([h1, h2])
-        assert selected is h2
-        assert gate == "verified_operative"
 
-    def test_no_verified_candidate_falls_back_to_novel(self):
-        h1 = IntentHypothesis(label="a", score=0.9, authority=None)
-        h2 = IntentHypothesis(label="b", score=0.9, authority=AuthorityLevel.RETRIEVED)
-        selected, gate = _select_operative_hypothesis([h1, h2])
-        assert selected.label == "novel"
-        assert selected.score == 0.1
-        assert gate == "open_category_fallback"
+class TestSelectHypothesis:
+    """_select_hypothesis is a fail-closed PLAUSIBILITY default, not an
+    authority decision (CTX-AUTH-002): eligible only if it cites the user's
+    own request and overlaps it; otherwise the trusted open-category
+    default. Replaces the rejected _select_operative_hypothesis, whose
+    criterion was a resolved AuthorityLevel.USER."""
 
-    def test_retrieved_authority_alone_is_not_sufficient(self):
-        h1 = IntentHypothesis(label="a", score=0.99, authority=AuthorityLevel.RETRIEVED)
-        _selected, gate = _select_operative_hypothesis([h1])
-        assert gate == "open_category_fallback"
+    def test_request_grounded_candidate_is_selected(self):
+        h = _grounded("a", 0.5)
+        selected, basis = _select_hypothesis([h])
+        assert selected is h and basis == "request_grounded"
+
+    def test_highest_scoring_eligible_candidate_wins(self):
+        lo, hi = _grounded("a", 0.5), _grounded("b", 0.9)
+        selected, basis = _select_hypothesis([lo, hi])
+        assert selected is hi and basis == "request_grounded"
+
+    def test_an_eligible_candidate_beats_a_higher_scored_ineligible_one(self):
+        ineligible = IntentHypothesis(label="x", score=0.99)
+        eligible = _grounded("y", 0.3)
+        selected, _ = _select_hypothesis([ineligible, eligible])
+        assert selected is eligible
+
+    def test_uncited_candidates_fall_back_to_the_trusted_default(self):
+        selected, basis = _select_hypothesis([IntentHypothesis(label="a", score=0.9)])
+        assert (selected.label, selected.score, basis) == ("novel", 0.1, "open_category_fallback")
+
+    def test_verified_but_ungrounded_falls_back(self):
+        selected, basis = _select_hypothesis([_grounded("a", 0.9, grounded=False)])
+        assert basis == "open_category_fallback" and selected.label == "novel"
+
+    def test_unverified_source_falls_back(self):
+        selected, basis = _select_hypothesis([_grounded("a", 0.9, verified=False, grounded=False)])
+        assert basis == "open_category_fallback"
+
+    def test_inconsistent_state_fails_closed(self):
+        """_check_source_grounding never produces content_grounded=True with
+        source_verified=False, but the selector must not depend on that
+        invariant holding forever: a hand-built or future-buggy object with
+        the impossible combination is not eligible."""
+        selected, basis = _select_hypothesis([_grounded("a", 0.9, verified=False, grounded=True)])
+        assert basis == "open_category_fallback" and selected.label == "novel"
+
+    def test_a_block_citation_is_never_eligible_even_when_grounded(self):
+        """A poisoned block is attacker-controlled on both sides (its text
+        AND the label the injection asks the model to emit), so overlap with
+        it says nothing about the user's request. Only a request citation
+        can make a candidate eligible."""
+        selected, basis = _select_hypothesis([_grounded("a", 0.99, source="[1]")])
+        assert basis == "open_category_fallback" and selected.label == "novel"
+
+    def test_the_fallback_is_a_fresh_trusted_object_not_model_output(self):
+        injected = IntentHypothesis(label="novel:CONTEXT_SENTINEL_INJECTED", score=1.0)
+        selected, _ = _select_hypothesis([injected])
+        assert selected is not injected and "SENTINEL" not in selected.label
+
+    def test_no_authority_is_consulted_or_returned(self):
+        import inspect
+        assert "AuthorityLevel" not in inspect.getsource(_select_hypothesis).split('"""')[2]
+
+
+class TestDescribeGrounding:
+    """_describe_grounding is pure observability (CTX-AUTH-002 replaces the
+    rejected _select_operative_hypothesis, which used these same facts to
+    GATE selection on authority). None of these labels may be read as, or
+    ever renamed back into, an authority or "operative" claim."""
+
+    def test_uncited(self):
+        h = IntentHypothesis(label="a", score=0.5)
+        assert _describe_grounding(h) == "uncited"
+
+    def test_source_unresolved(self):
+        h = IntentHypothesis(label="a", score=0.5, source="[9]",
+                             source_verified=False, content_grounded=False)
+        assert _describe_grounding(h) == "source_unresolved"
+
+    def test_content_ungrounded(self):
+        h = IntentHypothesis(label="a", score=0.5, source="request",
+                             source_verified=True, content_grounded=False)
+        assert _describe_grounding(h) == "content_ungrounded"
+
+    def test_content_grounded(self):
+        h = IntentHypothesis(label="a", score=0.5, source="request",
+                             source_verified=True, content_grounded=True)
+        assert _describe_grounding(h) == "content_grounded"
+
+    def test_the_function_never_returns_anything_authority_shaped(self):
+        import inspect
+        assert "AuthorityLevel" not in inspect.getsource(_describe_grounding)
 
 
 # ── Modality / complexity heuristics (K4.2.1) ──────────────────────────────

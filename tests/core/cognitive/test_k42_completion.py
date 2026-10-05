@@ -33,7 +33,6 @@ from core.cognitive.intent import (
     load_known_categories,
     normalize_request,
 )
-from core.memory.retrieval.context import AuthorityLevel
 from core.cognitive.planner import (
     CapabilityDiscoveryRequest,
     HintSource,
@@ -74,6 +73,13 @@ def _make_intent(
         lifecycle_state=IntentLifecycle.INTERPRETED,
         detected_language=detected_language,
     )
+
+# CTX-AUTH-002: fixtures that mock generate_hypotheses must return hypotheses
+# the selection default treats as eligible (cites the request, verified,
+# content-grounded) for interpret_request to select them; main's versions
+# marked these authority=AuthorityLevel.USER, a field that no longer exists.
+# This states the same intent without claiming any authority.
+_GROUNDED = dict(source="request", source_verified=True, content_grounded=True)
 
 
 def _make_novel_intent(raw_request: str = "hello") -> Intent:
@@ -229,7 +235,7 @@ class TestLanguageDetectionPropagation:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="greeting", score=0.9, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="greeting", score=0.9, **_GROUNDED)
             ]
             # Use text with enough French stopwords for the heuristic
             goals = await interpret_request(
@@ -243,7 +249,7 @@ class TestLanguageDetectionPropagation:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="creative writing", score=0.85, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="creative writing", score=0.85, **_GROUNDED)
             ]
             # Use text with enough English stopwords for the heuristic
             goals = await interpret_request(
@@ -553,7 +559,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="greeting", score=0.9, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="greeting", score=0.9, **_GROUNDED)
             ]
             goals = await interpret_request("Hello", event_stream=es)
             assert len(goals) >= 1
@@ -566,7 +572,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="creative writing", score=0.88, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="creative writing", score=0.88, **_GROUNDED)
             ]
             goals = await interpret_request(
                 "Write a short Chinese fantasy story about a young astronomer.",
@@ -584,7 +590,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="novel", score=0.3, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="novel", score=0.3, **_GROUNDED)
             ]
             goals = await interpret_request("Make it better.", event_stream=es)
             goal = goals[0]
@@ -598,7 +604,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="analysis", score=0.85, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="analysis", score=0.85, **_GROUNDED)
             ]
             goals = await interpret_request(
                 "Summarize this and then extract the key risks",
@@ -614,7 +620,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="information query", score=0.8, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="information query", score=0.8, **_GROUNDED)
             ]
             # Use text with enough French stopwords for the heuristic
             goals = await interpret_request(
@@ -630,7 +636,7 @@ class TestPublicUserScenarios:
         es = _make_event_stream()
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="information query", score=0.75, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="information query", score=0.75, **_GROUNDED)
             ]
             goals = await interpret_request(
                 "请解释量子计算的基本原理。",
@@ -711,7 +717,7 @@ class TestOntologyUserModelInteraction:
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             # Even with known categories, LLM can still return "novel"
             mock_hyp.return_value = [
-                IntentHypothesis(label="novel", score=0.6, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="novel", score=0.6, **_GROUNDED)
             ]
             goals = await interpret_request(
                 "Do something completely new and unexpected",
@@ -772,7 +778,7 @@ class TestInputFidelity:
         original = "Write a detailed technical explanation of quantum entanglement"
         with patch("core.cognitive.intent.generate_hypotheses") as mock_hyp:
             mock_hyp.return_value = [
-                IntentHypothesis(label="explanation", score=0.9, authority=AuthorityLevel.USER)
+                IntentHypothesis(label="explanation", score=0.9, **_GROUNDED)
             ]
             goals = await interpret_request(original, event_stream=es)
             assert goals[0].structured_form["raw_request"] == original
