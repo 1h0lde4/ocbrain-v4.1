@@ -240,9 +240,9 @@ elimination of all retrieved-content influence on output.
 reproduction run through the real `interpret_request` with only the model
 provider mocked. Real-model exploitation: NOT DEMONSTRATED. Reopens
 CTX-AUTH-001b. A replacement is implemented on branch
-`fix/ctx-auth-002-reject-content-corroboration-authority-sep2026` and is a
-**proposal pending the owner's and Moncif's concurrence** (see
-`ADR-KERNEL-08`, status DRAFT). Nothing here is a closure.
+`fix/ctx-auth-002-reject-content-corroboration-authority-sep2026` and is
+**approved in design** (`ADR-KERNEL-08`, APPROVED Oct 6, 2026 by Moncif) but
+**not promoted to `main` and not re-verified there**. Nothing here is a closure.
 
 **Affected component:** as merged on `main` at the branch point `80a1bb8` —
 `core/cognitive/intent.py` (`_resolve_source`, `_select_operative_hypothesis`)

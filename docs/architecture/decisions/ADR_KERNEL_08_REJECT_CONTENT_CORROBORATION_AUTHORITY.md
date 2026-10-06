@@ -1,9 +1,11 @@
 # ADR-KERNEL-08: Reject Content-Corroboration Authority; Reopen CTX-AUTH-001b
 
-**Status:** DRAFT — **not approved.** This ADR proposes rejecting a merged
-mechanism. It requires a decision by the project owner **and** Moncif's
-concurrence (Q1). It must not be moved past DRAFT by the session that wrote
-it. Lifecycle: DRAFT → REVIEW → APPROVED → IMPLEMENTED → FINAL.
+**Status:** APPROVED (Oct 6, 2026, by Moncif, the decision-maker) — **not
+IMPLEMENTED:** the replacement exists on the branch below but is not promoted
+to `main` and not re-verified there. CTX-AUTH-001b stays **OPEN** until it is.
+This is not a closure. Lifecycle: DRAFT → REVIEW → APPROVED → IMPLEMENTED →
+FINAL; the Oct 6 rulings in §8 are both the review outcome and the approval (no
+separate REVIEW stage was held).
 **Date:** October 6, 2026
 **Author:** Claude session, CTX-AUTH-002 workstream
 **Branch:** `fix/ctx-auth-002-reject-content-corroboration-authority-sep2026`
@@ -96,7 +98,7 @@ candidate to ever reach USER authority". This ADR is not Option B: it keeps
 `request` citation and a selection default. It **does** share Option B's
 consequence — no request-grounded candidate can reach USER authority — and
 therefore removes the very path §8 gave as its reason for rejecting B.
-Moncif's concurrence is needed on exactly that point. In mitigation, nothing
+Moncif's concurrence on exactly that point is the Q1 ruling in §8 (Oct 6, 2026). In mitigation, nothing
 reviewed required a model-authored hypothesis to hold USER authority: the
 consumers of label-derived fields are the planner's constraint extraction
 (fixed), a hint keyed on `category == "novel"`, and capability-discovery
@@ -144,6 +146,7 @@ lines.
   capability-discovery text built from `semantic_description`. It cannot
   reach `description`, `raw_request` or an EXPLICIT constraint. Pinned by
   `TestSelectHypothesis::test_padded_label_bypasses_the_default_but_cannot_escalate`.
+  **Status: ACCEPTED RISK** (Q2 and Q4 rulings, Moncif, Oct 6, 2026).
 - **R2 — the default is not a security control.** The security invariant is
   downstream of selection and holds whichever hypothesis is selected.
 - **R3 — functional cost.** With a real model that does not cite `request`,
@@ -160,6 +163,11 @@ lines.
   result recorded here is from `--dry-run` scripted stand-ins, which
   validate the harness and the code path, not any model. **No real
   provider was available; nothing here measures real-model behavior (R5).**
+  **Open gaps found after the rewrite (OPEN, not fixed in this checkpoint):**
+  the harness exits 0 with zero runs (`--trials 0` or `--requests 0`) and exits
+  0 when the poisoned entry never reached a prompt (`total_exposed == 0` prints
+  a NOTE only). Both are vacuous passes. Required before promotion: exit 2 in
+  both cases (the second outside `--dry-run`), with a sensitivity test for each.
 
 ## 7. Verification evidence
 
@@ -222,25 +230,55 @@ lines.
 
 **NOT yet re-run — do not read this ADR as covering it:** any run against a
 real model provider (none available in this sandbox). Until one is done,
-R5 stands, and the owner decisions in §8 remain open. `main` moves
+R5 stands. `main` moves
 constantly: recheck ADR numbering (`ADR-KERNEL-07` belongs to another
 session) and re-merge before any PR.
 
-## 8. Decisions required (none may be self-approved)
+## 8. Decisions (Moncif, Oct 6, 2026)
 
-- **Q1** Approve rejecting §8's authority grant and reopening CTX-AUTH-001b.
-  **Needs Moncif's concurrence** (see the Option B clarification in §3).
-- **Q2** Confirm the selection default (Decision 4), or choose: remove it, or
-  strengthen it.
-- **Q3** Authorize evaluating ADR-KERNEL-06 Option C; its trigger has fired.
-- **Q4** Should capability discovery keep building queries from the
-  label-bearing `semantic_description`? (A behavior change if not.)
-- **Q5** Until a decision is made, treat CTX-AUTH-001 as **open on `main`**
-  and re-widen the Sept 23 freeze-verdict narrowing.
-- **Q6** Approve the new event vocabulary (`citation_grounding`,
-  `selected_citation_grounding`, `selection_basis`).
+Rulings given by Moncif, the decision-maker, on Oct 6, 2026. The original
+question for each is kept for the record.
+
+| Q | Question | Ruling |
+|---|---|---|
+| Q1 | Approve rejecting §8's authority grant and reopening CTX-AUTH-001b | **APPROVE.** The content-corroboration authority grant of ADR-KERNEL-06 §8 is rejected (superseded). A model-authored hypothesis never acquires USER authority from citation, grounding, overlap or score. |
+| Q2 | Confirm the selection default (Decision 4), or remove or strengthen it | **CONFIRM.** Keep the fail-closed plausibility selection: the highest-scoring candidate that cites `request` with `source_verified` and `content_grounded`; otherwise `novel` / 0.1. This is not an authority or security decision. |
+| Q3 | Authorize evaluating ADR-KERNEL-06 Option C | **AUTHORIZE EVALUATION ONLY.** Do not adopt or implement Option C. The study must compare provenance strength against N+1 generation cost, latency, batching and K4.2 impact. |
+| Q4 | Keep building capability-discovery queries from the label-bearing `semantic_description`? | **KEEP.** It stays advisory input to capability discovery and matching. It is not USER-authority text, provenance or an explicit-constraint source, and it cannot bypass compilation or governance. No code change required: the branch already behaves this way. |
+| Q5 | Status of CTX-AUTH-001 on `main` | **CONFIRM OPEN.** CTX-AUTH-001b remains OPEN on `main`. The Sept 23 closure is withdrawn as a current state (its evidence is preserved as history). The freeze narrowing that depended on it is not valid. |
+| Q6 | Approve the new event vocabulary | **APPROVE** `citation_grounding`, `selected_citation_grounding`, `selection_basis`. Retire `authorities`, `selection_gate`, `verified_operative`, `verified_nonoperative`. |
+
+Verification notes on the rulings (Oct 6, 2026, on this branch):
+
+- **Q2:** removing the default was measured (every candidate eligible, highest
+  score wins): the injected `novel:CONTEXT_SENTINEL_INJECTED` label then wins
+  the category in cases A and B. With the default kept, A selects `novel` and B
+  selects `rename_branch`.
+- **Q4:** VERIFIED at the discovery function only. `discover_capabilities()`
+  uses the request description for token-overlap (Jaccard) scoring and
+  ranking, and its documented contract says it never calls
+  `Adapter.execute()` and never touches memory or governance. The downstream
+  compile gate was NOT traced for this ADR.
+- **Q6:** no code in the repository outside the tests and
+  `live_citation_check.py` reads these events. Consumers outside the
+  repository, if any, are unknown.
+
+## 8.1 Required before promotion (all OPEN)
+
+1. Fix the two vacuous-pass paths in `live_citation_check.py` (R6) and
+   complete the owner's independent review of that file.
+2. A real-model run on a machine with a configured provider (covers R3 and R5).
+3. Refresh `main`, recheck that ADR-KERNEL-08 is still the free number
+   (`ADR-KERNEL-07` belongs to another session), merge `main` into the branch
+   and re-run the critical gates.
+4. Only then a PR. ADR-KERNEL-08 moves to IMPLEMENTED after promotion and
+   re-verification on `main`, and CTX-AUTH-001b may be reconsidered for closure
+   on that evidence.
+
+The Option C study (Q3) is separate and does not block promotion.
 
 ## 9. Lifecycle
 
-DRAFT. Not reviewed, not approved, not implemented on `main`. The branch
-contains an implementation for review; its existence is not approval.
+APPROVED (Oct 6, 2026, by Moncif). Not IMPLEMENTED: the replacement exists on
+the branch, is not promoted to `main` and is not re-verified there. The
+branch's passing tests do not close CTX-AUTH-001b.

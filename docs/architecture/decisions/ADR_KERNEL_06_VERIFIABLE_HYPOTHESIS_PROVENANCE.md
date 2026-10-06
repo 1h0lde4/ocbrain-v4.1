@@ -39,10 +39,11 @@ the clarification is the right safeguard, not the number.
 > demonstrated that the content-corroboration authority grant in §8 is
 > exploitable: a request-independent label of common words obtained
 > `AuthorityLevel.USER` and, through the planner, became an explicit
-> constraint attributed to the user. `ADR-KERNEL-08` (status DRAFT, not
-> approved) proposes rejecting that mechanism and reopening CTX-AUTH-001b.
-> Until it is decided, treat CTX-AUTH-001b as **open**. §§1–8 below are left
-> unmodified as the historical record of the decision as taken.
+> constraint attributed to the user. `ADR-KERNEL-08` (APPROVED Oct 6, 2026,
+> by Moncif) rejects that mechanism: §8 is **rejected / superseded**.
+> CTX-AUTH-001b is **open** until the approved replacement is promoted to
+> `main` and re-verified there. §§1–8 below are left unmodified as the
+> historical record of the decision as taken.
 
 ## 1. Context
 
