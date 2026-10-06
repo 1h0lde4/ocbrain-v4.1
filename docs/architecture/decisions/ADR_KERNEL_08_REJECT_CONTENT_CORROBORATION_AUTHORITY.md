@@ -210,10 +210,21 @@ lines.
   'authorities'"), i.e. it cannot silently report zero against the old
   vocabulary. Source files were verified byte-identical after (1) and (2).
 
-**NOT yet re-run — do not read this ADR as covering them:**
-any run against a real model provider (none available in this sandbox), and
-a merge of current `main` into the branch. The status documents have not
-been reconciled. This section must be updated when they are.
+- `main` merged INTO the branch (never the reverse; nothing is merged to
+  `main`) at `8b0fee2` and again at `58d079f` (Oct 6), with no conflicts and no
+  file changed on both sides. On the tree merged with `58d079f`: full suite
+  **2028 passed, 1 xfailed, 0 failed**; mutation check 17/17 caught; drift
+  15/15; mypy error set identical to the pre-fix tree. `chromadb` is installed in
+  this environment, so the `chromadb` failures other status entries report do
+  not occur here. The status documents were reconciled (CURRENT_STATE,
+  KNOWN_ISSUES, ADR_INDEX, remediation register); the Sept 23 closure claims
+  are marked withdrawn in place.
+
+**NOT yet re-run — do not read this ADR as covering it:** any run against a
+real model provider (none available in this sandbox). Until one is done,
+R5 stands, and the owner decisions in §8 remain open. `main` moves
+constantly: recheck ADR numbering (`ADR-KERNEL-07` belongs to another
+session) and re-merge before any PR.
 
 ## 8. Decisions required (none may be self-approved)
 
