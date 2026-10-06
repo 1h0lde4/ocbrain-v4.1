@@ -5,6 +5,9 @@ Runs only when enough training pairs exist and training is enabled.
 from datetime import datetime
 from pathlib import Path
 from core.config import config
+from core.module_paths import module_child
+
+MODULES_DIR = Path(__file__).parent.parent / "modules"
 
 
 def train(module_name: str, data_path: Path) -> Path | None:
@@ -16,9 +19,7 @@ def train(module_name: str, data_path: Path) -> Path | None:
         print("[finetuner] Training disabled in settings.")
         return None
 
-    pending = (
-        Path(__file__).parent.parent / "modules" / module_name / "weights" / "pending"
-    )
+    pending = module_child(MODULES_DIR, module_name) / "weights" / "pending"
     pending.mkdir(parents=True, exist_ok=True)
 
     state      = config.get_module_state(module_name)

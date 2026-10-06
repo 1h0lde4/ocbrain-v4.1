@@ -54,6 +54,10 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from core.cognitive.content_anchor import (
+    ContentAnchorAssessment,
+    governance_metadata as content_anchor_governance_metadata,
+)
 from core.cognitive.planner import ClarificationPolicy, ExecutionPlan, PlanStep
 from core.events.event_stream import EventStream, get_event_stream
 from core.governance.governance_kernel import (
@@ -273,6 +277,7 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
     governance: Optional[GovernanceKernel] = None,
     clarification_policy: Optional[ClarificationPolicy] = None,
     clarification_attempt: int = 0,
+    content_anchor: Optional[ContentAnchorAssessment] = None,
 ) -> CompilationResult:
     """Plan Compiler's top-level entry point: ExecutionPlan -> CompilationResult.
 
@@ -316,6 +321,14 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
            .validate() (structurally unreachable given step 1's checks,
            except for a dangling error_branch reference), and emits
            cognitive.plan_compiled (K4 §12) on success.
+
+    content_anchor (ADR-KERNEL-07, PROPOSED; additive, keyword-only, default
+    None => behavior byte-identical to before): the pre-plan
+    creative-content-anchor observation. It is carried into this method's
+    EXISTING governance action under its own metadata keys and evaluated by the
+    existing OrchestrationGovernor alongside ClarificationPolicy. This adds no
+    new gate and no new governance boundary (K4.2: "no dedicated clarification
+    gate"); an ESCALATE is returned exactly like any other.
 
     clarification_attempt exists so a future caller (SupervisorWorker,
     Packet 08 — not built by this packet) can call compile() again for a
@@ -364,6 +377,12 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
             "confidence_threshold": clarification_policy.confidence_threshold,
             "clarification_attempt": clarification_attempt,
             "max_escalations": clarification_policy.max_escalations,
+            # ADR-KERNEL-07 (PROPOSED, D-5 = Option C): the pre-plan
+            # detector's observation, evaluated by the existing
+            # OrchestrationGovernor at THIS boundary under its own keys.
+            # Empty when content_anchor is None or abstained -> the
+            # governor rule stays inert and behavior is unchanged.
+            **content_anchor_governance_metadata(content_anchor),
         },
     )
     gov_result = governance.evaluate_action(action)
@@ -380,6 +399,11 @@ async def compile(  # noqa: A001 — name is frozen by K4.2 §1's public surface
                 "verdict": gov_result.verdict.value,
                 "reason": gov_result.reason,
                 "governor": gov_result.governor,
+                **(
+                    {"content_anchor_score": content_anchor.score}
+                    if content_anchor_governance_metadata(content_anchor)
+                    else {}
+                ),
             },
         )
         status = (
