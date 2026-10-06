@@ -24,6 +24,24 @@ from core.module_factory import create as factory_create
 
 log = logging.getLogger(__name__)
 
+
+def _log_and_redact(context: str, error: Exception) -> str:
+    """Log the real exception server-side; return an opaque id safe to
+    send to a client.
+
+    SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): every
+    exception handler that can reach an HTTP response or SSE event body
+    must go through this function instead of putting str(error) or
+    traceback.format_exc() directly in that payload -- exception text can
+    contain filesystem paths, internal component names, config values, or
+    other implementation detail that must not reach the caller. Regression
+    coverage: tests/test_api_error_disclosure.py.
+    """
+    error_id = str(uuid.uuid4())
+    log.error("%s failed; error_id=%s", context, error_id, exc_info=error)
+    return error_id
+
+
 app = FastAPI(
     title="OCBrain",
     version="2.1.0",
@@ -182,17 +200,12 @@ async def query(req: QueryRequest):
         )
 
     except Exception as e:
-        import logging
-        import traceback
-        err_msg = f"{type(e).__name__}: {e}"
-        logging.getLogger("ocbrain").error(
-            f"POST /query failed: {err_msg}\n{traceback.format_exc()}"
-        )
+        error_id = _log_and_redact("POST /query", e)
         return QueryResponse(
             success=False,
             answer="I encountered an internal error. Check logs for details.",
-            error=err_msg,
-            meta={"traceback": traceback.format_exc() if config.get("global.debug") else None}
+            error="internal_error",
+            meta={"error_id": error_id}
         )
 
 
@@ -342,6 +355,7 @@ async def _stream_response(
                 )
             yield "data: [DONE]\n\n"
         except Exception as error:
+            error_id = _log_and_redact("Streaming query (single-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
@@ -350,7 +364,7 @@ async def _stream_response(
                     payload={"execution_id": execution_id, "node_id": node_id,
                              "status": "failed"},
                 )
-            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
 
         # Save full collected answer to context (non-blocking)
@@ -365,10 +379,11 @@ async def _stream_response(
         try:
             answer = await orchestrator.handle(query, execution_id=execution_id)
         except Exception as error:
+            error_id = _log_and_redact("Streaming query (multi-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
-            yield f"data: {json.dumps({'error': str(error) or type(error).__name__})}\n\n"
+            yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
             return
         if monitor is not None:
@@ -446,6 +461,10 @@ async def train_module(module_name: str):
 
 @app.post("/distill")
 async def distill(req: DistillRequest):
+    if not req.module_name.isidentifier():
+        raise HTTPException(
+            400, "Invalid module_name: use only letters, digits, underscores."
+        )
     from learning.distiller import distill_topic
     n = await distill_topic(req.module_name, req.topic, req.num_pairs)
     return {"status": "done", "pairs_generated": n}
@@ -460,8 +479,11 @@ async def export_module(req: ExportRequest):
 
 @app.post("/import")
 async def import_module(req: ImportRequest):
-    from core.brain_export import import_module
-    name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+    from core.brain_export import BundlePathError, import_module
+    try:
+        name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+    except BundlePathError as e:
+        raise HTTPException(400, str(e))
     return {"status": "imported", "module": name}
 
 
@@ -484,7 +506,10 @@ async def debug():
             try:
                 report["modules"][name] = mod.health()
             except Exception as e:
-                report["modules"][name] = {"error": str(e)}
+                error_id = _log_and_redact(f"GET /debug module health ({name})", e)
+                report["modules"][name] = {
+                    "error": type(e).__name__, "error_id": error_id,
+                }
 
     # Ollama connectivity
     host = config.get("global.ollama_host") or "http://localhost:11434"
@@ -499,10 +524,12 @@ async def debug():
                 "models_available": models,
             }
     except Exception as e:
+        error_id = _log_and_redact("GET /debug ollama connectivity", e)
         report["ollama"] = {
             "status": "UNREACHABLE",
             "host": host,
-            "error": str(e),
+            "error": type(e).__name__,
+            "error_id": error_id,
             "fix": "Make sure Ollama is running: ollama serve",
         }
 

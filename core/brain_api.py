@@ -7,12 +7,16 @@ Versions:
   v1 — initial API (V1 of ocbrain)
   v2 — adds streaming, events, distillation, export/import (this file)
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, AsyncGenerator
 import asyncio
 import json
+import logging
+import uuid
+
+log = logging.getLogger(__name__)
 
 BRAIN_API_VERSION = "2.1.0"
 
@@ -124,6 +128,12 @@ def register(app, orchestrator_ref: dict):
 
     @router.post("/distill")
     async def distill(req: DistillRequest):
+        # Same guard as interface/api.py's /distill; distill_topic and
+        # _save_pairs also enforce it, this just turns it into a clean 400.
+        if not req.module_name.isidentifier():
+            raise HTTPException(
+                400, "Invalid module_name: use only letters, digits, underscores."
+            )
         from learning.distiller import distill_topic
         result = await distill_topic(
             req.module_name, req.topic,
@@ -141,8 +151,11 @@ def register(app, orchestrator_ref: dict):
     @router.post("/import")
     async def import_module(req: ImportRequest):
         from pathlib import Path
-        from core.brain_export import import_module
-        name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+        from core.brain_export import BundlePathError, import_module
+        try:
+            name = import_module(Path(req.bundle_path), overwrite=req.overwrite)
+        except BundlePathError as e:
+            raise HTTPException(400, str(e))
         return {"status": "imported", "module": name}
 
     @router.get("/version")
@@ -176,4 +189,13 @@ async def _stream_query(orchestrator, query: str) -> AsyncGenerator[str, None]:
             await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        # SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): str(e)
+        # can contain filesystem paths, internal component names, or other
+        # implementation detail -- must not reach the SSE client. See
+        # interface/api.py's _log_and_redact for the sibling fix; this file
+        # doesn't import from interface/, so the same few lines are kept
+        # local rather than introducing a cross-package dependency for one
+        # helper.
+        error_id = str(uuid.uuid4())
+        log.error("Brain API streaming query failed; error_id=%s", error_id, exc_info=e)
+        yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"

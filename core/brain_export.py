@@ -10,17 +10,77 @@ Bundle format (.ocbrain = zip):
     pairs_sample.jsonl   — 100 training pair samples (for inspection)
 """
 import json
+import os
 import shutil
 import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+
+from core.module_paths import module_child
 
 ROOT    = Path(__file__).parent.parent
 MODULES = ROOT / "modules"
 DATA    = ROOT / "data"
 EXPORTS = ROOT / "data" / "exports"
+
+
+# ── /import boundary (CTX-EXPORT-001, issue #54) ──────────────────────────────
+# bundle_path is a server-side file path named by the HTTP caller (both /import
+# routes). It may only name a ".ocbrain" file strictly inside the configured
+# import root, and with no import root configured the import is refused: there
+# is deliberately no implicit default directory.
+_BUNDLE_SUFFIX = ".ocbrain"
+_MSG_NO_ROOT = "Import is disabled: no import root is configured."
+_MSG_OUTSIDE = "bundle_path must be a .ocbrain file inside the configured import root."
+
+
+class BundlePathError(ValueError):
+    """bundle_path is outside the import boundary, or no boundary is
+    configured. The message is fixed: it echoes neither the input nor the
+    root."""
+
+
+def import_root() -> Optional[str]:
+    """Canonical import root from `global.import_root`, or None when it is
+    unset or unusable (the import is then refused). A relative value is
+    resolved against the project root."""
+    from core.config import config
+
+    configured = config.get("global.import_root")
+    if not isinstance(configured, str) or not configured.strip():
+        return None
+    try:
+        return os.path.realpath(os.path.join(os.fspath(ROOT), configured))
+    except (OSError, ValueError):
+        return None
+
+
+def resolve_bundle_path(bundle_path: Union[str, Path]) -> Path:
+    """Return the canonical bundle path, or raise BundlePathError.
+
+    Containment is decided on canonical strings (os.path.realpath, symlinks
+    followed) with candidate.startswith(root + os.sep): the separator keeps a
+    sibling such as "<root>_evil" out, and the root itself is not a bundle.
+    A relative bundle_path is taken relative to the import root, never the
+    process working directory. The ".ocbrain" suffix is checked on the
+    canonical path as defense in depth; it is NOT what keeps the path inside
+    the root. Containment is checked before existence, so a caller cannot
+    probe for files outside the root.
+    """
+    root = import_root()
+    if root is None:
+        raise BundlePathError(_MSG_NO_ROOT)
+    try:
+        candidate = os.path.realpath(os.path.join(root, os.fspath(bundle_path)))
+    except (OSError, ValueError, TypeError):
+        raise BundlePathError(_MSG_OUTSIDE) from None
+    if not candidate.startswith(root.rstrip(os.sep) + os.sep):
+        raise BundlePathError(_MSG_OUTSIDE)
+    if not candidate.endswith(_BUNDLE_SUFFIX):
+        raise BundlePathError(_MSG_OUTSIDE)
+    return Path(candidate)
 
 
 def _safe_read(path: Path, default: str) -> str:
@@ -38,14 +98,37 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     from core.config import config
     from core.brain_version import brain_version_manager
 
-    mod_dir = MODULES / module_name
+    # SECURITY (CTX-EXPORT-001, KNOWN_ISSUES.md DEBT-019): module_name
+    # reaches this function directly from an HTTP request body
+    # (ExportRequest.module_name -- both interface/api.py's and
+    # core/brain_api.py's /export routers call this same function) with
+    # zero validation before this fix. It is used below to build mod_dir,
+    # weights_src, kb_src, eval_src, raw_dir and output_path -- a
+    # module_name like "../../../somewhere" lets export read *.json files
+    # (eval_src, raw_dir.glob) and the fixed-name weights/active and
+    # knowledge.db subpaths from outside modules/ and data/ and hand them
+    # back inside the returned bundle, and a module_name containing "/" or
+    # ".." lets output_path escape EXPORTS entirely. import_module() below already
+    # applies this exact check to this exact field for the same reason
+    # (as does module_factory.create()) -- kept consistent rather than
+    # inventing a second convention. Regression coverage:
+    # tests/test_brain_export_security.py.
+    if not module_name.isidentifier():
+        raise ValueError(
+            f"Invalid module_name: {module_name!r}. "
+            f"Use only letters, digits, underscores."
+        )
+
+    # .isidentifier() above is the naming rule; module_child() is the
+    # filesystem boundary (single component, resolved path inside the root).
+    mod_dir = module_child(MODULES, module_name)
     if not mod_dir.exists():
         raise ValueError(f"Module '{module_name}' not found.")
 
     EXPORTS.mkdir(parents=True, exist_ok=True)
     if output_path is None:
         ts = time.strftime("%Y%m%d_%H%M%S")
-        output_path = EXPORTS / f"{module_name}_{ts}.ocbrain"
+        output_path = module_child(EXPORTS, module_name, f"_{ts}.ocbrain")
 
     state      = config.get_module_state(module_name)
     brain_info = brain_version_manager.get_state().modules.get(module_name, {})
@@ -87,12 +170,12 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
                 shutil.copy2(kb_src, kb_dest / "knowledge.db")
 
         # 4. Eval set
-        eval_src = DATA / "evals" / f"{module_name}.json"
+        eval_src = module_child(DATA / "evals", module_name, ".json")
         if eval_src.exists():
             shutil.copy2(eval_src, tmp_path / "evals.json")
 
         # 5. Training pair sample (100 pairs max)
-        raw_dir = DATA / "raw" / module_name
+        raw_dir = module_child(DATA / "raw", module_name)
         if raw_dir.exists():
             pairs = []
             for f in sorted(raw_dir.glob("*.json"))[:100]:
@@ -115,13 +198,51 @@ def export_module(module_name: str, output_path: Optional[Path] = None) -> Path:
     return output_path
 
 
+def _safe_extractall(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract zf into dest, refusing any member whose path would resolve
+    outside dest.
+
+    This is defense-in-depth, not the fix for an exploitable write.
+    CPython's zipfile already drops '..', '.', empty and drive/absolute
+    components from member names before extracting (see
+    ZipFile._extract_member), so a member named "../../evil" lands inside
+    dest under a sanitized name instead of escaping -- checked
+    empirically on Python 3.12.3 (plain extractall() left nothing outside
+    dest), and the same filter is in the CPython 3.11 and 3.13 sources, i.e.
+    across the project's supported range (>=3.11). What this helper adds is
+    strictness: it rejects the
+    whole bundle when any member name tries to leave dest, rather than
+    silently rewriting the name, and it does so before anything is
+    extracted. CodeQL (py/path-injection) still flags the extractall()
+    call below; treat that as an open scanner finding, not proof of an
+    exploitable write. Symlink members are not created by extractall(),
+    so their targets are not a concern here.
+    """
+    dest = dest.resolve()
+    for member in zf.infolist():
+        target = (dest / member.filename).resolve()
+        if not target.is_relative_to(dest):
+            raise ValueError(
+                f"Refusing to extract {member.filename!r} from bundle: "
+                f"resolves outside the extraction directory."
+            )
+    zf.extractall(dest)
+
+
 def import_module(bundle_path: Path, overwrite: bool = False) -> str:
     """
     Import a .ocbrain bundle.
     Returns the module name that was imported.
+
+    bundle_path must resolve to a .ocbrain file inside `global.import_root`
+    (see resolve_bundle_path); otherwise BundlePathError, and with no import
+    root configured every import is refused.
     """
     from core.config import config
 
+    # Containment first, existence second: checking existence first would let
+    # a caller probe for files outside the import root.
+    bundle_path = resolve_bundle_path(bundle_path)
     if not bundle_path.exists():
         raise FileNotFoundError(f"Bundle not found: {bundle_path}")
 
@@ -130,7 +251,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
 
         # Extract bundle
         with zipfile.ZipFile(bundle_path, "r") as zf:
-            zf.extractall(tmp_path)
+            _safe_extractall(zf, tmp_path)
 
         # Read manifest
         manifest_path = tmp_path / "manifest.json"
@@ -155,7 +276,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
                 f"Use only letters, digits, underscores."
             )
 
-        mod_dir = MODULES / name
+        mod_dir = module_child(MODULES, name)
 
         if mod_dir.exists() and not overwrite:
             raise ValueError(
@@ -202,7 +323,7 @@ def import_module(bundle_path: Path, overwrite: bool = False) -> str:
         # Restore eval set
         eval_src = tmp_path / "evals.json"
         if eval_src.exists():
-            eval_dest = DATA / "evals" / f"{name}.json"
+            eval_dest = module_child(DATA / "evals", name, ".json")
             eval_dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(eval_src, eval_dest)
 

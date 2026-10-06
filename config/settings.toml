@@ -9,10 +9,23 @@ classifier_model = "mistral"
 web_ui_port = 7437
 voice_enabled = false
 log_level = "INFO"
+# /import boundary (CTX-EXPORT-001, issue #54): the ONLY directory /import and
+# /brain/v2/import may read a bundle from. Absolute, or relative to the project
+# root. Unset = imports are refused. Bundle files must end in ".ocbrain".
+# import_root = "data/exports"
 
 [runtime]
 use_k42_frontend = true
 max_recovery_attempts = 3
+
+# ADR-KERNEL-07 (PROPOSED; D-5 resolved as Option C): creative content-anchor
+# detector -- a NARROW experimental slice toward intent sufficiency, not intent
+# sufficiency itself. When true (and use_k42_frontend is true), a pure detector
+# observes open-ended creative requests; a form-only request (e.g. "write a 1000
+# words story") is escalated by the EXISTING OrchestrationGovernor at Plan
+# Compilation and answered with a clarifying question instead of being executed.
+# No new gate. Default false: no behavior change.
+creative_content_anchor_enabled = false
 
 # Execution-budget defaults (K4.4). Distinct from max_recovery_attempts
 # above, which governs ADR-K4.2-H-05's OperationRecoveryBudget (autonomous
