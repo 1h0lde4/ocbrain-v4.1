@@ -44,7 +44,7 @@ from core.workers.base import WorkerResult
 from core.workers.planner import PlannerWorker
 from core.workflow.runtime import WorkflowRuntime
 
-SECRET = "SECRET-DETAIL password=hunter2 /var/lib/ocbrain/data/context.sqlite locked"
+RAW_FAILURE_TEXT = "SECRET-DETAIL password=hunter2 /var/lib/ocbrain/data/context.sqlite locked"
 ANSWER_RE = re.compile(
     r"Sorry, I encountered an internal error: WorkflowFailure "
     r"\(ref ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)")
@@ -96,7 +96,7 @@ async def _handle(orch, query="what is OCBrain?"):
 
 def _failing_context():
     ctx = MagicMock(spec=ContextMemory)
-    ctx.save = MagicMock(side_effect=RuntimeError(SECRET))  # outside dispatch try/except
+    ctx.save = MagicMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))  # outside dispatch try/except
     return ctx
 
 
@@ -105,12 +105,12 @@ def _failing_context():
 def test_log_text_and_ref_returns_a_uuid_and_logs_the_text_under_it(caplog):
     log = logging.getLogger("ocbrain.test_text_ref")
     with caplog.at_level(logging.ERROR, logger="ocbrain.test_text_ref"):
-        ref = log_text_and_ref(log, "unit context", SECRET)
+        ref = log_text_and_ref(log, "unit context", RAW_FAILURE_TEXT)
     uuid.UUID(ref)
     assert "hunter2" not in ref
     assert ref in caplog.text and "unit context" in caplog.text
     assert "hunter2" in caplog.text
-    assert log_text_and_ref(log, "unit context", SECRET) != ref  # a fresh ref each time
+    assert log_text_and_ref(log, "unit context", RAW_FAILURE_TEXT) != ref  # a fresh ref each time
 
 
 # ── C1 / C2: the caller boundary ──────────────────────────────────────────
@@ -177,7 +177,7 @@ async def test_the_internal_failure_event_still_carries_the_raw_error():
 @pytest.mark.asyncio
 async def test_unexpected_exception_in_the_workflow_path_still_returns_only_the_class():
     orch = _orchestrator()
-    orch._workflow_runtime.execute = AsyncMock(side_effect=ValueError(SECRET))
+    orch._workflow_runtime.execute = AsyncMock(side_effect=ValueError(RAW_FAILURE_TEXT))
     answer = await _handle(orch)
     assert answer == "Sorry, I encountered an internal error: ValueError"
     assert "hunter2" not in answer
