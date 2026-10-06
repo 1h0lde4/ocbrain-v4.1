@@ -32,6 +32,18 @@ the clarification is the right safeguard, not the number.
 
 ---
 
+> **RECONSIDERATION NOTICE (Oct 6 2026) — read before relying on §8 or on
+> the "CTX-AUTH-001b: CLOSED" statements in this file.**
+> Finding **CTX-AUTH-002**
+> (`docs/research/context-engineering/context-authority-threat-model.md`)
+> demonstrated that the content-corroboration authority grant in §8 is
+> exploitable: a request-independent label of common words obtained
+> `AuthorityLevel.USER` and, through the planner, became an explicit
+> constraint attributed to the user. `ADR-KERNEL-08` (status DRAFT, not
+> approved) proposes rejecting that mechanism and reopening CTX-AUTH-001b.
+> Until it is decided, treat CTX-AUTH-001b as **open**. §§1–8 below are left
+> unmodified as the historical record of the decision as taken.
+
 ## 1. Context
 
 REM-002 (CTX-AUTH-001) has two sub-findings. (a) structural containment
