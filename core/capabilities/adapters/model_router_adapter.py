@@ -51,6 +51,28 @@ import time
 from core.capabilities.capability import BaseAdapter, CapabilityRequest, CapabilityResult, CapabilityType
 from core.capabilities.resource import ResourceManager
 from core.model_router import ModelRouter
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
+
+# FZ-02 / batch B2a. Outcomes whose adapter-level result is deliberately left
+# exactly as it was (success=True): stalled / hard-deadline / completed-with-
+# partial-output. Their semantics (decision D2) change in B2b, not here, and
+# tests/test_fz02_provider_failure.py pins them until then.
+_UNCHANGED_PENDING_B2B = frozenset({
+    FailureType.STALLED,
+    FailureType.HARD_DEADLINE,
+    FailureType.COMPLETED_WITH_PARTIAL_OUTPUT,
+})
+
+# Fixed, opaque messages: this string can reach end users (the planner raises it
+# and the orchestrator renders it), so it never carries exception text, hosts or
+# URLs. The provider's own opaque error reference is appended when present.
+_FAILURE_MESSAGES = {
+    FailureType.PROVIDER_FAILURE: "model provider failure",
+    FailureType.EMPTY_RESPONSE: "model returned an empty response",
+    FailureType.CANCELLED: "model execution was cancelled",
+    FailureType.VALIDATION_ERROR: "model request failed validation",
+    FailureType.OTHER_FAILURE: "model execution failed",
+}
 
 
 class ModelRouterAdapter(BaseAdapter):
@@ -87,6 +109,18 @@ class ModelRouterAdapter(BaseAdapter):
         route_result = await self._model_router.route(module_name, subtask, context, scope=scope)
         duration_ms = (time.time() - start) * 1000
 
+        # FZ-02 / B2a: this used to return success=True unconditionally and never
+        # read execution_detail, so a failed generation completed as a success.
+        # Only a real ExecutionOutcome is classified; a RouteResult without one
+        # (every route() branch except the monitored long-form stream) is
+        # unchanged. Fail closed: anything that is not SUCCESS and not in the
+        # pinned set is a failure, including types route() cannot emit today.
+        detail = route_result.execution_detail
+        if (isinstance(detail, ExecutionOutcome)
+                and detail.failure_type != FailureType.SUCCESS
+                and detail.failure_type not in _UNCHANGED_PENDING_B2B):
+            return self._failure_result(route_result, detail, duration_ms)
+
         return CapabilityResult(
             success=True,
             output=route_result.answer,
@@ -97,4 +131,37 @@ class ModelRouterAdapter(BaseAdapter):
                 "similarity": route_result.similarity,
                 "route_latency_ms": route_result.latency_ms,
             },
+        )
+
+    def _failure_result(self, route_result, detail: ExecutionOutcome,
+                        duration_ms: float) -> CapabilityResult:
+        failure_type = detail.failure_type
+        failure_value = getattr(failure_type, "value", str(failure_type))
+        error = _FAILURE_MESSAGES.get(
+            failure_type, f"model execution did not complete ({failure_value})")
+        error_id = (detail.detail or {}).get("error_id", "")
+        if error_id:
+            error = f"{error} (ref {error_id})"
+        metadata = {
+            "source": route_result.source,
+            "similarity": route_result.similarity,
+            "route_latency_ms": route_result.latency_ms,
+            "failure_type": failure_value,
+            "retryable": detail.retryable,
+        }
+        if error_id:
+            metadata["error_id"] = error_id
+        if detail.model:
+            metadata["model"] = detail.model
+        if detail.partial_output:
+            # Preserved for the result channel (D1); never placed in `output`,
+            # so a failed generation cannot be consumed as content.
+            metadata["partial_output"] = detail.partial_output
+        return CapabilityResult(
+            success=False,
+            output=None,
+            error=error,
+            adapter_used=self.adapter_name,
+            duration_ms=duration_ms,
+            metadata=metadata,
         )
