@@ -168,14 +168,33 @@ lines.
   tree `80a1bb8`: **14 fail, 3 pass**. The 3 are the payloads that did not
   escalate on the old code either (controls, not detectors).
 - Full suite `python3 -m pytest tests -q -p no:cacheprovider --timeout=90`
-  on the branch at `6525556`: 1872 passed, 1 xfailed, 0 failed.
+  on the branch, after the mutation-driven test addition below:
+  1890 passed, 1 xfailed, 0 failed. (Measured earlier, at `6525556`:
+  1872 passed, 1 xfailed, 0 failed; the difference is the 18 parametrized
+  malformed-source cases added to `test_intent.py`.)
+- Mutation check, `python3 scripts/mutation_check_ctx_auth_002.py`: the
+  first run caught 16 of 17 mutants. The survivor, "malformed source
+  accepted" (`_check_source_grounding` returning `(True, True)` for a
+  non-matching source), was **not** an equivalent mutant: the candidate-line
+  grammar never lets a malformed source through the parser, but
+  `_check_source_grounding`'s documented contract covers it and no test
+  exercised it. A parametrized test of 18 malformed sources was added;
+  **17/17 caught** on the re-run, source files byte-identical afterwards.
+  The harness exits 1 on any survivor and 2 on an anchor, baseline or
+  restore error.
+- `scripts/check_drift.py`: 15/15 PASS, 0 violations, on the branch and
+  on the pre-fix tree `80a1bb8`.
+- mypy (`core/cognitive/intent.py` and `core/cognitive/planner.py` only,
+  `--follow-imports=silent --ignore-missing-imports --python-version 3.12
+  --explicit-package-bases`), compared by error set with line numbers
+  stripped against `80a1bb8`: 11 errors on each side, **identical**, none
+  new. This is a two-file scope, not a whole-repo mypy run.
 - The differential in §5.
 
-**NOT yet re-run — do not read this ADR as covering them:** the mutation
-harness, `scripts/check_drift.py`, the mypy error-set comparison against
-`main`, `live_citation_check.py` (still on the rejected vocabulary), and a
-merge of current `main` into the branch. This section must be updated when
-they are run.
+**NOT yet re-run — do not read this ADR as covering them:**
+`live_citation_check.py` (still on the rejected vocabulary, see R6) and a
+merge of current `main` into the branch. The status documents have not
+been reconciled. This section must be updated when they are.
 
 ## 8. Decisions required (none may be self-approved)
 

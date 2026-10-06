@@ -506,6 +506,24 @@ class TestCheckSourceGrounding:
         facts to False."""
         assert _check_source_grounding("", "request", "rename my branch", []) == (True, False)
 
+    @pytest.mark.parametrize("malformed", [
+        "[0]", "[01]", "[-1]", "[1", "1]", "[1]x", "x[1]", "[ 1 ]", "[a]",
+        "Request", "REQUEST", "request ", " request", "requests", "user",
+        "system", "[1][1]", "[1.5]",
+    ])
+    def test_malformed_source_is_unverified_and_ungrounded(self, malformed):
+        """CTX-AUTH-002: _check_source_grounding's own contract is "no
+        citation, an unresolvable one, or a malformed one: (False, False)".
+        _CANDIDATE_LINE only ever lets 'request' or '[N]' through the parser,
+        so this branch is defense in depth -- but it is the branch that keeps
+        a future parser change, or any direct caller, from turning an
+        arbitrary string into a verified source. A real, matching block and
+        a label that overlaps the request are supplied on purpose, so
+        nothing but the source's own shape can explain a False result."""
+        block = _block("rename my branch please", authority=AuthorityLevel.RETRIEVED)
+        assert _check_source_grounding(
+            "rename_branch", malformed, "please rename my branch", [block]) == (False, False)
+
 
 def _grounded(label, score, source="request", verified=True, grounded=True):
     return IntentHypothesis(label=label, score=score, source=source,
