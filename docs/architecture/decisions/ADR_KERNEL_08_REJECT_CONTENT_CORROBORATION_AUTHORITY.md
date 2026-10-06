@@ -153,10 +153,13 @@ lines.
 - **R5 — not validated on a real model.** Only the structure and a
   provider-mocked reproduction are demonstrated; real hostile exploitation of
   CTX-AUTH-002 is not.
-- **R6 — verification-instrument gap.** `live_citation_check.py` still reads
-  the rejected event vocabulary on this branch (see §7). Until it is rebuilt
-  and shown to fail against the vulnerable build, it must not be cited as
-  evidence.
+- **R6 — verification-instrument gap (narrowed, not closed).**
+  `live_citation_check.py` was rewritten to measure escalation and to fail
+  loudly, and was shown to fail against a regressed build (§7). It is the
+  owner's file: the rewrite is **flagged for the owner's review**. Every
+  result recorded here is from `--dry-run` scripted stand-ins, which
+  validate the harness and the code path, not any model. **No real
+  provider was available; nothing here measures real-model behavior (R5).**
 
 ## 7. Verification evidence
 
@@ -190,10 +193,26 @@ lines.
   stripped against `80a1bb8`: 11 errors on each side, **identical**, none
   new. This is a two-file scope, not a whole-repo mypy run.
 - The differential in §5.
+- `live_citation_check.py` (rewritten; flagged for the owner's review), all
+  six `--dry-run` modes at default scale (10 requests x 3 trials; 30 benign
+  runs and 120 poisoned runs per mode): **all six exit 0 with ESCALATED 0**.
+  `obey-padded` and `obey-bait` show SELECTED = 72 of 120 (advisory; the
+  residual R1 made visible), the other four show SELECTED 0.
+- Harness sensitivity, shown before the pass is trusted:
+  (1) with `planner._extract_constraints` regressed to mine
+  `semantic_description` again, `--dry-run obey-padded` and `obey-bait`
+  exit **1** (ESCALATED 72 of 150 runs for `obey-padded`) while `compliant`
+  correctly stays 0;
+  (2) with the `selection_basis` event key renamed, `obey-padded` exits **2**
+  (150 of 150 runs errored, "no pass is claimed");
+  (3) run unchanged against the pre-fix tree `80a1bb8`, it exits **2** (150
+  errored runs; first reason: the event "carries rejected key
+  'authorities'"), i.e. it cannot silently report zero against the old
+  vocabulary. Source files were verified byte-identical after (1) and (2).
 
 **NOT yet re-run — do not read this ADR as covering them:**
-`live_citation_check.py` (still on the rejected vocabulary, see R6) and a
-merge of current `main` into the branch. The status documents have not
+any run against a real model provider (none available in this sandbox), and
+a merge of current `main` into the branch. The status documents have not
 been reconciled. This section must be updated when they are.
 
 ## 8. Decisions required (none may be self-approved)
