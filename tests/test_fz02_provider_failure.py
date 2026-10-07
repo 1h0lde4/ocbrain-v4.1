@@ -7,9 +7,12 @@ success=True and ignores route_result.execution_detail.
 Scope of B2a (decisions D1=(a), D2=(i); this batch implements neither):
   * a provider failure (connect error, mid-stream drop) is classified
     PROVIDER_FAILURE, and the adapter reports success=False for it;
-  * the adapter fails closed for any other outcome that is not a success;
+  * the adapter fails closed for any other outcome that is neither a success
+    nor pinned;
   * STALLED / HARD_DEADLINE / COMPLETED_WITH_PARTIAL_OUTPUT keep their current
     adapter behaviour (success=True) -- pinned below, to be changed by B2b;
+  * EMPTY_RESPONSE (the stream finished with no output) also keeps today's
+    success=True -- pinned below; B2a establishes no contract for it;
   * a RouteResult with execution_detail=None (every route() branch except the
     monitored long-form stream) is not classified here and is unchanged.
 
@@ -251,19 +254,36 @@ async def test_a_healthy_stream_still_succeeds_unchanged(router, monkeypatch):
 # --------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_type", [
-    FailureType.STALLED,
-    FailureType.HARD_DEADLINE,
-    FailureType.COMPLETED_WITH_PARTIAL_OUTPUT,
+@pytest.mark.parametrize("failure_type, answer", [
+    (FailureType.STALLED, "partial text"),
+    (FailureType.HARD_DEADLINE, "partial text"),
+    (FailureType.COMPLETED_WITH_PARTIAL_OUTPUT, "partial text"),
+    (FailureType.EMPTY_RESPONSE, ""),
 ])
-async def test_stalled_deadline_and_partial_outcomes_are_pinned_unchanged(failure_type):
+async def test_outcomes_outside_b2a_scope_are_pinned_unchanged(failure_type, answer):
     rr = RouteResult(
-        answer="partial text", source="external",
-        execution_detail=ExecutionOutcome.failure(failure_type, partial_output="partial text"))
+        answer=answer, source="external",
+        execution_detail=ExecutionOutcome.failure(failure_type, partial_output=answer or None))
     result = await _adapter_result_for(rr)
-    assert result.success is True                       # today's behaviour, pending B2b
-    assert result.output == "partial text"
+    assert result.success is True                       # today's behaviour, unchanged by B2a
+    assert result.output == answer
     assert set(result.metadata) == UNCHANGED_SUCCESS_METADATA   # no new keys either
+    assert not result.error
+
+
+@pytest.mark.asyncio
+async def test_an_empty_stream_keeps_todays_success_through_the_real_router(router, monkeypatch):
+    """End to end: a provider that completes the stream without producing output
+    is classified EMPTY_RESPONSE by route() and still returns success=True at the
+    adapter -- exactly as before B2a. Whether that should be a failure is the
+    later outcome-policy work, not FZ-02."""
+    _install_fake_ollama(monkeypatch, tokens=())
+    routed = await router.route("coding", LONG_FORM, _FakeContext())
+    assert routed.execution_detail.failure_type == FailureType.EMPTY_RESPONSE
+    result = await _execute(router, _FakeContext())
+    assert result.success is True
+    assert result.output == ""
+    assert set(result.metadata) == UNCHANGED_SUCCESS_METADATA
     assert not result.error
 
 
@@ -282,7 +302,6 @@ async def test_a_route_result_without_execution_detail_is_unchanged():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure_type", [
     FailureType.PROVIDER_FAILURE,
-    FailureType.EMPTY_RESPONSE,
     FailureType.CANCELLED,
     FailureType.VALIDATION_ERROR,
     FailureType.OTHER_FAILURE,

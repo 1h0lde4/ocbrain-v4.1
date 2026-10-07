@@ -54,13 +54,18 @@ from core.model_router import ModelRouter
 from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 
 # FZ-02 / batch B2a. Outcomes whose adapter-level result is deliberately left
-# exactly as it was (success=True): stalled / hard-deadline / completed-with-
-# partial-output. Their semantics (decision D2) change in B2b, not here, and
-# tests/test_fz02_provider_failure.py pins them until then.
-_UNCHANGED_PENDING_B2B = frozenset({
+# exactly as it was (success=True, no new metadata). B2a only turns provider
+# failures into failures; it establishes no other outcome contract:
+#   * STALLED / HARD_DEADLINE / COMPLETED_WITH_PARTIAL_OUTPUT: their semantics
+#     are decision D2 and change in B2b;
+#   * EMPTY_RESPONSE: the stream finished without producing output. Whether that
+#     is a failure belongs to the later outcome-policy work, not to FZ-02.
+# tests/test_fz02_provider_failure.py pins all four until then.
+_UNCHANGED_BY_B2A = frozenset({
     FailureType.STALLED,
     FailureType.HARD_DEADLINE,
     FailureType.COMPLETED_WITH_PARTIAL_OUTPUT,
+    FailureType.EMPTY_RESPONSE,
 })
 
 # Fixed, opaque messages: this string can reach end users (the planner raises it
@@ -68,7 +73,6 @@ _UNCHANGED_PENDING_B2B = frozenset({
 # URLs. The provider's own opaque error reference is appended when present.
 _FAILURE_MESSAGES = {
     FailureType.PROVIDER_FAILURE: "model provider failure",
-    FailureType.EMPTY_RESPONSE: "model returned an empty response",
     FailureType.CANCELLED: "model execution was cancelled",
     FailureType.VALIDATION_ERROR: "model request failed validation",
     FailureType.OTHER_FAILURE: "model execution failed",
@@ -115,10 +119,11 @@ class ModelRouterAdapter(BaseAdapter):
         # (every route() branch except the monitored long-form stream) is
         # unchanged. Fail closed: anything that is not SUCCESS and not in the
         # pinned set is a failure, including types route() cannot emit today.
+        # (EMPTY_RESPONSE is in the pinned set: it keeps success=True here.)
         detail = route_result.execution_detail
         if (isinstance(detail, ExecutionOutcome)
                 and detail.failure_type != FailureType.SUCCESS
-                and detail.failure_type not in _UNCHANGED_PENDING_B2B):
+                and detail.failure_type not in _UNCHANGED_BY_B2A):
             return self._failure_result(route_result, detail, duration_ms)
 
         return CapabilityResult(
