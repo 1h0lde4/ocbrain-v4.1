@@ -2134,3 +2134,209 @@ async def test_d7_cancel_during_an_in_flight_start_cannot_be_escaped_by_the_work
         assert await backend.inspect(handle) == SandboxState.TERMINATED
     finally:
         await backend.destroy(handle)
+
+
+# ======================================================================
+# D11 outcome determinism (reconciliation §19.1: defect found October 6 2026)
+#
+# destroy() killing a container that run() is waiting on must give ONE
+# outcome, decided by what CAUSED the death, not by whether run()'s exit-code
+# read lands before or after the removal. The interleavings below are FORCED
+# with events (never with sleeps), and every test asserts that the
+# interleaving it names really happened, so none can pass vacuously.
+# ======================================================================
+
+
+async def _wait_container_running(container_id: str, timeout: float = 20.0) -> None:
+    """Bounded readiness wait: poll until docker reports the container Running."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "inspect", "-f", "{{.State.Running}}", container_id,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await proc.communicate()
+        if out.decode().strip() == "true":
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"container {container_id} never reached Running")
+
+
+async def _docker_sigkill(container_id: str) -> None:
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "kill", "--signal", "SIGKILL", container_id,
+        stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_destroy_during_run_is_error_when_run_reads_exit_137_before_the_removal(conc_backend, tmp_path):
+    """Interleaving 1, the one that used to return COMPLETED: the container is
+    killed, run() reads exit 137 while the container still exists, and only
+    then is it removed."""
+    request = SandboxRequest(command=("sleep", "20"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await conc_backend.create(request)
+    container_id = conc_backend._handles[handle.handle_id].container_id
+    inspected = asyncio.Event()
+    read: dict[str, int | None] = {}
+    real_inspect = conc_backend._inspect_exit_code
+    real_remove = conc_backend._remove_container
+
+    async def spy_inspect(cid):
+        code = await real_inspect(cid)
+        read["exit_code"] = code
+        inspected.set()
+        return code
+
+    async def kill_then_remove_after_the_read(name):
+        await _docker_sigkill(container_id)  # dead, but not yet removed
+        await asyncio.wait_for(inspected.wait(), timeout=20)  # run() reads while the container exists
+        return await real_remove(name)
+
+    conc_backend._inspect_exit_code = spy_inspect
+    conc_backend._remove_container = kill_then_remove_after_the_read
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await _wait_container_running(container_id)
+    await conc_backend.destroy(handle)
+    result = await asyncio.wait_for(run_task, timeout=20)
+    assert read["exit_code"] == 137, "the forced interleaving did not happen (vacuous)"
+    assert result.exit_code == 137
+    assert result.termination_reason == TerminationReason.ERROR
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_destroy_during_run_is_error_when_the_removal_lands_before_run_reads_the_exit_code(conc_backend, tmp_path):
+    """Interleaving 2: the removal completes first, so run() finds nothing to read."""
+    request = SandboxRequest(command=("sleep", "20"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await conc_backend.create(request)
+    container_id = conc_backend._handles[handle.handle_id].container_id
+    removed = asyncio.Event()
+    read: dict[str, int | None] = {}
+    real_inspect = conc_backend._inspect_exit_code
+    real_remove = conc_backend._remove_container
+
+    async def spy_remove(name):
+        ok = await real_remove(name)
+        removed.set()
+        return ok
+
+    async def held_inspect(cid):
+        await asyncio.wait_for(removed.wait(), timeout=20)  # not before the removal is done
+        code = await real_inspect(cid)
+        read["exit_code"] = code
+        return code
+
+    conc_backend._remove_container = spy_remove
+    conc_backend._inspect_exit_code = held_inspect
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await _wait_container_running(container_id)
+    await conc_backend.destroy(handle)
+    result = await asyncio.wait_for(run_task, timeout=20)
+    assert removed.is_set() and read["exit_code"] is None, "the forced interleaving did not happen (vacuous)"
+    assert result.exit_code is None
+    assert result.termination_reason == TerminationReason.ERROR
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_a_workload_that_exits_137_by_itself_is_completed_not_error(conc_backend, tmp_path):
+    """Exit 137 alone decides nothing: with no destroy and no cancel, a process
+    that SIGKILLs itself is an ordinary completion (and not an error)."""
+    request = SandboxRequest(command=("sh", "-c", "sh -c 'kill -9 $$'; exit $?"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await conc_backend.create(request)
+    try:
+        result = await conc_backend.run(handle, request)
+        assert result.exit_code == 137
+        assert result.termination_reason == TerminationReason.COMPLETED
+    finally:
+        await conc_backend.destroy(handle)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_destroying_one_sandbox_does_not_change_another_sandboxs_outcome(conc_backend, tmp_path):
+    """The marker is per handle: B is destroyed while A, which ends by its own
+    SIGKILL with exit 137 a few seconds later, is still running."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    req_a = SandboxRequest(command=("sh", "-c", "sleep 4; sh -c 'kill -9 $$'; exit $?"), policy=SandboxPolicy(workspace_dir=str(tmp_path / "a"), timeout_sec=30))
+    req_b = SandboxRequest(command=("sleep", "30"), policy=SandboxPolicy(workspace_dir=str(tmp_path / "b"), timeout_sec=30))
+    handle_a = await conc_backend.create(req_a)
+    handle_b = await conc_backend.create(req_b)
+    try:
+        task_a = asyncio.ensure_future(conc_backend.run(handle_a, req_a))
+        task_b = asyncio.ensure_future(conc_backend.run(handle_b, req_b))
+        await _wait_container_running(conc_backend._handles[handle_a.handle_id].container_id)
+        await _wait_container_running(conc_backend._handles[handle_b.handle_id].container_id)
+        await conc_backend.destroy(handle_b)
+        assert not task_a.done(), "A must still be running when B is destroyed (vacuous otherwise)"
+        result_b = await asyncio.wait_for(task_b, timeout=20)
+        result_a = await asyncio.wait_for(task_a, timeout=30)
+        assert result_b.termination_reason == TerminationReason.ERROR
+        assert result_a.exit_code == 137
+        assert result_a.termination_reason == TerminationReason.COMPLETED
+    finally:
+        await conc_backend.destroy(handle_a)
+        await conc_backend.destroy(handle_b)
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_cancel_then_destroy_during_run_is_cancelled(conc_backend, tmp_path):
+    """Precedence is causal and fixed: OOM, then cancel, then destroy, then a
+    missing exit code, then a normal completion. The read is held until the
+    removal is done so that both flags are set when run() classifies."""
+    request = SandboxRequest(command=("sleep", "20"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await conc_backend.create(request)
+    container_id = conc_backend._handles[handle.handle_id].container_id
+    removed = asyncio.Event()
+    real_inspect = conc_backend._inspect_exit_code
+    real_remove = conc_backend._remove_container
+
+    async def spy_remove(name):
+        ok = await real_remove(name)
+        removed.set()
+        return ok
+
+    async def held_inspect(cid):
+        await asyncio.wait_for(removed.wait(), timeout=20)
+        return await real_inspect(cid)
+
+    conc_backend._remove_container = spy_remove
+    conc_backend._inspect_exit_code = held_inspect
+    run_task = asyncio.ensure_future(conc_backend.run(handle, request))
+    await _wait_container_running(container_id)
+    await conc_backend.cancel(handle)
+    await conc_backend.destroy(handle)
+    result = await asyncio.wait_for(run_task, timeout=20)
+    assert removed.is_set()
+    assert result.termination_reason == TerminationReason.CANCELLED
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_d11_a_destroy_that_fails_before_any_run_does_not_mislabel_a_later_run(conc_backend, tmp_path):
+    """The marker records a destroy of a RUNNING sandbox only (the D6 lesson,
+    as for cancel): a failed destroy of a sandbox that never ran must not turn
+    a later, perfectly normal run into an error."""
+    request = SandboxRequest(command=("sh", "-c", "exit 0"), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
+    handle = await conc_backend.create(request)
+    real_remove = conc_backend._remove_container
+
+    async def cannot_confirm(name):
+        return False  # "removal could not be confirmed": the record is retained
+
+    conc_backend._remove_container = cannot_confirm
+    with pytest.raises(DockerBackendError):
+        await conc_backend.destroy(handle)
+    conc_backend._remove_container = real_remove
+    try:
+        result = await conc_backend.run(handle, request)
+        assert result.exit_code == 0
+        assert result.termination_reason == TerminationReason.COMPLETED
+    finally:
+        await conc_backend.destroy(handle)

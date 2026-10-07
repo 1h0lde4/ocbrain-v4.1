@@ -497,6 +497,11 @@ class _DockerRunState:
     workspace_dir: str
     state: SandboxState = SandboxState.PENDING
     cancel_requested: bool = False
+    # D11 (reconciliation §19.1): set when destroy() is called while this handle is
+    # RUNNING, before destroy()'s first await. It is the CAUSE of the container's
+    # death, so run()'s classification no longer depends on whether its exit-code
+    # read lands before the removal (exit 137) or after it (nothing to read).
+    destroy_requested: bool = False
     proxy: AllowlistProxy | None = None
     # D11: serializes the multi-await sequences that must not interleave
     # (today: destroy()'s remove -> confirm -> stop proxy -> forget).
@@ -809,6 +814,12 @@ class DockerBackend(SandboxBackend):
         state = self._handles.get(handle.handle_id)
         if state is None:
             return
+        if state.state is SandboxState.RUNNING:
+            # D11 (§19.1): record WHY the container is about to die, before the first
+            # await. Only a run that is actually running can be affected (the D6
+            # lesson, as for cancel): a destroy() that fails on a sandbox that never
+            # ran must not turn a later, normal run into an error.
+            state.destroy_requested = True
         async with state.lock:
             if self._handles.get(handle.handle_id) is not state:
                 return  # an earlier destroy() finished while this one waited
@@ -951,11 +962,21 @@ class DockerBackend(SandboxBackend):
         directly, independent of pytest (reconciliation §12): a real
         OOM gives OOMKilled=true/ExitCode=137; an ordinary SIGKILL gives
         OOMKilled=false/ExitCode=137 — same exit code, opposite flag,
-        confirming exit code alone genuinely cannot carry this."""
+        confirming exit code alone genuinely cannot carry this.
+
+        Precedence is causal and fixed (D11, §19.1): OOM kill, then a
+        requested cancel, then a requested destroy of this running handle
+        (-> ERROR, whatever exit code the racing read saw), then a missing
+        exit code (-> ERROR), then a normal completion."""
         if await self._inspect_oom_killed(state.container_id):
             return TerminationReason.RESOURCE_EXCEEDED
         if state.cancel_requested:
             return TerminationReason.CANCELLED
+        if state.destroy_requested:
+            # D11 (§19.1): destroy() killed the container this run was waiting on.
+            # The exit code may be 137 (the read landed before the removal) or absent
+            # (it landed after); the outcome is decided by the cause, not by timing.
+            return TerminationReason.ERROR
         if exit_code is None:
             return TerminationReason.ERROR
         return TerminationReason.COMPLETED
