@@ -367,6 +367,17 @@ async def test_root_filesystem_is_read_only(backend, tmp_path):
         await backend.destroy(handle)
 
 
+# The grandchild's heartbeat is written ATOMICALLY (temp file, then rename). A bare
+# `date > heartbeat` truncates the file before writing it, so a host-side read can
+# land in that gap and see an empty file (measured at about 0.8% of reads), which made
+# the D7 tests flaky. A rename replaces the file in one step, so a reader sees the
+# previous value or the new one, never an empty file.
+_HEARTBEAT_LOOP = (
+    "while true; do date +%s%N > /workspace/.heartbeat.tmp "
+    "&& mv -f /workspace/.heartbeat.tmp /workspace/heartbeat; sleep 0.2; done"
+)
+
+
 @_needs_docker
 @pytest.mark.asyncio
 async def test_cancel_kills_full_process_tree(backend, tmp_path):
@@ -375,10 +386,7 @@ async def test_cancel_kills_full_process_tree(backend, tmp_path):
     # signaled. Spawns a background grandchild that writes a heartbeat
     # file every 0.2s; after cancel(), the heartbeat must stop advancing.
     policy = SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30)
-    script = (
-        "sh -c '(sh -c \"while true; do date +%s%N > /workspace/heartbeat; "
-        'sleep 0.2; done" &) ; sleep 30\''
-    )
+    script = f"sh -c '(sh -c \"{_HEARTBEAT_LOOP}\" &) ; sleep 30'"
     request = SandboxRequest(command=("sh", "-c", script), policy=policy)
     handle = await backend.create(request)
     import asyncio
@@ -1867,7 +1875,7 @@ async def test_d7_cancel_reaches_a_grandchild_that_was_provably_alive_before(tmp
     it also passes if the grandchild never started (None == None). This one
     first proves the grandchild was alive and advancing, then that it stopped."""
     backend = DockerBackend(image_ref=_closeout_image())
-    script = "(sh -c 'while true; do date +%s%N > /workspace/heartbeat; sleep 0.2; done' &); sleep 30"
+    script = f"(sh -c '{_HEARTBEAT_LOOP}' &); sleep 30"
     request = SandboxRequest(command=("sh", "-c", script), policy=SandboxPolicy(workspace_dir=str(tmp_path), timeout_sec=30))
     handle = await backend.create(request)
     container_id = backend._handles[handle.handle_id].container_id
