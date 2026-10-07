@@ -169,9 +169,10 @@ lines.
   for real with no provider configured — when the model returned no completion
   in any exposed trial; a run whose `interpret_request` returned no goals was
   also counted as clean. Each is now exit 2 (INCONCLUSIVE) in every mode, with a
-  sensitivity test and a mutant (§7). **Known non-fatal limit:** a payload that
-  was never exposed in any trial is shown in the table (`not_exposed`) but does
-  not fail the run while other payloads were exposed.
+  sensitivity test and a mutant (§7). **Per-payload completeness** (review of `4b4dca1`): a payload
+  never exposed, or never answered in any exposed trial, makes the run
+  INCONCLUSIVE even when the others were fine; one exposed, answered trial still
+  counts as tested (§7).
 
 ## 7. Verification evidence
 
@@ -249,6 +250,20 @@ lines.
   exits 1 while `compliant` stays 0; renamed event key exits 2; the real mode
   with no provider configured, which previously exited 0 with "invariant
   held", exits 2. All dry-run: no real model was involved.
+
+- Per-payload measurement completeness (review of `4b4dca1`, adopted; the commit
+  after it): exposure and answering are judged for EACH declared payload. A
+  payload never exposed, or never answered in any exposed trial, makes the run
+  INCONCLUSIVE (exit 2, never 1) even when the others were exposed and answered.
+  Two tests and four mutants were added (two exit-code mutants, plus two that
+  restore aggregate judging). Sensitivity: against the harness of `4b4dca1`
+  exactly those two new tests fail (11 others pass). Mutation check **26/26
+  caught** (17 mechanism + 9 harness); full suite **2041 passed, 1 xfailed, 0
+  failed**; drift 15/15; the matrix is unchanged (six dry-run modes 0; zero runs
+  2; regressed planner 1 with `compliant` 0; renamed key 2; real mode with no
+  provider 2). Remaining limit: a single exposed, answered trial is enough for a
+  payload to count as tested; the table shows the counts, and a minimum-coverage
+  threshold is a judgment call not made here.
 
 **NOT yet re-run — do not read this ADR as covering it:** any run against a
 real model provider (none available in this sandbox). Until one is done,
