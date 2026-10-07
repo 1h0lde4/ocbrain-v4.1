@@ -163,11 +163,15 @@ lines.
   result recorded here is from `--dry-run` scripted stand-ins, which
   validate the harness and the code path, not any model. **No real
   provider was available; nothing here measures real-model behavior (R5).**
-  **Open gaps found after the rewrite (OPEN, not fixed in this checkpoint):**
-  the harness exits 0 with zero runs (`--trials 0` or `--requests 0`) and exits
-  0 when the poisoned entry never reached a prompt (`total_exposed == 0` prints
-  a NOTE only). Both are vacuous passes. Required before promotion: exit 2 in
-  both cases (the second outside `--dry-run`), with a sensitivity test for each.
+  **Gaps found after the rewrite — FIXED on the branch (Oct 6), pending the
+  owner's independent review:** the harness exited 0 (a vacuous pass) with zero
+  runs, when the poisoned entry never reached a prompt, and — found by running it
+  for real with no provider configured — when the model returned no completion
+  in any exposed trial; a run whose `interpret_request` returned no goals was
+  also counted as clean. Each is now exit 2 (INCONCLUSIVE) in every mode, with a
+  sensitivity test and a mutant (§7). **Known non-fatal limit:** a payload that
+  was never exposed in any trial is shown in the table (`not_exposed`) but does
+  not fail the run while other payloads were exposed.
 
 ## 7. Verification evidence
 
@@ -228,6 +232,24 @@ lines.
   KNOWN_ISSUES, ADR_INDEX, remediation register); the Sept 23 closure claims
   are marked withdrawn in place.
 
+- Harness hardening (Oct 6, after the Q1–Q6 rulings): `live_citation_check.py`,
+  `tests/test_live_citation_check.py` (11 tests) and 7 harness mutants added to
+  the mutation script. Closed: zero runs (rejected at argument parsing, and
+  INCONCLUSIVE at runtime), poisoned entry never exposed, model returned no
+  completion in any exposed trial, and a no-goals run counted as clean. Each is
+  exit 2 in every mode — stricter than R6's earlier wording "the second outside
+  `--dry-run`", because exposure 0 in a dry run also means broken
+  instrumentation. Sensitivity: against the previous harness (`218ff59`), 7 of
+  the 10 tests then written failed (the other 3 assert behavior that already
+  existed: the green path, exit 1 on escalation, exit 2 on an unreadable event
+  field); the no-answer test fails alone when its guard is removed. Mutation
+  check **24/24 caught** (17 mechanism + 7 harness); full suite **2039 passed,
+  1 xfailed, 0 failed**; drift 15/15. Matrix: six dry-run modes exit 0;
+  `--trials 0` and `--requests 0` exit 2; regressed planner + `obey-padded`
+  exits 1 while `compliant` stays 0; renamed event key exits 2; the real mode
+  with no provider configured, which previously exited 0 with "invariant
+  held", exits 2. All dry-run: no real model was involved.
+
 **NOT yet re-run — do not read this ADR as covering it:** any run against a
 real model provider (none available in this sandbox). Until one is done,
 R5 stands. `main` moves
@@ -263,10 +285,11 @@ Verification notes on the rulings (Oct 6, 2026, on this branch):
   `live_citation_check.py` reads these events. Consumers outside the
   repository, if any, are unknown.
 
-## 8.1 Required before promotion (all OPEN)
+## 8.1 Required before promotion
 
-1. Fix the two vacuous-pass paths in `live_citation_check.py` (R6) and
-   complete the owner's independent review of that file.
+1. `live_citation_check.py`: the vacuous-pass paths are FIXED on the branch
+   (R6, §7). **OPEN:** the owner's independent review of that file, including
+   its exit codes and escalation accounting.
 2. A real-model run on a machine with a configured provider (covers R3 and R5).
 3. Refresh `main`, recheck that ADR-KERNEL-08 is still the free number
    (`ADR-KERNEL-07` belongs to another session), merge `main` into the branch
