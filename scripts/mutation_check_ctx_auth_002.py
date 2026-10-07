@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Mutation check for the CTX-AUTH-002 replacement (core/cognitive/intent.py,
-core/cognitive/planner.py).
+core/cognitive/planner.py) and for the exit-code guards of the verification
+harness live_citation_check.py.
 
 Each mutant re-introduces one specific regression by an EXACT-string
-replacement (asserted to match exactly once), runs the four test files that
+replacement (asserted to match exactly once), runs the test files that
 guard this mechanism with -x, and requires the run to FAIL ("caught"). A
 mutant that leaves the tests green is a SURVIVOR and exits non-zero: either a
 test gap or an equivalent mutant, to be investigated -- never waved through.
@@ -24,11 +25,13 @@ import sys
 
 INTENT = pathlib.Path("core/cognitive/intent.py")
 PLANNER = pathlib.Path("core/cognitive/planner.py")
+LIVE = pathlib.Path("live_citation_check.py")
 TESTS = [
     "tests/core/cognitive/test_intent_security.py",
     "tests/core/cognitive/test_intent.py",
     "tests/core/cognitive/test_k42_completion.py",
     "tests/core/cognitive/test_planner.py",
+    "tests/test_live_citation_check.py",
 ]
 ELIGIBLE = 'if h.source == "request" and h.source_verified and h.content_grounded'
 
@@ -78,6 +81,21 @@ MUTANTS = [
      "h.source_verified, h.content_grounded = _check_source_grounding(\n"
      "                h.label, h.source, raw_request.text, context.blocks,\n            )",
      "h.source_verified, h.content_grounded = False, False"),
+    # -- exit-code guards of live_citation_check.py (ADR-KERNEL-08 section 8.1 item 1) --
+    ("harness: run-count guard accepts zero", LIVE,
+     "    if n < 1:\n        raise argparse.ArgumentTypeError", "    if n < 0:\n        raise argparse.ArgumentTypeError"),
+    ("harness: zero runs exit 0", LIVE,
+     "    elif not all_runs:\n        code = 2", "    elif not all_runs:\n        code = 0"),
+    ("harness: poison never exposed exits 0", LIVE,
+     "    elif total_exposed == 0:\n        code = 2", "    elif total_exposed == 0:\n        code = 0"),
+    ("harness: model never answered exits 0", LIVE,
+     "    elif total_answered == 0:\n        code = 2", "    elif total_answered == 0:\n        code = 0"),
+    ("harness: empty-goals guard removed", LIVE,
+     "    if not goals:\n        return {", "    if False:\n        return {"),
+    ("harness: run errors exit 0", LIVE,
+     "    elif total_errors:\n        code = 2", "    elif total_errors:\n        code = 0"),
+    ("harness: invariant failure exits 0", LIVE,
+     "    if total_escalated:\n        code = 1", "    if total_escalated:\n        code = 0"),
 ]
 
 
@@ -92,7 +110,7 @@ def run_tests() -> int:
 
 
 def main() -> int:
-    before = {p: sha(p) for p in (INTENT, PLANNER)}
+    before = {p: sha(p) for p in (INTENT, PLANNER, LIVE)}
     # Anchor check up front, so a drifted anchor is a harness error (2), not a survivor.
     for name, path, old, _ in MUTANTS:
         n = path.read_text().count(old)
@@ -115,7 +133,7 @@ def main() -> int:
             if not caught:
                 survivors.append(name)
     finally:
-        after = {p: sha(p) for p in (INTENT, PLANNER)}
+        after = {p: sha(p) for p in (INTENT, PLANNER, LIVE)}
         if after != before:
             print("RESTORE ERROR: source files differ from their pre-run bytes!")
             rc = 2
