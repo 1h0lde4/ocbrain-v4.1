@@ -9,8 +9,9 @@ Scope of B2a (decisions D1=(a), D2=(i); this batch implements neither):
     PROVIDER_FAILURE, and the adapter reports success=False for it;
   * the adapter fails closed for any other outcome that is neither a success
     nor pinned;
-  * STALLED / HARD_DEADLINE / COMPLETED_WITH_PARTIAL_OUTPUT keep their current
-    adapter behaviour (success=True) -- pinned below, to be changed by B2b;
+  * COMPLETED_WITH_PARTIAL_OUTPUT keeps its current adapter behaviour
+    (success=True) -- pinned below. (B2b has since moved STALLED and
+    HARD_DEADLINE out of this file: see test_fz02_stalled_deadline_failure.py);
   * EMPTY_RESPONSE (the stream finished with no output) also keeps today's
     success=True -- pinned below; B2a establishes no contract for it;
   * a RouteResult with execution_detail=None (every route() branch except the
@@ -255,8 +256,6 @@ async def test_a_healthy_stream_still_succeeds_unchanged(router, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure_type, answer", [
-    (FailureType.STALLED, "partial text"),
-    (FailureType.HARD_DEADLINE, "partial text"),
     (FailureType.COMPLETED_WITH_PARTIAL_OUTPUT, "partial text"),
     (FailureType.EMPTY_RESPONSE, ""),
 ])
