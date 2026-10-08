@@ -64,3 +64,11 @@ The one asymmetry worth flagging: `trafilatura`'s import is not guarded like the
 - 1 known: `TestCtxAuth001ParserAcceptance`, the intentional CTX-AUTH-001b tripwire (ADR-KERNEL-05).
 - 5 characterized: chromadb migration-compatibility failures on newer-generation committed fixtures, precedented since July 4, 2026 — disposition not yet decided.
 - Not comparable, and not claimed to be better than, the historical ~34-failure full-dependency baseline — this is a different, already-precedented environment class (minimal-dependency sandbox), established via direct evidence rather than assumed.
+
+---
+
+## Correction (added later, during the CodeQL-findings workstream)
+
+The dependency matrix above **undercounts unguarded `trafilatura` imports**. My search covered `core/ interface/ modules/ tests/` but not `learning/`; `learning/crawler.py:12` has a bare top-level `import trafilatura`, a second site beyond `modules/web_search/module.py`. It became reachable when `tests/test_module_name_containment.py` was added to `main` — its fixture imports `learning.crawler`, so in an environment without `trafilatura` all 51 of that file's tests error (`ModuleNotFoundError`); with it installed they pass.
+
+Also corrected: the "minimal-dependency sandbox" above excluded `trafilatura` together with `sentence-transformers`, treating them as one "heavy ML stack". They are not alike — `trafilatura` is a small package with no `torch` dependency. The sandbox class is now *no torch/transformers/sentence-transformers; `trafilatura` installed*. The `1,501 passed / 6 failed` and later `1535 / 0` baselines recorded in this packet were measured before that test file existed and do not apply to current `main`.

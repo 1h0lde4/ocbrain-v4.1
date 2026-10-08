@@ -54,3 +54,44 @@ This branch was cut from `main` @ `b1e4184` (Packet G's merge). By the time it w
 - Category 3: all three alerts named in the task (`core/brain_api.py:113`; `interface/api.py` at 178 and 544 after line shifts) are in CodeQL state **`fixed`**.
 
 **Inferred, not proven:** the 12 `brain_export.py` alerts remain open even though the guard demonstrably blocks the exploit, so CodeQL's `py/path-injection` query evidently does not treat `str.isidentifier()` (or dict-membership checks like `in _orchestrator.modules`) as a sanitizer. Consequence: **an open `py/path-injection` alert here does not by itself mean an unfixed vulnerability** — each needs classification (guarded & reachable-only-via-guard / genuinely unguarded). The three originally-named examples (`module_factory.py:49`, `scheduler.py:162`, `trainer.py:61`) are classified above as guarded.
+
+---
+
+## Final disposition (supersedes the postscript's open items)
+
+*Snapshot as of 2026-10-08 20:39 UTC (CodeQL REST API + git). Re-fetch before relying on any number below — this alert set changed three times within one session.*
+
+**CodeQL: 37 alerts — 33 `fixed`, 4 `dismissed`, 0 open.** Your three categories are closed:
+
+- **Category 1 — dismissed by Moncif** (`1h0lde4`): #30, #31, #32 as "used in tests" (2026-10-02 ~00:44Z). My analysis above agrees these are false positives (list membership, not substring search).
+- **Category 2 — closed upstream.** All 30 `py/path-injection` alerts are `fixed` (last fix 2026-10-05T07:31Z). The structural fix is `acc43b7` — *route every module-name filesystem path through `core/module_paths.module_child()`* — a single choke-point (canonicalizes, requires a direct child, symlink-aware, error text does not echo the input) used across `brain_export`, `module_factory`, `module_registry`, and `learning/{cleaner,crawler,distiller,evaluator,finetuner,gap_detector,trainer}`; plus `6dee2b2`, which confines `/import`'s `bundle_path` to a configured import root. `module_paths.py`'s own docstring states what I had only inferred: `.isidentifier()` is not a filesystem boundary and CodeQL does not treat it as one — which is why the alerts persisted on correctly-guarded code until a recognised helper replaced the per-site checks.
+- **Category 3 — closed upstream.** The three `py/stack-trace-exposure` alerts (your `core/brain_api.py:113`, `interface/api.py:529` and `:160`) are `fixed`.
+- Dismissed #36 (`brain_export.py:161`, "false positive") was also Moncif's call.
+
+**What I independently verified (by execution)**, not just by reading CodeQL's state: `tests/test_module_name_containment.py` — 76/76 pass; this branch's three end-to-end export tests pass against `main`'s code; full suite on the merged tree `1970 passed, 1 xfailed` (exit 0); `scripts/check_drift.py` 15/15.
+**What I did NOT verify:** the code of the fixes line by line; that `results_count=3` on CodeQL's latest 43-rule analysis of `main` is the three dismissed alerts (an inference — dismissed results still appear in analyses).
+
+### New finding CodeQL did not surface: `PrivacyGuard.wipe_module_data` — a latent unguarded deletion sink
+
+My independent sweep for raw module-name path joins (the "every path" claim in `acc43b7` is the same shape as the `export_module()` coverage gap) found exactly one site that bypasses `module_child()`:
+
+```python
+# core/privacy.py (unchanged on main since 2026-06-30; no module_child)
+def wipe_module_data(self, module_name: str):
+    import shutil
+    for folder in ["data/raw", "data/chunks"]:
+        p = Path(__file__).parent.parent / folder / module_name
+        if p.exists():
+            shutil.rmtree(p)
+```
+
+No containment, no validation, and the operation is `shutil.rmtree` — the same class as the original CTX-EXPORT-001 (traversal-to-arbitrary-deletion). `module_name = "../../.."` resolves above the repo root.
+
+- **Reachability: none today.** `git grep wipe_module_data|wipe_all` on `main` finds the two definitions and nothing else in production; `tests/test_privacy.py` only *stubs* `wipe_module_data` with a lambda, so the real function is not exercised by any test.
+- **Classification: UNPROVEN as live; a latent sink** — the same shape as Packet D's `resume()` (real in form, currently no caller). It becomes live the moment anything wires it to an endpoint. CodeQL's silence is consistent with that (no reachable taint source) — an inference, not a verified reason.
+- **Not yet proven by a test and not fixed.** The right next step is a decoy exploit test that fails first, then a fix through `module_child()` (see `handoff.md`).
+
+### Corrections to my own earlier work
+
+- **Packet E's dependency matrix undercounted unguarded `trafilatura` imports.** I searched `core/ interface/ modules/ tests/` and not `learning/`, so I recorded only `modules/web_search/module.py`. `learning/crawler.py:12` also has a bare top-level `import trafilatura`. It became reachable when `tests/test_module_name_containment.py` landed (its `sandbox` fixture imports `learning.crawler`): without `trafilatura`, **all 51** of that file's tests error with `ModuleNotFoundError`; with it installed they pass.
+- **I lumped `trafilatura` in with the heavy ML stack. That was wrong.** It is a small package with no `torch` dependency; only `torch`/`transformers`/`sentence-transformers` are heavy. The "minimal sandbox" is now defined as *no torch/transformers/sentence-transformers, with `trafilatura` installed*, and the old `1535 passed / 0 failed` baseline no longer applies (current: `1970 passed, 1 xfailed`).
