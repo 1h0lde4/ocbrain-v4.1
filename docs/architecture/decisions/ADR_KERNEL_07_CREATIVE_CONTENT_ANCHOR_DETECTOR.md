@@ -40,7 +40,7 @@ compile()  ── EXISTING Plan Compilation gate; the observation rides its EXIS
    ↓          "plan_compile" governance action under its own metadata keys
 OrchestrationGovernor  (EXISTING) applies a threshold alongside ClarificationPolicy
    ↓
-ESCALATE → clarification response: detector-specific question + the interpreted plan/intent
+ESCALATE → clarification response: detector-specific question + the request text and draft plan steps (§10.4)
 ```
 
 1. **Detector** (`core/cognitive/content_anchor.py`, `creative_content_anchor` v0):
@@ -62,8 +62,9 @@ ESCALATE → clarification response: detector-specific question + the interprete
 4. **Surface.** `handle()` turns an `ESCALATED` compilation into a clarification response
    when — and only when — the ESCALATE came from `OrchestrationGovernor` **and** the carried
    observation is missing an anchor (the same predicate the governor applied). Any other
-   escalation keeps the pre-existing generic message. The response is **the interpreted
-   intent, the draft plan steps (≤5, one line each, truncated), and a specific question**.
+   escalation keeps the pre-existing generic message. The response is **the request text (echoed:
+   `description` is the user's raw request, §10.4), the draft plan steps (≤5, one line each, truncated),
+   and a specific question**.
    `SupervisorWorker` is still invoked exactly as before.
 5. **Observability.** `cognitive.content_anchor_observed` (detector name/version, score,
    in_scope, abstained, missing; no raw text) pre-plan; the existing `cognitive.plan_rejected`
@@ -145,7 +146,7 @@ explicitly ACCEPTED by Moncif, so none is recorded as ACCEPTED. D-5 is decided (
 | D-2 | Keep the flag **off**; enabling is a measured experiment | PROPOSED — equals the implemented default |
 | D-3 | Cross-turn state / session identity → **its own future ADR** (number not reserved) | DEFERRED |
 | D-4 | Test D stays a strict `xfail`; depends on D-3 | DEFERRED |
-| — | Live draft-plan behavior (§10.4) | **UNKNOWN — requires a configured model provider** |
+| — | Live draft-plan behavior (§10.4) | **OBSERVED for one model (llama3, n = 11); disposition pending** |
 
 **No code on this branch depends on any of these dispositions.** D-2's "off" is the
 pre-existing default; D-3 and D-4 are unimplemented by design; D-1 is a documentation note.
@@ -213,9 +214,9 @@ compile; `ClarificationPolicy` still operates alongside and is evaluated after t
 another governor's rejection is not turned into a question; the feature adds **no**
 governance evaluation (sequence identical on vs off); the detector module has no governance
 import; flag-off is inert and the `compile()` call is unchanged; the response pairs the
-interpreted plan with a specific question and bounds model-derived text.
+request text and draft plan steps with a specific question and bounds model-derived text.
 Acceptance of the slice's structural invariants does **not** depend on live draft-plan behavior,
-which is UNKNOWN (§10.4).
+which has been observed for one model only (§10.4).
 Does **not** prove: material sufficiency; live-model behavior; precision/recall on a real
 corpus; the study's 466-vs-1000-words experiment (`[PENDING]`); cross-turn convergence; Test D.
 
@@ -266,31 +267,45 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
 ### 10.4 Consequences and risks
 - **Cost:** an intercepted request still pays `plan()`'s one decomposition model call (plus
   capability discovery); only execution/generation is avoided.
-- **Risk `[PENDING]` — draft plan steps.** The response shows model-generated plan steps for
-  a request the detector says lacks content. If a step contains content the user never
-  supplied, the system says "content is missing" while displaying invented content. The
-  question to answer, narrowly: *does exposing draft plan steps add useful context, or
-  introduce speculative assumptions?*
-  - **Status: UNKNOWN — live draft-plan behavior is UNVERIFIED and requires a configured model
-    provider.** Not run live. This sandbox has no model provider (verified: no credentials, no
-    local server). The instrument exists: `scripts/live_check_draft_plan.py` (17 tests, 4
-    mutation checks). Live mode runs the pipeline's two real model calls (interpretation +
-    planner decomposition) on 11 requests — 8 form-only plus 3 long-form ones chosen to tempt
-    multi-step splitting — and reports per step the content-bearing words that appear in
-    neither the request nor the interpretation. A run where every call degraded exits 2 and
-    declares itself NOT EVIDENCE; offline mode is synthetic and says so.
-  - **Hypothesis, not evidence** (no acceptance claim rests on it): the decomposition prompt says most goals need one step, its input
-    is the interpretation (not the raw request), and its degrade path is a single step equal
-    to that interpretation. So the likely common outcome is a **redundant** plan (restating the
-    interpretation line), not a speculative one. Only a live run can confirm or refute this.
-  - Instrument limitation: it is a word-level proxy (a short explicit process-vocabulary list
-    decides what is "not content"; an early version without it flagged every multi-step plan),
-    and it cannot see degradation *inside* `interpret_request`. The printed steps are the
-    primary evidence; read them.
-  - Containment options, **none applied**: `plan_steps=[]` (one line) if speculation shows up;
-    omit the plan when it is a single step equal to the interpretation if redundancy does.
-    Applying either now would turn an unverified hypothesis into architecture, so neither is
-    applied. Disposition is Moncif's, made from live output.
+- **Risk — draft plan steps: OBSERVED for one model; disposition pending.** The response shows
+  model-generated plan steps for a request the detector says lacks content. The question, narrowly:
+  *does exposing draft plan steps add useful context, or introduce speculative assumptions?*
+  - **Evidence** (first real run: llama3 via Ollama in a Codespace, 11 requests, one run; full record in
+    `docs/studies/OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RESULT_OCT2026.md`): all 11 plans were model-generated and
+    multi-step — steps per plan 7, 6, 7, 7, 5, 11, 5, 7, 9, 7, 12 (median 7; 83 in total; **0 single-step**) —
+    and 9 of 11 exceed the 5-step display cap. By the author's reading (one reader; check it), **no step
+    names a concrete subject, genre, character, setting or premise**; most are generic authoring workflow
+    (brainstorm / outline / draft / revise / proofread); a minority presuppose form or process the user did
+    not choose (character profiles and backstories, plot twists, a thesis plus researched sources, chord
+    progressions, "beta readers", "select a joke from a database or generate one using an algorithm").
+    **Answer to the narrow question: neither, cleanly.** The steps add almost no context toward "what should
+    it be about?", and what they introduce is *process/form* assumptions, not *premise* assumptions.
+  - **My earlier hypothesis was wrong on both counts.** I expected a single-step, "redundant" plan and wrote
+    that the decomposition input is "the interpretation (not the raw request)". Refuted for this model
+    (0 of 11 single-step), and the input *is* the raw request: `structured_form["description"] =
+    intent.raw_request` (`core/cognitive/intent.py:1090`).
+  - **The "interpretation" line is an echo.** Because `description` is the raw request by design, "Here's how
+    I read your request: …" shows the user's own words. The only real interpretation signal the Intent stage
+    produces is the hypothesis category label (`semantic_description` = "<label>: <request>", label dropped
+    when it is the `novel` placeholder). §2 item 4 and §9 are corrected accordingly. The rendered response
+    also joins sentence-final steps with semicolons ("story.; 2.") and its example text ("a noir mystery, a
+    cozy fantasy…") is story-specific for every artifact kind (a joke, an essay, a song).
+  - **Instrument:** `scripts/live_check_draft_plan.py`. Its `speculative` label was **saturated, 11 of 11**:
+    generic planning vocabulary (develop, including, clear, key, overall) counts as "content", so the label
+    carries no information here and the printed steps are the evidence. The runbook's validity checker was
+    also wrong at first (it treated an echoed interpretation as a sign of failure); corrected and tested.
+  - **Limits:** 11 requests; one model; one run (sampling variance unknown); a fresh, empty memory store; one
+    human reader; model identity recovered after the fact (`llama3:latest`, 8.0B, Q4_0, ID `365c0bd3c000`), sampling
+    uncontrolled (the code sets no temperature or seed, so a re-run is expected to differ), and the repo commit
+    not captured. It does **not** establish
+    behavior with other models, with populated memory, or any effect on user outcomes. It does not accept
+    this ADR.
+  - **Containment options, none applied** — (A) `plan_steps=[]`; (B) drop both the plan and the echoed
+    interpretation, leaving the question only; (C) cap the plan at three steps and fix its formatting.
+    D-5 as decided says an ESCALATE *may* surface a question paired with the plan/intent, so (A) and (B)
+    stay inside it. The author's reading of the evidence favors (B). The run refutes the hypothesis and shows what the
+    system does; it does **not** by itself establish that the behavior is undesirable or that (B) is the only
+    correct response — that is a product/architecture decision. Disposition is Moncif's.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
 
