@@ -53,17 +53,16 @@ from core.capabilities.resource import ResourceManager
 from core.model_router import ModelRouter
 from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 
-# FZ-02 / batch B2a. Outcomes whose adapter-level result is deliberately left
-# exactly as it was (success=True, no new metadata). B2a only turns provider
-# failures into failures; it establishes no other outcome contract:
-#   * STALLED / HARD_DEADLINE / COMPLETED_WITH_PARTIAL_OUTPUT: their semantics
-#     are decision D2 and change in B2b;
+# FZ-02 (batches B2a + B2b). Outcomes whose adapter-level result is deliberately
+# left exactly as it was (success=True, no new metadata). The adapter turns
+# provider failures (B2a) and stalled / hard-deadline generations (B2b, decision
+# D2=(i)) into failures; it establishes no other outcome contract:
+#   * COMPLETED_WITH_PARTIAL_OUTPUT: defined, but route() never produces it, and
+#     D2=(i) does not cover it;
 #   * EMPTY_RESPONSE: the stream finished without producing output. Whether that
 #     is a failure belongs to the later outcome-policy work, not to FZ-02.
-# tests/test_fz02_provider_failure.py pins all four until then.
-_UNCHANGED_BY_B2A = frozenset({
-    FailureType.STALLED,
-    FailureType.HARD_DEADLINE,
+# tests/test_fz02_provider_failure.py pins both.
+_PINNED_UNCHANGED = frozenset({
     FailureType.COMPLETED_WITH_PARTIAL_OUTPUT,
     FailureType.EMPTY_RESPONSE,
 })
@@ -73,6 +72,10 @@ _UNCHANGED_BY_B2A = frozenset({
 # URLs. The provider's own opaque error reference is appended when present.
 _FAILURE_MESSAGES = {
     FailureType.PROVIDER_FAILURE: "model provider failure",
+    FailureType.STALLED: "model generation stalled",
+    # route() labels every non-stall cancellation HARD_DEADLINE (deadline, startup
+    # window, external cancel), so this message does not claim a specific cause.
+    FailureType.HARD_DEADLINE: "model generation was stopped before it completed",
     FailureType.CANCELLED: "model execution was cancelled",
     FailureType.VALIDATION_ERROR: "model request failed validation",
     FailureType.OTHER_FAILURE: "model execution failed",
@@ -119,11 +122,13 @@ class ModelRouterAdapter(BaseAdapter):
         # (every route() branch except the monitored long-form stream) is
         # unchanged. Fail closed: anything that is not SUCCESS and not in the
         # pinned set is a failure, including types route() cannot emit today.
-        # (EMPTY_RESPONSE is in the pinned set: it keeps success=True here.)
+        # (The pinned set -- EMPTY_RESPONSE, COMPLETED_WITH_PARTIAL_OUTPUT -- keeps
+        # success=True here. STALLED / HARD_DEADLINE fail and carry their partial
+        # text in metadata["partial_output"], never in `output`.)
         detail = route_result.execution_detail
         if (isinstance(detail, ExecutionOutcome)
                 and detail.failure_type != FailureType.SUCCESS
-                and detail.failure_type not in _UNCHANGED_BY_B2A):
+                and detail.failure_type not in _PINNED_UNCHANGED):
             return self._failure_result(route_result, detail, duration_ms)
 
         return CapabilityResult(
