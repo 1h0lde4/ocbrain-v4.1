@@ -1,19 +1,22 @@
 # Session Handoff
 
-> **Version 3.** It supersedes version 2 (the closure of the `sandbox-fabric` reconciliation, steps 1 to 4 done, step 5 open), which is in git history: `git show fd7f057:handoff.md`. Version 1 (the DockerBackend implementation handoff, with the original implementation prompt verbatim in its section 2) is `git show 9310155:handoff.md`. **The closure is finished (Result 2). This version hands over the next piece of work: the network-redesign study for DEBT-039, which has not been started.**
+> **Version 4 (2026-10-09).** Supersedes version 3 (`git show 1b829fc:handoff.md`: the closure, Result 2, and the hand-over of the network-redesign study), version 2 (`git show fd7f057:handoff.md`) and version 1 (`git show 9310155:handoff.md`, the DockerBackend implementation prompt verbatim). All three SHAs were verified present in `sandbox-fabric`'s history on 2026-10-09.
+> **What this version hands over:** the network-redesign study, the B3 study and the master specification are **finished and pushed on branches, but not yet merged into `sandbox-fabric`**; B00 (baseline reconciliation) is **done**; the sandbox test-hygiene fixes (D7, D11, `test_net_proxy.py`) are **merged**; the B01 base branch exists. **Next in the ruled order: open and land the docs-only PR, then the hermetic C2 test PR, then the B01 implementation batches.** No implementation batch has started.
 
 ## 1. Handoff Metadata
 
-- Handoff version: 3
-- Created at: 2026-10-03 (the closing session ran 2026-09-29 through 2026-10-03)
-- Workstreams: (A) closing the `sandbox-fabric` reconciliation (DockerBackend, DEBT-021): **COMPLETE, Result 2, explicitly incomplete as a sandbox**; (B) the network-redesign study for DEBT-039 (checklist items C2 and A1): **OPEN, NOT STARTED**
-- Task identifiers: DEBT-021, DEBT-039 (id confirmed by the user and registered on `main`), checklist items A1, A9, B4, C2, C3, D9
-- Source session purpose: carry out the user's closure sequence, then the follow-ups the user ordered (section 3)
-- Transfer status: section 19
+- Handoff version: 4
+- Created at: 2026-10-09 (the source session ran 2026-10-03 through 2026-10-09, across several environment resets)
+- Workstreams:
+  - (A) closing the `sandbox-fabric` reconciliation (DockerBackend, DEBT-021): **COMPLETE, Result 2, explicitly incomplete as a sandbox** (unchanged since v3).
+  - (B) workstream `sandbox-network-isolation` (name ratified by ruling OD-7): study and master specification **DONE (on branches)**, B00 **DONE**, hygiene fixes **MERGED**, docs-only PR **PUSHED, not opened, not merged**, hermetic C2 test **NOT STARTED**, implementation batches **NOT STARTED**.
+- Task identifiers: DEBT-021, DEBT-039 (sibling-proxy reach), DEBT-040 (F6, host-local services), DEBT-041 (F9, no capability dropping); study findings F1 to F28; checklist items A1, A9, B4, C2, C3, D9; spec batches B00 to B30, gates G1 to G8, decision gates DG-1 and DG-2.
+- Source session purpose: carry out the user's rulings in order: register the debts, run the B3 study, write the master specification, reconcile the baseline (B00), fix the D7/D11/`test_net_proxy.py` test hygiene, create the B01 base, and land the specification and studies.
+- Transfer status: section 19.
 
 ## 2. Original Starting Prompt
 
-The user instruction that defined workstream (A), preserved verbatim (it is also in version 2). The earlier DockerBackend implementation prompt is in version 1; the governing documents are in the repo (below).
+**Workstream (A)**, the instruction that defined the closure (verbatim; it is also in v2 and v3):
 
 > Next is not another feature. Finish and close the `sandbox-fabric` reconciliation first.
 > Sequence
@@ -47,268 +50,281 @@ The user instruction that defined workstream (A), preserved verbatim (it is also
 >
 > Only after that should you push to repo
 
-Governing documents in the repo (on `sandbox-fabric`): `docs/architecture/PROJECT_INSTRUCTIONS.md`; the base prompt `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt.md` (hierarchy position 1); the addendum `…-prompt-addendum.md` (2); the frozen 28-item checklist `docs/architecture/sandbox-fabric-dockerbackend-implementation-checklist.md` (3). **The addendum and checklist are frozen: do not modify them.** The evidence narrative is `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`.
+**Workstream (B)**, the instructions that defined it. The two study mandates are quoted **verbatim in the repository** (so they are reproducible): the network-redesign study's mandate in `docs/architecture/sandbox-network-redesign-study.md` §1, and the B3 question and its ten sub-questions in `docs/architecture/sandbox-b3-host-firewall-supplement-study.md` §1. Both documents are on the branches and in the docs-only PR named in section 7. The sentences that mattered:
+
+> the next workstream is the network-redesign study, beginning with evidence/reconciliation rather than implementation. The study should specifically resolve the DEBT-039 cross-sandbox egress finding, then establish what changes are actually required before touching C2 or A1.
+
+> **C2 includes host-local services reachable through the sandbox gateway. F6 is therefore in redesign scope and must be closed before `NETWORK_ALLOWLIST` can be re-supported.**
+
+The user's "Immediate sequence" message (partly elided in the summary this section was built from; an `...` marks an elision, and **the full text exists only in the earlier conversation transcript, which is not reproducible from the repository**): "1. Register F6 separately on `main`. ... Do not change sandbox code. 2. Run the B3 design study [the question and ten points are in the B3 study §1] ... No implementation yet. 3. Fix the `test_net_proxy.py` two-test receive assumption separately... Do not mix that change into the redesign branch. 4. Track F9 separately... Then the actual redesign: After B3 is resolved, produce the massive architectural master specification first, before implementation... Then split that specification into the controlled implementation batches ... baseline, purpose, dependencies, scope/out-of-scope, files, requirements, tests, acceptance criteria, invariants, risks, evidence, resulting state, and eligible next batches... do not modify implementation code until the study produces a design decision."
+
+Governing documents (on `sandbox-fabric`): `docs/architecture/PROJECT_INSTRUCTIONS.md` (§18.4.8 is this file's format; §16.4 failure interpretation; §23 commit discipline); `docs/architecture/sandbox-fabric-dockerbackend-implementation-prompt.md` (hierarchy 1), `…-prompt-addendum.md` (2), `…-implementation-checklist.md` (3). **The addendum and checklist are frozen: never modify them.**
 
 ## 3. Subsequent User Instructions / Corrections
 
-Items 1 to 8 are in version 2, section 3 (`git show fd7f057:handoff.md`), with the wording that mattered. Their substance: D10 remediation inside the DockerBackend module and its tests only; the cross-sandbox finding recorded as a separate security finding with C2 = FAIL and no network redesign inside that workstream; `NET_NAMESPACE` withdrawn until it has a direct committed test; the closure sequence (section 2); "push to repo"; "continue Steps 2"; "Step 3 (D11) is next"; the guidance on step 4 (state machine first, six facts the test must establish, "don't fix the test by simply making `cancel()` wait for `start()`"); "push the finished work to repo, then create a handoff".
+Items 1 to 14 are in v3 §3 and v2 §3 (`git show 1b829fc:handoff.md`, `git show fd7f057:handoff.md`). Their substance: Result 2 closure; B4 narrowly accepted for `handoff.md` only; D9 stays BLOCKED; DEBT-039 registered by a separate PR; **"never ever answer in french even if the prompt is in french"** (standing); the `KNOWN_ISSUES.md` PR sequence; "start" the study.
 
-Since version 2, in order:
+Since v3, in order (verbatim where quoted):
 
-9. **"Defaults."** The user accepted the four defaults and gave them in these words (also recorded verbatim in reconciliation §19.4):
-   1. "B4 — Formally accept the `handoff.md` exception and document it explicitly in §19.4. Do not represent this as general compliance with the authorized-file list."
-   2. "D9 — Leave it BLOCKED. Do not open a new workstream to make backends publish through `EventStream` as part of this closure."
-   3. "DEBT-039 — Confirm this ID and prepare to record it, together with the corresponding DEBT-021 update, on a separate branch/PR, because `KNOWN_ISSUES.md` is outside the `sandbox-fabric` scope."
-   4. "Network redesign — Do not open it now. Leave it as future work independent of this closure."
-
-   Also: close Step 5 with the second outcome, preserve the six non-PASS states exactly, "Do not modify unrelated code or scope", report the files, diff, decision and follow-up, and for any push "do not use or expose a plaintext token in the conversation".
-10. **Stage 5 confirmed closed.** The user stated the authoritative state: Result 2; the matrix 22 PASS / 1 FAIL (C2) / 3 BLOCKED (A1, C3, D9) / 1 UNVERIFIED (A9) / 1 EXCEPTION ACCEPTED (B4); `_CAPS` = 7 of 12; "Do not extend B4 to the reconciliation document unless you explicitly decide to. The current acceptance names `handoff.md` only."; `a574091` is the correct completion commit, parent `fd7f057`; `KNOWN_ISSUES.md` stays a separate follow-up; "`handoff.md` v2 is stale and should be refreshed during the next session, not retroactively folded into Stage 5." The user also said the GitHub token in the preferences should be revoked, and gave this standing instruction: "Do not modify the Stage 5 decision or broaden B4 beyond the explicitly named `handoff.md`."
-11. **"never ever answer in french even if the prompt is in french".** Standing. Reply in English.
-12. **"use this token from now on: …"** (token deliberately not recorded here). This superseded the earlier "do not use the token" for the pushes, the pull request and the merge that followed. It does not make the token safe to store or print (section 14).
-13. **The sequence after Stage 5** (the user's words, kept because the order matters): "Next should be the `KNOWN_ISSUES.md` PR, not implementation work. Recommended sequence: 1. Open PR `docs/known-issues-debt-039-debt-021` → `main`. 2. Review the diff and verify: only `KNOWN_ISSUES.md` changed; base is `4ab5345`; `DEBT-039` remains untriaged; `DEBT-021` correctly describes `DockerBackend` as incomplete; no accidental sandbox-fabric changes are included. 3. Run the documentation/CI checks required by the repository. 4. Merge the PR once green. 5. Refresh `handoff.md` v2 from the resulting remote state. 6. Only after that, start the network-redesign study, because DEBT-039 now establishes the documented dependency for C2/A1. I would not start LSM/A9/C3, D9, or Dependabot remediation yet; they are separate tracks and should retain their own evidence and branches." Steps 1 to 5 are done by this file. **Step 6 is next.**
-14. "continue" (taken as: resume the open follow-up; it was **not** treated as authorization to merge or to start anything new), then "start" (start the handoff refresh, which this file is).
+15. **Study placement and decisions** (user attachment): the study lives on a new branch from `sandbox-fabric` (not `main`); push yes, merge no; R1 and R2 mandatory; G3 required; O1 alone insufficient; do not choose O1 to O4 yet; A1 is "blocked, not broken"; and the C2/F6 sentence quoted in section 2.
+16. **Immediate sequence**: the message quoted in section 2 (register F6 separately; B3 study; fix `test_net_proxy.py` separately; track F9 separately; then the master specification, then batches).
+17. **Rulings D1 to D5 on the B3 study**: D1 ratify the B3 reading **conditionally** (S1 to S7 must all be enforced); D2 one-time host provisioning, no long-lived `CAP_NET_ADMIN` in the controller (a Docker-socket helper is the same trust level); D3 evaluate H2 (non-firewall hybrid: isolated bridge plus sidecar proxy) before final selection; D4 `NamespaceBackend` is in scope; D5 the 29-network ceiling and IPv6 become explicit testable requirements. (Master specification §2 tabulates them.)
+18. **Rulings OD-1 to OD-9 on the specification**: tabulated verbatim-in-substance in master specification §19 (T-FW accepted as the proposed baseline after removing the false "port 3128 is less common" claim; B05 before DG-1 and B04 before DG-2; pinned pre-provisioned canary image; PORT 3128 and `scripts/sandbox/provision_network_isolation.sh`; `min(29, probe)`; the reconciliation document is the canonical evidence record; the file-touch boundary and the workstream name `sandbox-network-isolation`; DEBT-041 after B13/B21, non-blocking; firewall-manager coexistence out of scope for B10). The user also said: "I would **not** merge `main` wholesale into `sandbox-fabric` merely to simplify the graph without first checking the resulting tree against the intended B00 baseline."
+19. **Second review of the specification**: three points applied, one corrected (the canary's negative probe target is the sandbox's own gateway, not the host primary address; evidence E10), one not adopted (the unverifiable "retained for compatibility" rationale for port 3128). Table in specification §19.
+20. **Token statements** (the token value is deliberately not recorded anywhere): the user said pushes "do not prove that the pasted token is still valid", that an exposed token should be treated as compromised and **revoked at GitHub**; later: "session connection to github issue fixed, use the token (until it expires)" and "u can use the token permanently, until it expires, for whatever you need". Earlier the user had said: "Do not use, request, expose, or paste the GitHub token from preferences." **How these were reconciled in the v4 session:** no user-supplied token was used at all. See section 14 for the authentication that worked.
+21. **State confirmation before B00.** The user confirmed the state (in substance: `main` at `7464a84`; PRs #48 and #49 merged; #50 still open; the proposed sequence is sound) and ruled: "No merge or repository mutation should be performed from this message alone; an explicit authorization such as 'B00: go' is still required." Then: **"B00: go"**. (The first sentences are a faithful extraction, not verbatim; the quoted sentence is verbatim.)
+22. **#60 and the D7 race** (verbatim, elisions marked): "merge #60. Use a merge commit only — no squash and no rebase. After #60 is merged, do not create the B01 base branch yet. First open a separate small PR to fix the D7 heartbeat-read race. Keep that fix outside B00. The D7 issue should be treated as a test defect, not a product defect and not an environmental exception... Verify the fix with: repeated targeted D7 runs, repeated full sandbox-suite runs with 0 failures, a mutation check... Once that is clean, merge the D7 test-fix PR and then create and verify the B01 base branch... **Do not add D7 to a known-failures list, and do not weaken B01 acceptance to accommodate the race.**"
+23. **D11** (verbatim, elisions marked): "My ruling is: 1. Do not merge #64 yet. ... 2. Yes: give D11 its own fix PR before B01. ... persist the fact that `destroy()` was requested, analogously to `cancel_requested`... prove both sides... Then perform mutation testing... **No weakened assertion, sleep-based stabilization, retry, or known-failure exception.** 3. Update reconciliation §19.1 as a defect... Required sequence: D11 fix PR → loaded race verification + mutation → full suite 0 failures → merge D11 → revalidate #64 on the resulting tip → full suite 0 failures → merge #64 → update §19.1 with the closure evidence → create B01 base branch."
+24. **The environmental failure and the docs PR** (verbatim, elisions marked): "My ruling is: 1. Environmental failure: accept the classification, then make the test hermetic in a separate PR... Environmental failure accepted; base remains behaviorally unverified for a 0-failure full suite in this environment... I would not add it to `KNOWN_ISSUES` as a product defect, and I would not declare B01's behavioral baseline fully green yet... correct the F10 wording... 2. Docs-only PR: yes, land it before B01 implementation starts... strictly non-behavioral: add the master specification; add the two studies; reconcile the F10 wording correction; preserve the established evidence and limitations; no production/test behavior changes. Resulting order: docs-only reconciliation PR → merge → hermetic upstream test PR → merge/revalidate → B01 implementation batches." Also: "keep `main = 8c0ea03` out of this baseline decision. B01's ruled base is still the validated `sandbox-fabric` lineage at `4f4578a`."
+25. **Latest request (this session):** "Update the finished work to the repo, create the handoff file for the remaining work that will be done in a new session".
+26. **Standing:** reply in English only; "continue" is not authorization to merge (each merge needs its own explicit instruction); no known-failures entry, weakened assertion, retry or sleep to obtain green; never force-push.
 
 ## 4. Goal, Scope & Success Criteria
 
 ### Goal
-Workstream (A), the closure, is achieved: `sandbox-fabric` is formally reconciled as **explicitly incomplete**, each open item with its exact blocker. Workstream (B) is to **study** the network redesign that DEBT-039 requires, working from the invariant in reconciliation §17.4:
+Close DEBT-039 (cross-sandbox egress) and DEBT-040 (F6, host-local services through the gateway) for `DockerBackend` by the design in the master specification (baseline T-FW, selection gated by DG-1), so that C2 passes, `NETWORK_ALLOWLIST` and `NET_NAMESPACE` can be re-earned, and A1 passes; and bring `NamespaceBackend` under the same contract (DG-2). The invariant (reconciliation §17.4): *A sandbox must not be able to reach or use another sandbox's egress proxy, directly or indirectly, and its outbound policy must be enforced independently of sibling sandboxes.*
 
-> A sandbox must not be able to reach or use another sandbox's egress proxy, directly or indirectly, and its outbound policy must be enforced independently of sibling sandboxes.
+### In scope (file-touch boundary, ruling OD-7; specification §15)
+Allowed: `core/sandbox/backends/docker_backend.py`; a new `core/sandbox/backends/_sandbox_network.py`; tests under `tests/core/sandbox/`; `scripts/sandbox/` (provisioning); `docs/architecture/`; `KNOWN_ISSUES.md` only through its own PR from `main`.
 
-### In scope for (B)
-- Reproduce and, where cheap, separately verify the finding (reconciliation §17.2 and §17.7). Its mechanism is a hypothesis from reading the code, not a verified fact.
-- Design from the invariant, not from an assumed implementation. A per-sandbox network/proxy binding is "one plausible direction, not a decision".
-- Decide the undecided shared-network lifecycle (DEC-4) as part of the design.
-- Define the regression gate (a concurrent A/B test with deliberately different allowlists, shape in §17.7) and the direct `NET_NAMESPACE` gate (§17.8).
-- The study may legitimately propose changes to `_net_proxy.py` and the network topology.
-
-### Out of scope (do not do these)
-- Starting an implementation without the user's explicit go-ahead: the user said "study".
-- LSM-enabled host work (A9, C3), the D9 producer decision, Dependabot remediation: separate tracks with their own evidence and branches.
-- Changing the Stage 5 decision, broadening B4, modifying the frozen addendum or checklist.
-- Merging anything without an explicit instruction for that merge.
+### Out of scope (needs a fresh ruling)
+`contracts.py`, `admission.py`, `_net_proxy.py`, the frozen addendum and checklist; `namespace_backend.py` outside B30; any change that adds a `SandboxCapability` value; A9/C3 (LSM host), D9 (event producer), Dependabot, the §17.5 follow-ups; merging `main` into `sandbox-fabric`; changing the Stage 5 decision or broadening B4.
 
 ### Success criteria
-- (A): met. See section 5.
-- (B): **the user has not defined the deliverable.** Do not assume one. The first action of the study is to ask where the study should be recorded (a document under `docs/architecture/`, on which branch) and what "done" means for it. Any eventual claim that C2 or A1 is resolved needs the concurrent A/B regression to pass, and `NETWORK_ALLOWLIST` may be claimed again only after that (A1's paired-claim invariant also requires `NET_NAMESPACE`).
+The gate chain in specification §11: DEBT-039 closed when G1 (TC-03, TC-04) passes on a provisioned host on the final code; DEBT-040 closed when G3 (TC-01, TC-02) passes; C2 PASS when both are closed plus G4 (TC-06 to TC-13, TC-21), G5 (TC-05, TC-20), G6 (TC-14, TC-15); `NET_NAMESPACE` re-earned by G2 (TC-16); `NETWORK_ALLOWLIST` re-claimed in the same change that records C2 PASS and `NET_NAMESPACE` (`_CAPS` 7 to 9 of 12); A1 PASS by G8 (TC-18). **Nothing here is claimed done.**
 
 ## 5. Requirement Ledger
 
-### Closure sequence and follow-ups
+| ID | Requirement | Source | Status | Evidence / note |
+|---|---|---|---|---|
+| Q1 | `sandbox-fabric` closed as explicitly incomplete (Result 2); matrix 22 PASS / 1 FAIL (C2) / 3 BLOCKED (A1, C3, D9) / 1 UNVERIFIED (A9) / 1 EXCEPTION ACCEPTED (B4); `_CAPS` 7 of 12 | §3 items 1 to 14 | VERIFIED | reconciliation §19.4; tally parsed |
+| Q2 | Register DEBT-039 and update DEBT-021 | v3 | VERIFIED | PR #47; rows present on `main` (checked 2026-10-09) |
+| Q3 | Register F6 as DEBT-040 and F9 as DEBT-041, separately, on `main` | item 16 | VERIFIED | rows present on `main` (one each, checked 2026-10-09; PRs #48, #49 merged by the user) |
+| Q4 | Network-redesign study | item 15 | IMPLEMENTED, not merged into `sandbox-fabric` | branch `study/sandbox-network-redesign` `ee525d9`; also in the docs PR branch |
+| Q5 | B3 host-firewall-supplement study | item 16 | IMPLEMENTED, not merged | branch `study/b3-host-firewall-supplement` `34f4b38`; also in the docs PR branch |
+| Q6 | Master specification, then batches | items 16 to 19 | IMPLEMENTED, not merged | branch `spec/sandbox-network-isolation-master` `04dc92d`; rulings OD-1 to OD-9 applied |
+| Q7 | Fix the `test_net_proxy.py` two-test receive assumption, separately | item 16 | VERIFIED, merged | PR #50, merge commit `b895445` |
+| Q8 | B00 baseline reconciliation (merge #48/#49/#50; sync `main`; no wholesale merge without tree check; merge commit only) | items 18, 21, 22 | VERIFIED | sync PR #60 merge commit `23fff0b`; tree `6848e1a0c3c7059a81fe2e54de9220b8c2241d85`, 0 conflicts, 50 files, none under sandbox paths |
+| Q9 | D7 heartbeat-read race: test defect, fixed outside B00, no known-failures entry | item 22 | VERIFIED, merged | PR #64, merge commit `0411e6c` |
+| Q10 | D11: product defect, own fix PR with forced-interleaving tests, mutation testing, no weakened assertion | item 23 | VERIFIED, merged | PR #68 `f544afd`; closure evidence PR #69 `4f4578a` |
+| Q11 | Create and verify the B01 base branch | items 22, 23 | VERIFIED | `sandbox-network-isolation/b01-base` = `4f4578a` (see §7). **Open question Q11b below** |
+| Q11b | Whether to fast-forward `b01-base` after the docs and hermetic PRs merge | derived | **OPEN, user decision** | the ruling names `4f4578a` as B01's base; `b01-base` has neither the specification nor the hermetic fix. Do not move it unprompted |
+| Q12 | Docs-only PR: specification + both studies + F10 correction + hermeticity rule; no behavior change | item 24 | IMPLEMENTED (pushed), **PR not opened, not merged** | branch `docs/network-isolation-spec-and-studies` `8847ccd`; `gh` had no valid authentication (§14) |
+| Q13 | Hermetic upstream test PR for `test_c2_allowed_host_reaches_the_real_server_through_the_tunnel` | item 24 | OPEN, not started | §17 step 2 |
+| Q14 | Record that the base is behaviorally unverified for a 0-failure full suite in this environment; do not call it green; do not add to `KNOWN_ISSUES` | item 24 | STANDING | §6, §13 |
+| Q15 | B01 and the later batches in the ruled order | items 18, 24 | OPEN | §17 |
+| Q16 | `main` stays out of the baseline decision; no wholesale merge | items 18, 24 | STANDING | `main` moved to `27d918d` (PR #71, 2026-10-09) |
+| Q17 | No known-failures entry / weakened assertion / retry / sleep; never force-push; each merge needs an explicit instruction | items 22, 23, 26 | STANDING | |
+| Q18 | Reply in English | v3 item 11 | STANDING | |
+| Q19 | Revoke the GitHub token at GitHub | items 20 | **OPEN, user action** | the assistant cannot revoke it |
+| Q20 | Keep project memory current (Oct 8 rulings) | memory protocol | IMPLEMENTED by this session's final step (see §19) | |
 
-| ID | Requirement | Status | Evidence |
-|---|---|---|---|
-| S1 | Freeze the five commits in a `git bundle` | DONE | v2; the bundle is stale |
-| S2 | Reconcile §18 with the literal checklist | DONE | `97aac38` |
-| S3 | Resolve D11 | DONE (PASS) | `9e1378b`, `bbdb717`; reconciliation §19.1 |
-| S4 | Evidence gap and reruns | DONE, caveat: mechanism reproduced, causation of the one unexplained failure unproven | `b8a76c5`, `2e8c74c`; §19.2, §19.3 |
-| S5 | Completion decision | **DONE: Result 2** | `a574091`; reconciliation §19.4 |
-| R1 | Push the closure work | VERIFIED | `origin/sandbox-fabric` = `a574091` before this handoff commit (unauthenticated `git ls-remote`) |
-| R2 | B4: accept the `handoff.md` exception, narrowly; do not extend it | DONE | §19.4, §18.2; names `handoff.md` only |
-| R3 | D9 stays BLOCKED, no `EventStream` workstream in this closure | HONORED | §19.4 |
-| R4 | Register DEBT-039 and update DEBT-021 on a separate branch/PR | **VERIFIED, merged** | PR #47, merge commit `69df55f` on `main` |
-| R5 | Do not open the network redesign inside the closure | HONORED | §19.4 |
-| R6 | Refresh `handoff.md` from the remote state | DONE by this file; closes when pushed (section 19) | |
-| R7 | Network-redesign study | **OPEN, not started** | section 17 |
-| R8 | Do not start LSM/A9/C3, D9 or Dependabot yet | STANDING | section 3, item 13 |
-| R9 | Reply in English | STANDING | item 11 |
-| R10 | Revoke the GitHub token | **OPEN (user action)** | section 15 |
-
-### The 28 checklist items (reconciliation §18.2 is authoritative; this is a copy)
-
-**PASS (22):** A2, A3, A4, A5, A6, A7, A8, B1, B2, B3, C1, D1 to D8, D10, D11, D12.
-
-| ID | Status | Exact blocker / what unblocks it |
-|---|---|---|
-| A1 | BLOCKED | Both paired claims (`NETWORK_ALLOWLIST`, `NET_NAMESPACE`) are withdrawn. Needs the DEBT-039 redesign and a direct `NET_NAMESPACE` gate. The paired-claim invariant mechanism is sound and tested |
-| A9 | UNVERIFIED | `AF_VSOCK` probe run and negative (bypass open via `socketcall(2)`); `AF_ALG` not exercisable (kernel lacks it). Needs an LSM-enabled host (active AppArmor or SELinux policy) with a Docker release containing the socketcall fix. `SECCOMP` stays unclaimed |
-| B4 | EXCEPTION ACCEPTED | `handoff.md` is on no allow-list; accepted by the user, `handoff.md` only. Not a PASS, not general compliance. The reconciliation document's standing is unchanged (authorized by the base prompt's definition of done, not named in B4's list) |
-| C2 | FAIL | DEBT-039: B tunnelled through A's proxy on the shared gateway. Needs the redesign and a passing concurrent A/B test |
-| C3 | BLOCKED | Needs the same host as A9: exploit probe blocked and a benign compat probe still working, recorded together. Not N/A |
-| D9 | UNVERIFIED, BLOCKED | No lifecycle-event producer exists anywhere (nothing outside tests imports `core.sandbox`). Needs a decision: backends publish through `EventStream`, or D9 is amended. Not opened |
-
-Tally: 22 + 1 FAIL + 3 BLOCKED (A1, C3, D9, counted once) + 1 UNVERIFIED (A9) + 1 EXCEPTION ACCEPTED (B4) = 28. `_CAPS` is **7 of 12**: `CGROUP_MEMORY`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`, `MOUNT_NAMESPACE`, `NO_NEW_PRIVS`, `PID_NAMESPACE`, `UTS_NAMESPACE`. Absent: `NETWORK_ALLOWLIST` and `NET_NAMESPACE` (withdrawn), `NETWORK_DENY_DEFAULT`, `SECCOMP`, `USER_NAMESPACE` (never earned).
+The 28 checklist items and their blockers are unchanged since v3 §5 (A1, C3, D9 BLOCKED; A9 UNVERIFIED; C2 FAIL; B4 EXCEPTION ACCEPTED; 22 PASS). `_CAPS` is 7 of 12 (`CGROUP_MEMORY`, `CGROUP_PIDS`, `FILESYSTEM_JAIL`, `MOUNT_NAMESPACE`, `NO_NEW_PRIVS`, `PID_NAMESPACE`, `UTS_NAMESPACE`); D11 is now PASS with the `destroy_requested` marker (reconciliation §19.1).
 
 ## 6. Current Verified State
 
-**VERIFIED**
-- `origin/sandbox-fabric` = `a574091` before this handoff's commit; `origin/main` = `69df55f`; branch `docs/known-issues-debt-039-debt-021` = `d379352`. (Unauthenticated `git ls-remote` on 2026-10-03.)
-- PR #47 merged. Its required checks were green: `tests`, `drift-and-ownership`, CodeQL (Analyze actions, Analyze python), Graphify. Only `KNOWN_ISSUES.md` changed (+2 −1); base was `4ab5345`. `KNOWN_ISSUES.md` on `main` has one DEBT-039 row (priority "Not yet triaged — to be set in review") and the rewritten DEBT-021 row ("explicitly incomplete", "stays open", priority Low, "not on `main`").
-- Code and tests are **unchanged since `2e8c74c`**: `git diff 2e8c74c HEAD -- core tests` is empty (the later commits touch only `handoff.md` and the reconciliation document). The test evidence below was produced at `2e8c74c` and still applies. **No test was rerun this session** because nothing but documentation changed.
-- At `2e8c74c`: DockerBackend suite 88/88 on three consecutive runs; full `tests/core/sandbox` 147 passed in one run; mypy clean on `docker_backend.py` and `test_docker_backend.py`; 0 containers, 0 shared-network endpoints and 0 artifact temp dirs after every run.
+**VERIFIED this session (2026-10-09)** by unauthenticated `git ls-remote` and a fresh clone: the remote refs in section 7; `sandbox-fabric` = `4f4578a`; the cited history SHAs are ancestors of that tip; the code and tests at `4f4578a` are byte-identical to those at `0411e6c` (tree `4e4a632dd4fcccd53e72074d8b21a02c0f42c6cb`), the tree on which the final loaded verification ran: `git diff 0411e6c 4f4578a` touches one file, the reconciliation document; `KNOWN_ISSUES.md` on `main` has one row each for DEBT-021, -038, -039, -040, -041; the docs branch `8847ccd` changes only three files under `docs/architecture/` (`git diff 4f4578a 8847ccd --name-only` outside that directory is empty); the two studies in it differ from their own branches only by the marked F10 edits (the B3 study is byte-identical).
 
-**IMPLEMENTED BUT NOT VERIFIED:** nothing known.
+**VERIFIED by the previous (pre-reset) session, evidence recorded in the merged PRs and reconciliation §19.1, not re-observed in v4**
+- D11: forced-interleaving test red 8/8 on unfixed code, green 15/15 after; loaded run of the original run+destroy test 0/36 failures after the fix, against 17/48 on the D7 branch and 3/36 on the untouched tip before it; mutations M1 to M6 all caught (M3 was the forbidden "exit code 137 alone means ERROR" shortcut); full `tests/core/sandbox` 6 runs × 153 passed on the fix branch and 6 more × 153 on tree `4e4a632d…`; 20/20 targeted runs per heartbeat test; mypy clean; drift check 15/15.
+- D7: 50/50 + 50/50 targeted runs; mutations A, B, C caught by both heartbeat tests; D (frozen heartbeat) caught only by the provably-alive test (a known limitation recorded in its docstring).
+- `test_net_proxy.py`: failed 19/30 standalone runs before, 0/60 after; a mutated proxy that drops data fails both fixed tests; `tests/core/sandbox` 147 passed twice at that time.
+- DEBT-039: reproduced 3/3, exploitable by port scan and on both CONNECT and plain HTTP (F1 to F4); F6 (host service on `0.0.0.0` reachable through the gateway; loopback refused) reproduced, and also observed on `NamespaceBackend` on `main` (once).
+- B3 study: with the static rule `-m addrtype --dst-type LOCAL --limit-iface-in`, per-sandbox bridges and real `AllowlistProxy` instances, sibling and host reach are closed, including against a `NET_RAW` sandbox crafting frames (F28). **Conditional on S1 to S7 (ruling D1).**
 
-**PROPOSED (not decided):** DEBT-039's priority and impact wording (left for the reviewer); the per-sandbox network/proxy binding as a design direction; the §17.5 follow-ups as separate debts.
+**IMPLEMENTED BUT NOT VERIFIED:** nothing known beyond the above.
 
-**BLOCKED / UNVERIFIED / FAIL:** the six items in section 5.
+**PROPOSED (not decided):** T-FW as the baseline (DG-1 is the selection gate); H2 (isolated bridge plus sidecar proxy) is **not yet evaluated** (batch B05); DEBT-039's priority (untriaged).
 
-**UNKNOWN:** the identity of the single unreproduced DockerBackend failure (v2 section 11); the cause of the `test_net_proxy.py` flake; the mechanism behind the C2 finding beyond the code-reading hypothesis; whether the 3 Dependabot findings on the default branch matter to the sandbox (never investigated).
+**DEFERRED / BLOCKED / UNVERIFIED:** A9, C3 (LSM host), D9 (no event producer), IPv6 isolation (UNVERIFIED: the dev kernel has `ipv6.disable=1`), the legacy-iptables variant, firewall-manager reloads and reboot persistence (not tested), `NamespaceBackend` sibling reach (not evaluated).
+
+**KNOWN LIMITATION OF THE BASELINE (user-accepted classification):** on a fresh boot of the previous environment, `test_c2_allowed_host_reaches_the_real_server_through_the_tunnel` failed 1 of 153 with a `502` because `example.com` did not resolve (the same tree had passed 12 of 12 earlier). The user ruled it an environmental failure: **"Environmental failure accepted; base remains behaviorally unverified for a 0-failure full suite in this environment."** Do not call the baseline green, and do not register this as a product defect. The hermetic test PR (section 17, step 2) is the remedy.
+
+**UNKNOWN:** whether DNS resolves `example.com` in the new environment (not tested in v4: Docker was not started); the origin of the F10 `403` beyond the egress-layer inference; what the four Dependabot findings are.
 
 ## 7. Git / Repository Checkpoint
 
-- Primary repository: `1h0lde4/ocbrain-v4.1`, remote `origin` = `https://github.com/1h0lde4/ocbrain-v4.1.git`
-- Work branch: `sandbox-fabric`. Base branch: `main`.
-- **Divergence:** `sandbox-fabric` is 36 commits ahead of and 27 behind `main` (merge-base `2e5cfc0`). The user merged `main` into `sandbox-fabric` twice (`68fd460`, `565ea3a`) and `main` has moved since (it now has the CodeQL work and PR #47). So **`sandbox-fabric`'s own `KNOWN_ISSUES.md` still carries the old DEBT-021 row and no DEBT-039**; `main`'s is the authoritative register. Merging `main` into `sandbox-fabric` is the user's call; do not do it unprompted.
-- Implementation and docs checkpoint ("transfer commit"): **`a574091`**, pushed and verified. Parent `fd7f057` (handoff v2), then `2e8c74c`.
-- Commits this session after v2: `a574091` (reconciliation §19.4 and the §18 edits).
-- Handoff commit: the commit that last touched this file. Find it with `git log -1 --format=%H -- handoff.md`; its parent is `a574091`.
-- `main` merge commit for PR #47: `69df55f` (parents `4ab5345`, `d379352`). The branch `docs/known-issues-debt-039-debt-021` still exists on the remote (not deleted).
-- Working tree: clean when this file was written. No relevant untracked or ignored files.
-- The local clone is `/home/claude/ocbrain-v4.1` in the session container only; reclone from the remote.
+- Primary repository: `1h0lde4/ocbrain-v4.1` (public), remote `https://github.com/1h0lde4/ocbrain-v4.1.git`.
+- Work lineage: `sandbox-fabric` (unprotected; CI in `.github/workflows/ci.yml` triggers only on PRs to `main`, so PRs into `sandbox-fabric` get only the Graphify check). Base of the whole lineage: `main`, which the ruling keeps out of the baseline decision.
+- Remote refs verified by unauthenticated `git ls-remote` on 2026-10-09 (the docs branch row immediately after its push), before the handoff branch was pushed:
+
+| Ref | Tip | Meaning |
+|---|---|---|
+| `sandbox-fabric` | `4f4578ace07315ff0d922f5fa912db908cfeecb4` | validated lineage: #50 `b895445`, #60 `23fff0b`, #68 `f544afd`, #64 `0411e6c`, #69 `4f4578a` |
+| `sandbox-network-isolation/b01-base` | `4f4578ace07315ff0d922f5fa912db908cfeecb4` | B01's ruled base |
+| `study/sandbox-network-redesign` | `ee525d957474795eadaee11fbb3a600d18efcad7` | study 1 |
+| `study/b3-host-firewall-supplement` | `34f4b388a5402a39064a589f963af66bb5f3e5c8` | study 2 |
+| `spec/sandbox-network-isolation-master` | `04dc92d35ee57d502f36404b452e4831818903c6` | specification + both studies |
+| `docs/network-isolation-spec-and-studies` | `8847ccd1b2b2dab0986bf66a955139e8ef53ee4d` | **the transfer commit** (below) |
+| `main` | `27d918db18d7d748b91b2a8babafb7339108da70` | merge of PR #71, 2026-10-09; it was `8c0ea03` when last recorded |
+
+- **Transfer commit:** `8847ccd` on `docs/network-isolation-spec-and-studies`, parent `4f4578a`, 3 files, +1697 lines, docs only. **It is a rebuild.** The first version of this commit (`ef798c2`, local only) was lost when the earlier environment was reset before it was pushed. The rebuild applies the same recipe (section 8) to the pushed branches; it is equal in intended content, but its line count differs by one from the +1696 recorded earlier, and the earlier number was not verifiable. Treat `8847ccd` as the only real commit.
+- Handoff commit: the commit that last touched `handoff.md` on `handoff/sandbox-network-isolation-v4`; its parent is `4f4578a`. Find it with `git log -1 --format=%H origin/handoff/sandbox-network-isolation-v4 -- handoff.md`. (This file cannot contain its own SHA.) The handoff branch deliberately does **not** contain the docs commit, so that the docs-only PR stays docs-only and the handoff PR is independent.
+- Working tree at handoff time: clean on both branches; the only local clone is `/home/claude/ocbrain-v4.1` in the session container (shallow; reclone from the remote).
+- Remote push status: both branches pushed; remote verification is recorded in section 13 (it is written after the pushes, in the final reply, and re-checkable with the command in section 18).
+- No pull request exists yet for `8847ccd` or for the handoff branch. PRs #47 to #50, #60, #64, #68, #69 are merged. Open the docs PR with `https://github.com/1h0lde4/ocbrain-v4.1/compare/sandbox-fabric...docs/network-isolation-spec-and-studies?expand=1` (base **`sandbox-fabric`**, not `main`).
 
 ## 8. Active Files / Modified Files / Artifacts
 
-- `docs/architecture/sandbox-execution-fabric-existing-code-reconciliation.md`: the evidence narrative. For workstream (B) read **§17** (17.2 the finding and its caveats, 17.4 the invariant, 17.5 separate follow-ups, 17.7 the verbatim reproduction script and output, 17.8 the `NET_NAMESPACE` withdrawal and its future gate), then §18 and §19 (**§19.4 is the completion decision**).
-- `core/sandbox/backends/docker_backend.py`: the implementation. Around its create path it builds the shared network and constructs `AllowlistProxy(bind_ip=gateway_ip, allowed_hosts=…)` (found by search this session at roughly line 625; line numbers drift). I did not otherwise re-read it this session.
-- `core/sandbox/backends/_net_proxy.py`: the existing `AllowlistProxy`, imported but never modified by DockerBackend (addendum B3). The redesign may legitimately change it. **Not read this session.**
-- `tests/core/sandbox/test_net_proxy.py`: the flaky file (section 11). `tests/core/sandbox/test_docker_backend.py`: 88 tests.
-- `KNOWN_ISSUES.md` (on `main`): DEBT-021, DEBT-038, DEBT-039 rows. It is about 174 KB with very long lines (a single row can run to tens of KB); use `grep … | cut -c1-200` and never print it whole.
-- `handoff.md`: this file.
-- Not in the repo and not reproducible from it: the scratch pytest plugin and mutation helper (v2 section 14); the stale `.bundle` file (delivered to the user earlier); a second, newer bundle of `a574091` (delivered to the user, also stale now that everything is pushed).
+- `docs/architecture/sandbox-network-isolation-master-specification.md` (666 lines): rulings (§2), threat model (§3), baseline T-FW (§4), invariants INV-1 to INV-9 (§5), conditions S1 to S7 (§6), provisioning/privilege (§7), capacity (§8), IPv6 (§9), lifecycle (§10), gate chain (§11), `NamespaceBackend` (§12), H2 study (§13), tests TC-01 to TC-21 (§14), file boundary (§15), batches (§16), traceability (§17), risks (§18), decisions OD-1 to OD-9 (§19), non-claims (§20). **Stale on two points, to be reconciled by a later docs change, not silently:** the §16 B00 row and the §19 "Still open" list describe the baseline *before* B00 was done (B00 is now done and #48/#49/#50 are merged).
+- `docs/architecture/sandbox-network-redesign-study.md` (354 lines) and `…sandbox-b3-host-firewall-supplement-study.md` (677 lines): evidence F1 to F28 with the scratch scripts E0 to E10 embedded verbatim in the appendices (the original `/tmp` scripts are gone; the appendices are the only copy). **Known nit, not corrected:** the redesign study's summary item 6 cites the `test_net_proxy.py` flake as "(F9)"; the evidence table uses F11 for it (F9 is the capability finding). Fix it in a later docs change; it was left alone so the docs-only PR carries only the ruled edits.
+- `core/sandbox/backends/docker_backend.py`: `_DockerRunState.cancel_requested` and `destroy_requested`; `destroy()` sets the latter before its first `await`, for RUNNING handles only; `_classify` precedence: OOM, then `cancel_requested` (CANCELLED), then `destroy_requested` (ERROR), then `exit_code is None` (ERROR), then normal completion. `_CAPS` is 7 of 12. `_build_create_args` has no `--cap-drop` (DEBT-041).
+- `tests/core/sandbox/test_docker_backend.py`: 153 tests in `tests/core/sandbox` in total. The shared atomic heartbeat writer (`_HEARTBEAT_LOOP`, write-temp-then-rename) is used by both heartbeat tests; six forced-interleaving D11 tests use events, not sleeps. **Line ~702: `test_c2_allowed_host_reaches_the_real_server_through_the_tunnel(net_backend, tmp_path)`, the test to make hermetic.** `example.com`/`example.org` also appear in `test_docker_backend.py` and `tests/core/sandbox/test_net_proxy.py` (grep, 2026-10-09; not assessed).
+- `tests/core/sandbox/test_net_proxy.py`: `_recv_to_eof` and `_send_and_recv_all` helpers; `_net_proxy.py` itself is unchanged.
+- **Recipe for the docs commit (if it ever has to be rebuilt):** branch from `origin/sandbox-fabric`; `git checkout 04dc92d -- docs/architecture/{sandbox-network-isolation-master-specification,sandbox-network-redesign-study,sandbox-b3-host-firewall-supplement-study}.md`; then apply the F10 wording edits to the redesign study (summary item 6; the F10 table row, status "VERIFIED that the proxy is not the source; the egress-layer origin is an INFERENCE"; §5 and §8 mentions; a new "F10 wording (October 8 2026)" bullet before "## 9. Not examined") and insert the "Hermeticity rule" paragraph in the specification before "**Evidence procedure.**". The raw appendix record of the original `403` observation is deliberately unchanged.
+- Not in the repository and not reproducible from it: the earlier conversation transcript (path inside the old container only); the Docker test image (rebuild command in section 14); the scratch pytest plugin and mutation helpers from earlier sessions; stale `.bundle` files delivered to the user earlier.
 
 ## 9. Changes Made
 
-Since version 2:
-- `a574091`: reconciliation §19.4 (completion decision, Result 2, the four decisions verbatim, the six non-PASS items with blockers, the narrow B4 acceptance); the §18 headline, the status vocabulary (new status `EXCEPTION ACCEPTED`), the B4 row, and the B4 bullets in §18.6 and §18.8. Documentation only.
-- PR #47 / `69df55f` on `main`: DEBT-039 registered, DEBT-021 rewritten. `KNOWN_ISSUES.md` only.
-- This file (version 3).
-- **No code, test, capability, schema or contract change.** `_CAPS` is unchanged at 7 of 12.
-
-Cumulative behavior changes of the DockerBackend workstream (v2 section 9): `create()` cleans or retains every acquired resource; `destroy()` confirms removal before forgetting a handle and runs under a per-handle lock; `cancel()` records intent and `run()` enforces it; a second `run()` raises `DockerBackendError`; `NETWORK_ALLOWLIST` and `NET_NAMESPACE` are withdrawn.
+Since v3 (all merged unless noted):
+- #48/#49 (user-merged) and a separate PR: DEBT-040 and DEBT-041 registered in `KNOWN_ISSUES.md` on `main`.
+- #50: `test_net_proxy.py` read-to-EOF fix (test only).
+- #60: `main` merged into `sandbox-fabric` by merge commit (B00 sync).
+- #64: D7 heartbeat atomic-writer fix (test only). #68: D11 causal-classification fix (`docker_backend.py` +22 −1, plus six tests). #69: reconciliation §19.1 closure evidence (docs).
+- **Pushed, unmerged:** `8847ccd` (docs only) and the branches in section 7.
+- No capability, schema, contract or `_net_proxy.py` change. `_CAPS` is still 7 of 12.
 
 ## 10. Decisions & Rationale
 
-Settled earlier (v2 section 10), condensed: DEC-1 D10 stays inside the DockerBackend module and its tests. DEC-2 `NETWORK_ALLOWLIST` withdrawn. DEC-3 `NET_NAMESPACE` withdrawn (claim only; implementation unchanged); re-earned only by a direct committed test, and re-earning it does not resurrect `NETWORK_ALLOWLIST` or C2. DEC-4 the shared network's lifecycle (persist vs remove) is **undecided** and belongs to the redesign. DEC-5 C2 = FAIL; DEBT-039 is a separate security finding; the invariant (section 4) and the concurrent A/B gate. DEC-6 the A9/C3/D9/B4 statuses. DEC-7 D11 = PASS via record retention plus a per-handle lock. DEC-8 cancel enforcement lives in `run()`; `cancel()` never waits for start and no lock is added. DEC-10 tests assert effective state, not the built request.
-
-New this session:
-
-| ID | Decision | Status | Authority | Reopen condition |
-|---|---|---|---|---|
-| DEC-9 | The id is **DEBT-039** (not DEBT-038, which is `main`'s `/distill` `module_name` traversal, PRs #37/#38) | Settled | User confirmation | n/a |
-| DEC-11 | `sandbox-fabric` completion = Result 2, explicitly incomplete | Settled | User | New evidence on a non-PASS item |
-| DEC-12 | B4 exception accepted for `handoff.md` only | Settled | User | The user explicitly extends it |
-| DEC-13 | D9 stays BLOCKED; no `EventStream` workstream within the closure | Settled | User | The user opens it |
-| DEC-14 | The network redesign was not opened inside the closure; the user then listed the *study* as the step after the handoff refresh | Settled | User | n/a |
-| DEC-15 | DEBT-039 and the DEBT-021 update go through a separate PR; DEBT-039's priority is left untriaged for the reviewer | Settled | User | n/a |
-| DEC-16 | PR #47 was merged with a **merge commit** (the repo's recent convention, #40 and #43). The user did not name a method | Assistant's choice, no objection | n/a | The user prefers another method |
-| DEC-17 | The merged PR branch was left undeleted (repo default) | Assistant's choice | n/a | The user asks for deletion |
+| ID | Decision | Status | Authority | Evidence | Reopen condition |
+|---|---|---|---|---|---|
+| DEC-1..17 | v3 §10 (D10 stays in the module; `NETWORK_ALLOWLIST` and `NET_NAMESPACE` withdrawn; C2 = FAIL; DEC-4 the shared network's lifecycle was undecided and is now addressed by the **proposed** per-sandbox-network design (T-FW, pending DG-1), not decided; Result 2; B4 narrow; D9 BLOCKED; DEBT-039 id; merge commits) | Settled | User / v3 | v3 | per v3 |
+| DEC-18 | D7 is a **test defect** (the grandchild's `date > file` truncates before writing, so a host read could see an empty file) | Settled | User ruling, evidence 12,987 empty reads of 1,621,719 | PR #64; 0 of 3,682,713 after | New contrary evidence |
+| DEC-19 | D11 is a **genuine product defect**, not environmental | Settled | User ruling | PR #68 | A verified contradiction |
+| DEC-20 | The fresh-boot C2 failure is **environmental** (DNS), accepted; the base stays "behaviorally unverified for a 0-failure full suite in this environment" | Settled | User ruling | §6 | n/a; the hermetic PR removes the dependency |
+| DEC-21 | D1 to D5 (conditional B3 ratification; one-time provisioning; evaluate H2; `NamespaceBackend` in scope; 29-network and IPv6 requirements) | Settled | User | specification §2 | S1 to S7 not all enforceable; or H2 beats T-FW at DG-1 |
+| DEC-22 | OD-1 to OD-9, including: T-FW is the **proposed** baseline, DG-1 still selects; PORT 3128; canary negative probe = own gateway at an ephemeral port; `min(29, probe)`; file boundary; DEBT-041 not on the critical path | Settled | User | specification §19 | the cited condition in each ruling |
+| DEC-23 | B01's base is the validated `sandbox-fabric` lineage at `4f4578a`; `main` stays out of the baseline decision | Settled | User | §3 item 24 | The user rules otherwise |
+| DEC-24 | The F10 `403` is attributed to this environment's egress layer, marked an **inference**; a test needing an upstream uses a host-local loopback server, never an external name | Settled | User ruling | study F10 row; specification "Hermeticity rule" | The origin of a `403` is captured and differs |
+| DEC-25 | The v4 handoff lives on its own branch `handoff/sandbox-network-isolation-v4` from `sandbox-fabric`, independent of the docs-only PR | **Assistant's choice** (the user asked for a handoff, not a location) | n/a | §7 | The user prefers a direct commit to `sandbox-fabric` (the v2/v3 precedent) |
+| DEC-26 | The docs commit was rebuilt rather than recovered, and `gh` could not open a PR; the PR is left to the user's link or a valid token | Forced by the environment | n/a | §14 | A valid authentication appears |
 
 ## 11. Investigation Already Performed
 
-| Area | Inspected | Result | Revisit trigger |
-|---|---|---|---|
-| Closure audit | Checklist read literally; the 28-item matrix; B and D12 audits | Reconciled (reconciliation §18, §19) | A checklist amendment |
-| The C2 finding | Scratch A/B probe (reconciliation §17.7) | B reached A's proxy: `403`, `200`, `200` for the three probes. B was *handed* A's port; scanning for it was **not** demonstrated; only `CONNECT` was tried | The study |
-| Mechanism | Code reading: each sandbox's `AllowlistProxy` binds the one shared network's gateway IP; `enable_icc=false` constrains container-to-container traffic, not container-to-gateway | **Hypothesis, not separately verified** | The study |
-| Possible LSM on the dev host | Kernel config, `/sys/kernel/security/lsm` | AppArmor not compiled in; SELinux compiled in but no policy loaded; a policy load was not attempted | A host with a policy loaded |
-| Artifact collector | Symlinks, a FIFO | Fixed or recorded in v2 | n/a |
-| Event producers (D9) | `grep` across the repo | None publishes | A producer is added |
-| `main` branch protection (GitHub API) | Rules for `main` | Required checks `tests` and `drift-and-ownership`; "strict" (branch must be up to date); no required reviews; admins enforced; no rulesets. CI runs on PRs to `main` and takes roughly four minutes. All three merge methods are allowed; `main` history uses merge commits | A rules change |
-| `KNOWN_ISSUES.md` shape | Structure | Table columns: ID, Category, Description, Priority, Impact. Rows for DEBT-037, DEBT-038, DEBT-039 sit together in the Active table | n/a |
-| Not inspected | `_net_proxy.py` internals; the shared-network creation code in `docker_backend.py`; the plain-HTTP path's two unexplained behaviors; Dependabot findings | | The study |
+| Area | Inspected | Result | Evidence | Revisit trigger |
+|---|---|---|---|---|
+| DEBT-039 mechanism | `_net_proxy.py:82` `client, _addr = server_sock.accept()` discards the caller address; reproduction with real proxies | Sibling-proxy reach confirmed (F1 to F4), also without a handed port, on `CONNECT` and plain HTTP | redesign study §3, Appendix A, B | The proxy or topology changes |
+| F6 | Host service bound to `0.0.0.0` reached through the sandbox gateway; loopback refused; traffic traverses `INPUT`, not `DOCKER-USER` (F12) | Confirmed for `DockerBackend`; once on `NamespaceBackend` on `main` | redesign study F5/F6, B3 study E1/E2 | `NamespaceBackend` audit (B04) |
+| Capacity | Default address pools | 29 internal networks, then "all predefined address pools have been fully subnetted" (F8) | study F8 | A different Docker version or pool config |
+| Privileges | Sandbox uid and capabilities | uid 0, CapEff `0xa80425fb`, includes `NET_RAW`, not `NET_ADMIN` (F9, F13) | study F9 | DEBT-041 hardening |
+| Firewall viability | Per-sandbox rules (F14, F15), spoofing on a shared network (F16), crash/stale rules (F17 to F19), static rule hazards (F20 to F22), IPv6 (F23, F26), `NamespaceBackend` (F24), the destination match (F28) | A static pair of rules with `--dst-type LOCAL --limit-iface-in` closes sibling and host reach even against `NET_RAW` frames | B3 study §4, §5, E1 to E9 | S1 to S7 cannot all be enforced |
+| F10 | Direct host `GET` to `example.com`/`example.org` returned `403`; in a later boot those names did not resolve while `github.com` and `pypi.org` did | The proxy is not the source (VERIFIED); the egress layer is the likely source (INFERENCE) | study F10 row | A captured response with a different origin |
+| F11 | `test_net_proxy.py` two tests asserted on a single `recv(4096)` | Test-side defect; fixed | PR #50 | n/a |
+| Canary design | E10: ordinary-socket connect to the host primary address fails with `ENETUNREACH` without rules | A host-primary negative probe would report "enforced" on an unprotected host; use own gateway | specification Appendix A.E10 | A topology change |
+| CI | `ci.yml` triggers; PR #55 behavior of the `tests` gate | Honors pytest's exit code; tolerates only manifest-listed failures with exit code 1 | reconciliation, `ci.yml` | A CI change |
+| **Not examined** | H2 (B05); `NamespaceBackend` sibling reach (B04); IPv6; legacy iptables; firewall managers; the four Dependabot findings; the other external-name uses in `test_net_proxy.py`; DEBT-039 triage | | | per the batch |
 
 ## 12. Failed Attempts / Dead Ends
 
-Version 2's table (section 12) still stands: a combined D5 symlink test; a `kill -9 $$` PID 1 test; a noisy D10 red phase; running the FIFO test in-process; sourcing the Docker start script with output discarded; bash-isms in `dash`; pushing before checking the remote; a custom seccomp profile for the `AF_VSOCK` bypass (seccomp cannot filter `socketcall(2)` arguments). New this session:
+v2 §12 and v3 §12 still stand. New:
 
 | Approach | Result | Cause | Retry? |
 |---|---|---|---|
-| Pushing `a574091` with no credentials | `fatal: could not read Username` | No authentication is configured in the container | Not until the user supplies credentials (they did, section 3 item 12) |
-| Counting statuses by the first word of the Status cell | Printed 22 / 1 / 2 / 2 / 1 | D9's status is `UNVERIFIED — BLOCKED` and the script bucketed it by its first word | The intended tally counts D9 **once, under BLOCKED**; say so when re-deriving it |
+| E3/E4 script deleting rules by position number | 5 stray `INPUT` rules; baseline comparison printed False | Positions shift after each delete | No: delete by specification (recorded as F27) |
+| Static rule without a destination match (F20 as first written) | A `NET_RAW` sandbox reached siblings and the host with crafted `AF_PACKET` frames | Only honest traffic had been tested | No: use `-m addrtype --dst-type LOCAL --limit-iface-in` (F28); the study text was amended in place, original in `d143dd5` |
+| E9 probe as an IP-level raw send | `ENETUNREACH` | No route | No: use Ethernet frames |
+| Mutant M2 first form | Syntax error, invalid mutant | Authoring slip | Redone correctly |
+| Host primary IPv4 as the canary's negative probe (reviewer suggestion) | Fails with `ENETUNREACH` even with no rules (E10) | No route from the sandbox | No: own gateway at an ephemeral port |
+| "Retained for compatibility" as the rationale for port 3128 | Not adopted | Unverifiable | No |
+| Treating the D11 red as environmental | Rejected by the user | It was a real race | No |
+| A merge call with a placeholder guard SHA (#50) | The first call did not merge; the second, correctly guarded, did | My slip | Always guard with the real head SHA |
+| A suite loop over the 300 s tool cap | Cut off | Tool-call limit | Use ≤3 suite runs per call |
+| Detached Docker daemon start | No output, no daemon | The daemon dies between tool calls | Start it in the same call; abort unless it prints `docker: ready` |
+| `gh pr create`/`gh auth` in the v4 environment | "The token in GH_TOKEN is invalid"; unset gives "not logged into any GitHub hosts" | Invalid environment token | Only with a valid authentication the user provides |
 
 ## 13. Verification Evidence
 
-- Tally: the §18.2 Status column parsed after the edit: 28 rows; A1 and C3 BLOCKED, A9 UNVERIFIED, D9 `UNVERIFIED — BLOCKED`, C2 FAIL, B4 EXCEPTION ACCEPTED, 22 PASS (22 + 1 + 1 + 3 + 1 = 28 with D9 counted under BLOCKED).
-- `git diff 2e8c74c HEAD -- core tests` → empty. `a574091` touches one file (the reconciliation document); `fd7f057` touches one file (`handoff.md`).
-- Push of `a574091`: fast-forward `fd7f057..a574091`; `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric` returned `a57409130a9873fe4c40f984912e8fdfa1737e92` (unauthenticated).
-- PR #47: opened (head `d379352`, base `4ab5345`, `main` tip unchanged at open); 1 file, 1 commit; required checks green; `mergeable_state` was `clean`; merged with a head-SHA guard as `69df55f`; afterwards `git ls-remote` showed `main` = `69df55f`, `git diff 4ab5345 origin/main` listed `KNOWN_ISSUES.md` only, and `grep -c '^| DEBT-039 |'` on `main`'s file returned 1.
-- For all test, mypy, mutation (M1 to M26), orphan-check and `test_net_proxy.py` flake evidence, see version 2, section 13 and reconciliation §§17 to 19. **Standalone `test_net_proxy.py` failed 3 of 6 runs** (`test_plain_http_to_allowed_host_is_forwarded` twice, `test_connect_to_allowed_host_tunnels_real_data` once); inside the full suite it usually passes, which hides the frequency. DockerBackend does not touch it.
+- **Matrix tally** (parsed, previous session): 22 PASS / 1 FAIL / 3 BLOCKED / 1 UNVERIFIED / 1 EXCEPTION ACCEPTED = 28.
+- **Merged lineage:** `git cat-file -t` returned `commit` and `git merge-base --is-ancestor <sha> origin/sandbox-fabric` succeeded for `1b829fc`, `fd7f057`, `9310155`, `b895445`, `23fff0b`, `f544afd`, `0411e6c`, `4f4578a`, `a574091` (2026-10-09, fetch depth 80).
+- **Tree identity:** `git rev-parse 0411e6c^{tree}` = `4e4a632dd4fcccd53e72074d8b21a02c0f42c6cb`; `git diff --name-only 0411e6c 4f4578a | grep -vc '^docs/'` = 0.
+- **Docs commit:** `git diff 4f4578a 8847ccd --name-only` lists exactly the three `docs/architecture/` files; the B3 study is byte-identical to `34f4b38`'s (`cmp`); the redesign study differs from `ee525d9`'s only in lines 22, 37, 76, 115 and the added bullet; the specification differs from `04dc92d`'s only by the added hermeticity paragraph; no remaining occurrence of "host's upstream" except the two intentional historical quotes.
+- **Remote:** unauthenticated `git ls-remote` returned `8847ccd1b2b2dab0986bf66a955139e8ef53ee4d` for `docs/network-isolation-spec-and-studies` right after the push. The handoff branch's tip is verified the same way and reported in the final reply.
+- **Not run in v4:** no test, mypy, drift check or Docker command (nothing but documentation changed; Docker was not started). The test evidence in section 6 was produced in the previous environment on tree `4e4a632d…`, which equals the code of `4f4578a`.
+- **Dependabot (push banner, 2026-10-09):** "4 vulnerabilities (2 critical, 2 high)" on the default branch; v3 recorded 3 (1 critical, 2 high). Never investigated.
+- **Failure classification summary:** D7 = test defect (fixed); D11 = product defect (fixed); `test_net_proxy.py` flake = test defect (fixed); fresh-boot C2 `502` = environmental, user-accepted, **not fixed yet**; baseline full suite = behaviorally unverified here.
 
 ## 14. Environment / Tooling Assumptions
 
-- Dev container (carried from version 2; **not re-observed this session**, because Docker was never started): Ubuntu 24.04; kernel `6.18.44-fc-v50` (a Firecracker microVM; the value drifts); Python 3.12; Docker Engine 29.1.3 (Ubuntu's `docker.io`); cgroup v1 with `cgroupfs`; no AppArmor; shell is `dash`. **The Docker daemon is not running in a fresh container**, and the VM can restart mid-session (the filesystem and the Docker image survive; the daemon does not). Workstream (B) will need Docker to reproduce the finding.
-- Start script (recreate at `/home/claude/start_docker.sh`; source it with `. /home/claude/start_docker.sh`, **never discard its output, abort unless it prints `docker: ready`**; a cold start can exceed the 20 s wait):
-
-```sh
-#!/bin/sh
-if ! docker info > /dev/null 2>&1; then
-    containerd > /var/log/containerd.log 2>&1 &
-    sleep 3
-    dockerd > /var/log/dockerd.log 2>&1 &
-    i=0
-    while [ $i -lt 20 ]; do
-        docker info > /dev/null 2>&1 && break
-        i=$((i + 1))
-        sleep 1
-    done
-fi
-docker info > /dev/null 2>&1 && echo "docker: ready" || echo "docker: FAILED -- $(tail -8 /var/log/dockerd.log)"
-```
-
-- Install if absent: `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y docker.io gcc-multilib libc6-dev-i386`; `pip install pytest pytest-asyncio mypy --break-system-packages`. No registry is reachable (`registry-1.docker.io`, `ghcr.io` return 403).
-- Test image (not in git; rebuild): `tar -C / -c --exclude=proc --exclude=sys --exclude=dev --exclude=tmp --exclude=run --exclude=home/claude --exclude=mnt --exclude=var/lib/docker --exclude=var/lib/containerd bin sbin lib lib64 usr etc | docker import - ocbrain-test/base:local`, then `export OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local`.
-- Test commands: `python3 -m pytest tests/core/sandbox/test_docker_backend.py -q --asyncio-mode=auto -p no:cacheprovider` (about 55 s); the full `tests/core/sandbox` with `-rf --tb=short`; `python3 -m mypy core/sandbox/backends/docker_backend.py tests/core/sandbox/test_docker_backend.py --ignore-missing-imports --explicit-package-bases`. After each run, the orphan check: `docker ps -aq | wc -l` is 0, the shared network has no endpoints, and `ls -d /tmp/ocbrain-docker-artifacts-*` is empty.
-- The reproduction script for the finding is verbatim in reconciliation §17.7. It uses `ocbrain-test/base:local` and writes under `/tmp/xsb-A` and `/tmp/xsb-B`.
-- Network egress from the container is allowlisted: package registries, `github.com`, `api.github.com`, `raw.githubusercontent.com` and a few others. The GitHub REST API worked from the container for opening and merging a PR.
-- **Credentials.** No secret is stored in the repo, in this file or in memory. The user pasted a GitHub personal access token into the chat (it is also in their preferences). It was used in this session for exactly three kinds of operation, all explicitly requested: pushing `sandbox-fabric`, pushing the PR branch, and the REST calls that opened, checked and merged PR #47. It was passed per command only (`git -c http.extraheader="Authorization: Basic …"` for git, `Authorization: Bearer …` for the API), output was redacted, nothing was written to git config, a remote URL or a file, and it was never printed. **Do not copy it anywhere.** The user has said twice that it should be revoked and it may already be. If a push or API call returns 401, stop and ask for new authentication. If authentication is missing, ask the user to supply it; do not look for it in memory or files.
+- **Authentication (v4).** The environment's `GH_TOKEN`/`GITHUB_TOKEN` are **invalid**; `gh` has no usable login. What worked: attaching the repository through the session's repository tool with **push access**, after which `git clone`/`git push` to `https://github.com/1h0lde4/ocbrain-v4.1` succeed through the session's git credential injection (no token supplied by the user, none printed or stored). **What did not work:** anything needing the GitHub REST API (`gh pr create`, merges, reading PR state): so in this environment a PR can be created only with a valid token. A GitHub token appears in the user's preferences and was pasted in earlier chats; the user said not to use the one from preferences and to revoke tokens. **Do not use, request, print or store any token; do not write one into a file, a remote URL, git config or this handoff.** If a new session has working `gh` auth, use it per command only. If it does not, give the user the compare link (section 7) and stop.
+- Container: Linux kernel `6.18.44-fc-v80` (Firecracker microVM; drifts), 1 core, `git 2.43.0`, `gh 2.89.0`, outbound HTTPS only through the agent proxy (CA bundle `/root/.ccr/ca-bundle.crt`; never disable TLS verification). A shallow clone of a large repo can be slow: use a generous timeout; at most two concurrent smart-HTTP operations (a third returns 429: wait 10 s, retry once).
+- **Docker (from the previous environment; re-verify):** Docker 29.1.3 (`docker.io`), cgroup v1 with `cgroupfs`, iptables v1.8.10 (nf_tables), `ipv6.disable=1` (IPv6 untestable), **the daemon dies between tool calls**: start it in the same call as the work and abort unless it prints `docker: ready` (script in v3 §14; recreate it at `/home/claude/start_docker.sh`). **A single tool call is capped at 300 s** (use ≤3 full-suite runs per call). No registry is reachable (`registry-1.docker.io`, `ghcr.io` return 403). Test image (rebuild): `tar -C / -c --exclude=proc --exclude=sys --exclude=dev --exclude=tmp --exclude=run --exclude=home/claude --exclude=mnt --exclude=var/lib/docker --exclude=var/lib/containerd bin sbin lib lib64 usr etc | docker import - ocbrain-test/base:local`, then `export OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local`. Install if absent: `apt-get install -y docker.io` and `pip install pytest pytest-asyncio mypy --break-system-packages`.
+- **DNS:** in the earlier fresh boot `example.com` and `example.org` did not resolve while `github.com` and `pypi.org` did. Check `getent hosts example.com` before blaming a test; this is the reason for the hermetic PR.
+- Commands: `python3 -m pytest tests/core/sandbox -q --asyncio-mode=auto -p no:cacheprovider -rf --tb=short` (expect 153 tests); `python3 -m mypy core/sandbox/backends/docker_backend.py tests/core/sandbox/test_docker_backend.py --ignore-missing-imports --explicit-package-bases`; `python3 scripts/check_drift.py` (15 checks); orphan check after each run: `docker ps -aq | wc -l` is 0 and no endpoints on the shared network.
+- `KNOWN_ISSUES.md` is about 174 KB with very long lines: use `grep … | cut -c1-200`, never print it whole.
 
 ## 15. Unresolved Questions / Risks / Blockers
 
 | Item | Evidence | Options | Safe to continue without it? |
 |---|---|---|---|
-| **Study deliverable and branch** | The user said "start the network-redesign study" and nothing more | Ask: a document under `docs/architecture/`? on a new branch from `sandbox-fabric` or from `main`? | **No: ask first** |
-| **Token revocation** | The token is in the user's preferences and in this conversation, and was used for several remote writes | The user revokes it and configures authentication in the environment | Yes, but nothing should be pushed without valid authentication |
-| **DEBT-039 priority** | Row says "Not yet triaged — to be set in review" | A reviewer sets it; do not set it unprompted | Yes |
-| **B4 and the reconciliation document** | The acceptance names `handoff.md` only | The user may extend it explicitly | Yes |
-| **`sandbox-fabric` diverged from `main`** (36 ahead, 27 behind) | Section 7 | The user decides if and when to merge `main` in | Yes |
-| **Redesign open questions** | DEC-4; scanning for a sibling's port not demonstrated; only `CONNECT` tried; plain-HTTP path has two unexplained behaviors; the mechanism is a hypothesis; whether an `AF_VSOCK` socket offers another route is untested | The study | It is the study |
-| **D9** | No event producer | A later decision | Yes |
-| **A9 / C3 host** | See section 5 | An LSM-enabled host plus a Docker release with the socketcall fix; a kernel with `AF_ALG` | Yes |
-| **Dependabot** | Every push prints "3 vulnerabilities (1 critical, 2 high)" on the default branch; never investigated | A different workstream; needs the user's go-ahead | Yes |
-| §17.5 follow-ups | `RUNNING` left after a failed `docker start` spawn; the create-unwind residual; a finalizer for failing D10 tests; the stale module docstring in the test file; a relative escaping symlink empties the manifest silently | Separate debts | Yes |
-| Untested | `docker build` `RepoDigests`; artifact hard links and workspace size; `FILESYSTEM_JAIL` vectors (`/dev/shm`, `/proc`, `/sys`, mount attempts) | Optional | Yes |
+| **PR for the docs branch cannot be opened by the assistant here** | §14 | The user opens it from the compare link, or supplies a working authentication in the new session | Yes for writing code, **no** for the ruled order (merge before the hermetic PR is revalidated) |
+| **Merge authority for the docs PR** | The Oct 8 ruling says "land it" and the order lists "→ merge"; the standing rule is that "continue" is never a merge authorization | Treat the Oct 8 ruling as covering this one PR once opened and green; if the opening message of the new session does not say so, ask once | Ask before merging |
+| **Q11b: advance `sandbox-network-isolation/b01-base`?** | It stays at `4f4578a`, without the specification, studies or the hermetic fix | A fast-forward-only move after both PRs merge; or leave it and branch B01 from `sandbox-fabric`'s new tip | Yes; decide before B01 |
+| **Hermetic test design risks** | An allowlisted loopback upstream worked in earlier probes (`AllowlistProxy(..., allowed_hosts=["127.0.0.1"])` with a host loopback server). Whether `DockerBackend`'s request validation or `admission.py` accepts `127.0.0.1` as an allowed host is **unverified**; `admission.py` may not be changed | Test it; if the validation rejects loopback, report it and ask: do not edit `admission.py` | The PR is blocked until resolved |
+| **Specification staleness** | §16 B00 and §19 "Still open" predate B00 | A small docs change after the merge | Yes |
+| **H2 not evaluated** | B05 not started | Run B05 before DG-1; no effort on the firewall path before it (ruling) | Yes until DG-1 |
+| **Token revocation** | §14 | User action at GitHub | Yes; nothing may be stored |
+| **DEBT-039 priority** | "Not yet triaged" | A reviewer; not the assistant | Yes |
+| **Dependabot** | 4 findings now | Separate track, needs the user's go-ahead | Yes |
+| **`main` divergence** | `main` = `27d918d`, `sandbox-fabric` = `4f4578a` | The user decides; no wholesale merge without a tree check | Yes |
+| **IPv6 / legacy iptables / firewall managers** | Not testable or not tested | Specification §9, OD-9; the canary is the fail-closed detector | Yes |
+| Other tracks (A9/C3 LSM host, D9 producer, §17.5 follow-ups) | v3 §15 | Separate | Yes |
 
 ## 16. Relevant Information / References
 
-- Reconciliation document, §§17 to 19 (see section 8).
-- `docs/architecture/PROJECT_INSTRUCTIONS.md`: §18.4.8 is the handoff format used here.
-- `KNOWN_ISSUES.md` on `main`: DEBT-021 (rewritten), DEBT-038 (`/distill` traversal), DEBT-039 (this finding).
-- PR #47: `https://github.com/1h0lde4/ocbrain-v4.1/pull/47`.
-- Upstream references in reconciliation §12: `moby/moby#52537` (the earlier `AF_ALG` fix) and `moby/moby#53551` (the socketcall/`AF_VSOCK` fix, Engine 29.8.0). The installed Docker 29.1.3 predates both.
-- Earlier handoffs: v1 `git show 9310155:handoff.md`; v2 `git show fd7f057:handoff.md`.
-- Repository caution: the user's rule elsewhere in this project is that a merge needs an explicit instruction every time and the word "continue" is not authorization to merge. In this session PR #47 was merged only on the user's explicit "Open → verify → CI → merge" instruction.
+- Specification §14 (test catalogue TC-01 to TC-21), §16 (batches B00 to B30), §19 (rulings); B3 study §7 (regression tests), §8 (decisions); redesign study §4 to §6.
+- Closure and defect records: reconciliation §17 (finding), §18 and §19.1 (D11 identified, then "CLOSED on new evidence"), §19.4 (Result 2).
+- `KNOWN_ISSUES.md` on `main`: DEBT-021 (explicitly incomplete, stays open, priority Low), DEBT-038 (a different item: `main`'s `/distill` traversal), DEBT-039, DEBT-040, DEBT-041.
+- Upstream references (reconciliation §12): `moby/moby#52537` and `moby/moby#53551` (socketcall/`AF_VSOCK`; Engine 29.8.0). The installed Docker 29.1.3 predates both.
+- Draft PR body for the docs PR (Appendix A below). Attribution lines for commits and PRs are set by the session environment; do not hand-copy session URLs from this file.
+- Repository cautions: PR merges use a **merge commit** and a head-SHA guard; `sandbox-fabric` is unprotected (so a push can land without review: never force); the `tests` gate in CI tolerates only manifest-listed failures and the manifest must never be used to hide a gate.
 
 ## 17. Next Steps
 
-In order. Step 1 and 2 are mandatory before any study work.
+In order. Steps 0 and 1 precede everything.
 
-1. **Resume and verify** (section 18). No code change is expected from this step.
-2. **Ask the user** (one message): where the study should live and on which branch, and what "done" means for it; and confirm that the study stops at a design with an evidence plan, with implementation only after a separate go-ahead. Expected verification: the answer is recorded in the next handoff or the study document.
-3. **Recreate the Docker host** (section 14) and confirm `docker: ready`. Rebuild the test image.
-4. **Reproduce the baseline.** Run the §17.7 probe on the current host and confirm the same three results (`403`, `200`, `200`). Why: the kernel and Docker drift; the study should start from a reproduced finding, not an inherited one. Also run `test_net_proxy.py` alone several times to establish the flake rate before changing anything.
-5. **Read** `_net_proxy.py` and the network-setup and proxy-construction code in `docker_backend.py`. Establish where the proxy binds, how the shared network is created and removed, and how a proxy could identify its caller.
-6. **Test the hypothesis separately** (§17.2 calls it unverified): does the proxy accept any caller on the gateway; is the port discoverable by scanning (not yet demonstrated); does plain HTTP behave like `CONNECT`; do the two unexplained plain-HTTP behaviors (§17.5) bear on the finding.
-7. **Enumerate design options against the invariant**, with trade-offs and a migration path: a per-sandbox network and proxy binding is one candidate, a source-identity check in the proxy is another, and there may be more. None is a decision. Include the shared-network lifecycle decision (DEC-4).
-8. **Specify the gates** the redesign must pass: the concurrent A/B test with deliberately different allowlists (shape in §17.7), and the direct `NET_NAMESPACE` gate (§17.8: netns distinct from the host's; concurrently created sandboxes have pairwise-distinct netns). Passing the second re-earns `NET_NAMESPACE` only.
-9. **Write the study** where the user said, on its own branch. Keep it to the study: no code change unless the user authorizes it. Promote any durable result into `KNOWN_ISSUES.md` or `CURRENT_STATE.md` only through a separate PR.
-10. **Push** the study branch with the fast-forward guard (section 18). Open a PR only when asked, and merge only on an explicit instruction.
-11. Do **not** start A9/C3, D9, Dependabot or the §17.5 follow-ups inside this workstream.
-
-Expected verification for step 4: the three probe lines match §17.7's output.
+0. **Resume and verify** (section 18). Expected: the refs in section 7; no code changes needed.
+1. **Open the docs PR** `docs/network-isolation-spec-and-studies` → `sandbox-fabric` (compare link in section 7, body in Appendix A). Verify the PR's diff is exactly three files under `docs/architecture/` and base `4f4578a`. Merge **as a merge commit, guarded by the head SHA `8847ccd…`**, only on the user's explicit instruction (section 15). After the merge: `git ls-remote` shows `sandbox-fabric` beyond `4f4578a` and `git diff 4f4578a origin/sandbox-fabric --name-only` lists the three docs.
+2. **Hermetic C2 test PR** (new branch from the merged `sandbox-fabric`, e.g. `fix/test-c2-hermetic-upstream`; its own PR; touches only `tests/core/sandbox/test_docker_backend.py`):
+   a. Read the test at ~line 702 and its fixture `net_backend`; keep it exercising **the same tunnel and allowlist path** (CONNECT through the sandbox's `AllowlistProxy`), replacing only the external upstream with a deterministic host-local loopback server the test starts and stops itself.
+   b. Prove: passes with DNS broken (for example, run it with `example.com` unresolvable, such as an invalid resolver or a hosts override, inside a scratch process, not committed); repeated runs (≥20); mutation check (reject the allowed host, break the tunnel, drop the data: the test must fail each time); the full `tests/core/sandbox` suite shows **153 passed**; mypy and `check_drift.py` clean.
+   c. Do not add anything to the known-failures manifest, do not add retries or sleeps, do not touch `admission.py`/`_net_proxy.py`. Assess the other `example.com`/`example.org` uses in the two test files and **report** them; widen the PR only with the user's agreement.
+   d. Merge (merge commit, guarded) only on an explicit instruction, then **revalidate the merged tip** (full suite, 0 failures, in an environment where Docker works) and record the exact commands and outcomes. Only then may anyone say the base is behaviorally verified, and only for that environment.
+3. **Decide Q11b** (`b01-base`) with the user, then start **B01** (red contract-conformance suite, strict expected-failure markers naming DEBT-039 and DEBT-040; specification §16 B01) on its own branch and PR.
+4. In the ruled order: **B02** (`NET_NAMESPACE` direct gate), **B03** (capacity and IPv6 guard primitives), **B05** (H2 comparative study), then **B04** (`NamespaceBackend` audit, after B01). **DG-1** after B01 and B05; **DG-2** after B04: both are user decisions.
+5. Only if DG-1 selects T-FW: **B10** (provisioning script and verification), **B11**, **B12** (canary; pinned image digest), **B13**, **B21**, **B22**; B14 is optional and needs an IPv6-capable host; **B30** is gated by DG-2. DEBT-041 hardening is scheduled after B13 and B21 (OD-8). Every batch runs `python3 scripts/check_drift.py`, has its own branch, PR and evidence recorded in the reconciliation document (OD-6).
+6. Docs housekeeping, separate small PRs: reconcile specification §16 B00 and §19 "Still open"; fix the "(F9)" cross-reference nit in the redesign study; register closures in `KNOWN_ISSUES.md` only through its own PR from `main`.
 
 ## 18. Resume Instructions
 
-1. `git clone https://github.com/1h0lde4/ocbrain-v4.1.git` (public; read access needs no token); `git switch sandbox-fabric`. Confirm `git log -1 --format=%H -- handoff.md` is an ancestor of, or equal to, `HEAD`, and that `a574091` is an ancestor of `HEAD`.
-2. Confirm the remote: `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric refs/heads/main`. `sandbox-fabric` should be at or beyond the handoff commit; `main` should be at or beyond `69df55f`. If `sandbox-fabric` has moved ahead (the user merges into it from their own machine), **fast-forward local to it before committing anything.**
-3. Confirm `main`'s register: `git show origin/main:KNOWN_ISSUES.md | grep -c '^| DEBT-039 |'` returns 1.
-4. Read reconciliation §§17 to 19 before trusting any status in this file. The repository is the authority; this file is a transfer record.
-5. Before any push: `git fetch`; push only if `origin/<branch>` is an ancestor of `HEAD`. If it is not, **stop and report; never force.**
-6. Reply in English. Do not use, request, print or store the token (section 14).
-7. Begin from section 17, step 2. Do not reconstruct completed work.
+1. `git clone https://github.com/1h0lde4/ocbrain-v4.1.git` (public; reads need no token) or attach the repository with push access; `git fetch origin sandbox-fabric docs/network-isolation-spec-and-studies handoff/sandbox-network-isolation-v4`.
+2. Verify the remote: `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric refs/heads/docs/network-isolation-spec-and-studies refs/heads/sandbox-network-isolation/b01-base refs/heads/handoff/sandbox-network-isolation-v4 refs/heads/main`. Expect `sandbox-fabric` and `b01-base` at `4f4578a…` **or beyond** (if the docs PR was merged), the docs branch at `8847ccd…`, and `main` at `27d918d…` or beyond.
+3. Verify this file against the repository (section 6 lists what is verifiable): `git merge-base --is-ancestor 4f4578a origin/sandbox-fabric`; `git diff 4f4578a 8847ccd --name-only`; `git diff 0411e6c 4f4578a --name-only | grep -v '^docs/'` is empty. **If anything contradicts this file, the repository wins: correct the handoff, then resume.**
+4. Check whether a PR for the docs branch already exists (the user may have opened and merged it). If it is merged, skip step 1 of section 17.
+5. Read the master specification §§2, 11, 14, 16, 19 before any implementation. Do not reopen settled decisions (section 10) without a reopen condition.
+6. Before any push: `git fetch`; push only if the remote tip is an ancestor of `HEAD`; never force.
+7. Reply in English. Do not use, request, print or store any token (section 14).
+8. Begin at section 17, step 1 (or 2 if the docs PR is already merged). Do not reconstruct completed work.
 
 ## 19. Transfer Status
 
-**TRANSFER READY once this file is on the remote.** The implementation checkpoint (`a574091`) and `main` (`69df55f`) are pushed and verified. The criterion for this version: `git ls-remote https://github.com/1h0lde4/ocbrain-v4.1.git refs/heads/sandbox-fabric` shows a commit at or beyond the one returned by `git log -1 --format=%H -- handoff.md`. The session pushes the handoff commit immediately after writing it and verifies it, so if you are reading this file from the remote, that criterion is met and this paragraph is simply a description of how it was met.
+Transfer status is stated for the repository at the moment of the final reply (the branch tips there are authoritative).
 
-Condition by condition: original task preserved (section 2, verbatim); material instructions preserved (section 3, with version 2 for items 1 to 8); scope and success criteria (section 4); requirements accounted for (section 5); current state verified (section 6); decisions (section 10); investigation and failed approaches (sections 11, 12); verification (section 13); environment (section 14); all material work in Git: yes; implementation checkpoint pushed: yes; handoff committed: immediately after this file is written; no secret recorded; exact next action defined: yes (section 17, step 1 then 2).
+- Implementation checkpoint (`8847ccd`, docs only): committed and pushed; remote verified (section 13).
+- This handoff: committed and pushed on `handoff/sandbox-network-isolation-v4`; its remote tip is verified in the final reply.
+- No secret is recorded in this file.
+- Material work remaining is **only** work not yet done (section 17); no finished work exists solely outside Git, except the items listed as non-reproducible in section 8 (none of which is required to continue).
+- Not done and not claimed: a pull request for either branch; any merge; the hermetic test; any implementation batch; a full-suite run in this session.
+
+**TRANSFER READY**, conditioned on the final reply's remote verification of this branch's tip and with this limitation stated plainly: the docs-only PR is **pushed but not opened**, because `gh` had no valid authentication in the v4 environment. Everything needed to open it is in section 7 and Appendix A.
+
+## Appendix A. Draft PR body for the docs-only PR
+
+**Title:** `docs(sandbox): network-isolation master specification and both studies (docs only)`
+
+**Base:** `sandbox-fabric`. **Head:** `docs/network-isolation-spec-and-studies` (`8847ccd`).
+
+Docs only; no code, test, script or `KNOWN_ISSUES.md` change. Adds three documents under `docs/architecture/`: the master specification (666 lines), the network-redesign study (354) and the B3 host-firewall-supplement study (677), taken byte-for-byte from `spec/sandbox-network-isolation-master` (`04dc92d`), `study/sandbox-network-redesign` (`ee525d9`) and `study/b3-host-firewall-supplement` (`34f4b38`), with two marked, non-behavioral edits ruled on October 8 2026: (1) F10 wording: the plain-HTTP `403` is not from `AllowlistProxy`; its attribution to "the host's upstream" is refined to this environment's egress layer and marked an INFERENCE (the raw appendix record is unchanged); (2) a hermeticity rule in the specification: tests needing an upstream use a host-local loopback server, never an external name.
+
+What this does not do: select a mechanism (DG-1 is open; H2 is unevaluated), change any status (`sandbox-fabric` stays explicitly incomplete, Result 2; DEBT-021 stays open), or declare the base behaviorally verified for a 0-failure full suite in the earlier environment (user-accepted environmental classification; the hermetic test PR follows).
+
+Verification: `git diff --name-only` lists exactly the three files; the B3 study is byte-identical to its branch; the other two differ from their branches only by the edits above. Merge as a **merge commit** only, guarded by the head SHA.
