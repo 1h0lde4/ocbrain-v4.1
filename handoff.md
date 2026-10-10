@@ -9,7 +9,7 @@
 - Workstream: Verification / Critic / Evidence System: state reconciliation after the 3C-A closure and the 3C-B design block
 - Task identifier: reconciliation of the complete master prompt against the live repository
 - Source session purpose: began as the independent review of Batch 3C-A (read-only), then source reconciliation for 3C-B, then this repository reconciliation
-- Transfer status: **TRANSFER INCOMPLETE — LOCAL COMMIT ONLY** (see §19)
+- Transfer status: **TRANSFER READY** (see §19)
 
 ## 2. Original Starting Prompt
 
@@ -150,7 +150,7 @@ This reconciliation is itself an important Verification milestone. Accuracy of r
 5. Process: the authoritative tracking record is repo-resident, so the implementer session incorporates the ratification and pushes it; the independent review session stays read-only.
 6. Do not reconstruct unavailable mission sections from secondary mentions.
 7. This task (§2): the uploaded file is the authoritative complete master prompt; reconcile first; correct the state docs; produce a report and a self-contained handoff; do not start the next implementation batch before all of that is done.
-8. No credential is to be used for the review or the reconciliation. A GitHub token sits in the user preferences in plaintext; it was not used. The user was advised to remove and rotate it.
+8. Credentials: the review itself used none. Afterwards the user authorized use of the GitHub token they provided, "with all the ability it gives you", and asked not to be asked about it again. It was used only to push the documentation commits (fast-forward, no force). It is never written to the repository, memory or any output. Do not ask the user about it each time; if they provide a replacement token, use it the same way.
 
 ## 4. Goal, Scope & Success Criteria
 
@@ -174,10 +174,10 @@ State docs match the verified state; the report lists baseline, topology, contra
 | R2 | Reconcile against repo, main, branch, contracts/tests, parallel branches, Runtime, workers, Lab, state docs | step 2 | VERIFIED | report §1–§9 | broader suite not re-run |
 | R3 | Do not silently overwrite existing work | step 3 | VERIFIED | no source file changed; old handoff retained verbatim | |
 | R4 | No new architecture; classify contradictions | step 4 | VERIFIED | report §9 | |
-| R5 | Update CURRENT_STATE, KNOWN_ISSUES, roadmap/status docs, Verification docs | step 5 | IMPLEMENTED (local commit, not pushed) | commit `7607bdd` | `IMPLEMENTATION_ROADMAP.md` has no Verification entry and was left unchanged |
+| R5 | Update CURRENT_STATE, KNOWN_ISSUES, roadmap/status docs, Verification docs | step 5 | IMPLEMENTED and pushed (remote verified) | commit `7607bdd` | `IMPLEMENTATION_ROADMAP.md` has no Verification entry and was left unchanged |
 | R6 | Preserve branch topology | step 6 | VERIFIED | no merge, rebase or branch change | |
-| R7 | Complete reconciliation report | step 7 | IMPLEMENTED (local commit, not pushed) | `docs/reports/verification-state-reconciliation-2026-10-09.md`, commit `12d0383` | |
-| R8 | Fresh-session handoff | step 8 | IMPLEMENTED (local commit, not pushed) | this file | |
+| R7 | Complete reconciliation report | step 7 | IMPLEMENTED and pushed (remote verified) | `docs/reports/verification-state-reconciliation-2026-10-09.md`, commit `12d0383` | |
+| R8 | Fresh-session handoff | step 8 | IMPLEMENTED and pushed (remote verified) | this file | |
 | R9 | Do not begin the next implementation batch | critical rule | VERIFIED | no code touched | |
 | R10 | Record the M4 correction | earlier hold on M4 | **NEEDS CONFIRMATION** | the corrected crash wording is in `CURRENT_STATE.md` | previously held for separate authorization; the user's step 5 arguably covers it; drop the hunk if not |
 
@@ -193,7 +193,7 @@ State docs match the verified state; the report lists baseline, topology, contra
 - `WorkflowRuntime`: DAG, node-boundary checkpointing and `resume()` implemented and tested; no persistent node cache, replay engine, partial execution or external hooks.
 - `DEBT-015` and `DEBT-007` open. No `verification.*` events on `main`.
 
-**IMPLEMENTED BUT NOT VERIFIED:** the documentation corrections (local commit only; not reviewed by anyone else).
+**IMPLEMENTED BUT NOT VERIFIED:** the documentation corrections (pushed; not reviewed by anyone else; the M4 hunk awaits the user's confirmation).
 **PROPOSED:** none. **DEFERRED:** V2/high-assurance, `VerifiedState`, C-MoE, Lab, Context, Memory integration.
 **BLOCKED:** Batch 3C-B (design-blocked, ODIs open).
 **UNKNOWN:** broader-suite results at `fe338ed`; status of the archived DEBT-020 completion-gate branch; the Phase 0–14 master implementation prompt; the Parallel Implementation Mission past §13.
@@ -203,22 +203,22 @@ State docs match the verified state; the report lists baseline, topology, contra
 - Primary repository: `https://github.com/1h0lde4/ocbrain-v4.1` (public)
 - Branch: `feature/verification-critic-evidence-phase-c`; reviewed tip `fe338ed`
 - Base branch: `main` at `27d918d`
-- Work done in a **separate local clone** (sandbox, ephemeral) on local branch `recon/verification-state-2026-10-09`, created from `fe338ed`; it is not on the remote.
-- Transfer commits (sandbox-clone hashes; applying the patches elsewhere assigns new hashes): state docs `7607bdd`, report `12d0383`. The patch series has three files, in that order, the third being the handoff commit.
-- Handoff commit: the commit that adds this file (the next commit on that branch; run `git log -1 -- handoff.md`). A file cannot contain its own hash.
-- Parent of the handoff commit: `12d0383` (in the sandbox clone)
+- Work was done in a separate local clone on local branch `recon/verification-state-2026-10-09` (from `fe338ed`) and then pushed as a fast-forward to `feature/verification-critic-evidence-phase-c` (`fe338ed..7abd765`). Hashes are unchanged on the remote (no rewrite).
+- Transfer commits: state docs `7607bdd`, report `12d0383`, handoff `7abd765`, then a status-update commit (the tip commit touching `handoff.md`).
+- Handoff commit: `7abd765` added this file; the status-update commit above corrected its push status. Find the latest with `git log -1 -- handoff.md`. A file cannot contain its own hash.
+- Parent of the handoff commit `7abd765`: `12d0383`
 - Working tree status: the review checkout is clean at `fe338ed`; the work clone is clean after its commits.
 - Relevant untracked/ignored files: none in the work clone.
 - Submodules: none.
-- Remote push status: **NOT PUSHED** (no push authorization; no credential used)
-- Remote verification status: not applicable
+- Remote push status: **pushed** on 2026-10-09 with the token the user supplied and authorized, fast-forward `fe338ed..7abd765`, no force.
+- Remote verification status: `git ls-remote` returned `7abd765…`, equal to local HEAD, immediately after the push; the status-update commit was pushed and checked the same way.
 
 ## 8. Active Files / Modified Files / Artifacts
 
 Modified: `CURRENT_STATE.md` (line 155), `KNOWN_ISSUES.md` (DEBT-018 row), `docs/architecture/verification-critic-evidence-system-phase-c-semantic-pipeline-reconciliation.md` (section 10 appended), `handoff.md` (this version prepended).
 Added: `docs/reports/verification-state-reconciliation-2026-10-09.md`.
 Deleted: none.
-Non-repository artifacts needed for recovery: the three `git format-patch` files supplied with this handoff (the commits exist only in the sandbox clone). They apply to `fe338ed` with `git am`.
+Non-repository artifacts needed for recovery: none. All work is on the remote branch.
 Review documents (outside the repo): `3C-A-independent-review.md`, `3C-B-D5-mission-reconciliation.md`, `3C-B-D5-mission-recovery-record.md`, `3C-B-source-reconciliation-study-2.md`, `3C-B-Decision-Rulings-D6-D10-draft.md`, `implementer-handoff-note-3C-A-closure-and-3C-B-record.md`.
 
 ## 9. Changes Made
@@ -272,7 +272,7 @@ Python 3.12.3, pytest 9.1.1, mypy (latest at install), in a venv outside the rep
 
 ## 17. Next Steps
 
-1. Obtain the user's explicit authorization to push, then push the documentation commits to the Verification branch (or apply the patches there with `git am`). Why: the state docs are only local now. Verify: `git ls-remote` shows the new tip, and `git diff fe338ed..<tip> --stat` lists exactly the 5 files above.
+1. **Done (2026-10-09):** the documentation commits are pushed and verified (§7). Nothing further is needed to transfer them.
 2. Ask the user whether the M4 hunk stays (R10).
 3. Separate docs-only items, only if authorized: F1 wording (tracker rule 3 and the `ValueError` text at `criterion_result.py:199-201`), F2 wording (`rubric_fingerprint` docstring, `criterion_result.py:132-135`), refreshed divergence figures.
 4. Resolve the 3C-B decision surface from source (ODI-01/02/03 and the three questions). No code until closed.
@@ -280,15 +280,15 @@ Python 3.12.3, pytest 9.1.1, mypy (latest at install), in a venv outside the rep
 
 ## 18. Resume Instructions
 
-1. Verify the branch: `git fetch origin` then `git rev-parse origin/feature/verification-critic-evidence-phase-c` (expect `fe338ed` unless step 1 above was done).
-2. Check whether the reconciliation commits are on the remote; if not, apply the supplied patches to a branch from `fe338ed` (`git am`), do not rebuild them by hand.
+1. Verify the branch: `git fetch origin` then `git rev-parse origin/feature/verification-critic-evidence-phase-c` (expect the status-update commit that last touched `handoff.md`, or a later commit; `fe338ed` is the old tip).
+2. Check the reconciliation commits are still on the remote (`git ls-remote`, compare with the hashes in §7). If the branch was rewritten, compare before changing anything; do not rebuild by hand.
 3. Re-run the baseline commands in §13 and compare. Re-measure divergence with `main`.
 4. Resolve any mismatch before changing anything. Do not trust this handoff over the repository.
 5. Begin at §17 step 1.
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — LOCAL COMMIT ONLY.** The reconciliation work exists as local commits in a sandbox clone and as patch files; nothing is pushed. Not marked TRANSFER READY.
+**TRANSFER READY.** All reconciliation work is committed and pushed to `feature/verification-critic-evidence-phase-c`, and the remote tip was verified equal to local HEAD. Open items (R10, the ODIs, M9) are recorded as unresolved; they are not missing transfer content.
 
 ---
 

@@ -1,6 +1,6 @@
 # Verification subsystem: state reconciliation (2026-10-09)
 
-Status: read-only audit plus documentation corrections. Nothing here changes code. The documentation corrections are committed **locally only, not pushed** (no push authorization was given and no credential was used).
+Status: read-only audit plus documentation corrections. Nothing here changes code. The documentation corrections were committed and then pushed to the Verification branch as a fast-forward on the user's authorization.
 
 ## 0. Basis and source identity
 
@@ -166,7 +166,7 @@ V2/high-assurance items (causal visibility, attestation, temporal logic, conform
 
 ## 12. Boundaries kept
 
-No branch merged, rebased or modified. No source file changed. No credential used. The review checkout is clean at `fe338ed`; documentation edits are in a separate clone, committed locally, unpushed.
+No branch merged, rebased or force-pushed; only the Verification branch was updated, by fast-forward. No source file changed. The user-supplied token was used solely for that push. The review checkout stayed clean at `fe338ed`.
 
 ## 13. What I did not verify
 
