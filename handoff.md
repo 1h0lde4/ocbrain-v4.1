@@ -1,3 +1,299 @@
+# Session Handoff (version 3, 2026-10-09)
+
+> Versions 1 and 2 of this file are retained verbatim below the marker "ARCHIVED: earlier handoff content". Where they disagree with this version, this version and the live repository win; the earlier text is a transfer record, not an authority (`PROJECT_INSTRUCTIONS.md` §18.4.9).
+
+## 1. Handoff Metadata
+
+- Handoff version: 3
+- Created at: 2026-10-09
+- Workstream: Verification / Critic / Evidence System: state reconciliation after the 3C-A closure and the 3C-B design block
+- Task identifier: reconciliation of the complete master prompt against the live repository
+- Source session purpose: began as the independent review of Batch 3C-A (read-only), then source reconciliation for 3C-B, then this repository reconciliation
+- Transfer status: **TRANSFER INCOMPLETE — LOCAL COMMIT ONLY** (see §19)
+
+## 2. Original Starting Prompt
+
+The prompt that started this workstream phase, verbatim:
+
+``````text
+The incomplete prompt I uploaded previously is **NOT** the final complete master prompt.
+
+The complete version you need to use is **the one I have uploaded with this message**. Treat that document as the authoritative complete master prompt for this task.
+
+The previous 695-line document is an earlier/truncated version of the specification. It ends partway through the semantic pipeline and must **not** be used as the basis for completing or extending the work.
+
+### Required sequence
+
+**1. First, read the complete uploaded master prompt in full.**
+
+Do not start implementing anything yet.
+
+**2. Then perform a full repository reconciliation against the work already done.**
+
+Reconcile the complete master prompt against:
+
+* the current repository state;
+* the current `main`;
+* the existing Verification branch and its commits;
+* the contracts/tests already implemented;
+* all relevant parallel branches that are expected to merge into `main`;
+* current Runtime / WorkflowRuntime / Event Backbone state;
+* EvaluatorWorker and other adjacent workers;
+* Evaluation Lab work;
+* current `CURRENT_STATE.md`, `KNOWN_ISSUES.md`, roadmap, and relevant ADRs.
+
+Do not assume that previous reports, branch descriptions, test counts, or handoffs are still accurate. **Prove the actual state first, then reconcile it.**
+
+### 3. Do not silently overwrite existing work.
+
+Identify precisely:
+
+* what from the complete master prompt is already implemented;
+* what is partially implemented;
+* what is scaffolded;
+* what is missing;
+* what has changed since the earlier handoff;
+* what conflicts with other parallel branches;
+* what must be preserved for the eventual merge into `main`.
+
+Where two branches contain overlapping work, determine ownership and compatibility before changing either.
+
+### 4. Do not start a new implementation architecture.
+
+The complete master prompt is the specification to reconcile against the repository.
+
+Do not redesign the Verification system merely because the current repository differs from the prompt.
+
+If a genuine contradiction exists, document it explicitly and classify it as:
+
+`IMPLEMENTATION GAP / REPOSITORY CHANGE / ARCHITECTURAL CONFLICT / DEPENDENCY / DEFERRED WORK`
+
+Do not patch around architectural contradictions silently.
+
+### 5. After reconciliation, update the repository state documentation.
+
+Update the appropriate:
+
+* `CURRENT_STATE.md`
+* `KNOWN_ISSUES.md`
+* roadmap/status documents
+* Verification-specific documentation/ADRs
+
+so that they describe the **actual verified state**, not the old reported state.
+
+Do not merely update a progress number. Record the actual implemented/partial/missing state of the Verification subsystem.
+
+### 6. Preserve branch topology.
+
+Do not merge unrelated branches simply to reconcile the work.
+
+The existing Verification implementation branch should remain the primary working branch unless the live repository proves that another topology is required.
+
+Branches that will eventually merge into `main` must be treated as future integration constraints.
+
+### 7. Produce a complete reconciliation report.
+
+The report must show:
+
+* current repository baseline;
+* branch topology;
+* Verification branch state;
+* contracts already implemented;
+* tests already implemented;
+* semantic pipeline status;
+* Runtime/WorkflowRuntime integration status;
+* Evaluation Lab overlap;
+* parallel-branch dependencies/conflicts;
+* exact remaining implementation work;
+* exact deferred work;
+* any architecture/document discrepancies.
+
+### 8. Create a fresh-session handoff after reconciliation.
+
+Once the reconciliation is complete and the repository/documentation state has been updated, create a **self-contained handoff document for a new Claude session**.
+
+That handoff must include:
+
+* verified repository baseline;
+* current branch/HEAD;
+* branch topology and future merge considerations;
+* exact Verification implementation state;
+* completed contracts;
+* completed tests;
+* current semantic pipeline position;
+* remaining batches;
+* dependencies;
+* allowed scope;
+* out-of-scope items;
+* acceptance criteria;
+* known risks;
+* unresolved blockers;
+* exact next task.
+
+The new session must be able to resume from the handoff without relying on this conversation.
+
+### Critical rule
+
+**Do not begin the next implementation batch until the complete master prompt has been read, the repository has been reconciled against it, the state documentation has been corrected, and the fresh-session handoff has been created.**
+
+This reconciliation is itself an important Verification milestone. Accuracy of repository state takes precedence over speed.
+``````
+
+(The earlier independent-review brief for Batch 3C-A, which began the session, was a separate task. It was read-only, frozen at `fe338ed`, and told the reviewer to use no credentials. Its outcome is recorded in §3 and §6.)
+
+## 3. Subsequent User Instructions / Corrections
+
+1. 3C-A: **ACCEPTED / GATE SATISFIED (qualified)**; F1–F7 comparison UNVERIFIED because the implementer's review report and mutation harness were unavailable to the independent reviewer. Move to 3C-B, carrying M2, M3 and M6 as follow-ups. The 16-of-165 accepted combinations are a property of the implementation, not derivable from S13 alone; keep that explicit.
+2. 3C-B rulings D1–D5 (ratified 2026-10-05) and D6–D10 (ratified after the master-prompt reconciliation); full text in `docs/architecture/verification-critic-evidence-system-phase-c-semantic-pipeline-reconciliation.md` §10.
+3. Open design items ODI-3C-B-01/02/03 and the unresolved questions must not be silently resolved. No code, placeholder enum or speculative contract until they are closed.
+4. M9 is informational and non-blocking.
+5. Process: the authoritative tracking record is repo-resident, so the implementer session incorporates the ratification and pushes it; the independent review session stays read-only.
+6. Do not reconstruct unavailable mission sections from secondary mentions.
+7. This task (§2): the uploaded file is the authoritative complete master prompt; reconcile first; correct the state docs; produce a report and a self-contained handoff; do not start the next implementation batch before all of that is done.
+8. No credential is to be used for the review or the reconciliation. A GitHub token sits in the user preferences in plaintext; it was not used. The user was advised to remove and rotate it.
+
+## 4. Goal, Scope & Success Criteria
+
+### Goal
+Reconcile the repository's real Verification state against the master prompt, correct the state documentation, and hand off cleanly.
+
+### In scope
+Read-only audit; correction of `CURRENT_STATE.md`, `KNOWN_ISSUES.md` and the Phase C tracker; a reconciliation report; this handoff.
+
+### Out of scope
+Any implementation batch, 3C-B design resolution, `EvaluatorWorker` or `WorkflowRuntime` changes, merging branches, the F1/F2 wording and divergence-figure docs items (authorized earlier but separate), pushing without authorization.
+
+### Success criteria
+State docs match the verified state; the report lists baseline, topology, contracts, tests, pipeline, Runtime status, Lab overlap, conflicts, remaining and deferred work, and discrepancies; a new session can resume from this file alone.
+
+## 5. Requirement Ledger
+
+| ID | Requirement | Source | Status | Evidence | Notes |
+|---|---|---|---|---|---|
+| R1 | Read the complete master prompt in full | prompt §2 step 1 | VERIFIED | 4,317-line file inspected; it is the §0–§117 master prompt, not the truncated continuation | the §100–§112 sections were extracted for the matrix |
+| R2 | Reconcile against repo, main, branch, contracts/tests, parallel branches, Runtime, workers, Lab, state docs | step 2 | VERIFIED | report §1–§9 | broader suite not re-run |
+| R3 | Do not silently overwrite existing work | step 3 | VERIFIED | no source file changed; old handoff retained verbatim | |
+| R4 | No new architecture; classify contradictions | step 4 | VERIFIED | report §9 | |
+| R5 | Update CURRENT_STATE, KNOWN_ISSUES, roadmap/status docs, Verification docs | step 5 | IMPLEMENTED (local commit, not pushed) | commit `7607bdd` | `IMPLEMENTATION_ROADMAP.md` has no Verification entry and was left unchanged |
+| R6 | Preserve branch topology | step 6 | VERIFIED | no merge, rebase or branch change | |
+| R7 | Complete reconciliation report | step 7 | IMPLEMENTED (local commit, not pushed) | `docs/reports/verification-state-reconciliation-2026-10-09.md`, commit `12d0383` | |
+| R8 | Fresh-session handoff | step 8 | IMPLEMENTED (local commit, not pushed) | this file | |
+| R9 | Do not begin the next implementation batch | critical rule | VERIFIED | no code touched | |
+| R10 | Record the M4 correction | earlier hold on M4 | **NEEDS CONFIRMATION** | the corrected crash wording is in `CURRENT_STATE.md` | previously held for separate authorization; the user's step 5 arguably covers it; drop the hunk if not |
+
+## 6. Current Verified State
+
+**VERIFIED**
+- `origin/main` `27d918d` (2026-10-09); Verification branch tip `fe338ed`; 137 only-in-main / 52 only-in-branch; merge-base `5954e44`; `main` changed 85 files since, none in Verification paths.
+- `core/verification/`: 26 modules, 104 classes/enums, contracts only; no importer outside the package, its tests and documentation.
+- Tests on `fe338ed` (run 2026-10-09): pytest 424 passed; stdlib mirror 424 OK; `mypy` clean on 28 files.
+- §100 domain model (46 names): 23 implemented, 4 under another name, 6 partial, 13 not implemented (report §4).
+- Pipeline: complete through `CriterionResult`; aggregation and decision layers absent (report §5).
+- `EvaluatorWorker` on `main` still uses the caller-supplied `goal_completed` fallback; no `INSUFFICIENT_EVIDENCE`.
+- `WorkflowRuntime`: DAG, node-boundary checkpointing and `resume()` implemented and tested; no persistent node cache, replay engine, partial execution or external hooks.
+- `DEBT-015` and `DEBT-007` open. No `verification.*` events on `main`.
+
+**IMPLEMENTED BUT NOT VERIFIED:** the documentation corrections (local commit only; not reviewed by anyone else).
+**PROPOSED:** none. **DEFERRED:** V2/high-assurance, `VerifiedState`, C-MoE, Lab, Context, Memory integration.
+**BLOCKED:** Batch 3C-B (design-blocked, ODIs open).
+**UNKNOWN:** broader-suite results at `fe338ed`; status of the archived DEBT-020 completion-gate branch; the Phase 0–14 master implementation prompt; the Parallel Implementation Mission past §13.
+
+## 7. Git / Repository Checkpoint
+
+- Primary repository: `https://github.com/1h0lde4/ocbrain-v4.1` (public)
+- Branch: `feature/verification-critic-evidence-phase-c`; reviewed tip `fe338ed`
+- Base branch: `main` at `27d918d`
+- Work done in a **separate local clone** (sandbox, ephemeral) on local branch `recon/verification-state-2026-10-09`, created from `fe338ed`; it is not on the remote.
+- Transfer commits (sandbox-clone hashes; applying the patches elsewhere assigns new hashes): state docs `7607bdd`, report `12d0383`. The patch series has three files, in that order, the third being the handoff commit.
+- Handoff commit: the commit that adds this file (the next commit on that branch; run `git log -1 -- handoff.md`). A file cannot contain its own hash.
+- Parent of the handoff commit: `12d0383` (in the sandbox clone)
+- Working tree status: the review checkout is clean at `fe338ed`; the work clone is clean after its commits.
+- Relevant untracked/ignored files: none in the work clone.
+- Submodules: none.
+- Remote push status: **NOT PUSHED** (no push authorization; no credential used)
+- Remote verification status: not applicable
+
+## 8. Active Files / Modified Files / Artifacts
+
+Modified: `CURRENT_STATE.md` (line 155), `KNOWN_ISSUES.md` (DEBT-018 row), `docs/architecture/verification-critic-evidence-system-phase-c-semantic-pipeline-reconciliation.md` (section 10 appended), `handoff.md` (this version prepended).
+Added: `docs/reports/verification-state-reconciliation-2026-10-09.md`.
+Deleted: none.
+Non-repository artifacts needed for recovery: the three `git format-patch` files supplied with this handoff (the commits exist only in the sandbox clone). They apply to `fe338ed` with `git am`.
+Review documents (outside the repo): `3C-A-independent-review.md`, `3C-B-D5-mission-reconciliation.md`, `3C-B-D5-mission-recovery-record.md`, `3C-B-source-reconciliation-study-2.md`, `3C-B-Decision-Rulings-D6-D10-draft.md`, `implementer-handoff-note-3C-A-closure-and-3C-B-record.md`.
+
+## 9. Changes Made
+
+Documentation only. `CURRENT_STATE.md` and `KNOWN_ISSUES.md` now give the verified state (tests, commit history by batch, what exists, what is absent, crash semantics as enforced, adjacent-system findings, source-integrity note). The tracker gains section 10 (3C-A closure, D1–D10, ODIs, M9, branch position). The report and this handoff are new. No behavior, schema, contract, governance, security or test change.
+
+## 10. Decisions & Rationale
+
+- 3C-A accepted (qualified). The crash rule stays (Option A), an IMPLEMENTATION JUDGMENT inside the master prompt's allowed outcomes (§104-J, §93), stricter than §93.
+- D1–D10 as in tracker §10. Reopen only on a verified contradiction, changed dependency, governance/security concern, higher authority, or explicit user request.
+- This reconciliation did **not** make the F1/F2 wording changes or touch `IMPLEMENTATION_ROADMAP.md` (no Verification entry) .
+
+## 11. Investigation Already Performed
+
+Inspected: all remote branches (64; path scan against Verification-relevant paths); `main` since the merge-base; the Lab branch's oracle files and ADR_LAB_06; `core/workflow/runtime.py` and `definition.py` on `main`; `core/workers/evaluator.py` on `main`; `KNOWN_ISSUES.md`/`CURRENT_STATE.md` on `main` and the branch; the whole `core/verification/` package by import-time inspection; the uploaded master prompt (headings, §100, §102, §110–§112, mechanical phrase search). Do not repeat these unless the repository has moved. Not inspected in depth: the archived DEBT-020 branch; Runtime behavior beyond a static read.
+
+## 12. Failed Attempts / Dead Ends
+
+- Searching git history and all refs for the mission text: not found (never committed). Do not retry.
+- Using fuzzy name matching for the §100 table gave false positives; the table in the report is hand-mapped and checked against real classes.
+- My first cleanup deleted 17 tracked `.pyc` files in the review checkout; they were restored with `git restore`. Avoid `find ... -delete` on `__pycache__` in this repo.
+- Early documentation drafts carried wrong dates (Oct 7) and a stale `main` tip; corrected before commit. Use `date -u` and re-fetch before dating anything.
+
+## 13. Verification Evidence
+
+All run 2026-10-09 unless noted.
+- `cd <checkout> && git checkout --detach fe338ed && python -m pytest tests/test_verification_contracts.py -q -p no:cacheprovider` → 424 passed.
+- `python tests/verification_run_tests_stdlib.py` → 424 tests, OK.
+- `python -m mypy --explicit-package-bases core/verification` → no issues in 28 source files.
+- `git rev-list --left-right --count origin/main...origin/feature/verification-critic-evidence-phase-c` → 137 / 52.
+- `git diff --name-only $(git merge-base ...) origin/main` → 85 files, 0 in Verification paths.
+- `git grep` for importers of `core.verification` outside the package, tests and docs → none.
+- The broader suite was **not** run. Do not quote the implementer's earlier figures (9 failed, 1918 passed, 4 errors) as verified.
+
+## 14. Environment / Tooling Assumptions
+
+Python 3.12.3, pytest 9.1.1, mypy (latest at install), in a venv outside the repo. `mypy core/verification` needs `--explicit-package-bases`. Never put `sleep 50` in a command line (an old test uses a global `pgrep`). Run suites one at a time. Clone without credentials. No secret is recorded here.
+
+## 15. Unresolved Questions / Risks / Blockers
+
+- ODI-3C-B-01/02/03; no-conclusion representation; `CoverageResult` vocabulary; evidence-reference fields and derivation for `failure_control` (3C-B; design-blocked; do not guess).
+- M9: code "mission §N" citations unverified; the Phase 0–14 master implementation prompt and the Parallel Implementation Mission past §13 are not available. Work may continue without them.
+- The M4 hunk in `CURRENT_STATE.md` needs the user's confirmation (R10).
+- `main` keeps moving; one known `KNOWN_ISSUES.md` merge conflict; `CURRENT_STATE.md` auto-merges but was edited on both sides.
+- Unmerged DEBT-020 completion-gate branch overlaps the EvaluatorWorker; examine before touching it.
+- Risk: every figure in the state docs (divergence, tip) drifts; always re-measure.
+
+## 16. Relevant Information / References
+
+`PROJECT_INSTRUCTIONS.md` (§16.4, §16.5, §18.4.9); `docs/architecture/verification-critic-evidence-system-architecture-v3-final.md` (v1/v2 incorporated by reference); the Phase C tracker (§9 audit register, §10 this reconciliation); `docs/reports/verification-state-reconciliation-2026-10-09.md`; ADR_LAB_06 on `eval-lab/research-and-architecture`; the master prompt (`Pasted_markdown_10_.md`, §100 domain model and §110–§112 acceptance criteria).
+
+## 17. Next Steps
+
+1. Obtain the user's explicit authorization to push, then push the documentation commits to the Verification branch (or apply the patches there with `git am`). Why: the state docs are only local now. Verify: `git ls-remote` shows the new tip, and `git diff fe338ed..<tip> --stat` lists exactly the 5 files above.
+2. Ask the user whether the M4 hunk stays (R10).
+3. Separate docs-only items, only if authorized: F1 wording (tracker rule 3 and the `ValueError` text at `criterion_result.py:199-201`), F2 wording (`rubric_fingerprint` docstring, `criterion_result.py:132-135`), refreshed divergence figures.
+4. Resolve the 3C-B decision surface from source (ODI-01/02/03 and the three questions). No code until closed.
+5. Only then plan the next batch; candidates that do not obviously depend on 3C-B should be checked against ODI-3C-B-02 (lifecycle ownership) first.
+
+## 18. Resume Instructions
+
+1. Verify the branch: `git fetch origin` then `git rev-parse origin/feature/verification-critic-evidence-phase-c` (expect `fe338ed` unless step 1 above was done).
+2. Check whether the reconciliation commits are on the remote; if not, apply the supplied patches to a branch from `fe338ed` (`git am`), do not rebuild them by hand.
+3. Re-run the baseline commands in §13 and compare. Re-measure divergence with `main`.
+4. Resolve any mismatch before changing anything. Do not trust this handoff over the repository.
+5. Begin at §17 step 1.
+
+## 19. Transfer Status
+
+**TRANSFER INCOMPLETE — LOCAL COMMIT ONLY.** The reconciliation work exists as local commits in a sandbox clone and as patch files; nothing is pushed. Not marked TRANSFER READY.
+
+---
+
+# ARCHIVED: earlier handoff content (versions 1–2), retained verbatim
+
 # Session Handoff
 
 Workstream: OCBrain Verification / Critic / Evidence subsystem, branch `feature/verification-critic-evidence-phase-c`.
