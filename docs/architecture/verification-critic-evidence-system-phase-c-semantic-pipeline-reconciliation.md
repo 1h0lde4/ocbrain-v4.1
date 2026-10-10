@@ -279,3 +279,46 @@ Deferred or open for 3C-A, deliberately:
 | Pre-existing: `MethodDisposition.INCONCLUSIVE == FindingDisposition.INCONCLUSIVE` is `True` (same `str` value in two enums) | Observed during the 3C study; not caused by or in scope for 3C; a separate finding |
 
 **Batch 3C-B (`ProcessVerificationResult` / `OutcomeVerificationResult` / `FailureControl`): BLOCKED pending architecture reconciliation — no code, no placeholder types.** These are source/architecture questions, not implementation judgments, and must not be resolved by the implementer: (1) v1 §20 states process and outcome results as `VERIFIED` / `FAILED`, but `FAILED` is not among the canonical verdict states of v1 §25 or in `VerificationVerdict`. It must not be silently mapped to `CONTRADICTED` or `UNSUPPORTED`; their semantics are not necessarily equivalent to it. (2) v1 §20 calls `failure_control` (CONTROLLABLE / UNCONTROLLABLE / MIXED / UNKNOWN) an *orthogonal verification finding*; whether it is a field on the outcome result, a standalone classification or a Finding-layer relationship is not established. (3) Authority: v3 preserves earlier architecture by reference, so the correct reading is that v3 does not independently specify the 3C result contracts, v1/v2 contain the relevant semantics (v1 §20 remains authoritative), and the exact implementation shape is unresolved. Also open: whether these results are per criterion or per verification, and how they relate to `VerificationFinding.dimension` (PROCESS / OUTCOME), which already classifies findings. Roadmap: 3C-B → architecture reconciliation first, then implementation. **Next investigation: a source-reconciliation study, not an implementation batch, limited to (1) what `FAILED` means in the frozen architecture, (2) who owns `failure_control`, and (3) what authority v1 §20 has.** No placeholder enum, no speculative owner and no guessed authority model. New input for that study: "a crash is `FAILED`" (v1 Self-Review Pass 3; v2 Review C) is a second occurrence of the same undefined state and bears on 3C-A rule 7.
+
+## 10. Reconciliation after the independent review and the 3C-B rulings (2026-10-09)
+
+Status register entry. It supersedes the "open decision" wording earlier in this document and in `handoff.md` for the crash rule, and corrects state text that had drifted (see `CURRENT_STATE.md` and `KNOWN_ISSUES.md` DEBT-018, both corrected in the same change). Evidence and method: `docs/reports/verification-state-reconciliation-2026-10-09.md`.
+
+### 10.1 Batch 3C-A: closed
+
+- **ACCEPTED / GATE SATISFIED (qualified).** Independent review ran at `fe338ed` (read-only). Qualification: the implementer's review report and mutation harness were unavailable to the reviewer, so the comparison of the implementer's findings F1–F7 is **UNVERIFIED**.
+- The crash rule stays as implemented (Option A) and remains an **IMPLEMENTATION JUDGMENT**. It sits inside the outcomes the research/implementation master prompt allows (§104-J "FAILED / UNVERIFIABLE"; §93 lists `UNVERIFIABLE`, `INSUFFICIENT_EVIDENCE`, `ESCALATE` "as appropriate") but is stricter than §93. M1 is resolved for design purposes by D2/D6 and must be reflected when crash/failure semantics are implemented.
+- **The 16 accepted combinations (of 165 valid-type combinations) are a property of the implementation, not derivable from S13 alone.** The S13 text alone allows 60; every excluded combination is excluded by the crash rule.
+- Carried follow-ups (do not reopen 3C-A): M2 and M3 (docs-only wording: the crash-safety wording in rule 3 and the `ValueError` text, and the `rubric_fingerprint` docstring), M6 (nothing pins the `VerificationVerdict` member set). M5 is optional test hardening, not part of 3C-B.
+
+### 10.2 Batch 3C-B: design-blocked. Rulings
+
+Ratified architectural decisions only; no code, enum, placeholder or contract is authorized by them.
+
+| ID | Ruling |
+|---|---|
+| D1 | v1 §20 remains the authoritative semantic source for the concepts it explicitly describes (Reading A, qualified); absence of a restatement in v2/v3 is incomplete specification, not revocation; no invention of unspecified vocabularies, schemas, ownership or relationships. |
+| D2 | `FAILED` is a process/outcome result status, not a `VerificationVerdict`; never added to it and never silently mapped to a canonical verdict; "a crash is `FAILED`" is a failure status, not a verdict; the `verification.failed` event is a separate use of the word; the status vocabulary is binary `VERIFIED`/`FAILED` unless recovered mission text explicitly contradicts. |
+| D3 | Process/outcome results are per verification execution (siblings belonging to one `VerificationResult`); `VerificationFinding` stays the evidence layer; `CriterionResult` is not replaced. |
+| D4 | `failure_control` (`CONTROLLABLE`/`UNCONTROLLABLE`/`MIXED`/`UNKNOWN`) is a field on the process/outcome result carrying the `FAILED` status; Verification owns and derives it from evidence; Governance/Supervisor may consume it but do not own it. |
+| D5 | Recover the original mission text before implementation. Done: the master prompt was recovered and explicitly contradicts neither D1 nor D2. |
+| D6 | A crash is recorded on two independent axes, kept distinguishable: lifecycle/execution `FAILED` and the epistemic result `UNVERIFIABLE`; not "crash = semantic `FAILED`". |
+| D7 | A not-assessable execution is never forced into semantic `FAILED`; it yields no semantic binary conclusion plus `UNVERIFIABLE`/`INSUFFICIENT_EVIDENCE`/`ESCALATE` as appropriate; execution/lifecycle failure is recorded separately. |
+| D8 | `CriterionResult` is the immediate aggregation input to the process/outcome/coverage results; findings are upstream epistemic inputs; D3 stands. |
+| D9 | `failure_control` is a field on the process/outcome result, derived from the evidence/finding chain; not a free assertion and not a Governance decision. Refines D4. |
+| D10 | `CoverageResult` is a sibling of `ProcessVerificationResult` and `OutcomeVerificationResult`; all feed `VerificationResult`. |
+
+### 10.3 Open design items and unresolved questions
+
+- **ODI-3C-B-01:** how a `CriterionResult` acquires process/outcome scope. `Criterion` and `CriterionResult` have no dimension field; `VerificationFinding` does. Do not add a dimension field merely to close the ambiguity; first decide whether it derives from the associated findings and what happens with no findings (declared crash, BLOCKED, NOT_ATTEMPTED) or findings spanning both dimensions.
+- **ODI-3C-B-02:** ownership of lifecycle `FAILED`. `execution_failure` is a cause, not a lifecycle state; frozen v1 §11 has no `FAILED` state (v2 §31 restores a `verification.failed` event) while master-prompt §66 lists `FAILED`. It must not be placed on `CriterionResult` or `VerificationResult` merely because they carry `execution_failure`.
+- **ODI-3C-B-03:** the semantic process/outcome `FAILED` and the lifecycle/execution `FAILED` must be distinct, namespaced types (D-17 precedent); never a `FAILED` member in `VerificationVerdict`.
+- **Unresolved:** representation of "no semantic conclusion" (no result object, or a result with an explicit non-conclusion state; D2's binary vocabulary rules out a third in-enum value without reopening D2); the `CoverageResult` status vocabulary; the evidence-reference fields a process/outcome result must carry to substantiate `failure_control`; the derivation/assignment algorithm for `failure_control`.
+
+### 10.4 Source-integrity addendum (M9, informational, non-blocking)
+
+- The research/implementation master prompt (§0–§117) was recovered and matches the citations in the Phase A findings. The `mission §N` citations inside `core/verification/` do not correspond to it (a mechanical search found none of the quoted phrases the code attributes to "the mission"), and the Phase 0 audit refers to a separate "September 2026 master implementation prompt, Phase 0–14 numbering" that is not in the repository and has not been recovered. Treat those code citations as unverified; do not reconstruct their sections from secondary mentions.
+
+### 10.5 Branch position
+
+`feature/verification-critic-evidence-phase-c` at `fe338ed` is 52 commits ahead of and 137 behind `origin/main` (`27d918d`, Oct 9, 2026; merge-base `5954e44`). The earlier handoff figure (91 / 51) is stale; this figure also drifts as `main` moves. `main` has not changed any Verification path since the merge-base.
