@@ -37,6 +37,8 @@ Two tiers here, gated differently on purpose:
 import asyncio
 import glob
 import hashlib
+import http.server
+import ipaddress
 import json
 import sys
 import os
@@ -45,6 +47,7 @@ import shutil
 import socket
 import tempfile
 import subprocess
+import threading
 
 import pytest
 
@@ -685,9 +688,16 @@ async def test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state(tmp_pa
 # ======================================================================
 # C2 — the network gate's real bypass paths, against the actual
 # isolated network _ensure_sandbox_network() builds (an --internal
-# Docker network, ICC disabled), not the "bridge" placeholder. Hits
-# real external hosts (example.com/example.org), same as this
-# repository's own test_net_proxy.py already does.
+# Docker network, ICC disabled), not the "bridge" placeholder.
+#
+# Hermetic by design (ruling of October 8 2026; master specification,
+# "Hermeticity rule"): a test that needs an upstream starts a
+# deterministic host-local loopback server and allowlists that address.
+# It never resolves or dials an external name, so its verdict cannot
+# depend on the test host's DNS or egress layer (study finding F10). The
+# tests below that still mention example.com / example.org only use them
+# as names: an allowlist entry that is never dialed, or a request the
+# proxy must reject with 403 before it dials anything.
 # ======================================================================
 
 
@@ -697,25 +707,126 @@ def net_backend():
     return DockerBackend(image_ref=image)
 
 
+class _RecordingUpstream:
+    """A real HTTP server on the host's loopback that records every request
+    target it receives and answers `upstream-saw:<target>`. It is the
+    deterministic stand-in for "the real server" in the C2 tunnel test: the
+    AllowlistProxy runs on the host, so it can dial this loopback address,
+    and the recorded requests prove that the bytes really crossed the
+    tunnel (a proxy that fabricated a 200 would leave `requests` empty)."""
+
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+        seen = self.requests
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                seen.append(self.path)
+                body = f"upstream-saw:{self.path}".encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port: int = self._server.server_port
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+
+@pytest.fixture
+def loopback_upstream():
+    upstream = _RecordingUpstream()
+    upstream.start()
+    try:
+        yield upstream
+    finally:
+        upstream.close()
+
+
+@pytest.fixture
+def no_name_resolution(monkeypatch):
+    """Make the hermeticity of a test enforced rather than assumed: any
+    attempt, in this process (the AllowlistProxy runs here, in threads), to
+    resolve a non-numeric host name fails like a dead resolver and is
+    recorded. The returned list must be empty at the end of the test."""
+    attempts: list[str] = []
+    real_getaddrinfo = socket.getaddrinfo
+
+    def guarded(host, *args, **kwargs):
+        name = host.decode("ascii", "replace") if isinstance(host, bytes) else host
+        if name not in (None, ""):
+            try:
+                ipaddress.ip_address(name)
+            except ValueError:
+                attempts.append(name)
+                raise socket.gaierror(socket.EAI_NONAME, "name resolution is disabled by this test")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded)
+    return attempts
+
+
+# Runs inside the sandbox. Opens a CONNECT tunnel through the proxy named by
+# the sandbox's own HTTPS_PROXY (so the proxy wiring is exercised too), then
+# sends one real HTTP request through the tunnel and reads the answer to EOF
+# (never a single recv()).
+_C2_TUNNEL_PROBE = """
+import os, socket, sys, urllib.parse
+host, port, path = sys.argv[1], sys.argv[2], sys.argv[3]
+proxy = urllib.parse.urlsplit(os.environ["HTTPS_PROXY"])
+s = socket.create_connection((proxy.hostname, proxy.port), timeout=8)
+s.sendall(f"CONNECT {host}:{port} HTTP/1.1\\r\\nHost: {host}:{port}\\r\\n\\r\\n".encode())
+head = b""
+while b"\\r\\n\\r\\n" not in head:
+    chunk = s.recv(4096)
+    if not chunk:
+        break
+    head += chunk
+status = head.split(b"\\r\\n", 1)[0].decode("latin-1")
+if " 200 " not in status:
+    print("TUNNEL_FAILED", status)
+    sys.exit(0)
+s.sendall(f"GET {path} HTTP/1.1\\r\\nHost: {host}:{port}\\r\\nConnection: close\\r\\n\\r\\n".encode())
+buf = b""
+while True:
+    chunk = s.recv(4096)
+    if not chunk:
+        break
+    buf += chunk
+print("OK", buf.split(b"\\r\\n", 1)[0].decode("latin-1"), buf.split(b"\\r\\n\\r\\n", 1)[-1].decode("latin-1"))
+"""
+
+
 @_needs_docker
 @pytest.mark.asyncio
-async def test_c2_allowed_host_reaches_the_real_server_through_the_tunnel(net_backend, tmp_path):
-    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("example.com",), timeout_sec=15)
-    request = SandboxRequest(command=("python3", "-c", """
-import urllib.request, urllib.error, ssl
-ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
-try:
-    r = urllib.request.urlopen('https://example.com/', timeout=8, context=ctx)
-    print('OK', r.status)
-except urllib.error.HTTPError as e:
-    print('OK', e.code)  # reached the real server -- the tunnel worked, status is the server's own business
-except urllib.error.URLError as e:
-    print('TUNNEL_FAILED', e.reason)
-"""), policy=policy)
+async def test_c2_allowed_host_reaches_the_real_server_through_the_tunnel(
+    net_backend, tmp_path, loopback_upstream, no_name_resolution
+):
+    path = "/c2-tunnel-probe"
+    policy = SandboxPolicy(workspace_dir=str(tmp_path), allowed_hosts=("127.0.0.1",), timeout_sec=15)
+    request = SandboxRequest(
+        command=("python3", "-c", _C2_TUNNEL_PROBE, "127.0.0.1", str(loopback_upstream.port), path),
+        policy=policy,
+    )
     handle = await net_backend.create(request)
     try:
         result = await net_backend.run(handle, request)
         assert result.stdout.strip().startswith("OK"), result.stdout + result.stderr
+        assert f"upstream-saw:{path}" in result.stdout, result.stdout + result.stderr
+        assert loopback_upstream.requests == [path]
+        assert no_name_resolution == [], f"the test tried to resolve names: {no_name_resolution}"
     finally:
         await net_backend.destroy(handle)
 
