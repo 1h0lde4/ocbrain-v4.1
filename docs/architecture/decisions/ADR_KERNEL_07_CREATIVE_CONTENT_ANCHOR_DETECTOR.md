@@ -146,7 +146,7 @@ explicitly ACCEPTED by Moncif, so none is recorded as ACCEPTED. D-5 is decided (
 | D-2 | Keep the flag **off**; enabling is a measured experiment | PROPOSED — equals the implemented default |
 | D-3 | Cross-turn state / session identity → **its own future ADR** (number not reserved) | DEFERRED |
 | D-4 | Test D stays a strict `xfail`; depends on D-3 | DEFERRED |
-| — | Live draft-plan behavior (§10.4) | **OBSERVED for one model (llama3, n = 11); disposition pending** |
+| — | Live draft-plan behavior (§10.4) | **OBSERVED for one model (llama3): run 0 (n = 11) and a pre-registered 3-run batch — C1 FAIL (a rare single-step plan); disposition pending** |
 
 **No code on this branch depends on any of these dispositions.** D-2's "off" is the
 pre-existing default; D-3 and D-4 are unimplemented by design; D-1 is a documentation note.
@@ -280,10 +280,22 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     progressions, "beta readers", "select a joke from a database or generate one using an algorithm").
     **Answer to the narrow question: neither, cleanly.** The steps add almost no context toward "what should
     it be about?", and what they introduce is *process/form* assumptions, not *premise* assumptions.
+  - **Repeated runs (2026-10-12; same model, three runs, pre-registered protocol — record:
+    `OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RESULT_OCT2026.md`, "Repeated-run evidence"):** batch `20261012T121543Z`, tested
+    commit `e305f20`, `llama3:latest` ID `365c0bd3c000` (unchanged before/after), each run in its own process; valid
+    runs 3/3. Verdicts as computed: **C1 FAIL**, C2 PASS, C3 PASS (lexicon screen; the human read is outstanding),
+    C4 PASS — **Overall FAIL**. C1 failed because run 3 gave "tell me a joke" a single step (four steps in runs 1
+    and 2): a **counterexample to the universal claim "every plan is multi-step"** for this model at default
+    sampling — 1 of 33 plans in the batch, 2 of 77 across all independent samples seen (both that request). It is
+    **not** evidence that single-step plans are defective. Per-run median 8 / 7 / 8; plans over the cap 9 / 10 / 10;
+    every story plan had a character step; step counts varied between runs (e.g. essay 7–13). Not a robust
+    model-wide result: one model, three runs, sampling uncontrolled. (An earlier batch of 2026-10-09 was invalid —
+    runs 2 and 3 were prompt-cache replays of run 1 — and is not counted; see the protocol's Deviation 1.)
   - **My earlier hypothesis was wrong on both counts.** I expected a single-step, "redundant" plan and wrote
-    that the decomposition input is "the interpretation (not the raw request)". Refuted for this model
-    (0 of 11 single-step), and the input *is* the raw request: `structured_form["description"] =
-    intent.raw_request` (`core/cognitive/intent.py:1090`).
+    that the decomposition input is "the interpretation (not the raw request)". Refuted for this model in run 0
+    (0 of 11 single-step; qualified by the repeated runs above — single-step plans do occur, rarely), and the
+    input *is* the raw request: `structured_form["description"] = intent.raw_request`
+    (`core/cognitive/intent.py:1090`).
   - **The "interpretation" line is an echo.** Because `description` is the raw request by design, "Here's how
     I read your request: …" shows the user's own words. The only real interpretation signal the Intent stage
     produces is the hypothesis category label (`semantic_description` = "<label>: <request>", label dropped
@@ -294,18 +306,21 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     generic planning vocabulary (develop, including, clear, key, overall) counts as "content", so the label
     carries no information here and the printed steps are the evidence. The runbook's validity checker was
     also wrong at first (it treated an echoed interpretation as a sign of failure); corrected and tested.
-  - **Limits:** 11 requests; one model; one run (sampling variance unknown); a fresh, empty memory store; one
-    human reader; model identity recovered after the fact (`llama3:latest`, 8.0B, Q4_0, ID `365c0bd3c000`), sampling
-    uncontrolled (the code sets no temperature or seed, so a re-run is expected to differ), and the repo commit
-    not captured. It does **not** establish
+  - **Limits:** 11 requests; one model; run 0 plus one 3-run batch (sampling variance observed, not
+    characterized); a fresh, empty memory store; run 0: one reader (the author), model identity recovered after the
+    fact (`llama3:latest`, 8.0B, Q4_0, ID `365c0bd3c000`) and repo commit not captured; the batch: provenance
+    captured automatically, but the C3 **human** read is outstanding (Moncif's own read is not recorded); sampling
+    uncontrolled in both (the code sets no temperature or seed). It does **not** establish
     behavior with other models, with populated memory, or any effect on user outcomes. It does not accept
     this ADR.
   - **Containment options, none applied** — (A) `plan_steps=[]`; (B) drop both the plan and the echoed
     interpretation, leaving the question only; (C) cap the plan at three steps and fix its formatting.
     D-5 as decided says an ESCALATE *may* surface a question paired with the plan/intent, so (A) and (B)
-    stay inside it. The author's reading of the evidence favors (B). The run refutes the hypothesis and shows what the
-    system does; it does **not** by itself establish that the behavior is undesirable or that (B) is the only
-    correct response — that is a product/architecture decision. Disposition is Moncif's.
+    stay inside it. The author's reading of the evidence favors (B) — a reading recorded before the repeated runs, which
+    neither select nor exclude any option. Run 0 refuted the hypothesis in that run, and the repeated batch showed
+    that "every plan is multi-step" does not hold universally; together they show what the system does, **not**
+    that the behavior is undesirable or that (B) is the only correct response — that is a
+    product/architecture decision. Disposition is Moncif's.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
 
