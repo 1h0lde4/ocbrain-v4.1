@@ -34,6 +34,9 @@ EVENTS = {
     "learning.train_done",      # fine-tuning run completed
     "learning.distill_done",    # distillation batch completed
     "learning.gap_detected",    # gap detector found knowledge holes
+    "learning.job_failed",      # a background job failed (payload: job, phase, error_type, error_ref)
+    "learning.job_recovered",   # a failing background job succeeded again
+    "learning.job_abandoned",   # a background job was given up on after repeated loop crashes
     # Knowledge store
     "kb.ingested",              # new chunks written to ChromaDB
     # Brain health

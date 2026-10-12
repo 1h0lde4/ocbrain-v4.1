@@ -5,6 +5,7 @@ Mixes 20% of previous pairs to prevent catastrophic forgetting.
 import json
 import random
 from pathlib import Path
+from core.module_paths import module_child
 
 DATA_RAW    = Path(__file__).parent.parent / "data" / "raw"
 DATA_CHUNKS = Path(__file__).parent.parent / "data" / "chunks"
@@ -19,18 +20,18 @@ def prepare(module_name: str, registry: dict) -> Path | None:
     min_pairs = int(config.get("learning.min_pairs_to_train") or 500)
     replay    = float(config.get("learning.replay_ratio") or 0.2)
 
-    raw_pairs = _load_pairs(DATA_RAW / module_name)
+    raw_pairs = _load_pairs(module_child(DATA_RAW, module_name))
     if len(raw_pairs) < min_pairs:
         print(f"[trainer] {module_name}: only {len(raw_pairs)} pairs (need {min_pairs})")
         return None
 
-    prev_pairs = _load_pairs(DATA_CHUNKS / module_name, ext=".json")
+    prev_pairs = _load_pairs(module_child(DATA_CHUNKS, module_name), ext=".json")
     n_replay   = int(len(raw_pairs) * replay)
     replay_set = random.sample(prev_pairs, min(n_replay, len(prev_pairs)))
     mixed      = raw_pairs + replay_set
     random.shuffle(mixed)
 
-    out_path = DATA_CHUNKS / f"{module_name}_train.jsonl"
+    out_path = module_child(DATA_CHUNKS, module_name, "_train.jsonl")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     module = registry.get(module_name)

@@ -24,3 +24,15 @@ def log_and_ref(logger: logging.Logger, context: str, exc: BaseException) -> str
     ref = str(uuid.uuid4())
     logger.error("%s failed; error_id=%s", context, ref, exc_info=exc)
     return ref
+
+
+def log_text_and_ref(logger: logging.Logger, context: str, text: str) -> str:
+    """Like log_and_ref(), for a failure that only exists as text.
+
+    A worker's WorkerResult.error is a string, not an exception, so there is
+    no traceback to attach here (the worker logged its own where it caught
+    it). Log the text under a new id and return only that id.
+    """
+    ref = str(uuid.uuid4())
+    logger.error("%s failed; error_id=%s: %s", context, ref, text)
+    return ref

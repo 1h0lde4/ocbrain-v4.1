@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 
 from core.event_bus import bus
+from core.module_paths import module_child
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def _detect_gaps(module_name: str) -> list[str]:
     1. Low-confidence answers in query logs (if scores saved)
     2. Repeated queries with similar keywords (= user is asking about it a lot)
     """
-    raw_dir = DATA_RAW / module_name
+    raw_dir = module_child(DATA_RAW, module_name)
     if not raw_dir.exists():
         return []
 
@@ -127,7 +128,7 @@ def _answer_quality(answer: str) -> float:
 def _save_gap_queue(module_name: str, gaps: list[str]):
     """Persist gap queue so scheduler can process it later."""
     DATA_GAPS.mkdir(parents=True, exist_ok=True)
-    queue_file = DATA_GAPS / f"{module_name}_gaps.json"
+    queue_file = module_child(DATA_GAPS, module_name, "_gaps.json")
     existing = []
     if queue_file.exists():
         try:
@@ -140,7 +141,7 @@ def _save_gap_queue(module_name: str, gaps: list[str]):
 
 def load_gap_queue(module_name: str) -> list[str]:
     """Load pending gap topics for a module."""
-    queue_file = DATA_GAPS / f"{module_name}_gaps.json"
+    queue_file = module_child(DATA_GAPS, module_name, "_gaps.json")
     if not queue_file.exists():
         return []
     try:
@@ -151,14 +152,14 @@ def load_gap_queue(module_name: str) -> list[str]:
 
 def clear_gap_queue(module_name: str):
     """Clear queue after distillation."""
-    queue_file = DATA_GAPS / f"{module_name}_gaps.json"
+    queue_file = module_child(DATA_GAPS, module_name, "_gaps.json")
     if queue_file.exists():
         queue_file.unlink()
 
 
 def _load_known_topics(module_name: str) -> set[str]:
     """Topics already well-covered (from distillation history)."""
-    history_file = DATA_GAPS / f"{module_name}_known.json"
+    history_file = module_child(DATA_GAPS, module_name, "_known.json")
     if not history_file.exists():
         return set()
     try:
@@ -170,7 +171,7 @@ def _load_known_topics(module_name: str) -> set[str]:
 def mark_topic_known(module_name: str, topic: str):
     """Mark a topic as covered so we don't re-distill it."""
     DATA_GAPS.mkdir(parents=True, exist_ok=True)
-    history_file = DATA_GAPS / f"{module_name}_known.json"
+    history_file = module_child(DATA_GAPS, module_name, "_known.json")
     known = _load_known_topics(module_name)
     known.add(topic)
     history_file.write_text(json.dumps(list(known), indent=2))

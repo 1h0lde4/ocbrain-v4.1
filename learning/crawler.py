@@ -13,6 +13,7 @@ import trafilatura
 
 from core.config import config
 from core.privacy import privacy
+from core.module_paths import module_child
 
 DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
 _LAST_FETCH: dict[str, float] = {}   # url → last fetch timestamp
@@ -29,11 +30,11 @@ async def run_all(registry: dict):
 
 
 async def run_module(module_name: str):
+    out_dir = module_child(DATA_RAW, module_name)  # validate before anything else
     sources = config.get_sources(module_name)
     if not sources:
         return
 
-    out_dir = DATA_RAW / module_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     async with httpx.AsyncClient(

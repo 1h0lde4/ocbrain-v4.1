@@ -20,6 +20,7 @@ import httpx
 
 from core.config import config
 from core.event_bus import bus
+from core.module_paths import module_child
 
 DATA_RAW = Path(__file__).parent.parent / "data" / "raw"
 
@@ -168,7 +169,7 @@ def _score_pair(pair: dict) -> float:
 
 def _save_pairs(module_name: str, topic: str, pairs: list[dict]) -> int:
     _require_module_identifier(module_name)
-    out = DATA_RAW / module_name
+    out = module_child(DATA_RAW, module_name)
     out.mkdir(parents=True, exist_ok=True)
     saved = 0
     for pair in pairs:

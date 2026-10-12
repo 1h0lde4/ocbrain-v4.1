@@ -4,6 +4,7 @@ Uses a fixed eval set + cosine similarity vs external model.
 """
 import json
 from pathlib import Path
+from core.module_paths import module_child
 
 EVAL_DIR = Path(__file__).parent.parent / "data" / "evals"
 PASS_FLOOR     = 0.60    # absolute floor
@@ -87,7 +88,7 @@ def _cosine_sim(a: str, b: str) -> float:
 
 
 def _load_eval_set(module_name: str) -> list[tuple[str, str]]:
-    path = EVAL_DIR / f"{module_name}.json"
+    path = module_child(EVAL_DIR, module_name, ".json")
     if not path.exists():
         return []
     try:
@@ -100,5 +101,5 @@ def _load_eval_set(module_name: str) -> list[tuple[str, str]]:
 def save_eval_set(module_name: str, pairs: list[dict]):
     """Save a hand-crafted eval set for a module."""
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
-    path = EVAL_DIR / f"{module_name}.json"
+    path = module_child(EVAL_DIR, module_name, ".json")
     path.write_text(json.dumps(pairs, indent=2, ensure_ascii=False))
