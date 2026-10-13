@@ -132,15 +132,17 @@ variance across runs *(partly addressed since: see "Repeated-run evidence")*, or
 section does not accept ADR-KERNEL-07, applies no containment, and does not choose among options A–D.
 
 > **Limits.** One model, three runs, 11 prompts, sampling uncontrolled, a fresh and empty memory store. "PASS" here
-> means *no contradiction found in these runs*, not proof. The C3 **human** read is outstanding (see below). Nothing in
+> means *no contradiction found in these runs*, not proof. The C3 human review covered the flagged steps and the joke plans, not all 252 steps (see below). Nothing in
 > this section is a robust model-wide result.
 
 ### Method and history (so the numbers are not over-read)
 - **Protocol:** `docs/studies/OCBRAIN_LIVE_CHECK_REPEAT_RUNS_PROTOCOL_OCT2026.md`, criteria C1–C4 and thresholds
   pre-registered before any data; **not changed after seeing data**. That file and the tool live on PR #61's branch
-  `tools/live-check-repeat-runs` (draft, **not yet on `main`**); the tested commit below contains them.
-- **First batch (2026-10-09, tool at `258a58a`): INVALID.** Runs 2 and 3 were replays of run 1 served by the in-process
-  prompt cache (identical output, calls at 0 ms), so its "Overall: PASS" is **withdrawn**; kept only as a diagnostic
+  `tools/live-check-repeat-runs` (open PR, **not yet on `main`**); the tested commit below contains them. That branch's
+  protocol text was later reworded for calibration (`851d4ee`: the replay guard is a suspicion screen, not a proof of
+  replay); criteria and thresholds are unchanged and `e305f20` remains an ancestor of that branch.
+- **First batch (2026-10-09, tool at `258a58a`): INVALID.** Runs 2 and 3 were indistinguishable from replays of run 1
+  (byte-identical output, nearly every call at 0 ms), which the in-process prompt cache explains, so its "Overall: PASS" is **withdrawn**; kept only as a diagnostic
   record. The fix (one fresh process per preflight and run) and a replay guard are protocol **Deviation 1**, commit
   `e305f20`.
 - **Two interrupted batches** (2026-10-09 23:59 UTC and 2026-10-10 00:40 UTC; one completed isolated run each, then the
@@ -169,7 +171,7 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 | Check | Result |
 |---|---|
 | Valid runs | **3 of 3** (LIVE; no degraded row in any run; no replay flag) |
-| Independent samples | three **distinct** output fingerprints; wall-clock 7.2–7.8 min per run (a replay took 0–15 s) |
+| Independent samples | three **distinct** output fingerprints; wall-clock 7.2–7.8 min per run (the suspected replays took 0–15 s) |
 | Recomputation | `compare` re-run on the supplied archive with the tool at `e305f20`: `report.md` and `compare.json` **byte-identical** to the supplied ones |
 | Harness label | `speculative` on 11 of 11 plans in every run — saturated, **carries no information** (as in run 0) |
 
@@ -178,7 +180,7 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 |---|---|
 | C1 every plan multi-step (no single-step plan in any run) | **FAIL** |
 | C2 per-run median steps in [5,9] and ≥ 7 plans over the 5-step cap | PASS |
-| C3 no concrete-premise word in any step (lexicon screen; human read still required) | PASS (automated) — **human read: see below** |
+| C3 no concrete-premise word in any step (lexicon screen; human read still required) | PASS (automated) · human review of the flagged steps and the joke plans: **PASS, qualified on run 2** (see below) |
 | C4 form/process presupposition recurs (≥ 5 story plans with a character step and ≥ 1 essay plan with an argument/research step, every run) | PASS |
 | **Overall** | **FAIL** |
 
@@ -214,6 +216,9 @@ four in run 2 (run 1: Think of a joke that is likely to be understood and apprec
   environments, not pre-registered), both for `tell me a joke` (step counts for that request across those samples:
   5, 5, 3, 1, 4, 4, 1).
 - It qualifies the earlier "hypothesis test — REFUTED" below: that conclusion holds for run 0 only.
+- **Validity of the counterexample run:** run 3 is part of a valid batch (3 of 3) — LIVE, no degraded row, its own fresh
+  process (pid 16424), 7.8 min, output fingerprint distinct from runs 1–2, no replay flag. The **C1 verdict FAIL is
+  preserved**: the criterion was not changed, and the C3 review below neither offsets nor modifies it.
 
 ### C3: review status
 - **Automated:** PASS — the 55-word lexicon found no hit in 252 steps.
@@ -227,8 +232,25 @@ four in run 2 (run 1: Think of a joke that is likely to be understood and apprec
   run); outlines and drafts for a one-line request; "beta readers" and "publish in print and digital formats" (novel
   plans); "record a rough demo" (song plans); "query letter, synopsis, and other marketing materials" (run 1 novel
   plan); advice that reads as addressed to a human author.
-- **Outstanding:** the protocol asks for a **human** read. Moncif's own read is **not recorded**. C3 therefore stands
-  as *automated PASS + AI read; human read pending* — not as fully reviewed.
+- **Human review (Moncif), 2026-10-13 — scope: the three flagged steps and the three joke plans, not all 252 steps.
+  C3: PASS for the three "historical" examples, with a scope qualification on run 2.**
+  - Run 1, "write a novel": acceptable; research and fact-checking are limited to historical, scientific or cultural
+    details integral to the plot or setting.
+  - Run 2, "write a long story please": the instruction to research historical events, cultural context and
+    geographical details is overly broad for an unspecified story; it should ideally be conditional on the setting
+    and story requirements. A **plan-quality concern, not evidence that a concrete premise has been invented**.
+  - Run 3, "write a long story please": acceptable; it refers to *relevant* historical or scientific context, which
+    does not require those elements in every story.
+  - The word "historical" alone does not establish that the plan invented a concrete premise; the three examples do
+    not justify a C3 failure.
+- **Joke plans — structural assessment (Moncif; plan quality, separate from C3 and from C1):** runs 1 and 2 are
+  coherent four-step plans (choosing a punchline before constructing the setup is a legitimate approach); run 3 is
+  **unsatisfactory as a complete plan** for "tell me a joke": a punchline-generation step only, no setup, and the
+  "vast repository of known humor" wording — which does not establish copying but is a less appropriate formulation
+  than explicitly constructing a joke.
+- **C3 status:** automated PASS; AI read of all 252 steps; human review of the flagged steps and the joke plans: PASS
+  (qualified). **Not done:** a human read of all 252 steps. The human C3 disposition is recorded separately from the C1
+  result, which stays **FAIL**.
 
 ### What the repeated runs show — and do not show
 - **Held in all three runs:** C2–C4 features — median 7–8, 9–10 of 11 plans over the display cap, a character step
@@ -240,16 +262,24 @@ four in run 2 (run 1: Think of a joke that is likely to be understood and apprec
   "robust": three runs, one model, uncontrolled sampling.
 
 ### Artifacts and where they live
-The raw batch is **not committed** to this repository (`live_runs/` is kept out of git by design). Moncif supplied it
-as `archive.zip` (SHA-256 `b6d51a901d89ca3e8f19a7add0c1b11dc6aba8b7936b8db1ada309552bff2f0f`); it exists only as that
-copy and cannot be regenerated identically (sampling is stochastic). Members (SHA-256):
-`meta.json` `09305493b490621d41e64d8ac85968df91c1dae98a87e1661bce1cd5d032928e` ·
-`run1.json` `802c99df5f28b44c9a11cffa6a7f768c4084a39fecc1ebfdadd730eff2730ae2` ·
-`run2.json` `a5cee0a386de8103281eb48a49779f816e4feaed347c414ab2c304f8c364ed24` ·
-`run3.json` `49a4fe343a91e0f68b04991298342448fb75c827aacab635164f2de6390dfcb7` ·
-`compare.json` `561eac17c3d79817698cffad51a0b49c55227e3e9c847634c29e6885ddbbd483` ·
-`report.md` `7b5786d025e83d5618c31fdda8c67d596efddd8154e94d3a9435c9e19651105f`.
-Keep the archive: the hashes let anyone verify a copy, but nothing else in the repository reproduces it.
+- **In the repository:** `docs/studies/evidence/live-check-draft-plan-batch-20261012T121543Z.zip` — the archive exactly
+  as supplied by Moncif (supplied name `archive.zip`; **only the file name differs, the bytes are unchanged**), added
+  by commit `ad3a7e79f7d30c66ed3535dc4a4715198e2e507b` on this branch (PR #45). **21,632 bytes**; SHA-256
+  `b6d51a901d89ca3e8f19a7add0c1b11dc6aba8b7936b8db1ada309552bff2f0f`. **Independently verified 2026-10-13:** the hash of the supplied file, of the blob in
+  that commit, and of a copy downloaded back from the remote after the push are identical, and `unzip -t` reports no
+  errors. The contents were scanned beforehand: no tokens, emails, home paths or IP addresses. The repository is public.
+- **Second copy in an access-controlled store:** to be retained (decision of 2026-10-13). **Not yet recorded as
+  placed:** its location will be recorded here once the copy has actually been placed there; nothing is claimed about
+  it now.
+- **Members (SHA-256):**
+  `meta.json` `09305493b490621d41e64d8ac85968df91c1dae98a87e1661bce1cd5d032928e` ·
+  `run1.json` `802c99df5f28b44c9a11cffa6a7f768c4084a39fecc1ebfdadd730eff2730ae2` ·
+  `run2.json` `a5cee0a386de8103281eb48a49779f816e4feaed347c414ab2c304f8c364ed24` ·
+  `run3.json` `49a4fe343a91e0f68b04991298342448fb75c827aacab635164f2de6390dfcb7` ·
+  `compare.json` `561eac17c3d79817698cffad51a0b49c55227e3e9c847634c29e6885ddbbd483` ·
+  `report.md` `7b5786d025e83d5618c31fdda8c67d596efddd8154e94d3a9435c9e19651105f`.
+- The batch cannot be regenerated identically (sampling is stochastic). The batch's own `live_runs/` directory stays
+  out of git by design; the committed archive is the evidence copy.
 
 ### Applicability to current `main`
 Static comparison only; the harness was **not** re-run on current `main`. Between the tested commit `e305f20` (product

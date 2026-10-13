@@ -283,14 +283,14 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
   - **Repeated runs (2026-10-12; same model, three runs, pre-registered protocol — record:
     `OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RESULT_OCT2026.md`, "Repeated-run evidence"):** batch `20261012T121543Z`, tested
     commit `e305f20`, `llama3:latest` ID `365c0bd3c000` (unchanged before/after), each run in its own process; valid
-    runs 3/3. Verdicts as computed: **C1 FAIL**, C2 PASS, C3 PASS (lexicon screen; the human read is outstanding),
+    runs 3/3. Verdicts as computed: **C1 FAIL**, C2 PASS, C3 PASS (lexicon screen; human review of the flagged steps and the joke plans: PASS, qualified),
     C4 PASS — **Overall FAIL**. C1 failed because run 3 gave "tell me a joke" a single step (four steps in runs 1
     and 2): a **counterexample to the universal claim "every plan is multi-step"** for this model at default
     sampling — 1 of 33 plans in the batch, 2 of 77 across all independent samples seen (both that request). It is
     **not** evidence that single-step plans are defective. Per-run median 8 / 7 / 8; plans over the cap 9 / 10 / 10;
     every story plan had a character step; step counts varied between runs (e.g. essay 7–13). Not a robust
     model-wide result: one model, three runs, sampling uncontrolled. (An earlier batch of 2026-10-09 was invalid —
-    runs 2 and 3 were prompt-cache replays of run 1 — and is not counted; see the protocol's Deviation 1.)
+    runs 2 and 3 were indistinguishable from prompt-cache replays of run 1 — and is not counted; see the protocol's Deviation 1.)
   - **My earlier hypothesis was wrong on both counts.** I expected a single-step, "redundant" plan and wrote
     that the decomposition input is "the interpretation (not the raw request)". Refuted for this model in run 0
     (0 of 11 single-step; qualified by the repeated runs above — single-step plans do occur, rarely), and the
@@ -309,7 +309,7 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
   - **Limits:** 11 requests; one model; run 0 plus one 3-run batch (sampling variance observed, not
     characterized); a fresh, empty memory store; run 0: one reader (the author), model identity recovered after the
     fact (`llama3:latest`, 8.0B, Q4_0, ID `365c0bd3c000`) and repo commit not captured; the batch: provenance
-    captured automatically, but the C3 **human** read is outstanding (Moncif's own read is not recorded); sampling
+    captured automatically, and C3 was human-reviewed only on the flagged steps and the joke plans, not on all 252 steps; sampling
     uncontrolled in both (the code sets no temperature or seed). It does **not** establish
     behavior with other models, with populated memory, or any effect on user outcomes. It does not accept
     this ADR.
