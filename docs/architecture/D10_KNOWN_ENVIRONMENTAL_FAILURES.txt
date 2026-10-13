@@ -1,9 +1,21 @@
 # K4.2-H2 D10 -- known environmental test failures (Hugging Face Hub
 # connectivity class). One pytest node ID per line (lines starting with
-# # are comments). CI's "no new failures" gate (.github/workflows/ci.yml)
-# treats any FAILED test NOT in this list as a genuine regression;
-# anything IN this list that starts passing is fine (not flagged) --
-# only new, unlisted failures fail the build.
+# # are comments). CI's test gate (.github/workflows/ci.yml; the decision
+# is made by scripts/ci_test_gate.py since FZ-07 / B9) treats any FAILED
+# test NOT in this list as a genuine regression; anything IN this list
+# that starts passing is fine (not flagged).
+#
+# What listing a test here does and does NOT do: it tolerates that test's
+# FAILED result, and only while pytest exits with code 1 and its summary
+# agrees (failed count == distinct FAILED node IDs, every one listed).
+# It never excuses anything else. Collection/setup/teardown ERRORs,
+# INTERNALERROR, a run that passed nothing, a missing summary line and
+# every other pytest exit code (2, 3, 4, 5, kills, crashes) fail the build
+# regardless of this list; they cannot be listed.
+#
+# Matching is by exact node ID. A node ID containing " - " cannot be
+# matched yet (the gate cuts a FAILED line at its first " - "; recorded as
+# residual R-1 of FZ-07 in KNOWN_ISSUES.md). Do not add such an entry.
 #
 # This exact 34-item set was independently, repeatedly reconfirmed
 # byte-for-byte identical across five separate checks in one session
