@@ -654,3 +654,161 @@ The five original D11 race-pair tests passed because they fire the pairs but nev
 **Verification of this step.** Documentary: the Status column of §18.2 was parsed after the edit: 28 rows; 22 PASS, 1 FAIL (C2), 1 EXCEPTION ACCEPTED (B4), BLOCKED for A1 and C3, UNVERIFIED for A9, and "UNVERIFIED — BLOCKED" for D9, which the tally counts once, under BLOCKED, as §18 always has. That is 22 + 1 + 1 + 3 + 1 = 28, matching the tally above. The commit's diff contains this document only; `core/`, `tests/`, the frozen addendum and checklist, `handoff.md` and `KNOWN_ISSUES.md` are unchanged.
 
 **Addendum (October 6 2026).** D11 was reopened as DEFECT IDENTIFIED (§19.1) after this decision was recorded. The final tally above was superseded while D11 was open and holds again now that D11 is closed on new evidence (§19.1); the decision itself (Outcome 2, `sandbox-fabric` explicitly incomplete) and every other status are unchanged.
+
+## 20. B01: the network-isolation contract suite, written red (October 13 2026)
+
+**Scope of this section.** Evidence record (ruling OD-6) for batch B01 of the `sandbox-network-isolation` workstream (`docs/architecture/sandbox-network-isolation-master-specification.md` §16 B01). B01 adds one test file and changes nothing else: `tests/core/sandbox/test_network_isolation_contract.py`. No source file, contract, admission rule or capability changed; `_CAPS` is still 7 of 12; `NETWORK_ALLOWLIST` and `NET_NAMESPACE` remain withdrawn.
+
+**Status vocabulary (PROJECT_INSTRUCTIONS §0.3).** The suite is **IMPLEMENTED** and **VERIFIED** for the scope stated below. **No gate is earned and nothing is closed:** DEBT-039 and DEBT-040 are open, C2 stays FAIL, A1 stays BLOCKED, and the closure tally of §18/§19.4 (22 PASS / 1 FAIL / 3 BLOCKED / 1 UNVERIFIED / 1 EXCEPTION ACCEPTED) is unchanged. The suite defines the red state; it does not move any item.
+
+### 20.1 What B01 defines
+
+INV-1 (spec §5): a networked sandbox can reach, from its network, only its own proxy endpoint. The cases probe behavior from inside a sandbox, from a test-owned attacker container and from the host; none presupposes a firewall, a per-sandbox network or any other mechanism (ruling D3). Each case calls `create()` directly (admission is withdrawn), asserts that its setup fired and its controls held, and compares Docker containers, Docker networks and the firewall (`iptables-save` without counters) with the start-of-test baseline.
+
+| Case | Variants | What must be true (INV-1) | Open debt that makes it red today | Violation class (the marker's `raises`) |
+|---|---|---|---|---|
+| TC-01 | 1 | A TCP service bound to `0.0.0.0` on the host is unreachable from a sandbox through the gateway address; the sandbox's own proxy still answers (control); a `127.0.0.1`-bound service is unreachable (negative control) | DEBT-040 (F6) | `Debt040Violation` |
+| TC-02 | 1 | The same for a UDP socket: no datagram arrives | DEBT-040 (F6) | `Debt040Violation` |
+| TC-03 | 4: `handed_port`, `scan`, `connect_method`, `plain_http` | Sandbox B, whose allowlist differs from A's, cannot connect to A's proxy endpoint (handed its port), cannot discover it by scanning the gateway over `{3128} ∪` the host's ephemeral range, and cannot obtain a CONNECT tunnel or a plain-HTTP fetch of A's host through it | DEBT-039 (F1 to F4) | `Debt039Violation` |
+| TC-04 | 2: `sibling_proxy`, `host_primary` | A test-owned container joined to B's own network with `NET_RAW` added by the test (OD-8) crafts an `AF_PACKET` SYN: no SYN-ACK from A's proxy endpoint, none from a host service on the primary address; the same probe to B's own proxy endpoint gets a SYN-ACK (positive control) | DEBT-039 (F28) and DEBT-040 (F28) | `Debt039Violation` and `Debt040Violation`, one per variant |
+
+**Red for the right reason.** Every variant carries one `xfail(strict=True, raises=<specific violation class>, condition=not provisioned)` whose reason names the debt. The violation classes are raised only by the contract assertion, after setup and controls held, so a harness error (`HarnessError`), a failed control or an ordinary `AssertionError` is not absorbed and fails the case. `strict=True` turns an unexpected pass into a failure, which forces the batch that earns the gate to remove the marker in the same change (never the known-failures manifest; PROJECT_INSTRUCTIONS §16.4). Five meta-tests that need no Docker check the markers by inspecting the cases found by name.
+
+**Host gating (spec §14).** D: a reachable Docker daemon and the test image present locally (`OCBRAIN_SANDBOX_DOCKER_IMAGE`, which must contain `python3`); otherwise the Docker cases skip with that reason. P: `OCBRAIN_SANDBOX_NETWORK_PROVISIONED=1` declares the host provisioned and runs the cases without the marker. **P is an interim declaration of this batch's own design (no provisioning artifact exists until B10, which replaces it with the provisioning script's verify mode); it can only make the suite stricter, never more lenient, and it is flagged for the user's review rather than ruled.**
+
+### 20.2 OD-6 record
+
+| Field | Value |
+|---|---|
+| Final commit SHA | `694ba2a14e408c1c9930f0d863caa0cd14d231bf` (the test commit; the test file's blob is `abcf31df43e6287c2d05935d33f2dd4399942603`, sha256 `b776b239acb09bb7a81f650f5af16c275f4743f90e421c75660a3f8e75831623`). The commit that records this section follows it and changes only this document |
+| Branch and base | `sandbox-network-isolation/b01-contract-suite`, based on `sandbox-network-isolation/b01-base` = `sandbox-fabric` = `d5de7baf0ff32d0d6c68f4b597d0d442a5e023b6` (PRs #72 and #75 merged; the original baseline `4f4578a` is an ancestor) |
+| Host fingerprint | Linux kernel `6.18.44-fc-v114`, 2 CPUs; Docker 29.8.2 (API 1.56); `iptables v1.8.10 (nf_tables)`; Python 3.13.16; pytest 9.1.1 (pytest-asyncio 1.4.0, anyio 4.15.1); test image `ocbrain-test/base:local`, ID `sha256:ce6ff6bac67827e3678f33b9270cc595315f3b0876bb745306d40b887549eb89` |
+| Environment adjustments the verdict depends on | The ones recorded for the revalidation of `d5de7ba`: `/usr/bin/python3` is a direct symlink to `python3.13`; `NO_PROXY` and `no_proxy` unset for pytest (`env -u NO_PROXY -u no_proxy`); `iproute2`, `gcc-multilib` and `libc6-dev-i386` installed; trimmed image above. The new file itself needs only Docker, `iptables-save` (optional: when it cannot be read the firewall comparison is skipped and the Docker comparison still runs) and an image with `python3` |
+| Provisioning state | **Not provisioned.** No isolation mechanism exists on this host or in the code; `OCBRAIN_SANDBOX_NETWORK_PROVISIONED` was unset for the evidence runs. The shared network `ocbrain-sandbox-net` (`--internal`, ICC off, gateway `172.18.0.1`) is the only infrastructure |
+| Exact command (evidence of record) | `OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_network_isolation_contract.py -v -rxXs -p no:cacheprovider`, run on the clean committed tree at `694ba2a`, with the Docker daemon started in the same shell call |
+| Result | 13 collected: **8 XFAIL** (TC-01, TC-02, TC-03 ×4, TC-04 ×2), **5 PASSED** (the meta-tests); `5 passed, 8 xfailed in 25.94s`. Timestamp `2026-10-13T11:05:14Z` to `11:05:41Z` |
+| Cleanup and baseline check | Before and after the run: 0 containers, 4 Docker networks (`bridge`, `host`, `none`, `ocbrain-sandbox-net`), and the same `iptables-save` digest (counters and chain headers excluded, `cc263ef99b33`). The fixture `host_baseline` additionally asserts this inside every Docker case at teardown |
+| Reproduction artifacts | The command above and the committed test file. The scratch firewall used for the green-path check (§20.4) is reproduced verbatim in §20.6; it is not part of the suite |
+
+### 20.3 The red state is red for the documented reason
+
+Evidence that each case fails with its documented violation, on the file as committed (this run, like the mutation, scratch-firewall, skip and full-suite runs below, was made on the working tree before the commit; the test file is byte-identical to the committed blob `abcf31d…`): with the strict markers withdrawn by declaring the host provisioned (`OCBRAIN_SANDBOX_NETWORK_PROVISIONED=1`, no mechanism present), the same command gives `8 failed, 5 passed in 25.56s`, and every failure is the intended violation class (sandbox ids elided):
+
+- TC-01: `Debt040Violation: DEBT-040/F6: sandbox … delivered its token to a TCP service bound to 0.0.0.0 on the host, through its gateway 172.18.0.1 (network ocbrain-sandbox-net)`
+- TC-02: `Debt040Violation: DEBT-040/F6: sandbox … delivered UDP datagrams to a socket bound to 0.0.0.0 on the host, through its gateway 172.18.0.1 (network ocbrain-sandbox-net)`
+- TC-03 `handed_port`: `Debt039Violation: … sandbox B … connected to A's proxy endpoint 172.18.0.1:<port> when handed its port; B's own allowlist does not contain A's host`
+- TC-03 `scan`: `Debt039Violation: … discovered A's proxy endpoint … by scanning (open endpoints: [B's own, A's])`
+- TC-03 `connect_method`: `Debt039Violation: … obtained a CONNECT tunnel to A's host through A's proxy ('HTTP/1.1 200 Connection Established')`
+- TC-03 `plain_http`: `Debt039Violation: … fetched A's host with plain HTTP through A's proxy ('HTTP/1.0 200 OK')`
+- TC-04 `sibling_proxy`: `Debt039Violation: … a NET_RAW container on sandbox B's network … crafted a frame and got a SYN-ACK from A's proxy endpoint 172.18.0.1:<port>`
+- TC-04 `host_primary`: `Debt040Violation: … got a SYN-ACK from a TCP service on the host's primary address <host primary>:<port>`
+
+These are exactly F6 (TC-01, TC-02), F1 to F4 (TC-03) and F28 (TC-04) of the study documents. Every failure was reached through every setup check and every control (own proxy answers 403 for a non-allowlisted name; the `127.0.0.1`-bound listener stays unreachable; the host's own setup probe is received; B's allowlist rejects A's host; the scan finds B's own endpoint; the crafted frame to B's own endpoint gets a SYN-ACK; two independent observers agree where the host can observe).
+
+### 20.4 Checks that the suite can fail loudly and can pass
+
+Six one-line mutations of a scratch copy of the file (deleted afterward) each had to produce a hard FAILED, never an XFAIL. All six did:
+
+| Mutation | Fault class | Result |
+|---|---|---|
+| TC-01 probe calls an undefined function | broken probe | `HarnessError: the probe did not run to completion (exit 1 …)` |
+| marker `strict=True` replaced by `strict=False` | loose marker | meta-test fails: `the marker is not strict` |
+| TC-01 raises a plain `AssertionError` in place of `Debt040Violation` | wrong exception class | FAILED with that `AssertionError` (not absorbed by `raises=`) |
+| TC-03 gives B the same allowlist as A | control invalid | `control: B's own proxy did not reject A's allowed host ('HTTP/1.1 200 Connection Established'); the two allowlists do not differ` |
+| TC-02 probe sends no datagram | silent probe | `the probe did not send its datagrams` |
+| TC-04 attacker without `NET_RAW` | control invalid | `control: the crafted frame to B's own proxy endpoint … got 'NO_AF_PACKET PermissionError'` |
+
+**The cases can pass.** A throwaway destination-keyed firewall (§20.6; not a mechanism proposal, never committed) that accepts only a sandbox's own proxy port from the sandbox bridge and drops everything else from it made all 13 cases pass with P declared (`13 passed in 82.67s`), and without the declaration it made the 8 marked variants XPASS(strict) and fail the suite (`8 failed, 5 passed in 82.19s`), which is the intended behavior: the marker must be removed in the change that earns the gate. After both runs no scratch rule remained in `iptables-save`. This shows the assertions are satisfiable and not contradicted by their own controls. It is **not** evidence that any proposed mechanism works, and it does not touch any gate.
+
+**Skip behavior.** With no `docker` binary on `PATH`: `8 skipped` ("requires a reachable Docker daemon") and 5 passed. With the daemon up but the image absent: `8 skipped` ("requires the test image … locally (OCBRAIN_SANDBOX_DOCKER_IMAGE; it must contain python3)") and 5 passed. A TC-04 variant also skips, with its reason, when the host has no primary non-loopback IPv4 address.
+
+### 20.5 Suite, type check, drift, cleanup
+
+| Check | Command | Result |
+|---|---|---|
+| Full sandbox suite, 3 runs | `OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox -q -p no:cacheprovider` | 3 × `158 passed, 8 xfailed` (125.67 s, 123.19 s, 120.69 s; 2026-10-13 10:57Z to 11:01Z). The 153 tests of the `d5de7ba` revalidation plus the 5 meta-tests, plus the 8 expected-red variants; 0 failures, 0 errors, 0 XPASS |
+| Type check | `python3 -m mypy tests/core/sandbox/test_network_isolation_contract.py --explicit-package-bases --ignore-missing-imports` | `Success: no issues found in 1 source file` |
+| Type check, source | `python3 -m mypy core/sandbox --explicit-package-bases --ignore-missing-imports` | `Success: no issues found in 12 source files` |
+| Drift | `python3 scripts/check_drift.py` | 15 of 15 PASS |
+| Orphans | `docker ps -aq`; `docker network ls` | 0 containers; no network beyond `bridge`, `host`, `none`, `ocbrain-sandbox-net` |
+
+Limits: this is one host and one adjusted environment. An unadjusted VM fails the `NamespaceBackend` tests on untouched code for environmental reasons (the user has not ruled on that classification; B01 neither changes nor relies on it). Nothing here says anything about `NamespaceBackend` (TC-17 belongs to B04). The red state is demonstrated on a Docker host without provisioning; it is not demonstrated on a provisioned host, and there is none yet.
+
+### 20.6 Interpretations to confirm, and the scratch firewall
+
+Choices made inside B01 that the specification does not fix. None changes a requirement; each is stated so it can be overruled:
+
+1. **P is an environment variable** (`OCBRAIN_SANDBOX_NETWORK_PROVISIONED=1`) until B10 provides a verify mode (§20.1).
+2. **TC-03 "scanning the gateway ranges"** is implemented as a TCP connect scan of the gateway address(es) over `{3128} ∪` the host's ephemeral range (`/proc/sys/net/ipv4/ip_local_port_range`), with a control that the scan finds B's own endpoint. It is not a scan of the Docker address pool.
+3. **TC-04 is two variants**, one per debt it demonstrates, each with its own typed marker. The host variant targets a test-owned listener on the host's primary IPv4 address, because nothing listens on the proxy port there; the sibling variant targets A's proxy endpoint.
+4. **TC-04's positive control is network-scoped**, as INV-1 ("from its network") and rule S2 (keyed on the ingress interface, never on a source address) are: the attacker is a different container on B's network, and the same crafted frame to B's own proxy endpoint must get a SYN-ACK. A mechanism keyed on a sandbox's source address would fail that control as a harness-level failure, not as a contract violation.
+5. **Setup**: the module-scoped `_infrastructure_warm` fixture creates and destroys one networked sandbox first so persistent infrastructure (today the shared network) is not mistaken for a leak. It uses only the public backend API.
+
+**Scratch firewall (verbatim; sha256 `86ba9d2ad500641e388ca64a804cbcd9619a8e4e8e5319ae8b8931c095338e81`; loaded with `PYTHONPATH=<dir> python3 -m pytest -p scratch_fw_plugin …`; not part of the suite).** It wraps the test module's `_created` to insert, per "own" sandbox, an `INPUT` accept for that sandbox's own proxy port from the sandbox bridge, plus one drop for everything else from that bridge, and removes them on exit; it filters its own tagged rules out of the firewall snapshot so the baseline check still compares the real host.
+
+```python
+"""SCRATCH ONLY (never committed): a throwaway destination-keyed firewall used to
+show that the B01 contract cases CAN pass when only a sandbox's own proxy
+endpoint is reachable from the sandbox network. It is not a mechanism proposal."""
+import contextlib
+import subprocess
+
+import pytest
+
+TAG = ["-m", "comment", "--comment", "b01-scratch"]
+_state = {"drop": 0}
+
+
+def _ipt(*args):
+    r = subprocess.run(["iptables", *args], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"iptables {args}: {r.stderr}")
+
+
+def _bridge(network):
+    nid = subprocess.run(["docker", "network", "inspect", network, "--format", "{{.Id}}"],
+                         capture_output=True, text=True).stdout.strip()
+    return "br-" + nid[:12]
+
+
+@pytest.fixture(autouse=True)
+def _scratch_fw(request, monkeypatch):
+    mod = request.module
+    if not hasattr(mod, "_created"):
+        yield
+        return
+    orig = mod._created
+    orig_snap = mod._firewall_snapshot
+
+    def snap():
+        s = orig_snap()
+        return None if s is None else "\n".join(l for l in s.splitlines() if "b01-scratch" not in l)
+
+    @contextlib.asynccontextmanager
+    async def created(backend, req):
+        async with orig(backend, req) as (handle, view):
+            br = _bridge(view.network)
+            own = req.policy.allowed_hosts[0] not in ("127.0.0.1", "a-only.invalid")
+            installed = []
+            if own:
+                if _state["drop"] == 0:
+                    _ipt("-I", "INPUT", "1", "-i", br, "-j", "DROP", *TAG)
+                _state["drop"] += 1
+                rule = ["-i", br, "-d", view.gateway, "-p", "tcp", "--dport", str(view.proxy_port), "-j", "ACCEPT", *TAG]
+                _ipt("-I", "INPUT", "1", *rule)
+                installed.append(rule)
+            try:
+                yield handle, view
+            finally:
+                for rule in installed:
+                    _ipt("-D", "INPUT", *rule)
+                    _state["drop"] -= 1
+                    if _state["drop"] == 0:
+                        _ipt("-D", "INPUT", "-i", br, "-j", "DROP", *TAG)
+
+    monkeypatch.setattr(mod, "_created", created)
+    monkeypatch.setattr(mod, "_firewall_snapshot", snap)
+    yield
+```
+
+**What B01 did not do.** No `KNOWN_ISSUES.md` or `CURRENT_STATE.md` change (outside the batch and not warranted: no debt moved), no provisioning artifact, no mechanism, no source change, no new `SandboxCapability`. **Next (not started):** B02 (the direct `NET_NAMESPACE` gate), B03, B05 (H2 study), B04, then DG-1 and DG-2, in the order the specification and the user's rulings set.
