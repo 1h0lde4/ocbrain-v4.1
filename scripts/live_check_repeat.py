@@ -16,8 +16,8 @@ USAGE (run from the repo root, in the Codespace where Ollama and the model are a
 ISOLATION. The preflight and EVERY run execute in their own fresh Python process (`_worker`, below). This is
 load-bearing, not tidiness: core/provider_mesh.py routes every model call through a module-level prompt cache
 (core/prompt/cache.py, keyed by the full prompt, 1 h TTL) and a shared network client. When this tool used to
-run all runs inside ONE process, runs 2..N were replays of run 1 served from that cache (0 ms calls, identical
-output) and the first call of each later run hit a closed event loop. See the protocol's "Deviation 1".
+run all runs inside ONE process, runs 2..N were indistinguishable from replays of run 1 (0 ms calls, byte-identical
+output) -- which that cache explains -- and the first call of each later run hit a closed event loop. See the protocol's "Deviation 1".
 
 `run` first does a one-request PREFLIGHT and aborts (exit 2) if the provider is not working, so a bad setup
 costs seconds, not 25 minutes. It then records, automatically: repo commit + dirty state, Python/platform, the
@@ -65,7 +65,8 @@ MIN_VALID_RUNS = 2                                 # fewer valid runs than this 
 # Validity guards -- NOT criteria. Added AFTER the first repeated-run batch (protocol "Deviation 1"): they only decide
 # whether a run counts as an independent sample. C1-C4 and every threshold above are unchanged.
 # Coarse floor, deliberately far below real latencies: the two real live runs observed so far needed >= ~25 s per
-# escalating request (2 model calls, each >= ~12 s); the replayed runs needed 0 s and ~1.4 s per request.
+# escalating request (2 model calls, each >= ~12 s); the suspected replays needed 0 s and ~1.4 s per request.
+# Elapsed time is INDIRECT evidence: below the floor, freshness is not established; it does not prove a cache replay.
 REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST = 2.0
 PREFLIGHT_TIMEOUT_S = 900                          # worker wall-clock limits (a cold model load took ~95 s once)
 RUN_TIMEOUT_S = 3600
@@ -215,7 +216,8 @@ def subprocess_executor(harness_path: Path = HARNESS_PATH, *, python: str = sys.
 
 def _in_process_executor(harness: Any) -> Executor:
     """TEST ONLY. Runs the harness inside THIS process, so the prompt cache, provider singletons and network client
-    persist from call to call -- exactly what made the first batch's runs 2..N replays. Never use for a live batch."""
+    persist from call to call -- the condition under which the first batch's runs 2..N became indistinguishable from
+    replays. Never use for a live batch."""
     def execute(requests: Sequence[str], offline: str, label: str, timeout_s: int) -> Dict[str, Any]:
         result = asyncio.run(harness.run(list(requests), offline=offline))
         return {**result, "worker": {"mode": "in-process", "pid": os.getpid()}}
@@ -257,15 +259,17 @@ def fingerprint(rec: Dict[str, Any]) -> str:
 
 
 def replay_reasons(rec: Dict[str, Any], earlier: Dict[str, int]) -> List[str]:
-    """Why this LIVE run cannot be counted as an independent sample. `earlier` maps fingerprint -> run index."""
+    """Why this LIVE run is not counted as an independent sample: suspicion or freshness not established, never proof of
+    a replay. `earlier` maps fingerprint -> run index."""
     esc = [r for r in rec["rows"] if r.get("would_escalate")]
     if rec.get("mode") != "LIVE" or not esc:
         return []
     reasons: List[str] = []
     secs, floor = run_seconds(rec), REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST * len(esc)
     if secs is not None and secs < floor:
-        reasons.append(f"finished in {secs:.0f}s, below the {floor:.0f}s floor ({REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST:g}s x "
-                       f"{len(esc)} escalating requests): the model answers were not freshly generated (cache replay)")
+        reasons.append(f"SUSPICIOUS: finished in {secs:.0f}s, below the {floor:.0f}s floor ({REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST:g}s x "
+                       f"{len(esc)} escalating requests); freshness of the model answers is not established "
+                       "(a cache replay is suspected, not proven: elapsed time is indirect evidence)")
     fp = fingerprint(rec)
     if fp in earlier:
         reasons.append(replay_reasons_identical(earlier[fp]))
@@ -391,7 +395,8 @@ def flag_replays(metrics: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def replay_reasons_identical(index: int) -> str:
-    return f"output identical to run {index}: indistinguishable from a replay, so not an independent sample"
+    return (f"output identical to run {index}: indistinguishable from a replay (not proven to be one), "
+            "so it is not treated as an independent sample")
 
 
 def evaluate(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:

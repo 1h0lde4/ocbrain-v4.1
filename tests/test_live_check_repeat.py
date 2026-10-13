@@ -5,9 +5,9 @@ nothing about any real model; that is what the live batch is for. The isolation 
 only against a tiny stub harness script (or the real harness in --offline mode), never against a model. Key properties: provenance is captured, a bad
 provider aborts before any run, runs persist incrementally, a model change mid-batch is detected, every
 pre-registered criterion can independently FAIL/REVIEW, synthetic or degraded runs never count as evidence, and the
-tool's constants match the protocol document -- and (after the first batch turned out to be replays of run 1 served
-by the in-process prompt cache) every preflight/run executes in its own fresh process, and a run that looks like a
-replay is excluded as NOT EVIDENCE instead of being counted as a stable repeat.
+tool's constants match the protocol document -- and (after the first batch's runs 2-3 turned out indistinguishable from
+replays of run 1, which the in-process prompt cache explains) every preflight/run executes in its own fresh process,
+and a run that looks like a replay is excluded as NOT EVIDENCE instead of being counted as a stable repeat.
 """
 import ast
 import asyncio
@@ -456,7 +456,7 @@ def test_cli_returns_2_when_a_run_fails(tmp_path, monkeypatch, capsys):
     assert "run 2/3 failed" in capsys.readouterr().out
 
 
-# ── replay guard: a replay is excluded, never counted as a stable repeat ────────────────────────────
+# ── replay guard: a suspected replay is excluded, never counted as a stable repeat ────────────────────────────
 def live_rec(index, salt="a", seconds=600, n=11, mode="LIVE"):
     rows = [{"request": r, "would_escalate": True, "interpretation": r,
              "steps": [f"{salt} {r} {k}" for k in range(7)], "degraded": []} for r in lc.SAMPLE[:n]]
@@ -468,7 +468,18 @@ def live_rec(index, salt="a", seconds=600, n=11, mode="LIVE"):
 
 def test_a_run_faster_than_the_floor_is_not_evidence():
     m = rp.analyze_run(live_rec(1, seconds=0))
-    assert m["valid"] is False and any("below the" in r and "cache replay" in r for r in m["invalid_reasons"])
+    assert m["valid"] is False and any("below the" in r and "not established" in r for r in m["invalid_reasons"])
+
+
+def test_guard_reasons_do_not_assert_a_replay_as_established_fact():
+    """Elapsed time and identical output are indirect evidence: the wording must say suspected / not established /
+    indistinguishable -- never that a cache replay (or non-fresh generation) was proven."""
+    fast = rp.analyze_run(live_rec(1, seconds=0))["invalid_reasons"]
+    assert any(r.startswith("SUSPICIOUS:") and "suspected, not proven" in r and "indirect evidence" in r for r in fast)
+    dup = rp.flag_replays([rp.analyze_run(live_rec(1, "same")), rp.analyze_run(live_rec(2, "same"))])[1]["invalid_reasons"]
+    assert any("indistinguishable from a replay (not proven to be one)" in r for r in dup)
+    for reason in fast + dup:
+        assert "were not freshly generated" not in reason and "(cache replay)" not in reason     # the old assertive phrasing
 
 
 def test_the_floor_boundary_is_exact():
@@ -548,6 +559,7 @@ def test_protocol_document_matches_the_tools_constants():
     assert f"Fewer than {rp.MIN_VALID_RUNS} valid runs" in doc
     assert f"**{rp.REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST:g} s per escalating request**" in doc    # replay floor (Deviation 1)
     assert "Deviation 1" in doc and "fresh process" in doc and "identical to an earlier run" in doc
+    assert "does not prove" in doc and "indirect" in doc                    # the guard is a screen, not a proof of replay
     for w in rp.PREMISE_LEXICON:                                   # every lexicon word is published in the protocol
         assert w in doc, w
 

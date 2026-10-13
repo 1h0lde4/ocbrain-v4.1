@@ -78,7 +78,7 @@ status (still PROPOSED); behavior with a different model or hardware.
 preflight and all runs inside **one Python process**. `core/provider_mesh.py` sends every model call through a module-level
 prompt cache (`core/prompt/cache.py`: keyed by the full prompt, 1 h TTL, never cleared) and a shared network client. Run 1 was a
 genuine sample (≈ 6.3 min). Runs 2 and 3 finished in 0 s and 15 s with nearly every model call at 0 ms, and every per-request step
-count, total and category count was identical to run 1: they were **replays of run 1 served from the cache**, so the tool's own
+count, total and category count was identical to run 1: they were **indistinguishable from replays of run 1** (the in-process prompt cache explains it), so the tool's own
 "Overall: PASS" over 3 "valid" runs carried **no information about stability**. (The first call of each later run also failed
 with `Event loop is closed`: a shared client bound to the previous run's event loop.) That batch is kept as a **diagnostic
 record** and does **not** count toward C1–C4. The earlier single-invocation run 0 is unaffected (11 different prompts, one pass,
@@ -89,10 +89,12 @@ every call took ≥ 12 s).
    provider and network singletons, its own event loop. The parent process never makes a model call.
 2. A **replay guard** excludes a run from the valid set (it is listed as NOT EVIDENCE with the reason) when either (a) it finished in
    less than **2 s per escalating request** (a coarse floor, far below the ≥ ~25 s per request seen in real runs and above the
-   observed 0 s and ~1.4 s per request of the replays), or (b) its output (request, interpretation and steps of every escalating
+   observed 0 s and ~1.4 s per request of the suspected replays), or (b) its output (request, interpretation and steps of every escalating
    request) is byte-identical to an earlier run of the same batch — such a run cannot be told apart from a replay, so it is not an
    independent sample. The earliest of a group of identical runs stays. A backend that is genuinely deterministic would therefore
-   yield INSUFFICIENT, which is the honest result for a repeat that repeats nothing.
+   yield INSUFFICIENT, which is the honest result for a repeat that repeats nothing. Both rules are **indirect** evidence: a run
+   excluded by the guard has not had the freshness of its model answers established; the guard **does not prove** that a cache replay
+   occurred.
 3. `compare` prints which files were dirty at batch start and whether every run really ran in a fresh process; a batch made before
    this fix is labelled **isolation NOT GUARANTEED**.
 
