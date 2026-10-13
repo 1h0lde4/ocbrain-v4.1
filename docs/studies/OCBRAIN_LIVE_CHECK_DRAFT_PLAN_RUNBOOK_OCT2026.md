@@ -41,7 +41,7 @@ pip install -r requirements.txt
 # 2. Provider (standard Ollama commands; unverified from the authoring sandbox)
 curl -fsSL https://ollama.com/install.sh | sh
 (ollama serve > /tmp/ollama.log 2>&1 &) ; sleep 5
-ollama pull llama3                       # or the model you deploy; see Prerequisites
+ollama pull llama3                       # the name the code requests; for another model, alias it (Troubleshooting, fix B) or set bootstrap_model (Prerequisites)
 curl -s localhost:11434/api/tags         # must list the model
 
 # 3. Smoke test with ONE request: must exit 0 with an empty "degraded" list
