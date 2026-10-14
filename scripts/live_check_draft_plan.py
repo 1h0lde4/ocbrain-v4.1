@@ -26,8 +26,12 @@ USAGE
         # OFFLINE: synthetic canned model output to self-test THIS SCRIPT. It is NOT
         # evidence about any real model and is labeled as such in its output.
 
-Live mode makes real model calls (2 per escalating request; ~11 requests). It does
-not touch the capability registry, memory, or the real event log. Exit code 2 means
+Live mode makes real model calls (2 per escalating request; ~11 requests). It does not use the
+capability registry and writes no events to the real event log (they go to a null stream). It DOES
+use the local memory store: interpret_request() falls back to the global memory singleton, so the
+first run creates EMPTY databases under the git-ignored `.data/memory/` (unified.db, archive.db) and
+searches them; the harness writes no entries (verified: 0 rows after a run). The prompt cache is
+in-process only. Exit code 2 means
 every live call degraded (provider unavailable) -- the run is then NOT evidence.
 """
 from __future__ import annotations
