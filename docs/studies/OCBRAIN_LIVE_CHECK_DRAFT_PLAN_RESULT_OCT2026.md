@@ -137,10 +137,12 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 
 ### Method and history (so the numbers are not over-read)
 - **Protocol:** `docs/studies/OCBRAIN_LIVE_CHECK_REPEAT_RUNS_PROTOCOL_OCT2026.md`, criteria C1–C4 and thresholds
-  pre-registered before any data; **not changed after seeing data**. That file and the tool live on PR #61's branch
-  `tools/live-check-repeat-runs` (open PR, **not yet on `main`**); the tested commit below contains them. That branch's
-  protocol text was later reworded for calibration (`851d4ee`: the replay guard is a suspicion screen, not a proof of
-  replay); criteria and thresholds are unchanged and `e305f20` remains an ancestor of that branch.
+  pre-registered before any data; **not changed after seeing data**. That file and the tool are on `main` since PR #61
+  was merged on 2026-10-14 (merge commit `4b90ed94d038a5d2e765ca517e94608b78f556a6`). `e305f20` — the commit that produced
+  this batch — is an **ancestor of `main` (verified)**, as are `851d4ee` and `7044fdb`. Two amendments were made **after** this
+  batch ran and before the merge: `851d4ee` rewords the replay guard as a suspicion screen, not a proof of replay (Deviation 1
+  text), and `7044fdb` adds the model-identity validity rule (Deviation 2, found by review, not by data). Criteria and
+  thresholds are unchanged; recomputed with the final tool, this batch's `report.md` is byte-identical to the supplied one.
 - **First batch (2026-10-09, tool at `258a58a`): INVALID.** Runs 2 and 3 were indistinguishable from replays of run 1
   (byte-identical output, nearly every call at 0 ms), which the in-process prompt cache explains, so its "Overall: PASS" is **withdrawn**; kept only as a diagnostic
   record. The fix (one fresh process per preflight and run) and a replay guard are protocol **Deviation 1**, commit
@@ -154,7 +156,7 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 | Item | Value |
 |---|---|
 | Batch / window (UTC) | `20261012T121543Z`, 2026-10-12T12:15:43Z → 12:39:40Z |
-| Tested commit | `e305f2091802a02b01d607b9baf05fa08fdc6535` (branch `tools/live-check-repeat-runs`). Tree "dirty" **only** by three untracked files — `.ocbrain_install_state`, `.python-version`, `.python_selected` (referenced only by `setup.sh`; no tracked file modified, none read by `core/`, `scripts/`, `config/`) |
+| Tested commit | `e305f2091802a02b01d607b9baf05fa08fdc6535` (PR #61's branch `tools/live-check-repeat-runs`; merged into `main` on 2026-10-14, so now an ancestor of `main`). Tree "dirty" **only** by three untracked files — `.ocbrain_install_state`, `.python-version`, `.python_selected` (referenced only by `setup.sh`; no tracked file modified, none read by `core/`, `scripts/`, `config/`) |
 | Tool / harness SHA-256 | `463d6b934f8a694bf13188fa6243ef617d9fb03f12d8fef8a4589577d64724f4` / `70b3ed9d3bd4ade6958f39f7aedc652773087d1d159b844a56a0b153b16ddc64` — both **verified equal** to the files at `e305f20` |
 | Model | `llama3:latest`, ID `365c0bd3c000`, 4.7 GB; `ollama show`: architecture `llama`, 8.0B, context 8192, embedding 4096, Q4_0; Meta Llama 3 license (Apr 18, 2024). `ollama list` MODIFIED "2 days ago" before and after; **ID unchanged before/after** (tool check true) |
 | Environment | `Linux-6.8.0-1064-azure-x86_64-with-glibc2.39`, Python 3.11.9 — an Azure-hosted Linux VM, consistent with a Codespace (not independently confirmed; not a local machine) |
@@ -172,7 +174,8 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 |---|---|
 | Valid runs | **3 of 3** (LIVE; no degraded row in any run; no replay flag) |
 | Independent samples | three **distinct** output fingerprints; wall-clock 7.2–7.8 min per run (the suspected replays took 0–15 s) |
-| Recomputation | `compare` re-run on the supplied archive with the tool at `e305f20`: `report.md` and `compare.json` **byte-identical** to the supplied ones |
+| Recomputation | `compare` re-run on the supplied archive with the tool at `e305f20`, and again with the final tool (`7044fdb`, identical to `main`): `report.md` and `compare.json` **byte-identical** to the supplied ones |
+| Model identity (Deviation 2) | **established**: the `ollama list` ID was `365c0bd3c000` before and after the batch. The rule was added after the batch ran; the final tool gives the same verdicts for it |
 | Harness label | `speculative` on 11 of 11 plans in every run — saturated, **carries no information** (as in run 0) |
 
 ### Verdicts, exactly as computed
@@ -283,7 +286,8 @@ four in run 2 (run 1: Think of a joke that is likely to be understood and apprec
 
 ### Applicability to current `main`
 Static comparison only; the harness was **not** re-run on current `main`. Between the tested commit `e305f20` (product
-code identical to `main` @ `80a1bb8`) and `main` @ `1d813bd`: `core/cognitive/content_anchor.py`,
+code identical to `main` @ `80a1bb8`) and `main` @ `1d813bd` (the commit immediately before PR #61 merged; that merge adds only the repeat-run tool, its protocol and
+its tests): `core/cognitive/content_anchor.py`,
 `core/cognitive/compiler.py` and `core/governance/orchestration_governor.py` are **identical**; `core/orchestrator.py`
 differs only in the workflow-failure answer, `core/model_router.py` changed (FZ-02; not referenced from the harness or
 cognitive path by a static search), `config/settings.toml` differs by a comment. A change on those paths would
