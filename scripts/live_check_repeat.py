@@ -28,7 +28,9 @@ it finishes, so an interrupted batch keeps what it completed.
 `compare` evaluates the pre-registered criteria. PASS means "no contradiction found in these runs", never
 "proved": the result characterizes ONE model at default sampling over N runs. Offline/synthetic and degraded runs
 are flagged NOT EVIDENCE and excluded, and so is any run that looks like a REPLAY (finished faster than
-REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST allows, or output byte-identical to an earlier run in the batch). The word-level screens are proxies; read the steps it prints for REVIEW.
+REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST allows, or output byte-identical to an earlier run in the batch). A batch whose
+model identity is NOT established (ID changed, unreadable before or after, or no after-batch snapshot) is INSUFFICIENT as a
+whole, whatever its runs show (protocol Deviation 2). The word-level screens are proxies; read the steps it prints for REVIEW.
 """
 from __future__ import annotations
 
@@ -291,7 +293,8 @@ def run_batch(n: int, out_root: Path, *, offline: str = "", model: str = "llama3
     meta.update({"batch_id": batch_id, "started_utc": clock(), "mode": f"OFFLINE-SYNTHETIC:{offline}" if offline else "LIVE",
                  "requested_runs": n, "git_excluded": excluded, "runs": []})
     if not offline and not meta["model_before"]["available"]:
-        log("[WARN] could not read `ollama list`/`ollama show`: the model identity will NOT be recorded for this batch.")
+        log("[WARN] could not read `ollama list`/`ollama show`: the model identity will NOT be recorded, so `compare` will report this batch "
+            "INSUFFICIENT (protocol Deviation 2).")
     if preflight:
         log("preflight: 1 request ...")
         try:
@@ -334,6 +337,10 @@ def run_batch(n: int, out_root: Path, *, offline: str = "", model: str = "llama3
                  "model_id_changed": (b is not None and a is not None and b != a),
                  "model_id_checked": b is not None and a is not None})
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
+    ident = model_identity(meta)
+    if not ident["established"]:
+        log(f"[WARN] model identity NOT established ({ident['status']}): {ident['reason']}. "
+            "`compare` will report this batch INSUFFICIENT (protocol Deviation 2).")
     return out
 
 
@@ -406,6 +413,7 @@ def evaluate(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
     if len(valid) < MIN_VALID_RUNS:
         out["verdict"] = "INSUFFICIENT"
         out["criteria"] = {}
+        out["insufficient_reasons"] = [f"fewer than {MIN_VALID_RUNS} valid runs"]
         return out
     lo, hi = C2_MEDIAN_RANGE
     out["criteria"] = {
@@ -423,6 +431,51 @@ def evaluate(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
     out["verdict"] = "FAIL" if "FAIL" in out["criteria"].values() else (
         "REVIEW" if "REVIEW" in out["criteria"].values() else "PASS")
     return out
+
+
+def model_identity(meta: Dict[str, Any]) -> Dict[str, Any]:
+    """Evidence-validity rule (protocol Deviation 2) -- NOT a criterion.
+
+    The batch asks whether results are stable across repeats of ONE model, so that model's identity must be ESTABLISHED:
+    the ID shown by `ollama list` read both before the first run and after the last, and equal. Anything else (changed,
+    unreadable before, unreadable after, no after-batch snapshot because the batch was interrupted) means the runs are not
+    shown to be repeats of one model. Offline synthetic batches are never evidence and are not judged here.
+    """
+    if str(meta.get("mode", "")).startswith("OFFLINE"):
+        return {"status": "not-applicable", "established": True, "before": None, "after": None, "reason": ""}
+
+    def model_id(snapshot: Any) -> Optional[str]:
+        return ((snapshot or {}).get("row") or {}).get("id")
+    before, after_snapshot = model_id(meta.get("model_before")), meta.get("model_after")
+    after = model_id(after_snapshot)
+    if before is None:
+        status, reason = "unavailable-before", "model identity could not be read before the batch (ollama unavailable or the model is not listed)"
+    elif not after_snapshot:
+        status, reason = "batch-incomplete", ("no after-batch model snapshot (the batch was interrupted or is still running): "
+                                              "identity across the batch is not established")
+    elif after is None:
+        status, reason = "unavailable-after", "model identity could not be read after the batch"
+    elif after != before:
+        status, reason = "changed", f"model ID changed during the batch ({before} -> {after}): the runs are not repeats of one model"
+    else:
+        status, reason = "unchanged", ""
+    return {"status": status, "established": status == "unchanged", "before": before, "after": after, "reason": reason}
+
+
+def identity_line(ident: Dict[str, Any]) -> str:
+    status = ident["status"]
+    if status == "unchanged":
+        return "model id unchanged across the batch: **True**"
+    if status == "not-applicable":
+        return "model id: not applicable (synthetic offline batch)"
+    tail = " -- identity NOT established: the batch is not valid evidence for one model (protocol Deviation 2)"
+    if status == "changed":
+        return f"model id **CHANGED** during the batch ({ident['before']} -> {ident['after']})" + tail
+    if status == "batch-incomplete":
+        return "model id after the batch: **not checked** (no after-batch snapshot: the batch was interrupted or is still running)" + tail
+    if status == "unavailable-after":
+        return "model id after the batch: **not checked** (could not be read after the batch)" + tail
+    return "model id before/after the batch: **not checked** (ollama unavailable)" + tail
 
 
 def isolation_line(meta: Dict[str, Any]) -> str:
@@ -445,10 +498,7 @@ def render_report(meta: Dict[str, Any], metrics: List[Dict[str, Any]], ev: Dict[
     if repo.get("dirty"):
         L.append("dirty files at batch start: " + "; ".join(f"`{f.strip()}`" for f in (repo.get("dirty_files") or [])[:10]))
     L.append(isolation_line(meta))
-    if meta.get("model_id_checked"):
-        L.append(f"model id unchanged across the batch: **{not meta.get('model_id_changed')}**")
-    else:
-        L.append("model id before/after the batch: **not checked** (ollama unavailable)")
+    L.append(identity_line(model_identity(meta)))
     L += ["", "> Observations for ONE model at default sampling over N runs. PASS = no contradiction found, not proof."]
     if str(meta.get("mode", "")).startswith("OFFLINE"):
         L += ["", "**NOT EVIDENCE: synthetic offline runs.**"]
@@ -473,7 +523,8 @@ def render_report(meta: Dict[str, Any], metrics: List[Dict[str, Any]], ev: Dict[
     L += ["", "## Pre-registered criteria", "", f"valid runs: {ev['valid_runs']}/{ev['total_runs']}"
           + (f" (excluded: {ev['invalid_runs']})" if ev["invalid_runs"] else "")]
     if ev["verdict"] == "INSUFFICIENT":
-        L += ["", f"**INSUFFICIENT**: fewer than {MIN_VALID_RUNS} valid runs; no criterion is evaluated."]
+        reasons = ev.get("insufficient_reasons") or [f"fewer than {MIN_VALID_RUNS} valid runs"]
+        L += ["", "**INSUFFICIENT**: " + "; ".join(reasons) + "; no criterion is evaluated."]
     else:
         L.append("")
         for k, v in ev["criteria"].items():
@@ -501,6 +552,11 @@ def compare_dir(d: Path) -> Tuple[str, Dict[str, Any]]:
         raise FileNotFoundError(f"no run*.json in {d}")
     metrics = flag_replays([analyze_run(r) for r in recs])
     ev = evaluate(metrics)
+    ident = model_identity(meta)
+    if not ident["established"]:                    # validity rule (Deviation 2): not evidence for ONE model -> no verdict
+        ev = {**ev, "verdict": "INSUFFICIENT", "criteria": {},
+              "insufficient_reasons": [ident["reason"]] + list(ev.get("insufficient_reasons", []))}
+    ev["model_identity"] = ident
     report = render_report(meta, metrics, ev)
     (d / "report.md").write_text(report)
     (d / "compare.json").write_text(json.dumps({"evaluation": ev, "runs": metrics}, indent=2))

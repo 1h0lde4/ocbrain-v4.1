@@ -29,7 +29,8 @@ preflight and of every run; and, when the tree is dirty at batch start, **which 
 mode `LIVE`, not flagged `not_evidence`, at least one escalating request, and **no degraded model call in any escalating
 row**, and the run does not look like a replay (Deviation 1: it took at least **2 s per escalating request** and its output is not
 identical to an earlier run of the batch). Invalid and synthetic runs are excluded and listed with the reason.
-**Fewer than 2 valid runs ⇒ INSUFFICIENT**; no criterion is evaluated.
+**Fewer than 2 valid runs ⇒ INSUFFICIENT**; no criterion is evaluated. A batch whose **model identity is not established**
+is INSUFFICIENT as a whole, whatever its runs show (Deviation 2).
 
 ## Criteria (fixed now; evaluated over the valid runs)
 | # | Finding under test | PASS iff, in **every** valid run |
@@ -58,7 +59,7 @@ motivation(s), arc(s); argument/research = thesis, research, sources, statistics
   or desirability.
 - **FAIL** — that finding does **not** survive sampling variation; the evidence record and ADR §10.4 must say so.
 - **REVIEW** — read the printed steps; the lexicon is a proxy and can hit harmlessly or miss.
-- **INSUFFICIENT** — not enough valid runs; rerun.
+- **INSUFFICIENT** — not enough valid runs, or the batch's model identity is not established (Deviation 2); rerun.
 
 ## Not concluded, whatever the verdict
 That the observed behavior is desirable or undesirable; that any of options A–D is correct; anything about ADR-KERNEL-07's
@@ -101,6 +102,28 @@ every call took ≥ 12 s).
 **What did not change.** C1–C4, every threshold, the lexicon, the 2-valid-run minimum, and the question. The guard thresholds are
 not criteria; they are validity checks and, being introduced after seeing data, are **post-hoc** (the first batch's own verdicts:
 runs 1–3 "valid", Overall PASS — **withdrawn**, see above; re-evaluated with the guard: run 1 valid, runs 2–3 excluded ⇒ INSUFFICIENT).
+
+## Deviation 2 — model-identity validity rule (found by review of PR #61 on 2026-10-13, not by data; criteria untouched)
+**What was missing.** The tool recorded the model ID before and after the batch and printed whether it had changed, but the
+comparison ignored it: a batch whose model changed, or whose identity could not be read, could still end in PASS or FAIL. This
+was found by reviewing the tool, **not by data**. No result so far is affected: the one complete, valid 3-run batch
+(`20261012T121543Z`) has an established, unchanged identity (ID `365c0bd3c000` before and after); every other batch was already
+INSUFFICIENT.
+
+**The rule (a validity rule, not a criterion).** A LIVE batch is evidence for "stability across repeats of one model" only if its
+**model identity is established**: the ID shown by `ollama list` was read **before the first run and after the last run** and the
+two are equal. Otherwise `compare` reports **INSUFFICIENT** and evaluates **no criterion**, whatever the runs show. The cases:
+the ID **changed**; it could not be read **before** the batch; it could not be read **after** the batch; or there is **no
+after-batch snapshot** (the batch was interrupted or is still running). Offline synthetic batches are never evidence and are not
+judged by this rule. The tool also warns when a batch starts without a readable identity and when one ends without an
+established identity.
+
+**Limits (stated, not hidden).** The ID is compared at **two points** only; a change and a revert between them would not be
+detected. The ID is the 12-character value shown by `ollama list`. An established identity is necessary, not sufficient:
+sampling, host load and the server's `keep_alive` are not controlled.
+
+**What did not change.** C1–C4, every threshold, the lexicon, the 2-valid-run minimum and the replay guard. As with Deviation 1,
+this rule was added after repeated-run data existed (it is therefore reported as a deviation), although the data did not motivate it.
 
 ## Changing this protocol
 Any threshold or lexicon change made **after** seeing repeated-run data must be reported as post-hoc, together with the

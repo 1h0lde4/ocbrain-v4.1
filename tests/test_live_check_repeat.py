@@ -5,7 +5,7 @@ nothing about any real model; that is what the live batch is for. The isolation 
 only against a tiny stub harness script (or the real harness in --offline mode), never against a model. Key properties: provenance is captured, a bad
 provider aborts before any run, runs persist incrementally, a model change mid-batch is detected, every
 pre-registered criterion can independently FAIL/REVIEW, synthetic or degraded runs never count as evidence, and the
-tool's constants match the protocol document -- and (after the first batch's runs 2-3 turned out indistinguishable from
+tool's constants match the protocol document -- a batch whose model identity is not established is INSUFFICIENT (Deviation 2) -- and (after the first batch's runs 2-3 turned out indistinguishable from
 replays of run 1, which the in-process prompt cache explains) every preflight/run executes in its own fresh process,
 and a run that looks like a replay is excluded as NOT EVIDENCE instead of being counted as a stable repeat.
 """
@@ -164,8 +164,9 @@ def test_model_change_during_the_batch_is_detected(tmp_path):
     out = batch(tmp_path, n=2, run_cmd=runner_factory(model_ids=("aaaaaaaaaaaa", "bbbbbbbbbbbb")))
     meta = json.loads((out / "meta.json").read_text())
     assert meta["model_id_checked"] is True and meta["model_id_changed"] is True
-    report, _ = rp.compare_dir(out)
-    assert "model id unchanged across the batch: **False**" in report
+    report, ev = rp.compare_dir(out)
+    assert "model id **CHANGED** during the batch (aaaaaaaaaaaa -> bbbbbbbbbbbb)" in report
+    assert ev["verdict"] == "INSUFFICIENT"                                    # see the Deviation 2 tests below
 
 
 # ── batch mechanics ─────────────────────────────────────────────────────────────────────────────────
@@ -548,6 +549,93 @@ def test_an_in_process_batch_is_labelled_not_guaranteed_independent(tmp_path):
     assert "isolation: **NOT GUARANTEED**" in report
 
 
+# ── model identity is an evidence-validity rule (Deviation 2), not just a report line ───────────────
+def runner_failing_second_list():
+    """Reads the model fine before the batch, then `ollama list` fails (e.g. the server died) for the after-snapshot."""
+    inner, state = runner_factory(), {"lists": 0}
+
+    def run_cmd(cmd, cwd=None, timeout=30):
+        if list(cmd)[:2] == ["ollama", "list"]:
+            state["lists"] += 1
+            if state["lists"] >= 2:
+                return 127, ""
+        return inner(cmd, cwd=cwd, timeout=timeout)
+    return run_cmd
+
+
+def snap(model_id):
+    return {"available": True, "row": {"id": model_id}} if model_id else {"available": False, "row": {}}
+
+
+@pytest.mark.parametrize("meta, status, established", [
+    ({"mode": "LIVE", "model_before": snap("a1"), "model_after": snap("a1")}, "unchanged", True),
+    ({"mode": "LIVE", "model_before": snap("a1"), "model_after": snap("b2")}, "changed", False),
+    ({"mode": "LIVE", "model_before": snap(None), "model_after": snap("a1")}, "unavailable-before", False),
+    ({"mode": "LIVE", "model_before": snap("a1"), "model_after": snap(None)}, "unavailable-after", False),
+    ({"mode": "LIVE", "model_before": snap("a1")}, "batch-incomplete", False),
+    ({"mode": "LIVE"}, "unavailable-before", False),
+    ({"mode": "OFFLINE-SYNTHETIC:generic"}, "not-applicable", True),
+])
+def test_model_identity_is_established_only_when_read_before_and_after_and_equal(meta, status, established):
+    ident = rp.model_identity(meta)
+    assert (ident["status"], ident["established"]) == (status, established)
+    assert bool(ident["reason"]) is (not established and status != "not-applicable") or status in ("unchanged", "not-applicable")
+
+
+def test_a_changed_model_makes_the_batch_insufficient_not_pass(tmp_path):
+    same = rp.compare_dir(batch(tmp_path / "same", n=3))[1]
+    assert same["verdict"] == "PASS" and same["model_identity"]["status"] == "unchanged"      # the same runs DO pass
+    out = batch(tmp_path / "chg", n=3, run_cmd=runner_factory(model_ids=("aaaaaaaaaaaa", "bbbbbbbbbbbb")))
+    report, ev = rp.compare_dir(out)
+    assert ev["verdict"] == "INSUFFICIENT" and ev["criteria"] == {} and ev["valid_runs"] == 3   # runs fine; batch is not evidence
+    assert ev["model_identity"]["status"] == "changed" and ev["insufficient_reasons"][0].startswith("model ID changed")
+    assert "Overall:" not in report and "no criterion is evaluated" in report and "aaaaaaaaaaaa -> bbbbbbbbbbbb" in report
+    saved = json.loads((out / "compare.json").read_text())["evaluation"]
+    assert saved["model_identity"]["status"] == "changed" and saved["verdict"] == "INSUFFICIENT"
+
+
+def test_an_unreadable_model_identity_before_the_batch_is_insufficient(tmp_path):
+    out = batch(tmp_path, n=3, run_cmd=runner_factory(ollama=False))
+    report, ev = rp.compare_dir(out)
+    assert ev["verdict"] == "INSUFFICIENT" and ev["model_identity"]["status"] == "unavailable-before"
+    assert "Overall:" not in report and "identity NOT established" in report
+
+
+def test_an_unreadable_model_identity_after_the_batch_is_insufficient(tmp_path):
+    out = batch(tmp_path, n=3, run_cmd=runner_failing_second_list())
+    report, ev = rp.compare_dir(out)
+    assert ev["verdict"] == "INSUFFICIENT" and ev["model_identity"]["status"] == "unavailable-after"
+    assert "could not be read after the batch" in report and "Overall:" not in report
+
+
+def test_an_interrupted_batch_without_an_after_snapshot_is_insufficient(tmp_path):
+    out = batch(tmp_path, n=3)
+    meta = json.loads((out / "meta.json").read_text())
+    for key in ("model_after", "model_id_changed", "model_id_checked", "finished_utc"):      # what an interrupted batch lacks
+        meta.pop(key, None)
+    (out / "meta.json").write_text(json.dumps(meta))
+    report, ev = rp.compare_dir(out)
+    assert ev["verdict"] == "INSUFFICIENT" and ev["model_identity"]["status"] == "batch-incomplete"
+    assert "interrupted or is still running" in report and "ollama unavailable" not in report   # the old, misleading wording
+
+
+def test_offline_batches_are_not_judged_by_the_identity_rule(tmp_path):
+    report, ev = rp.compare_dir(batch(tmp_path, n=2, offline="generic"))
+    assert ev["model_identity"]["status"] == "not-applicable" and "model id: not applicable" in report
+    assert ev["insufficient_reasons"] == ["fewer than 2 valid runs"]                          # one reason, not two
+
+
+def test_the_start_and_end_warnings_say_the_batch_will_be_insufficient(tmp_path):
+    logs = []
+    batch(tmp_path / "a", n=1, run_cmd=runner_factory(ollama=False), log=logs.append)
+    start = [l for l in logs if l.startswith("[WARN] could not read")]
+    assert len(start) == 1 and "INSUFFICIENT (protocol Deviation 2)" in start[0]            # at the START, not only at the end
+    assert any(l.startswith("[WARN] model identity NOT established (unavailable-before)") for l in logs)
+    logs.clear()
+    batch(tmp_path / "b", n=1, run_cmd=runner_factory(model_ids=("aaaaaaaaaaaa", "bbbbbbbbbbbb")), log=logs.append)
+    assert any(l.startswith("[WARN] model identity NOT established (changed)") for l in logs)
+
+
 # ── pre-registration integrity ──────────────────────────────────────────────────────────────────────
 def test_protocol_document_matches_the_tools_constants():
     doc = PROTOCOL.read_text()
@@ -560,6 +648,7 @@ def test_protocol_document_matches_the_tools_constants():
     assert f"**{rp.REPLAY_MIN_SECONDS_PER_ESCALATING_REQUEST:g} s per escalating request**" in doc    # replay floor (Deviation 1)
     assert "Deviation 1" in doc and "fresh process" in doc and "identical to an earlier run" in doc
     assert "does not prove" in doc and "indirect" in doc                    # the guard is a screen, not a proof of replay
+    assert "Deviation 2" in doc and "model identity" in doc and "two points" in doc and "not by data" in doc
     for w in rp.PREMISE_LEXICON:                                   # every lexicon word is published in the protocol
         assert w in doc, w
 
