@@ -279,7 +279,7 @@ class WorkflowRuntime:
 
     @asynccontextmanager
     async def _lock_instance(self, instance_id: str):
-        """Serialize concurrent execute()/resume() calls on the same instance_id (DEBT-028)."""
+        """Serialize concurrent resume() calls on the same instance_id (DEBT-028)."""
         async with self._instance_locks_guard:
             if instance_id not in self._instance_locks:
                 self._instance_locks[instance_id] = _RefCountedLock()
@@ -580,23 +580,25 @@ class WorkflowRuntime:
             "execution_id": execution_id,
         }
         try:
-            last_result = await self._execute_from(
-                definition=definition,
-                node_id=definition.entry_node,
-                node_states=node_states,
-                node_results=node_results,
-                query=query,
-                session_id=session_id,
-                instance_id=instance_id,
-                metadata=run_metadata,
-                cancel_token=cancel_token,
-            )
+            try:
+                last_result = await self._execute_from(
+                    definition=definition,
+                    node_id=definition.entry_node,
+                    node_states=node_states,
+                    node_results=node_results,
+                    query=query,
+                    session_id=session_id,
+                    instance_id=instance_id,
+                    metadata=run_metadata,
+                    cancel_token=cancel_token,
+                )
+            finally:
+                await watchdog.stop()
         except Exception as e:
             # Should never happen — _execute_from contains failures.
             # But if it does, we contain it here.
             logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
             self._total_failures += 1
-            await watchdog.stop()
             return WorkflowResult(
                 success=False,
                 workflow_id=definition.workflow_id,
@@ -677,8 +679,6 @@ class WorkflowRuntime:
                 **({"constraint_violations": constraint_violations} if constraint_violations else {}),
             },
         )
-        await watchdog.stop()
-
         if constraint_violations:
             error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
         elif last_result and not last_result.success:
