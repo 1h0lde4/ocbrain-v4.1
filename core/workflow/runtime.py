@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -229,6 +230,15 @@ class WorkflowResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+# ── Concurrency Locking Helper (DEBT-028) ───────────────────────────────────
+
+class _RefCountedLock:
+    """Helper for per-instance execution locking in WorkflowRuntime."""
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.ref_count = 0
+
+
 # ── Workflow Runtime ──────────────────────────────────────────────────────────
 
 class WorkflowRuntime:
@@ -263,7 +273,27 @@ class WorkflowRuntime:
         self._event_stream = event_stream or get_event_stream()
         self._total_executions: int = 0
         self._total_failures: int = 0
+        self._instance_locks: Dict[str, _RefCountedLock] = {}
+        self._instance_locks_guard: asyncio.Lock = asyncio.Lock()
         logger.info("WorkflowRuntime initialized")
+
+    @asynccontextmanager
+    async def _lock_instance(self, instance_id: str):
+        """Serialize concurrent execute()/resume() calls on the same instance_id (DEBT-028)."""
+        async with self._instance_locks_guard:
+            if instance_id not in self._instance_locks:
+                self._instance_locks[instance_id] = _RefCountedLock()
+            entry = self._instance_locks[instance_id]
+            entry.ref_count += 1
+
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            async with self._instance_locks_guard:
+                entry.ref_count -= 1
+                if entry.ref_count == 0 and instance_id in self._instance_locks:
+                    del self._instance_locks[instance_id]
 
     @staticmethod
     def default_budget_for(query: str) -> ExecutionBudget:
@@ -316,16 +346,20 @@ class WorkflowRuntime:
         Returns:
             WorkflowResult — always. Never raises.
         """
-        instance_id = str(uuid.uuid4())
-        node_states: Dict[str, WorkflowNodeState] = {
-            node.node_id: WorkflowNodeState(node_id=node.node_id)
-            for node in definition.nodes
-        }
-        return await self._run(
-            definition, instance_id, node_states, {},
-            query=query, session_id=session_id, metadata=metadata,
-            cancellation_token=cancellation_token,
-        )
+        user_instance_id = (metadata or {}).get("instance_id")
+        instance_id = user_instance_id or str(uuid.uuid4())
+        run_metadata = dict(metadata or {})
+        run_metadata["instance_id"] = instance_id
+        async with self._lock_instance(instance_id):
+            node_states: Dict[str, WorkflowNodeState] = {
+                node.node_id: WorkflowNodeState(node_id=node.node_id)
+                for node in definition.nodes
+            }
+            return await self._run(
+                definition, instance_id, node_states, {},
+                query=query, session_id=session_id, metadata=run_metadata,
+                cancellation_token=cancellation_token,
+            )
 
     async def resume(
         self,
@@ -378,48 +412,49 @@ class WorkflowRuntime:
             an exception) if no checkpoint exists for `instance_id`, or if
             the checkpoint's workflow_id doesn't match `definition`.
         """
-        checkpoint_name = self._checkpoint_name(instance_id)
-        checkpoint = await self._event_stream.get_checkpoint(checkpoint_name)
-        if checkpoint is None:
-            return WorkflowResult(
-                success=False, workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=f"No checkpoint found for instance '{instance_id}' -- cannot resume",
+        async with self._lock_instance(instance_id):
+            checkpoint_name = self._checkpoint_name(instance_id)
+            checkpoint = await self._event_stream.get_checkpoint(checkpoint_name)
+            if checkpoint is None:
+                return WorkflowResult(
+                    success=False, workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=f"No checkpoint found for instance '{instance_id}' -- cannot resume",
+                )
+
+            payload = checkpoint.payload or {}
+            checkpointed_workflow_id = payload.get("workflow_id")
+            if checkpointed_workflow_id != definition.workflow_id:
+                return WorkflowResult(
+                    success=False, workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=(f"Checkpoint workflow_id mismatch: checkpoint is for "
+                           f"'{checkpointed_workflow_id}', definition given is "
+                           f"'{definition.workflow_id}'"),
+                )
+
+            node_states: Dict[str, WorkflowNodeState] = {}
+            node_results: Dict[str, WorkerResult] = {}
+            for node_id, state_data in payload.get("node_states", {}).items():
+                state = WorkflowNodeState.from_dict(state_data)
+                if state.status in (NodeStatus.RUNNING, NodeStatus.CANCELLED):
+                    state.status = NodeStatus.PENDING
+                    state.result = None
+                node_states[node_id] = state
+                if state.result is not None:
+                    node_results[node_id] = state.result
+            # A node present in `definition` but absent from the checkpoint
+            # (e.g. the definition was extended since the crash) starts fresh.
+            for node in definition.nodes:
+                if node.node_id not in node_states:
+                    node_states[node.node_id] = WorkflowNodeState(node_id=node.node_id)
+
+            return await self._run(
+                definition, instance_id, node_states, node_results,
+                query=query, session_id=session_id, metadata=metadata,
+                cancellation_token=cancellation_token,
+                resumed_from=checkpoint_name,
             )
-
-        payload = checkpoint.payload or {}
-        checkpointed_workflow_id = payload.get("workflow_id")
-        if checkpointed_workflow_id != definition.workflow_id:
-            return WorkflowResult(
-                success=False, workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=(f"Checkpoint workflow_id mismatch: checkpoint is for "
-                       f"'{checkpointed_workflow_id}', definition given is "
-                       f"'{definition.workflow_id}'"),
-            )
-
-        node_states: Dict[str, WorkflowNodeState] = {}
-        node_results: Dict[str, WorkerResult] = {}
-        for node_id, state_data in payload.get("node_states", {}).items():
-            state = WorkflowNodeState.from_dict(state_data)
-            if state.status in (NodeStatus.RUNNING, NodeStatus.CANCELLED):
-                state.status = NodeStatus.PENDING
-                state.result = None
-            node_states[node_id] = state
-            if state.result is not None:
-                node_results[node_id] = state.result
-        # A node present in `definition` but absent from the checkpoint
-        # (e.g. the definition was extended since the crash) starts fresh.
-        for node in definition.nodes:
-            if node.node_id not in node_states:
-                node_states[node.node_id] = WorkflowNodeState(node_id=node.node_id)
-
-        return await self._run(
-            definition, instance_id, node_states, node_results,
-            query=query, session_id=session_id, metadata=metadata,
-            cancellation_token=cancellation_token,
-            resumed_from=checkpoint_name,
-        )
 
     def _checkpoint_name(self, instance_id: str) -> str:
         return f"workflow:{instance_id}"
@@ -481,7 +516,8 @@ class WorkflowRuntime:
         start_time = time.time()
         self._total_executions += 1
         cancel_token = cancellation_token or CancellationToken()
-        execution_id = (metadata or {}).get("execution_id") or instance_id
+        # Ensure execution_id uniquely isolates execution_registry entries for concurrent or retried instances
+        execution_id = (metadata or {}).get("execution_id") or f"{instance_id}_{time.time_ns()}"
         graph = execution_registry.create(
             execution_id, title=(metadata or {}).get("execution_title") or definition.name
         )
