@@ -346,20 +346,16 @@ class WorkflowRuntime:
         Returns:
             WorkflowResult — always. Never raises.
         """
-        user_instance_id = (metadata or {}).get("instance_id")
-        instance_id = user_instance_id or str(uuid.uuid4())
-        run_metadata = dict(metadata or {})
-        run_metadata["instance_id"] = instance_id
-        async with self._lock_instance(instance_id):
-            node_states: Dict[str, WorkflowNodeState] = {
-                node.node_id: WorkflowNodeState(node_id=node.node_id)
-                for node in definition.nodes
-            }
-            return await self._run(
-                definition, instance_id, node_states, {},
-                query=query, session_id=session_id, metadata=run_metadata,
-                cancellation_token=cancellation_token,
-            )
+        instance_id = str(uuid.uuid4())
+        node_states: Dict[str, WorkflowNodeState] = {
+            node.node_id: WorkflowNodeState(node_id=node.node_id)
+            for node in definition.nodes
+        }
+        return await self._run(
+            definition, instance_id, node_states, {},
+            query=query, session_id=session_id, metadata=metadata,
+            cancellation_token=cancellation_token,
+        )
 
     async def resume(
         self,
@@ -516,8 +512,7 @@ class WorkflowRuntime:
         start_time = time.time()
         self._total_executions += 1
         cancel_token = cancellation_token or CancellationToken()
-        # Ensure execution_id uniquely isolates execution_registry entries for concurrent or retried instances
-        execution_id = (metadata or {}).get("execution_id") or f"{instance_id}_{time.time_ns()}"
+        execution_id = (metadata or {}).get("execution_id") or instance_id
         graph = execution_registry.create(
             execution_id, title=(metadata or {}).get("execution_title") or definition.name
         )
