@@ -4,7 +4,7 @@
 
 ## 1. Handoff Metadata
 
-- Handoff version: 3
+- Handoff version: 3.1 — **corrected**: the chromadb decision and PR #25's nature were already visible in the repo; v3's §6/§15 framing of both was wrong (fixed below)
 - Created at: 2026-10-15 00:28 UTC
 - Workstream: CodeQL-findings triage and its follow-ups — **the engineering work is done**; what remains is decisions, merges, and the freeze-manifest
 - Source session purpose: continue after another session's report (§3) — fix R6, sweep R7, reconcile that report against live data
@@ -47,7 +47,7 @@ only once these are finished do we start the freeze-manifest
 | R5 | Category 3 | **DONE upstream** | 3 `py/stack-trace-exposure` alerts `fixed` |
 | R6 | `PrivacyGuard.wipe_module_data` deletion sink | **FIXED — PR #79 open, awaiting Moncif** | §6, §7 |
 | R7 | Sweep for other destructive sinks | **DONE, with stated caveats** | `R7_DESTRUCTIVE_SINK_SWEEP_OCT2026.md` + `r7_destructive_sink_sweep.py` (this branch) |
-| R8 | Freeze-manifest | **UNBLOCKED by his sequencing; needs his go-ahead** | Overlap check first (§15 U3) |
+| R8 | Freeze-manifest | **Scoped (reconnaissance done); needs his go-ahead** | `FREEZE_MANIFEST_SCOPING_OCT2026.md`; executable baseline pinned at `main` @ `3f8ef97` |
 | R9 | Decisions only Moncif can make | **OPEN** | §15 |
 
 ## 6. Current Verified State
@@ -58,7 +58,7 @@ only once these are finished do we start the freeze-manifest
 - **R6 is *latent*, not live:** no production caller of `wipe_module_data`/`wipe_all`; the old test stubbed the method and called `shutil.rmtree` itself, so it tested the standard library.
 - **R7 sweep:** 133 filesystem-mutating call sites in 197 production files → `CONST` 62, `GUARDED` 28, `STATE` 24, `PARAM` 19. Recall check: the known-bad `privacy.py` site is `PARAM` on old `main`, `GUARDED` on PR #79's branch. **No second unguarded, externally-reachable destructive sink found in what the heuristic can see.** Read and found sound: `modules/system_ctrl._safe_path` (`resolve()` + `relative_to(SAFE_ROOT)`). `PUT /config` mutable keys are `{ollama_host, debug, log_level, web_ui_port, auto_update}` — none path-valued. Latent output-path sinks with **zero callers**: `SqliteArchive.export_jsonl`, `ShadowCollector.export_training_dataset`.
 - **CodeQL (live API): 37 alerts — 33 fixed, 4 dismissed.**
-- **Dependabot security alerts (live): 7 open.** The other session's claims check out: all three `chromadb` advisories list **no patched version**, and `0.5.3` is inside every affected range; `sentence-transformers` is affected `< 5.6.0`. **New, verified:** the chromadb affected ranges end at `<= 1.5.9` — **the exact version open PR #33 bumps to — so merging #33 fixes no chromadb alert** while breaking the `DEBT-032` pin alignment with `release.yml`.
+- **Dependabot security alerts (live): 7 open.** The other session's claims check out: all three `chromadb` advisories list **no patched version**, and `0.5.3` is inside every affected range; `sentence-transformers` is affected `< 5.6.0`. **Not new:** the repo's own record already states it — `DEBT-032`'s Oct 6 owner addendum says the vulnerable ranges run through `1.5.9` and no patched version exists. The owner's decision there: keep `0.5.3`, an *embedded-only* security boundary, explicit reopen trigger; #65/#70 (Oct 10) are recorded and `pyproject.toml` is pinned (PR #73). **This was settled before I raised it** — I wrongly presented it as open.
 
 **Claims in the other session's report, checked:** R6 still on `main` ✓ · the old test stubs the method ✓ · Dependabot facts ✓ · "34 fixed + 4 dismissed" ✗ vs. the live API (33 + 4) — **but it matches the repo's own text** (`KNOWN_ISSUES.md` header, `CURRENT_STATE.md`), so this is a docs-vs-API mismatch of one alert that I could not resolve · its R7 table was preliminary (it said so) and is superseded by the AST sweep · "revoke the admin token" ✓ agree.
 
@@ -157,9 +157,9 @@ R6 (reproduce → fix → gate); the R7 AST sweep and its triage (§6; every `PA
 
 | ID | Item | Needs |
 |---|---|---|
-| U1 | **Dependabot vs. `DEBT-032`.** 3 of the open alerts are chromadb (no patched version exists); PR #33 bumps to `1.5.9`, **inside** the affected range, so it fixes nothing and breaks the `release.yml` pin alignment. Commits `bc27d8d`/`8284149` on `main` record a "DEBT-032 embedded-only boundary" — **unread by me** — and I do not know whether the CVEs affect embedded-only use. PR #32 relaxes the `sentence-transformers` bound; PRs #27–#31 bump pinned Actions (check upload/download-artifact land on compatible majors) | **Moncif** |
+| U1 | ~~Dependabot vs. `DEBT-032`~~ — **RESOLVED by the owner** (`DEBT-032` Oct 6 addendum; #65/#70; PR #73). Open Dependabot PRs #33/#32/… stay open *by design* until the compatibility study; closing them is his call, not a question | none |
 | U2 | **Docs-vs-API CodeQL count** (docs: 34 fixed; API: 33). Which is right? | Moncif / a docs fix |
-| U3 | **Overlap:** open PR #25 ("Audit remaining freezing blockers…") and the `FZ-xx` commit series suggest another session is enumerating freeze blockers | Read before the manifest |
+| U3 | **PR #25 is not an active competing effort — it is a stale (Sept 24) automated Jules PR that would delete 185 lines of `CURRENT_STATE.md`** and asserts all core kernel blockers are closed (contradicting the register). The real parallel work is the **FZ-01..07 series** (Oct 1 audit, baseline `ecddbff`); **the register lags merged code on FZ-02** (B2a #67, B2b #71 merged; register still says "OPEN — not started"). See the scoping memo | Owner: close #25? |
 | U4 | PR #79 vs. a moving `main` (mergeable state above) | Re-check |
 | U5 | Sandbox-backend and `STATE` sinks classified, not traced; the sweep is heuristic with one validated recall sample | Optional follow-up |
 | U6 | Latent output-path sinks (`export_jsonl`, `export_training_dataset`): confine to an export root if ever routed | When wired |
@@ -202,9 +202,9 @@ R6 (reproduce → fix → gate); the R7 AST sweep and its triage (§6; every `PA
 
 1. **Verify the transfer** (§18); rebuild the environment if the container reset (§14).
 2. **PR #79:** re-check CI and mergeability; if `main` moved and conflicts, merge `main` into its branch and verify `KNOWN_ISSUES.md` per-row (and re-check the highest `DEBT-` id — rename `DEBT-042` if taken). **Merge only on Moncif's instruction.**
-3. **Put §15 U1/U2/U8 to Moncif** — they are his decisions. Don't merge #33 or touch the pin.
+3. **Put U2, U8 and the PR #25 question to Moncif.** (U1 is already decided in the repo. Don't merge #33; closing Dependabot PRs is his call.)
 4. *If he wants the audit trail on `main`:* on `security/codeql-findings-sep2026` do `git rm handoff.md`, merge `main`, open a docs+tests PR; wait for the 5 checks; merge only on his word.
-5. **Freeze-manifest — only with his go-ahead, after reading PR #25 and `CURRENT_STATE.md`.** A fresh evidence-first reconciliation of the register against live `main`: `DEBT-032…036`, `DEBT-042`, CTX-AUTH-001b (implemented upstream), ADR-KERNEL-07 (proposed), `DEBT-025` (unauthenticated control plane), `DEBT-033` (admin bypass), the chromadb CVE question, and the Kernel v1.0 verdict.
+5. **Freeze-manifest — only with his go-ahead.** Start from `docs/Bugs Hunt & fix reports/FREEZE_MANIFEST_SCOPING_OCT2026.md` (the Oct 1 audit's FZ-01..07 series is the spine; PR #25 is stale, not a competing effort; first reconcile the register's FZ-02 status with the merged B2a/B2b). A fresh evidence-first reconciliation of the register against live `main`: `DEBT-032…036`, `DEBT-042`, CTX-AUTH-001b (implemented upstream), ADR-KERNEL-07 (proposed), `DEBT-025` (unauthenticated control plane), `DEBT-033` (admin bypass), the chromadb CVE question, and the Kernel v1.0 verdict.
 6. *Optional:* trace the sandbox/`STATE` sinks (U5); the drift-check idea (U7).
 
 ## 18. Resume Instructions
