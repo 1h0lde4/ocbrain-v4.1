@@ -174,7 +174,7 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 |---|---|
 | Valid runs | **3 of 3** (LIVE; no degraded row in any run; no replay flag) |
 | Independent samples | three **distinct** output fingerprints; wall-clock 7.2–7.8 min per run (the suspected replays took 0–15 s) |
-| Recomputation | `compare` re-run on the supplied archive with the tool at `e305f20`, and again with the final tool (`7044fdb`, identical to `main`): `report.md` and `compare.json` **byte-identical** to the supplied ones |
+| Recomputation | `compare` re-run on the supplied archive. With the tool at `e305f20`, `report.md` and `compare.json` are **byte-identical** to the supplied ones. With the final tool (`7044fdb`, identical to `main`), `report.md` is **byte-identical**, and `compare.json` differs only by one added field, `evaluation.model_identity` (the Deviation 2 record in the next row: `established: true`, `365c0bd3c000` before and after); the verdict (FAIL on C1) and every other field are unchanged |
 | Model identity (Deviation 2) | **established**: the `ollama list` ID was `365c0bd3c000` before and after the batch. The rule was added after the batch ran; the final tool gives the same verdicts for it |
 | Harness label | `speculative` on 11 of 11 plans in every run — saturated, **carries no information** (as in run 0) |
 
