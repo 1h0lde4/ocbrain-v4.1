@@ -300,7 +300,7 @@ Two results, deliberately kept separate: a lifecycle defect class that is now fi
 | D10 | **Closed** (scope in §17.1) | Network-object lifecycle explicitly undecided |
 | C2 | **FAIL** | The observed behavior contradicts the intended per-sandbox isolation property; §14's results stand only for the paths it tested |
 | `NETWORK_ALLOWLIST` | **Withdrawn** | Removed from `_CAPS` (8 of 12 at this point; 7 of 12 after §17.8). `check_admission()` again rejects a request that sets `allowed_hosts`. Re-earn only with a passing concurrent A/B test |
-| `NET_NAMESPACE` | **Withdrawn** (§17.8) | Claim/evidence withdrawal only: implementation unchanged, no direct committed test yet |
+| `NET_NAMESPACE` | **Withdrawn** (§17.8); **re-earned alone** in B02 (§21) | Claim/evidence withdrawal only: implementation unchanged. TC-16 now supplies the direct committed test; the claim means namespace separation, not network isolation |
 | A1 | Mechanism retained | The import-time paired-claim invariant is unchanged and still tested (it fires when violated); it holds trivially again |
 | Sandbox-security closeout | **Not issued** | No overall closeout may say the network-isolation claims passed |
 
@@ -404,6 +404,8 @@ The three statuses are kept distinct:
 
 **Effects:** `check_admission()` still rejects any request that sets `allowed_hosts`, now on the `NET_NAMESPACE` check first. Tests changed only where the contract changed: the capability-set test (8 → 7, `NET_NAMESPACE` added to the deliberately-absent list) and its count assertion. No test was deleted or weakened.
 
+**Update (October 16 2026, batch B02):** the future gate described above was written and passed as TC-16, and `NET_NAMESPACE` was re-added to `_CAPS` in the same change (8 of 12). The separation rule held: `NETWORK_ALLOWLIST` and C2 are unchanged. The evidence record is §21; this section is kept as written because it is the record of the withdrawal.
+
 
 ## 18. Closeout audit: the 28-item matrix, B and D12 audits (September 29 2026)
 
@@ -438,7 +440,7 @@ Status vocabulary: the original prompt's PASS / FAIL / BLOCKED (N/A is not used)
 
 | ID | Class | Status | Evidence | File/Symbol | Public/Policy Surface | Host Dependency | Notes |
 |---|---|---|---|---|---|---|---|
-| A1 | A | **BLOCKED** | Invariant enforced at import and tested (`test_a1_*`: holds; fires when violated). The required verification, an allowlist request admitted and reaching the proxy path, is impossible while both claims are withdrawn (§17, §17.8) | `_CAPS`, `_check_a1_paired_capability_invariant` | capability claims withdrawn | none | Unblocks only after the DEBT-039 redesign and a `NET_NAMESPACE` gate; the mechanism itself is sound |
+| A1 | A | **BLOCKED** | Invariant enforced at import and tested (`test_a1_*`: holds; fires when violated). The required verification, an allowlist request admitted and reaching the proxy path, is impossible while `NETWORK_ALLOWLIST` is withdrawn (§17; `NET_NAMESPACE` was re-earned alone in B02, §21, which does not unblock it) | `_CAPS`, `_check_a1_paired_capability_invariant` | `NETWORK_ALLOWLIST` withdrawn | none | Unblocks only after the DEBT-039 redesign; the `NET_NAMESPACE` prerequisite is now met (§21); the mechanism itself is sound |
 | A2 | A | PASS | `test_a2_mount_…`, `test_a2_pid_…`, `test_a2_uts_…` (real host mount, real host PID, hostname) | `_CAPS` | claims MOUNT/PID/UTS_NAMESPACE | none | Claimed on their own tests, not "Docker uses namespaces" |
 | A3 | A | PASS | `test_a3_independent_backends_resolve_the_identical_immutable_digest`, `test_a3_image_like_env_cannot_change_what_runs` (M14), `test_sandbox_request_has_no_image_field` | `_resolve_image_digest`, constructor | none: no `image` field | image must carry local RepoDigests | Verified only for a `docker import` image; `docker build` path untested |
 | A4 | A | PASS | `test_a4_host_only_env_var_is_absent_and_request_env_is_present_in_the_container` (M18), `test_c2_env_cannot_redirect_the_enforced_proxy`, env-builder unit tests | `_build_container_env` | none | none | Verifies env ordering only; says nothing about egress enforcement (C2 FAIL) |
@@ -497,7 +499,7 @@ Status vocabulary: the original prompt's PASS / FAIL / BLOCKED (N/A is not used)
 - **Files changed by this workstream:** `docker_backend.py`, `test_docker_backend.py`, the reconciliation document; earlier, the addendum, the checklist and `handoff.md` (§18.6).
 - **Public interfaces changed:** none; `contracts.py` is byte-identical to the base. Caller-visible behavior changed as listed in §18.1.
 - **Policy surfaces changed:** none.
-- **Capability surface:** `_CAPS` started empty, reached 9 of 12 in §16, and is **7 of 12** after §17 and §17.8.
+- **Capability surface:** `_CAPS` started empty, reached 9 of 12 in §16, was **7 of 12** after §17 and §17.8, and is **8 of 12** after B02 (§21: `NET_NAMESPACE` re-earned alone; `NETWORK_ALLOWLIST` stays withdrawn).
 
 ### 18.6 B audit
 
@@ -515,8 +517,8 @@ Status vocabulary: the original prompt's PASS / FAIL / BLOCKED (N/A is not used)
 **Blockers, with the evidence needed to resolve each:**
 
 1. **C2 / DEBT-039:** a network-boundary redesign; evidence is a passing concurrent A/B test with different allowlists (§17.4).
-2. **A1:** blocked on item 1 and on a `NET_NAMESPACE` gate.
-3. **`NET_NAMESPACE`:** a direct committed test that a sandbox's netns differs from the host's and that concurrently created sandboxes have pairwise-distinct netns; passing it does not resurrect `NETWORK_ALLOWLIST` or C2 (§17.8).
+2. **A1:** blocked on item 1 (the `NET_NAMESPACE` prerequisite is met since B02, §21; necessary is not sufficient).
+3. **`NET_NAMESPACE`:** resolved in B02 (§21): TC-16 is committed and passes, and the claim is back in `_CAPS`. It does not resurrect `NETWORK_ALLOWLIST` or C2 (§17.8).
 4. **A9 / C3:** a host with an active AppArmor or SELinux policy and a Docker release containing the socketcall fix; evidence is the exploit probe blocked plus a benign 32-bit/compat probe still working; `AF_ALG` additionally needs a kernel that exposes it.
 
 **Untested or unattacked, not claimed:** `docker build` `RepoDigests`; hard links and workspace size in artifact collection; whether an `AF_VSOCK` socket has anywhere to connect on a real host; `FILESYSTEM_JAIL` vectors beyond those tested (`/dev/shm`, `/proc`, `/sys`, mount attempts).
@@ -811,4 +813,73 @@ def _scratch_fw(request, monkeypatch):
     yield
 ```
 
-**What B01 did not do.** No `KNOWN_ISSUES.md` or `CURRENT_STATE.md` change (outside the batch and not warranted: no debt moved), no provisioning artifact, no mechanism, no source change, no new `SandboxCapability`. **Next (not started):** B02 (the direct `NET_NAMESPACE` gate), B03, B05 (H2 study), B04, then DG-1 and DG-2, in the order the specification and the user's rulings set.
+**What B01 did not do.** No `KNOWN_ISSUES.md` or `CURRENT_STATE.md` change (outside the batch and not warranted: no debt moved), no provisioning artifact, no mechanism, no source change, no new `SandboxCapability`. **Next at the time of writing:** B02 (the direct `NET_NAMESPACE` gate; recorded in §21), then B03, B05 (H2 study), B04, then DG-1 and DG-2, in the order the specification and the user's rulings set.
+
+## 21. B02: the `NET_NAMESPACE` gate, TC-16 (October 16 2026)
+
+**Scope of this section.** Evidence record (ruling OD-6) for batch B02 of the `sandbox-network-isolation` workstream (`docs/architecture/sandbox-network-isolation-master-specification.md` §16 B02, test case TC-16 of §14, gate G2, invariant INV-5). B02 adds TC-16 to `tests/core/sandbox/test_docker_backend.py` and re-adds `NET_NAMESPACE` to `DockerBackend._CAPS` in the same change. Two source files changed: `core/sandbox/backends/docker_backend.py` (the `_CAPS` entry and the text around it, no logic) and `tests/core/sandbox/test_docker_backend.py`. `admission.py`, the contracts, every topology and `test_network_isolation_contract.py` are untouched (blob `abcf31df43e6287c2d05935d33f2dd4399942603`, identical to `b01-base`; `admission.py` blob `cf704293cc2c0df9325d9436aa2b96462e8c0658`, identical to `b01-base`).
+
+**Status vocabulary (PROJECT_INSTRUCTIONS §0.3).** TC-16 is **IMPLEMENTED** and **VERIFIED** for the scope stated below, and the `NET_NAMESPACE` claim is re-earned **alone**. **This is not a network-isolation gate and nothing else moves:** DEBT-039 and DEBT-040 stay open, C2 stays FAIL, `NETWORK_ALLOWLIST` stays withdrawn, A1 stays BLOCKED, the B01 suite stays red for the same reasons, and the closure tally of §18/§19.4 (22 PASS / 1 FAIL / 3 BLOCKED / 1 UNVERIFIED / 1 EXCEPTION ACCEPTED) is unchanged. Statements in §19.4 and the earlier sections that `NET_NAMESPACE` is withdrawn describe the state at the time they were written and are superseded as to that one claim only.
+
+### 21.1 What `NET_NAMESPACE` means, and what it does not
+
+**It means:** every sandbox `DockerBackend` creates runs in a network namespace of its own, different from the host's and from that of every other sandbox running at the same time. Nothing more.
+
+**It is not isolation evidence.** Sandboxes with `allowed_hosts` share one `--internal` bridge network and its gateway, which is the topology behind DEBT-039 and DEBT-040; the sandbox is still able to reach the host's gateway address and other sandboxes' proxy endpoints, and the B01 contract suite (`test_network_isolation_contract.py`, 8 strict expected failures) is red because of exactly that. A separate namespace is necessary for isolation and says nothing about whether traffic crosses it. The claim must not be cited for `NETWORK_ALLOWLIST`, for C2, for "the sandbox cannot reach the host", or for any security gate. The same statement is in the `_CAPS` comment and the module docstring of `docker_backend.py`.
+
+### 21.2 What TC-16 does
+
+Three tests, in the TC-16 section of `test_docker_backend.py` (before the A9/C3 section):
+
+| Test | Host gate | What it establishes |
+|---|---|---|
+| `test_tc16_the_probe_reports_the_hosts_identity_for_a_host_network_container` | D (Docker) | Control. A container started with `--network host` reports a namespace identity equal to one of the host readings, so the probe can tell "same as the host" from "different". Without this, "differs from the host" would prove nothing |
+| `test_tc16_every_concurrent_sandbox_has_a_network_namespace_of_its_own` | D (Docker) | Four sandboxes are created concurrently through `backend.create()` (`asyncio.gather`): two without network and two with `allowed_hosts` (different names, never resolved or dialed). All four are started and running. Each sandbox's identity (`net:[<inode>]`) is read twice: from inside (`docker exec … readlink /proc/self/ns/net`) and, where the test process can read it, from the host (`/proc/<init pid>/ns/net` of the container's `State.Pid`); the two observers must agree. Setup is asserted to have fired (every `create()` succeeded, every container running with a positive pid, every identity of the form `net:[digits]`, and the same init pid after all probes, so the comparison is between simultaneously live namespaces). Every identity must differ from each host reading (this test process, dockerd) and from the `--network host` reference, and the four must be pairwise distinct. Cleanup runs in `finally` |
+| `test_tc16_net_namespace_alone_does_not_admit_a_networked_request` | none (pure logic) | The separation rule, with the real unmodified `check_admission()`: with `NET_NAMESPACE` claimed and `NETWORK_ALLOWLIST` not, a request that sets `allowed_hosts` is still rejected, now with the "does not enforce" reason of the `NETWORK_ALLOWLIST` check and not the "cannot isolate network at all" reason of the `NET_NAMESPACE` check |
+
+The existing capability tests changed only where the contract changed: `test_capabilities_reflect_exactly_the_evidence_backed_set` (expected set 7 → 8; `NET_NAMESPACE` removed from the deliberately-absent list and asserted present, a strengthening) and `test_no_new_contracts_py_enum_members_added` (`== 7` → `== 8`). The three A1 tests are unchanged and pass. No test was deleted, skipped or weakened, and no known-failure entry, retry or sleep was added.
+
+### 21.3 OD-6 record
+
+| Field | Value |
+|---|---|
+| Final commit SHA | `5e00ba35ce462f23893110fbd4cfafbf01009f81` (code and tests; blobs `docker_backend.py` `d3f77aba4b932745ebdb2de894174d7f1a4c70df`, sha256 `480bde784c6396139994be413f0606d28048588e19798a06c5d47edf20ee92bc`; `test_docker_backend.py` `356e286aa00d53c9129d7efac36985539067613c`, sha256 `2c25079709e4d9c5d0b84e5044c044203b44e556f609b260a92530bea917a6c2`). The commit that records this section follows it and changes only this document |
+| Branch and base | `sandbox-network-isolation/b02-net-namespace-gate`, based on `sandbox-network-isolation/b01-base` = `c35707044c9f36fb3da43e791b414835c12c43c1` (the merge of PR #78 by the user; parents `d5de7baf0ff32d0d6c68f4b597d0d442a5e023b6` = `sandbox-fabric` and `d3af4eff67afb5f900fb8802b86b1fcbde1b40a1`) |
+| Host fingerprint | Linux kernel `6.18.44-fc-v139` (B01's evidence was `v114`), 2 CPUs; Docker 29.8.2; `iptables v1.8.10 (nf_tables)`; Python 3.13.16; pytest 9.1.1 (pytest-asyncio 1.4.0, anyio 4.15.1); test image `ocbrain-test/base:local`, ID `sha256:ce6ff6bac67827e3678f33b9270cc595315f3b0876bb745306d40b887549eb89` (the same image as B01). The test process runs as uid 0 and can read `/proc/self/ns/net` and dockerd's namespace; `/proc/1/ns/net` was not readable from it, so the host readings in this run are "this test process" and "dockerd" (both `net:[4026531833]`) |
+| Environment adjustments the verdict depends on | The ones recorded for the revalidation of `d5de7ba` and in §20.2: `/usr/bin/python3` a direct symlink to `python3.13`; `NO_PROXY` and `no_proxy` unset for pytest (`env -u NO_PROXY -u no_proxy`); `iproute2`, `gcc-multilib` and `libc6-dev-i386` installed; the trimmed image above. TC-16 itself needs only Docker, an image with `readlink` (busybox/coreutils) and `pgrep` (optional: without it the dockerd reading is skipped and the others remain) |
+| Provisioning state | **Not provisioned**; irrelevant to this batch. TC-16 uses host gate D only; `OCBRAIN_SANDBOX_NETWORK_PROVISIONED` was unset and is not consulted. The shared network `ocbrain-sandbox-net` is the existing infrastructure; no isolation mechanism was added |
+| Exact command (evidence of record) | `OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_docker_backend.py -k tc16 -v -rxXs -p no:cacheprovider`, on the clean committed tree at `5e00ba3`, with the Docker daemon started in the same shell call |
+| Result | **3 passed, 94 deselected in 3.30s** (all three TC-16 tests PASSED), `2026-10-16T19:32:45Z` to `19:32:48Z`. Repeated 8 more times on the same tree, `19:32:57Z` onward: `3 passed` every time (3.24s to 3.86s). Full directory on the committed tree, `python3 -m pytest tests/core/sandbox -q`: **161 passed, 8 xfailed in 120.22s**, ending `19:35:31Z` (baseline on `b01-base`: 158 passed, 8 xfailed; the difference is the three TC-16 tests; the 8 xfails are the unchanged B01 cases). `test_network_isolation_contract.py` alone, run on the same sources before the commit: `5 passed, 8 xfailed in 24.67s` |
+| Cleanup and baseline check | Before and after the primary run and after the repeats and the full suite: 0 containers, 4 Docker networks (`bridge`, `host`, `none`, `ocbrain-sandbox-net`), and an unchanged `iptables-save` digest (non-comment lines, counters stripped, sha256 prefix `b2b624aa389d`; this method differs from the one in §20.2, so the two digests are not comparable with each other). The TC-16 tests do not use B01's `host_baseline` fixture; the check above was made around them |
+| Reproduction artifacts | The command above and the committed test file. The observation script used for §21.4 (a scratch file, not part of the repository) only imports the test module's own helpers and prints their readings; it needs nothing the command above does not |
+
+### 21.4 Observed identities, and the checks that TC-16 can fail
+
+**Observed (one run, `2026-10-16` between `19:28Z` and `19:29Z`, on a working tree whose two changed files are byte-identical to the commit).** Host readings: this test process `net:[4026531833]`, dockerd `net:[4026531833]`; the `--network host` control reported `net:[4026531833]`. Sandboxes: `no_network_a` `net:[4026532268]`, `no_network_b` `net:[4026532324]`, `networked_a` `net:[4026532380]`, `networked_b` `net:[4026532436]`, each reported identically by the in-sandbox observer and by the host-side `/proc/<pid>/ns/net` observer.
+
+**Red before the claim, then green.** With the claim withheld (the test file complete, `_CAPS` at 7), the run at `2026-10-16T19:27:17Z` gave 2 passed and 1 failed: the two Docker tests pass (the behavior was always true, which is what §17.8 said), and `test_tc16_net_namespace_alone_does_not_admit_a_networked_request` failed on `assert NET_NAMESPACE in backend.capabilities.supported`. The claim and its evidence entered together (INV-5), and the claim-dependent test is what turns red if the claim is later dropped without the test being changed.
+
+**The test can fail loudly.** Two scratch mutations of `create()` (the one `network_mode=` line; the file was restored from a copy and verified byte-identical by sha256 afterwards, and neither mutation was committed):
+
+| Mutation | Fault class | Result |
+|---|---|---|
+| every sandbox created with `network_mode="host"` | no separate namespace | FAILED: `sandbox no_network_a is in the host's network namespace (net:[4026531833], the same as this test process)` |
+| every sandbox created with `network_mode="container:<anchor>"` (all four join one non-host namespace held by a scratch container) | namespace shared between sandboxes | FAILED: `concurrently running sandboxes share a network namespace: {…: 'net:[4026532268]' ×4}` |
+
+**Skips.** Without a reachable Docker daemon (`docker` absent from `PATH`) the run gives `1 passed, 2 skipped` and both skips carry the reason `requires a reachable Docker daemon`; the pure-logic admission test still runs.
+
+**Other checks.** `python3 -m mypy --explicit-package-bases --ignore-missing-imports core/sandbox/backends/docker_backend.py tests/core/sandbox/test_docker_backend.py`: no issues in the 2 changed files. The same run over the whole of `core/sandbox` and `tests/core/sandbox` reports 5 errors in two files B02 did not touch (`core/events/event_stream.py`, 2; `tests/core/sandbox/test_contracts.py`, 3): pre-existing, not part of this batch. `python3 scripts/check_drift.py`: 15 of 15 PASS (rerun after this document was written, see below).
+
+### 21.5 Limits of this evidence
+
+- The identity is the kernel's network-namespace inode as read through `/proc`; it is meaningful only between namespaces that exist at the same moment. TC-16 therefore keeps all four sandboxes running (and checks that their init pids did not change) while it compares. It says nothing about identity reuse after a namespace is destroyed.
+- Four concurrent sandboxes of two shapes (no network; `allowed_hosts`) were exercised. This is not a scaling result, and sandboxes created through other paths or with other policy fields were not enumerated.
+- `SandboxRequest` has no network-mode field, so a request cannot change the mode; the mutations above are faults in the backend, not something a caller can do. The test would catch such a fault only while the sharing sandbox's peer is alive at the same time (mutation 2 shows the shared-namespace case).
+- `NamespaceBackend` already claims `NET_NAMESPACE` on its own evidence and is unaffected.
+- Nothing here tests reachability: whether a sandbox can talk to the host or to another sandbox is the subject of B01's red suite, not of TC-16.
+
+### 21.6 Effects and what B02 did not do
+
+**Effects.** `_CAPS` is 8 of 12 (the seven of §17.8 plus `NET_NAMESPACE`). `check_admission()` still rejects a request that sets `allowed_hosts`, now on the `NETWORK_ALLOWLIST` check (reason "policy names allowed_hosts, which this backend does not enforce"). A1's import-time paired-claim invariant holds (`NETWORK_ALLOWLIST` is not claimed) and its three tests pass unchanged; its prerequisite `NET_NAMESPACE` now exists, which is necessary and not sufficient for ever claiming `NETWORK_ALLOWLIST` again. §17.3, §17.8, the §18.2 A1 row, the §18 capability-surface bullet and §18.8 were updated to say so; the §18 matrix statuses and the §19.4 tally were not changed.
+
+**What B02 did not do.** No topology change, no `admission.py` change, no `NETWORK_ALLOWLIST`, no change to C2, no change to the B01 suite or its markers, no debt closed or registered (`KNOWN_ISSUES.md` and `CURRENT_STATE.md` untouched), no provisioning artifact, no security gate claimed. **Next (not started, each needing the user's go):** B03, B05 (H2 study), B04, then DG-1 and DG-2.
