@@ -24,7 +24,7 @@ An **Oct 1, 2026 Kernel v1.0 freeze audit** (baseline `ecddbff`; verdict *NOT FR
 | Item | Finding (register's words, condensed) | Registered status (Oct 5) | Since |
 |---|---|---|---|
 | FZ-01 | K4.2 path has no failure channel — `/query` returns `success=True` with an empty answer | OPEN, blocked on **D1** (public result contract); depends on FZ-02 | — |
-| FZ-02 | ModelRouter false completion: error text yielded as a normal token; `ModelRouterAdapter.execute()` hard-codes `success=True` | **OPEN — BLOCKED on D2 (not started; batch B2)** | **B2a (#67) and B2b (#71) merged — see §3 F1** |
+| FZ-02 | ModelRouter false completion: error text yielded as a normal token; `ModelRouterAdapter.execute()` hard-codes `success=True` | **OPEN — BLOCKED on D2 (not started; batch B2)** | **B2a (#67), B2b (#71) merged; tests cite D1=(a), D2=(i) as decided — §3 F1** |
 | FZ-03 | A scheduler import failure terminated `main.py`, including the web server | FIXED + VERIFIED Oct 4 (PR #53, `80a1bb8`) | tests pass at `3f8ef97` |
 | FZ-04 | `AdaptiveSemaphore` lost permits (shared instance state) | FIXED + VERIFIED Oct 3 (PR #51, `1a09941`) | tests pass |
 | FZ-05 | Unbounded growth: `GET /executions/{id}` creates registry state for unknown IDs; `EventStore` append-only | OPEN | — |
@@ -35,7 +35,7 @@ Open maintainer decisions, as the register words them: **D1** (FZ-01) public res
 
 ## 3. Findings so far
 
-**F1 — The register lags merged code on FZ-02.** *VERIFIED:* the register says FZ-02 is "OPEN — BLOCKED on D2 (not started; batch B2)" and mentions `B2a`/`B2b` zero times; `main` contains `728bbfd` "FZ-02/B2a: a provider failure no longer completes as success" (PR #67) and `31d7745` "FZ-02/B2b: stalled and hard-deadline generations fail and keep their partial text" (PR #71), and `test_fz02_provider_failure.py` / `test_fz02_stalled_deadline_failure.py` pass. *INFERRED:* B2b's title matches one of D2's two options ("a failure carrying the partial"), so D2 may have been decided in practice while the register still says "none taken". *NOT CHECKED:* that B2a+B2b fully close the audit's exact FZ-02 finding, and FZ-01 (which depends on it). This is exactly the docs-vs-reality gap a manifest exists to reconcile.
+**F1 — The register lags merged code on FZ-02, and decisions the register calls open are cited as taken.** *VERIFIED:* the register says FZ-02 is "OPEN — BLOCKED on D2 (not started; batch B2)", says "Open maintainer decisions (none taken here)", and mentions `B2a`/`B2b` zero times; `main` contains `728bbfd` "FZ-02/B2a: a provider failure no longer completes as success" (PR #67) and `31d7745` "FZ-02/B2b: stalled and hard-deadline generations fail and keep their partial text" (PR #71); the five FZ test files pass (146). *READ:* the merged tests' own docstrings state **"decisions D1=(a), D2=(i)"** — so D1 and D2 **were decided**, just not in the register — and `test_fz02_provider_failure.py` reproduces the audit's recorded condition (real `ModelRouter` + real `ModelRouterAdapter`, only the HTTP client faked to raise `httpx.ConnectError`) and asserts `success is False` where the audit recorded `success = True`. *Residual, in the code's own words:* `EMPTY_RESPONSE` and `COMPLETED_WITH_PARTIAL_OUTPUT` are deliberately **left `success=True`** ("pinned"; "B2a establishes no contract for it"), and FZ-01 — which depends on FZ-02 — is untouched. So the accurate statement is **"implemented and tested for the provider-failure and stall/deadline classes, with two pinned residuals"**, not "closed". *NOT CHECKED:* where D1/D2 were actually recorded (probably a GitHub issue), D3, and whether the two pinned outcomes are acceptable for the audit's blocker.
 
 **F2 — PR #25 is a stale automated PR, not a competing effort — and a hazard.** Opened Sept 24 by Google's "Jules" agent under the owner's account, untouched since. It changes `CURRENT_STATE.md` by **+17 / −185** (deleting the sync history of the file that calls itself the authoritative record of what is built) and asserts all core kernel blockers are closed, which contradicts the register. *Merging it as-is would be destructive.* Closing it is the owner's call.
 
@@ -45,10 +45,12 @@ Open maintainer decisions, as the register words them: **D1** (FZ-01) public res
 
 **F5 — FZ-07 supersedes part of `DEBT-031`** (the register says so on that row): the CI gate's real hole was deeper than the allowlist mislabelling I found in Packet F.
 
+**F6 — Decision IDs are reused across tracks.** "D2" means stalled/deadline outcomes in the FZ series, `is_general_purpose` in K4.2-H, and something else again in the `/import` work (issue #54's "D1-D5"); H2 packet branches use D3/D7/D11. The manifest must qualify every decision (e.g. *FZ-D2*), or two different decisions will be conflated.
+
 ## 4. What the manifest needs from the owner (not mine to decide)
 
 1. **Which document defines "Kernel v1.0 freeze-ready"?** Several exist (the Sept 6 freeze audit, K4.2 pre-freeze specs, the pre-freeze debt reconciliation audit, the Oct 1 audit). The manifest must name its criteria.
-2. **D1/D2/D3** — decided, pending, or superseded by merged work?
+2. **D1/D2/D3 (FZ series)** — the merged tests cite D1=(a) and D2=(i) as decided: confirm, and record them in the register; D3 (FZ-05) status unknown. Should the two pinned FZ-02 residuals (`EMPTY_RESPONSE`, `COMPLETED_WITH_PARTIAL_OUTPUT` stay `success=True`) count as accepted?
 3. **Scope:** the kernel only, or also the control plane (`DEBT-025`, unauthenticated API; `DEBT-033`, admin bypass) — accepted risk, deferred, or blocking?
 4. **PR #25** — close it?  **PR #79** (the privacy fix, CI green) — merge?
 5. Open items from earlier sync entries whose current status I have **not** re-read: REM-004, `DEBT-020`'s classification.
