@@ -755,6 +755,187 @@ class TestWorkflowRuntimeCheckpointResume:
         assert result.payload in (payload_a, payload_b)  # one coherent payload, not a corrupted merge
 
 
+class TestWorkflowRuntimeConcurrencyLocking:
+    """DEBT-028: Concurrent resume() instance serialization tests."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_resumes_for_same_instance_id_are_serialized(self):
+        """Concurrent resume() calls on the same instance_id must be serialized.
+        Uses asyncio.Event to coordinate lock-waiting deterministically."""
+        instance_id = "resume-serialized-deterministic"
+        invocations = []
+        first_entered_event = asyncio.Event()
+        release_first_event = asyncio.Event()
+
+        class DeterministicLockWorker(AbstractCognitiveWorker):
+            worker_type = "DeterministicLockWorker"
+
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                invocations.append(asyncio.get_event_loop().time())
+                first_entered_event.set()
+                await release_first_event.wait()
+                return WorkerResult(success=True, output="node-b-done")
+
+        runtime = _make_workflow_runtime(DeterministicLockWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-resume-lock-det",
+            nodes=[
+                WorkflowNode(node_id="a", worker_type="DeterministicLockWorker"),
+                WorkflowNode(node_id="b", worker_type="DeterministicLockWorker"),
+            ],
+            edges=[WorkflowEdge(from_node="a", to_node="b")],
+            entry_node="a",
+        )
+
+        # 1. Incomplete checkpoint with node 'a' completed, node 'b' pending
+        await runtime._save_checkpoint(instance_id, "w-resume-lock-det", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED,
+                                    result=WorkerResult(success=True, output="node-a-done")),
+            "b": WorkflowNodeState(node_id="b", status=NodeStatus.PENDING),
+        })
+
+        # 2. Launch first resume()
+        task1 = asyncio.create_task(runtime.resume(d, instance_id, query="caller1"))
+        await first_entered_event.wait()
+
+        # 3. Launch second resume() while first is held inside worker execution
+        task2 = asyncio.create_task(runtime.resume(d, instance_id, query="caller2"))
+        await asyncio.sleep(0.01)
+
+        # Verify second caller is waiting on lock
+        assert instance_id in runtime._instance_locks
+        assert runtime._instance_locks[instance_id].ref_count == 2
+
+        # 4. Release first worker
+        release_first_event.set()
+        r1, r2 = await asyncio.gather(task1, task2)
+
+        # 5. Prove both callers succeed and node 'b' was invoked exactly once
+        assert r1.success is True
+        assert r2.success is True
+        assert len(invocations) == 1
+        assert r1.node_results["b"].output == "node-b-done"
+        assert r2.node_results["b"].output == "node-b-done"
+        assert len(runtime._instance_locks) == 0
+
+    @pytest.mark.asyncio
+    async def test_concurrent_resumes_for_distinct_instance_ids_run_in_parallel(self):
+        """Concurrent resume() calls for distinct instance_ids run in parallel using asyncio.Event."""
+        both_entered_event = asyncio.Event()
+        release_all_event = asyncio.Event()
+        active_count = 0
+
+        class DeterministicParallelWorker(AbstractCognitiveWorker):
+            worker_type = "DeterministicParallelWorker"
+
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                nonlocal active_count
+                active_count += 1
+                if active_count == 2:
+                    both_entered_event.set()
+                await release_all_event.wait()
+                inst = context.metadata.get("instance_id")
+                return WorkerResult(success=True, output=f"done:{inst}")
+
+        runtime = _make_workflow_runtime(DeterministicParallelWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-parallel-det",
+            nodes=[WorkflowNode(node_id="a", worker_type="DeterministicParallelWorker")],
+            entry_node="a",
+        )
+
+        inst1, inst2 = "inst-det-p1", "inst-det-p2"
+        await runtime._save_checkpoint(inst1, "w-parallel-det", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+        await runtime._save_checkpoint(inst2, "w-parallel-det", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        t1 = asyncio.create_task(runtime.resume(d, inst1, metadata={"instance_id": inst1}))
+        t2 = asyncio.create_task(runtime.resume(d, inst2, metadata={"instance_id": inst2}))
+
+        # Wait until BOTH tasks are actively executing inside their workers concurrently
+        await asyncio.wait_for(both_entered_event.wait(), timeout=1.0)
+        assert active_count == 2
+
+        release_all_event.set()
+        r1, r2 = await asyncio.gather(t1, t2)
+        assert r1.success is True
+        assert r2.success is True
+        assert len(runtime._instance_locks) == 0
+
+    @pytest.mark.asyncio
+    async def test_lock_cleanup_on_missing_checkpoint_and_mismatch(self):
+        """Lock registry is cleaned up on missing checkpoint or workflow_id mismatch."""
+        runtime = _make_workflow_runtime(EchoNodeWorker)
+        d1 = WorkflowDefinition(workflow_id="w1", nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")], entry_node="a")
+        d2 = WorkflowDefinition(workflow_id="w2", nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")], entry_node="a")
+
+        inst1 = "missing-ckpt-inst"
+        r1 = await runtime.resume(d1, inst1)
+        assert r1.success is False
+        assert len(runtime._instance_locks) == 0
+
+        inst2 = "mismatch-inst"
+        await runtime._save_checkpoint(inst2, "w1", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED, result=WorkerResult(success=True))
+        })
+        r2 = await runtime.resume(d2, inst2)
+        assert r2.success is False
+        assert len(runtime._instance_locks) == 0
+
+    @pytest.mark.asyncio
+    async def test_lock_and_watchdog_cleanup_on_task_cancellation(self):
+        """Cancelling a running resume() task releases lock, stops watchdog, and permits re-resume."""
+        worker_started = asyncio.Event()
+        finish_event = asyncio.Event()
+
+        class CancellingWorker(AbstractCognitiveWorker):
+            worker_type = "CancellingWorker"
+
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                worker_started.set()
+                await finish_event.wait()
+                return WorkerResult(success=True, output="done")
+
+        runtime = _make_workflow_runtime(CancellingWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-cancel",
+            nodes=[WorkflowNode(node_id="a", worker_type="CancellingWorker")],
+            entry_node="a",
+        )
+        inst = "cancel-inst"
+        await runtime._save_checkpoint(inst, "w-cancel", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        # Launch resume task
+        task = asyncio.create_task(runtime.resume(d, inst))
+        await worker_started.wait()
+
+        # Cancel the task mid-execution
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+        # Confirm lock registry is cleaned up after task cancellation
+        assert len(runtime._instance_locks) == 0
+
+        # Allow worker to finish if re-run, reset checkpoint to PENDING
+        finish_event.set()
+        await runtime._save_checkpoint(inst, "w-cancel", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        # Confirm subsequent resume can acquire lock and complete successfully
+        res = await runtime.resume(d, inst)
+        assert res.success is True
+        assert len(runtime._instance_locks) == 0
+
+
 class TestWorkflowRuntimeStats:
     @pytest.mark.asyncio
     async def test_stats_track_executions_and_failures(self):
