@@ -43,11 +43,13 @@ import json
 import sys
 import os
 import pathlib
+import re
 import shutil
 import socket
 import tempfile
 import subprocess
 import threading
+import uuid
 
 import pytest
 
@@ -100,10 +102,11 @@ _COMMON_ARGS = dict(
 
 
 def test_capabilities_reflect_exactly_the_evidence_backed_set():
-    # Reconciliation §17: seven values, each with its own adversarial
-    # runtime evidence — not "whatever Docker configuration implies".
-    # (NETWORK_ALLOWLIST and NET_NAMESPACE were claimed as of §16 and
-    # withdrawn in §17 / §17.8.)
+    # Reconciliation §21 (B02): eight values, each with its own runtime
+    # evidence — not "whatever Docker configuration implies". (NETWORK_
+    # ALLOWLIST and NET_NAMESPACE were claimed as of §16 and withdrawn in
+    # §17 / §17.8; NET_NAMESPACE alone was re-earned by TC-16 in B02 and
+    # means namespace separation only, not network isolation.)
     from core.sandbox.contracts import SandboxCapability
 
     backend = DockerBackend(image_ref="example/image:tag")
@@ -116,6 +119,7 @@ def test_capabilities_reflect_exactly_the_evidence_backed_set():
             SandboxCapability.NO_NEW_PRIVS,
             SandboxCapability.CGROUP_PIDS,
             SandboxCapability.FILESYSTEM_JAIL,
+            SandboxCapability.NET_NAMESPACE,
         }
     )
     assert backend.capabilities.supported == expected
@@ -123,15 +127,13 @@ def test_capabilities_reflect_exactly_the_evidence_backed_set():
     # comment): USER_NAMESPACE (no userns-remap on this daemon),
     # SECCOMP (A9's bypass is real and unmitigated), NETWORK_DENY_DEFAULT
     # (admission.py never actually consults it), NETWORK_ALLOWLIST
-    # (WITHDRAWN, §17: one sandbox can use another's egress proxy),
-    # NET_NAMESPACE (WITHDRAWN, §17.8: no direct committed test yet;
-    # a claim withdrawal only -- the implementation is unchanged).
+    # (WITHDRAWN, §17: one sandbox can use another's egress proxy; it
+    # stays withdrawn — B02 re-earned NET_NAMESPACE alone).
     for absent in (
         SandboxCapability.USER_NAMESPACE,
         SandboxCapability.SECCOMP,
         SandboxCapability.NETWORK_DENY_DEFAULT,
         SandboxCapability.NETWORK_ALLOWLIST,
-        SandboxCapability.NET_NAMESPACE,
     ):
         assert absent not in backend.capabilities.supported
 
@@ -285,12 +287,14 @@ def test_no_new_contracts_py_enum_members_added():
 
     backend = DockerBackend(image_ref="example/image:tag")
     assert backend.capabilities.supported.issubset(set(SandboxCapability))
-    assert len(backend.capabilities.supported) == 7
+    assert len(backend.capabilities.supported) == 8
 
 
 def test_a1_network_allowlist_requires_net_namespace_currently_holds():
     # A1 — NETWORK_ALLOWLIST is withdrawn (reconciliation §17), so this
-    # holds trivially again: nothing is claimed that needs the pairing.
+    # holds trivially: nothing is claimed that needs the pairing. (Its
+    # prerequisite, NET_NAMESPACE, has been claimed again since B02, §21,
+    # on namespace-separation evidence only; that does not change this.)
     # The mechanism itself is unchanged and stays enforced at import
     # time. Real value is
     # test_a1_invariant_actually_fires_when_violated below: a
@@ -317,8 +321,9 @@ def test_a1_invariant_actually_fires_when_violated():
 
 def test_a1_net_namespace_alone_is_fine():
     # NET_NAMESPACE without NETWORK_ALLOWLIST is a legitimate
-    # intermediate state (e.g. only NETWORK_DENY_DEFAULT earned so far)
-    # — A1 only constrains the NETWORK_ALLOWLIST direction.
+    # intermediate state — it is the state DockerBackend is in since B02
+    # (reconciliation §21) — A1 only constrains the NETWORK_ALLOWLIST
+    # direction.
     from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
     from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability
 
@@ -574,6 +579,230 @@ async def test_a2_uts_namespace_container_hostname_is_independent_of_host(backen
         assert change_attempt.returncode != 0
     finally:
         await backend.destroy(handle)
+
+
+# ======================================================================
+# B02 / TC-16 — NET_NAMESPACE, gate G2 (master specification §14, §16 B02;
+# reconciliation §17.8 set the requirement and §21 records the evidence).
+#
+# What this gate proves, and ONLY this: every sandbox the backend creates
+# runs in a network namespace of its own, different from the host's and
+# from every other sandbox running at the same time. It is NOT evidence
+# that a sandbox is isolated from the host or from its siblings: sandboxes
+# with allowed_hosts share ONE bridge network, reach the host's gateway and
+# can use each other's proxies (DEBT-039, DEBT-040), and the B01 contract
+# suite (test_network_isolation_contract.py) stays red for exactly that.
+# Passing this gate re-earns NET_NAMESPACE alone; it does not resurrect
+# NETWORK_ALLOWLIST or C2, and an allowed_hosts request is still rejected
+# at admission.
+#
+# Two independent observers read each sandbox's namespace identity
+# (`net:[<inode>]`): the sandbox itself (`readlink /proc/self/ns/net`
+# through `docker exec`) and the host's /proc/<container pid>/ns/net. A
+# control makes the probe prove it can see sameness: a container started
+# with `--network host` must report the host's identity. The host's own
+# identity is read from this process, from pid 1 and from dockerd, every one
+# that is readable.
+#
+# Nothing in this section pulls an image (addendum A3: the backend's image
+# is a local, digest-resolved artifact, never fetched implicitly). The
+# `--network host` control runs with `--pull never` and first asserts that
+# the image is already present locally, so a missing image is a loud
+# harness failure with an explicit message, not a silent network fetch
+# (`docker run` pulls a missing image by default).
+# ======================================================================
+
+_NETNS_IDENTITY = re.compile(r"^net:\[\d+\]$")
+
+
+def _netns_link(path: str) -> str | None:
+    """The identity (`net:[<inode>]`) behind a /proc/<pid>/ns/net link, or
+    None when it cannot be read from this process."""
+    try:
+        return os.readlink(path)
+    except OSError:
+        return None
+
+
+def _host_netns_identities() -> dict[str, str]:
+    """Every reading of the HOST's network namespace this process can make,
+    by source. Never empty on a normal host: this process's own is always
+    readable."""
+    found: dict[str, str] = {}
+    sources = {"this test process": "/proc/self/ns/net", "pid 1": "/proc/1/ns/net"}
+    try:
+        pids = subprocess.run(
+            ["pgrep", "-x", "dockerd"], capture_output=True, text=True, timeout=5
+        ).stdout.split()
+    except (OSError, subprocess.TimeoutExpired):
+        pids = []
+    if pids:
+        sources["dockerd"] = f"/proc/{pids[0]}/ns/net"
+    for name, path in sources.items():
+        identity = _netns_link(path)
+        if identity is not None:
+            found[name] = identity
+    return found
+
+
+def _netns_inside(container: str) -> str:
+    """What the sandbox itself reports for its own network namespace."""
+    r = subprocess.run(
+        ["docker", "exec", container, "readlink", "/proc/self/ns/net"],
+        capture_output=True, text=True, timeout=30,
+    )
+    identity = r.stdout.strip()
+    assert r.returncode == 0 and _NETNS_IDENTITY.match(identity), (
+        f"harness: the in-sandbox probe did not report a network namespace "
+        f"(exit {r.returncode}, stdout {r.stdout!r}, stderr {r.stderr!r}); "
+        f"the test image needs `readlink`"
+    )
+    return identity
+
+
+def _require_local_image(image: str) -> None:
+    """TC-16 never pulls: the image must already be present locally."""
+    r = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert r.returncode == 0 and r.stdout.strip(), (
+        f"harness: the image {image!r} is not present locally and TC-16 never pulls "
+        f"images (addendum A3); load or build it first "
+        f"(inspect exit {r.returncode}, stderr {r.stderr.strip()!r})"
+    )
+
+
+def _netns_of_host_network_container(image: str) -> str:
+    """What a container that IS in the host's network namespace reports
+    (Docker's own `--network host`): the control for the probe. Never pulls
+    (`--pull never`, after an explicit local-presence check)."""
+    _require_local_image(image)
+    name = f"b02-tc16-host-{uuid.uuid4().hex[:8]}"
+    try:
+        r = subprocess.run(
+            ["docker", "run", "--pull", "never", "--rm", "--name", name, "--network", "host",
+             "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+             image, "readlink", "/proc/self/ns/net"],
+            capture_output=True, text=True, timeout=60,
+        )
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=30)
+    identity = r.stdout.strip()
+    assert r.returncode == 0 and _NETNS_IDENTITY.match(identity), (
+        f"harness: the host-network control container did not report a namespace "
+        f"(exit {r.returncode}, stdout {r.stdout!r}, stderr {r.stderr!r})"
+    )
+    return identity
+
+
+@_needs_docker
+def test_tc16_the_probe_reports_the_hosts_identity_for_a_host_network_container():
+    # The control behind TC-16: if this probe could not tell "same as the
+    # host" from "different", "differs from the host" would prove nothing.
+    image = os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+    host = _host_netns_identities()
+    assert host, "harness: no host network namespace identity is readable from this process"
+    reported = _netns_of_host_network_container(image)
+    assert reported in host.values(), (
+        f"the --network host control reported {reported}, which matches none of the host "
+        f"readings {host}: the probe cannot be related to the host, so TC-16 cannot be trusted"
+    )
+
+
+@_needs_docker
+@pytest.mark.asyncio
+async def test_tc16_every_concurrent_sandbox_has_a_network_namespace_of_its_own(backend, tmp_path):
+    image = os.environ.get("OCBRAIN_SANDBOX_DOCKER_IMAGE", "alpine:3")
+    host = _host_netns_identities()
+    assert host, "harness: no host network namespace identity is readable from this process"
+    # Two sandboxes without network (`--network none`) and two with
+    # allowed_hosts (the shared bridge network): the claim must hold for both
+    # shapes, and among all four at once. The names never resolve and are
+    # never dialed (hermetic); the proxy each networked sandbox starts only
+    # listens on the gateway.
+    specs = (
+        ("no_network_a", ()),
+        ("no_network_b", ()),
+        ("networked_a", ("tc16-a.invalid",)),
+        ("networked_b", ("tc16-b.invalid",)),
+    )
+    requests = [
+        SandboxRequest(
+            command=("sleep", "120"),
+            policy=SandboxPolicy(workspace_dir=str(tmp_path / label), allowed_hosts=hosts),
+        )
+        for label, hosts in specs
+    ]
+    results = await asyncio.gather(*(backend.create(r) for r in requests), return_exceptions=True)
+    handles = [r for r in results if isinstance(r, SandboxHandle)]
+    try:
+        failures = [r for r in results if isinstance(r, BaseException)]
+        assert not failures, f"harness: create() failed for {len(failures)} of {len(requests)}: {failures}"
+        container_ids = [backend._handles[h.handle_id].container_id for h in handles]
+        for cid in container_ids:
+            subprocess.run(["docker", "start", cid], check=True, capture_output=True)
+
+        def running_pid(cid: str) -> int:
+            out = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Running}} {{.State.Pid}}", cid],
+                capture_output=True, text=True, timeout=30,
+            ).stdout.split()
+            assert out and out[0] == "true" and int(out[1]) > 0, (
+                f"harness: container {cid[:12]} is not running (inspect said {out})"
+            )
+            return int(out[1])
+
+        pids = {label: running_pid(cid) for (label, _), cid in zip(specs, container_ids)}
+        inside = {label: _netns_inside(cid) for (label, _), cid in zip(specs, container_ids)}
+        # The second observer: the host's own view of the container's init
+        # process. Where this process can read it, the two must agree.
+        outside = {label: _netns_link(f"/proc/{pid}/ns/net") for label, pid in pids.items()}
+        for label, seen in outside.items():
+            if seen is not None:
+                assert seen == inside[label], (
+                    f"the two observers disagree for {label}: the sandbox reports "
+                    f"{inside[label]}, the host reads {seen}"
+                )
+        # Every sandbox was still running (same init pid) after all probes:
+        # the comparison was between simultaneously live namespaces.
+        for (label, _), cid in zip(specs, container_ids):
+            assert running_pid(cid) == pids[label]
+
+        reference = _netns_of_host_network_container(image)
+        assert reference in host.values(), (
+            f"harness: the --network host control reported {reference}, matching none of "
+            f"the host readings {host}"
+        )
+        for label, identity in inside.items():
+            for source, host_identity in {**host, "a --network host container": reference}.items():
+                assert identity != host_identity, (
+                    f"sandbox {label} is in the host's network namespace ({identity}, "
+                    f"the same as {source})"
+                )
+        assert len(set(inside.values())) == len(inside), (
+            f"concurrently running sandboxes share a network namespace: {inside}"
+        )
+    finally:
+        await asyncio.gather(*(backend.destroy(h) for h in handles), return_exceptions=True)
+
+
+def test_tc16_net_namespace_alone_does_not_admit_a_networked_request():
+    # The separation rule (reconciliation §17.8): NET_NAMESPACE is claimed,
+    # NETWORK_ALLOWLIST is still withdrawn, so an allowed_hosts request is
+    # rejected by the real, unmodified check_admission() on the
+    # NETWORK_ALLOWLIST check (not on the "cannot isolate network at all"
+    # one it used to fail first). TC-16 re-earns the namespace claim only.
+    from core.sandbox.contracts import SandboxCapability
+
+    backend = DockerBackend(image_ref="example/image:tag")
+    assert SandboxCapability.NET_NAMESPACE in backend.capabilities.supported
+    assert SandboxCapability.NETWORK_ALLOWLIST not in backend.capabilities.supported
+    policy = SandboxPolicy(workspace_dir="/tmp/whatever", allowed_hosts=("example.com",))
+    decision = check_admission(SandboxRequest(command=("echo", "hi"), policy=policy), backend.capabilities)
+    assert decision.allowed is False
+    assert "does not enforce" in decision.reason
+    assert "cannot isolate network at all" not in decision.reason
 
 
 # ======================================================================

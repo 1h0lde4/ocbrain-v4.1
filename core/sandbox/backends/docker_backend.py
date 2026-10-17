@@ -27,15 +27,21 @@ network-isolation implementation and bypass testing, D11's concurrency
 races, and finally the three remaining capability-evidence gaps
 (NO_NEW_PRIVS/CGROUP_PIDS/FILESYSTEM_JAIL) closed with real adversarial
 tests against the running container. `_CAPS` below reflects that, as
-amended by reconciliation §17 — seven of the twelve `SandboxCapability`
-values, each with its own adversarial runtime evidence, not a Docker
-configuration knob assumed to imply one. `NETWORK_ALLOWLIST`, claimed as
-of §16, was WITHDRAWN in §17: a concurrent A/B test showed one sandbox
-can obtain egress through another sandbox's proxy on the shared
-gateway, so per-sandbox egress enforcement is not demonstrated. `NET_NAMESPACE`
-was withdrawn too (§17.8): it has no direct test of its own. Read
-`_CAPS`'s own comment before trusting any individual claim; read
-reconciliation §16 and §17 for the full evidence trail.
+amended by reconciliation §17 and §21 — eight of the twelve
+`SandboxCapability` values, each with its own runtime evidence, not a
+Docker configuration knob assumed to imply one. `NETWORK_ALLOWLIST`,
+claimed as of §16, was WITHDRAWN in §17: a concurrent A/B test showed one
+sandbox can obtain egress through another sandbox's proxy on the shared
+gateway, so per-sandbox egress enforcement is not demonstrated, and it
+stays withdrawn. `NET_NAMESPACE` was withdrawn too (§17.8) because it had
+no direct test of its own; B02 re-earned it ALONE (§21, TC-16). It means
+exactly one thing: each sandbox runs in a network namespace of its own,
+different from the host's and from every other sandbox running at the
+same time. It is NOT evidence that a sandbox is network-isolated from the
+host or from other sandboxes (DEBT-039/DEBT-040 are open and the B01
+contract suite is deliberately red for them). Read `_CAPS`'s own comment
+before trusting any individual claim; read reconciliation §16, §17 and
+§21 for the full evidence trail.
 
 One consequence worth stating plainly, since it's a real behavior
 change and not just a documentation update: `AdmissionGate.
@@ -43,9 +49,10 @@ check_admission()` requires `FILESYSTEM_JAIL`/`CGROUP_MEMORY`/
 `CGROUP_PIDS` unconditionally, so a realistic non-networked
 `SandboxRequest` is admitted through the normal admission-gated path.
 A request that sets `allowed_hosts` additionally requires
-`NET_NAMESPACE` and `NETWORK_ALLOWLIST`; with both withdrawn
-(§17, §17.8) such a request is REJECTED at admission again. Both directions
-of that boundary are tested, not just asserted here.
+`NET_NAMESPACE` and `NETWORK_ALLOWLIST`; `NETWORK_ALLOWLIST` stays
+withdrawn (§17), so such a request is still REJECTED at admission (now on
+the NETWORK_ALLOWLIST check, since `NET_NAMESPACE` is claimed again, §21).
+Both directions of that boundary are tested, not just asserted here.
 
 Still genuinely open, not silently treated as closed: A1/A2/A6's
 runtime halves are covered, but A9 (the socketcall(2)/AF_VSOCK seccomp
@@ -53,10 +60,12 @@ bypass) was investigated and NOT mitigated — this host has no AppArmor
 or SELinux, and the seccomp-only mitigation this session tried does
 not work (see `_lsm_active()`'s own docstring for the full account).
 `SECCOMP` is deliberately absent from `_CAPS` for exactly that reason.
-C2's network isolation is real and tested, but Phase 5's remaining
-adversarial depth (beyond what §14 covers) and C3's 32-bit-compat
-regression question (moot without an attempted fix) remain
-unaddressed. `USER_NAMESPACE` is absent because this daemon has no
+C2 is a FAIL, not a pass (§17): one sandbox can reach another's proxy,
+and the host's own services, through the shared gateway (DEBT-039,
+DEBT-040); the B01 contract suite is red for exactly that, and
+`NETWORK_ALLOWLIST` stays withdrawn until a redesign passes it. C3's
+32-bit-compat regression question (moot without an attempted fix) also
+remains unaddressed. `USER_NAMESPACE` is absent because this daemon has no
 userns-remap configured — claiming it would misrepresent the host, not
 just this code.
 
@@ -95,10 +104,9 @@ from core.sandbox.contracts import (
 
 # Addendum B2: each value here requires its own passing gate,
 # individually — not Docker configuration knobs, demonstrated security
-# properties. As of reconciliation §17, seven of the twelve
-# SandboxCapability values have real, adversarial, runtime evidence
-# (see that section for the full account; this comment is the
-# short form):
+# properties. As of reconciliation §21 (B02), eight of the twelve
+# SandboxCapability values have real runtime evidence (see §12, §16,
+# §17 and §21 for the full account; this comment is the short form):
 #   MOUNT_NAMESPACE, PID_NAMESPACE, UTS_NAMESPACE  -- §12 (A2): a host
 #       mount made after the container starts is invisible inside it;
 #       a real host PID can't be signaled or seen; the container's
@@ -118,6 +126,16 @@ from core.sandbox.contracts import (
 #       filesystem write, an unrelated path, a `..` traversal, and a
 #       symlink pointing out of the workspace are all denied
 #       (EROFS); the workspace remains writable afterward.
+#   NET_NAMESPACE -- §21 (B02, TC-16), re-earned alone after the §17.8
+#       withdrawal: each sandbox's network-namespace identity differs
+#       from the host's, and concurrently running sandboxes (with and
+#       without allowed_hosts) have pairwise-distinct identities, read by
+#       two independent observers with a --network host control. This is
+#       NAMESPACE SEPARATION ONLY. It is NOT isolation evidence: sandboxes
+#       with allowed_hosts still share one bridge network and the host's
+#       gateway (DEBT-039, DEBT-040), and nothing here means a sandbox
+#       cannot reach the host or another sandbox. It does not make
+#       NETWORK_ALLOWLIST or C2 true; do not cite it for either.
 #
 # Deliberately NOT claimed:
 #   NETWORK_ALLOWLIST -- WITHDRAWN (it was claimed as of §16). §17:
@@ -126,15 +144,6 @@ from core.sandbox.contracts import (
 #       permits, by connecting to A's proxy on the shared gateway.
 #       Per-sandbox egress enforcement is not demonstrated. Re-earn it
 #       only with a concurrent A/B regression test that passes.
-#   NET_NAMESPACE -- WITHDRAWN (§17.8). Docker does build a separate
-#       network namespace per container, and nothing here changes that:
-#       this withdraws the CLAIM, not the implementation. It has no
-#       direct committed test (its only cited evidence was the C2 set,
-#       which tests egress paths, not namespace separation). Re-earn it
-#       only with a test that the sandbox's netns differs from the
-#       host's AND that concurrently created sandboxes have distinct
-#       netns. Passing that re-earns NET_NAMESPACE alone: it does not
-#       resurrect NETWORK_ALLOWLIST or C2 (DEBT-038 stays open).
 #   USER_NAMESPACE -- no userns-remap configured on this daemon (§11);
 #       claiming it would misrepresent the host, not just this code.
 #   SECCOMP -- claiming it would imply protection against the
@@ -156,6 +165,7 @@ _CAPS = RuntimeCapabilities(
             SandboxCapability.NO_NEW_PRIVS,
             SandboxCapability.CGROUP_PIDS,
             SandboxCapability.FILESYSTEM_JAIL,
+            SandboxCapability.NET_NAMESPACE,
         }
     ),
 )
@@ -519,10 +529,11 @@ class _DockerRunState:
 class DockerBackend(SandboxBackend):
     """Docker-daemon SandboxBackend. See the module docstring and
     `_CAPS`'s own comment before trusting any individual capability
-    claim — seven of twelve are backed by real adversarial evidence,
-    three were never earned, two (NETWORK_ALLOWLIST, NET_NAMESPACE)
-    were withdrawn in §17, and A9's seccomp bypass is real and
-    unmitigated (`_lsm_active()`)."""
+    claim — eight of twelve are backed by real runtime evidence (and
+    NET_NAMESPACE, re-earned in §21, is namespace separation only, not
+    network isolation), three were never earned, NETWORK_ALLOWLIST was
+    withdrawn in §17 and stays withdrawn, and A9's seccomp bypass is
+    real and unmitigated (`_lsm_active()`)."""
 
     def __init__(self, image_ref: str | None = None) -> None:
         """`image_ref` is backend-private configuration (addendum A3),
