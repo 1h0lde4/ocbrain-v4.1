@@ -1,12 +1,16 @@
 # Runbook — live check of the draft-plan risk (ADR-KERNEL-07 §10.4)
 
 **Purpose.** Establish whether the draft plan steps shown next to a content-anchor clarification
-question add useful context or introduce speculation. **Status of that question today: UNKNOWN**
-(ADR-KERNEL-07 §10.4) — it has never been run against a real model. This runbook produces the
-evidence. It does **not** enable the feature, change code or config, or accept the ADR.
+question add useful context or introduce speculation. **Status of that question (updated 2026-10-14):
+OBSERVED for one model, not settled.** This runbook was written when the status was UNKNOWN (no real-model
+run existed); the check has since been run on `llama3:latest` (ID `365c0bd3c000`) — run 0 and a
+pre-registered 3-run batch, Overall **FAIL** on C1 — see `OCBRAIN_LIVE_CHECK_DRAFT_PLAN_RESULT_OCT2026.md`
+and ADR-KERNEL-07 §10.4. This runbook describes the **single-run** harness; for **repeated runs** use
+`scripts/live_check_repeat.py` and its protocol `OCBRAIN_LIVE_CHECK_REPEAT_RUNS_PROTOCOL_OCT2026.md`.
+It does **not** enable the feature, change code or config, or accept the ADR.
 
-`scripts/live_check_draft_plan.py` is already on `main` (merged with PR #41). Open the Codespace on
-`main`; this runbook can be read from this branch/PR.
+`scripts/live_check_draft_plan.py` is on `main` (merged with PR #41), and so is this runbook (PR #45).
+Open the Codespace on `main`.
 
 ## What the script does (and does not)
 Runs the pipeline's **two real model calls** — `interpret_request()` (module `intent_interpreter`) and
