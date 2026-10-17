@@ -60,10 +60,12 @@ bypass) was investigated and NOT mitigated — this host has no AppArmor
 or SELinux, and the seccomp-only mitigation this session tried does
 not work (see `_lsm_active()`'s own docstring for the full account).
 `SECCOMP` is deliberately absent from `_CAPS` for exactly that reason.
-C2's network isolation is real and tested, but Phase 5's remaining
-adversarial depth (beyond what §14 covers) and C3's 32-bit-compat
-regression question (moot without an attempted fix) remain
-unaddressed. `USER_NAMESPACE` is absent because this daemon has no
+C2 is a FAIL, not a pass (§17): one sandbox can reach another's proxy,
+and the host's own services, through the shared gateway (DEBT-039,
+DEBT-040); the B01 contract suite is red for exactly that, and
+`NETWORK_ALLOWLIST` stays withdrawn until a redesign passes it. C3's
+32-bit-compat regression question (moot without an attempted fix) also
+remains unaddressed. `USER_NAMESPACE` is absent because this daemon has no
 userns-remap configured — claiming it would misrepresent the host, not
 just this code.
 

@@ -292,7 +292,9 @@ def test_no_new_contracts_py_enum_members_added():
 
 def test_a1_network_allowlist_requires_net_namespace_currently_holds():
     # A1 — NETWORK_ALLOWLIST is withdrawn (reconciliation §17), so this
-    # holds trivially again: nothing is claimed that needs the pairing.
+    # holds trivially: nothing is claimed that needs the pairing. (Its
+    # prerequisite, NET_NAMESPACE, has been claimed again since B02, §21,
+    # on namespace-separation evidence only; that does not change this.)
     # The mechanism itself is unchanged and stays enforced at import
     # time. Real value is
     # test_a1_invariant_actually_fires_when_violated below: a
@@ -319,8 +321,9 @@ def test_a1_invariant_actually_fires_when_violated():
 
 def test_a1_net_namespace_alone_is_fine():
     # NET_NAMESPACE without NETWORK_ALLOWLIST is a legitimate
-    # intermediate state (e.g. only NETWORK_DENY_DEFAULT earned so far)
-    # — A1 only constrains the NETWORK_ALLOWLIST direction.
+    # intermediate state — it is the state DockerBackend is in since B02
+    # (reconciliation §21) — A1 only constrains the NETWORK_ALLOWLIST
+    # direction.
     from core.sandbox.backends.docker_backend import _check_a1_paired_capability_invariant
     from core.sandbox.contracts import RuntimeCapabilities, SandboxCapability
 
@@ -600,6 +603,13 @@ async def test_a2_uts_namespace_container_hostname_is_independent_of_host(backen
 # with `--network host` must report the host's identity. The host's own
 # identity is read from this process, from pid 1 and from dockerd, every one
 # that is readable.
+#
+# Nothing in this section pulls an image (addendum A3: the backend's image
+# is a local, digest-resolved artifact, never fetched implicitly). The
+# `--network host` control runs with `--pull never` and first asserts that
+# the image is already present locally, so a missing image is a loud
+# harness failure with an explicit message, not a silent network fetch
+# (`docker run` pulls a missing image by default).
 # ======================================================================
 
 _NETNS_IDENTITY = re.compile(r"^net:\[\d+\]$")
@@ -650,14 +660,29 @@ def _netns_inside(container: str) -> str:
     return identity
 
 
+def _require_local_image(image: str) -> None:
+    """TC-16 never pulls: the image must already be present locally."""
+    r = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert r.returncode == 0 and r.stdout.strip(), (
+        f"harness: the image {image!r} is not present locally and TC-16 never pulls "
+        f"images (addendum A3); load or build it first "
+        f"(inspect exit {r.returncode}, stderr {r.stderr.strip()!r})"
+    )
+
+
 def _netns_of_host_network_container(image: str) -> str:
     """What a container that IS in the host's network namespace reports
-    (Docker's own `--network host`): the control for the probe."""
+    (Docker's own `--network host`): the control for the probe. Never pulls
+    (`--pull never`, after an explicit local-presence check)."""
+    _require_local_image(image)
     name = f"b02-tc16-host-{uuid.uuid4().hex[:8]}"
     try:
         r = subprocess.run(
-            ["docker", "run", "--rm", "--name", name, "--network", "host", "--read-only",
-             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            ["docker", "run", "--pull", "never", "--rm", "--name", name, "--network", "host",
+             "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
              image, "readlink", "/proc/self/ns/net"],
             capture_output=True, text=True, timeout=60,
         )
