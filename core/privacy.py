@@ -4,6 +4,7 @@ Every write to disk or network call checks through this guard.
 """
 from pathlib import Path
 from .config import config
+from .module_paths import module_child
 
 
 class PrivacyGuard:
@@ -23,7 +24,11 @@ class PrivacyGuard:
         """Delete all raw pairs and chunks for a module."""
         import shutil
         for folder in ["data/raw", "data/chunks"]:
-            p = Path(__file__).parent.parent / folder / module_name
+            # module_name is an identifier, never a path: route it through the shared
+            # containment helper so '../x' or an absolute path cannot aim
+            # shutil.rmtree outside data/raw and data/chunks (CTX-EXPORT-001 class).
+            # Raises InvalidModuleName before anything is deleted.
+            p = module_child(Path(__file__).parent.parent / folder, module_name)
             if p.exists():
                 shutil.rmtree(p)
         # Also wipe ChromaDB — handled by calling module.db.reset()
