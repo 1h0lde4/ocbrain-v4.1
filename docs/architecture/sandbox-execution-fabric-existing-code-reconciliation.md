@@ -890,4 +890,112 @@ The existing capability tests changed only where the contract changed: `test_cap
 
 **Effects.** `_CAPS` is 8 of 12 (the seven of §17.8 plus `NET_NAMESPACE`). `check_admission()` still rejects a request that sets `allowed_hosts`, now on the `NETWORK_ALLOWLIST` check (reason "policy names allowed_hosts, which this backend does not enforce"). A1's import-time paired-claim invariant holds (`NETWORK_ALLOWLIST` is not claimed) and its three tests pass unchanged; its prerequisite `NET_NAMESPACE` now exists, which is necessary and not sufficient for ever claiming `NETWORK_ALLOWLIST` again. §17.3, §17.8, the §18.2 A1 row, the §18 capability-surface bullet and §18.8 were updated to say so; the §18 matrix statuses and the §19.4 tally were not changed.
 
-**What B02 did not do.** No topology change, no `admission.py` change, no `NETWORK_ALLOWLIST`, no change to C2, no change to the B01 suite or its markers, no debt closed or registered (`KNOWN_ISSUES.md` and `CURRENT_STATE.md` untouched), no provisioning artifact, no security gate claimed. **Next (not started, each needing the user's go):** B03, B05 (H2 study), B04, then DG-1 and DG-2.
+**What B02 did not do.** No topology change, no `admission.py` change, no `NETWORK_ALLOWLIST`, no change to C2, no change to the B01 suite or its markers, no debt closed or registered (`KNOWN_ISSUES.md` and `CURRENT_STATE.md` untouched), no provisioning artifact, no security gate claimed. **Next (as written on 2026-10-16: not started, each needing the user's go):** B03, B05 (H2 study), B04, then DG-1 and DG-2. *Update, 2026-10-18:* the user's ruling of 2026-10-17 authorized B03 once B02 was resolved, and B03 was then done (§22); B05, B04, DG-1 and DG-2 still each need the user's go.
+
+## 22. B03: capacity and IPv6 guard primitives, inert (October 18 2026)
+
+**Scope of this section.** Evidence record (ruling OD-6) for batch B03 of the `sandbox-network-isolation` workstream (`docs/architecture/sandbox-network-isolation-master-specification.md` §16 B03, test case TC-14 of §14, invariants INV-7 and INV-8). B03 adds two files and changes nothing that exists, apart from this document: the new module `core/sandbox/backends/_sandbox_network.py` and the new test file `tests/core/sandbox/test_sandbox_network_guards.py`. Byte-identical to `b01-base` (`e2266603cf215c301af4a6b47124b44730d41f0f`): `admission.py` (`cf704293cc2c0df9325d9436aa2b96462e8c0658`), `contracts.py` (`ee5f3fc4559c5b2e1527b0bc2e6a2eb05897f5f9`), `_net_proxy.py` (`c603deaa8ac6e79bdffb7d6799416f300ae96df6`), `docker_backend.py` (`70a4e0dfcc7f8e6d29e72d31ab46a1cbb74ef865`), `test_docker_backend.py` (`4503eb327d6fd69c3691b715a83b86434127cc3d`) and `test_network_isolation_contract.py` (`abcf31df43e6287c2d05935d33f2dd4399942603`).
+
+**Status vocabulary (PROJECT_INSTRUCTIONS §0.3).** The two primitives and TC-14 are **IMPLEMENTED** and **VERIFIED** at unit level, for the scope stated below. **The guards are inert: nothing calls them, so INV-7 and INV-8 are NOT ENFORCED BY THE PRODUCT.** Gate G4 (TC-13 and the lifecycle tests) and gate G6 (TC-14 together with TC-15) are **not earned**: TC-13 needs a real daemon and a capacity probe implementation, TC-15 needs an IPv6-capable host, and neither exists yet. No `SandboxCapability` changed (`_CAPS` is still 8 of 12), DEBT-039 and DEBT-040 stay open, C2 stays FAIL, A1 stays BLOCKED, `NETWORK_ALLOWLIST` stays withdrawn, the B01 suite is untouched and still red for its documented reasons, and the closure tally of §18/§19.4 (22 PASS / 1 FAIL / 3 BLOCKED / 1 UNVERIFIED / 1 EXCEPTION ACCEPTED) is unchanged.
+
+### 22.1 What B03 delivers
+
+| Item | Where | What it is |
+|---|---|---|
+| `MAX_CONCURRENT_SANDBOX_NETWORKS = 29` | module constant | The product ceiling of ruling OD-5, a `Final[int]`. A limiter cannot be built above it: raising it needs a new ruling |
+| `CapacityProbe` | `Protocol` with `probe() -> int` | The interface a start-up or provisioning probe implements. **No implementation** (measuring capacity means creating networks, which is out of scope) |
+| `effective_limit(result)`, `resolve_effective_limit(probe)` | functions | `min(29, probe result)`. A probe that raises, or returns a bool, a non-int or a negative number, is a `SandboxNetworkCapacityProbeError` (chained from the original error); the ceiling is never assumed. A result of 0 gives a limit of 0 |
+| `NetworkSlotLimiter`, `NetworkSlot` | classes | A counting limiter: `reserve(owner)` takes a slot before a network is created or raises `SandboxNetworkCapacityError(limit, in_use, owner)` and changes nothing; `release(slot)` returns True once and False on every later call (so a double `destroy()` cannot open the limit), rejects a slot of another limiter with `ValueError`; `from_probe(probe)`; `limit`, `in_use`, `available`. One `threading.Lock`; critical sections are O(1) and do no I/O |
+| `Ipv6Sources`, `proc_ipv6_sources()`, `evaluate_ipv6()`, `enforce_ipv6_guard()` | dataclass and functions | The §9 detection over three injectable callables: `OFF` only if the ipv6 sysctl directory is absent (while `/proc/sys/net` is present) or `disable_ipv6` is 1 for both `all` and `default`; `ON` if either is 0; anything else, including any unreadable or unrecognised value or any exception, is `UNKNOWN`; ON wins over UNKNOWN. `enforce_ipv6_guard()` raises `SandboxIPv6RefusedError` unless OFF |
+| Structured log records | logger `ocbrain.sandbox.network` | One record per decision (INV-9): `sandbox_network_capacity_refused` and `sandbox_network_ipv6_refused` at WARNING, `sandbox_network_capacity_probe_failed` at ERROR, the rest at INFO or DEBUG, each with the facts as a dict under `record.sandbox_network_event` |
+
+The module is a **leaf** (standard library only) and **inert**: two tests pin both properties.
+
+### 22.2 Review against B03's own acceptance criteria
+
+| Criterion (§16 B03) | Evidence | Status |
+|---|---|---|
+| Baseline: the B00 base branch | Branch `sandbox-network-isolation/b03-capacity-ipv6-guards` from `sandbox-network-isolation/b01-base` = `e2266603…` (the merge of PR #84), verified on the remote immediately before branching | Met |
+| Scope: new module with the counting limiter and the constant | `NetworkSlotLimiter`, `MAX_CONCURRENT_SANDBOX_NETWORKS` | Met |
+| Scope: the capacity probe interface | `CapacityProbe`, `effective_limit`, `resolve_effective_limit` (no implementation, by design) | Met |
+| Scope: the IPv6 detection and decision function with injectable sources | `Ipv6Sources`, `evaluate_ipv6`, `enforce_ipv6_guard` | Met |
+| Scope: not wired into `create()` | `test_nothing_in_core_imports_the_guard_module_yet` (AST scan of `core/` for imports and string references to the module) passes; `docker_backend.py` is byte-identical to the base | Met |
+| Out of scope: network creation, rules, canary, wiring | None present; no Docker call, no subprocess, no file write in the module | Respected |
+| Files: the new module; new unit tests | Exactly those two, plus this document (inside the OD-7 boundary) | Respected |
+| Requirement §8: the limit, the effective limit `min(29, probe)`, reservation before create, release after confirmed removal, a defined error | Constant and limiter as above. "Reservation before create" and "release after confirmed removal" are **usage contracts of the API** (documented, and the limiter keeps an unreleased slot counted): the primitive cannot see a network, so whether `create()` honors them is **UNVERIFIED until B11**. The defined error exists but is **not** in the `DockerBackendError` family (see 22.5, item 1) | Met, with one interpretation to confirm |
+| Requirement §9: the detection matrix, refuse by default | Matrix tested in 20 cases (absent, 1, 0, unreadable, malformed, mixed); anything that is not OFF is refused | Met |
+| Tests: TC-14 | `test_tc14_*`: the 20-case matrix is run twice (once on `evaluate_ipv6`, once on `enforce_ipv6_guard`), plus read-order and "nothing else is asked" tests and the real procfs sources against a temporary tree | Met |
+| Tests: limiter unit tests (limit, release, concurrent reservation without exceeding) | Limit, refusal without residue, release, idempotent release, foreign slot, never-released slot stays held; concurrency: 64 threads on a limit of 5 give exactly 5 grants; 16 threads of 300 reserve/release rounds never hold more than the limit; 32 threads releasing one slot release it once | Met |
+| Acceptance: unit tests pass | 112 passed (22.3) | Met |
+| Acceptance: mypy clean | No issues in the two files (22.3) | Met |
+| Acceptance: no import cycle | Leaf test (every import is standard library) and a fresh-interpreter import of the module and of `docker_backend` in both orders | Met |
+| Acceptance: `check_drift.py` green | 15 of 15 PASS | Met |
+| Invariants INV-7, INV-8 | The primitives that INV-7 and INV-8 need exist and are tested. **Enforcement does not**: it begins when B11 wires them | Primitives supported; invariants not enforced |
+| Risk: if DG-1 selects a mechanism with no per-sandbox networks, the capacity portion must be reconciled first | Reconciliation duty recorded in 22.6; the module says so in its docstring | Carried |
+| Resulting state: two inert, tested guards | As described | Met |
+
+### 22.3 OD-6 record
+
+| Field | Value |
+|---|---|
+| Final commit SHA | Code and tests: `b74bbdd3fdaa4bf71cc0d25ce43578e029e5e29c` (blobs `_sandbox_network.py` `4edbbe56ad9eb6b5708a838208fd82162e882864`, sha256 `aff7ea59686764969f52bbabdaa5beece9b3ba20f41427a466760d7bbbbc3064`, 440 lines; `test_sandbox_network_guards.py` `730e27caf7e67b48580284a3991cc3966e4ce817`, sha256 `4bfa8834aa9213cd35f76e2b52adf4236dea9e9cc2472600fb7fba9611fbb214`, 682 lines). A later commit on the branch records this section and changes only this document |
+| Branch and base | `sandbox-network-isolation/b03-capacity-ipv6-guards`, based on `sandbox-network-isolation/b01-base` = `e2266603cf215c301af4a6b47124b44730d41f0f` (merge of PR #84; tree `fc1dda9ae768d6c4a9809331781ba5cd04ae00b5`) |
+| Host fingerprint | Linux `6.18.44-fc-v139`, 2 CPUs; Docker 29.8.2; `iptables v1.8.10 (nf_tables)`; Python 3.13.16 (GIL build); pytest 9.1.1, pytest-asyncio 1.4.0, anyio 4.15.1; mypy 2.4.0; test image `ocbrain-test/base:local` `sha256:ce6ff6bac67827e3678f33b9270cc595315f3b0876bb745306d40b887549eb89`. The kernel was booted with `ipv6.disable=1` (`/proc/cmdline`); `/proc/sys/net` exists and `/proc/sys/net/ipv6` does not (the same F26 condition as in the studies) |
+| Environment adjustments the verdict depends on | Those of §20.2 and §21.3 for the Docker-dependent part of the full-suite runs (`python3` a direct symlink, `NO_PROXY`/`no_proxy` unset for pytest, `iproute2` and `gcc-multilib` installed). **The B03 tests themselves need none of them: no Docker, no root, no firewall, no network, no environment variable** |
+| Provisioning state | **Not provisioned**; irrelevant to this batch. `OCBRAIN_SANDBOX_NETWORK_PROVISIONED` was unset and is not consulted |
+| Exact commands (evidence of record) | `env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_sandbox_network_guards.py -p no:cacheprovider -q`; the full directory `OCBRAIN_SANDBOX_DOCKER_IMAGE=ocbrain-test/base:local env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox -p no:cacheprovider -q` with the Docker daemon started in the same shell call; `python3 -m mypy --explicit-package-bases --ignore-missing-imports core/sandbox/backends/_sandbox_network.py tests/core/sandbox/test_sandbox_network_guards.py`; `python3 scripts/check_drift.py` |
+| Result (2026-10-18, clean committed tree at `b74bbdd`) | **New tests:** 112 passed (0.77s with `PATH=/nonexistent`, i.e. no `docker` binary at all); 40 further runs, 112 passed each; 25 runs with two busy-loop processes on the 2 CPUs, 112 passed each (`19:57:56Z` to `19:59:25Z`). **Full directory:** 273 passed, 8 xfailed in 107.46s (`19:54:00Z` to `19:55:49Z`) and again 273 passed, 8 xfailed in 97.57s (`19:55:58Z` to `19:57:36Z`); the baseline on `b01-base` is 161 passed, 8 xfailed, and the difference is exactly the 112 new tests. `test_network_isolation_contract.py` alone: 5 passed, 8 xfailed in 21.07s (unchanged). **mypy:** no issues in the 2 files. **Drift:** 15 of 15 PASS. The tree was clean before and after every run |
+| Cleanup and baseline check | 0 containers and 4 Docker networks (`bridge`, `host`, `none`, `ocbrain-sandbox-net`) before and after both full runs. `iptables-save` (lines not starting with `#` or `:`, counters stripped, sha256 first 12 characters; a method different from §20.2's and §21.3's, so the digests are not comparable with theirs): **`c3506dfe607b` before and `bb4344e48d2e` after the first full-suite run, and identical before and after the second** (37 lines each; both dumps were saved and `diff` is empty). The B03 tests touch neither Docker nor the firewall, so this is not a result of B03; it is the **same pattern** as the unexplained observation of §21.3 (a change in the first full-suite run, none in the repeat). The dump of the state before the first run was not kept, so what changed is still not known. It remains an unexplained environment observation, not evidence either way |
+| Reproduction artifacts | The commands above and the committed files. The mutation harness (a scratch script, not in the repository) applies each mutation in 22.4 to one line or block, runs the new test file and restores the file with `git checkout`; it asserts a clean tree before and after |
+
+### 22.4 Checks that the tests can fail
+
+Nineteen scratch mutations, each applied to the committed tree, each run against the new test file, each restored with `git checkout` with a clean tree asserted afterwards (none committed). **All 19 were caught.**
+
+| Mutation | Fault class | Failing tests |
+|---|---|---|
+| M1 reserve without the lock, yielding between check and add | check-then-act race | 2 |
+| M1b reserve without the lock, no yield | check-then-act race | 1 to 2 (caught in 23 of 23 runs; detection of a missing lock without a yield is probabilistic under the GIL, which is why the concurrency tests run at a 1 microsecond switch interval) |
+| M2 the effective limit has no ceiling | limit above 29 | 5 |
+| M2b the effective limit ignores the probe | limit not host-validated | 6 |
+| M3 a failing probe falls back to the ceiling | silent fail-open | 5 |
+| M3b a negative probe result is accepted | malformed probe | 2 |
+| M4 `release` always reports True | double release looks successful | 3 |
+| M4b a foreign slot is not rejected | cross-limiter release | 1 |
+| M4c a limiter can be built above the ceiling | ceiling not enforced | 3 |
+| M5 an unreadable `disable_ipv6` is treated as fine | IPv6 fail-open | 12 |
+| M6 absence is trusted without checking `/proc/sys/net` | "procfs not readable" read as "IPv6 off" | 8 |
+| M7 absence through `os.path.isdir` | a permission error read as "absent", i.e. as off | 1 |
+| M8 UNKNOWN takes precedence over ON | wrong reason, same refusal | 4 |
+| M9 the guard returns instead of raising | no refusal | 18 |
+| M9b a `0` is read as off | IPv6 fail-open | 14 |
+| M10 the module imports from this repository | leaf property | 1 |
+| M11 wired with a cycle (`docker_backend` imports the guards, the guards import `DockerBackendError`) | import cycle | collection error (`ImportError`) |
+| M12 wired without a cycle (`docker_backend` imports the module) | accidental wiring | 1 |
+| M13 the capacity refusal is not logged | INV-9 | 1 |
+
+The inertness pin first failed on the unmodified tree, usefully: `docker_backend.py` already contains `_ensure_sandbox_network()`, which a plain substring match took for a reference to the module. The pin now matches the module name as a whole identifier, and a check of the pattern on five strings (including that one) passed.
+
+### 22.5 Interpretations and findings to confirm
+
+1. **The defined error and the `DockerBackendError` family.** §8 says a request beyond the limit "raises a defined error (`DockerBackendError` family)". `DockerBackendError` lives in `docker_backend.py`, which B11 will import this module from; importing it here would form an import cycle the moment the guards are wired, and B03's own acceptance requires no import cycle. The errors therefore derive from `RuntimeError` (as `DockerBackendError` does) under `SandboxNetworkGuardError`, and `create()` is expected to surface them as `DockerBackendError` at the wiring boundary (for example `raise DockerBackendError(str(exc)) from exc`). **This is an interpretation, not a quiet satisfaction of the sentence**: until B11 an error raised by the guards is not an instance of `DockerBackendError`. Reopen if the user wants the literal subclass (the alternative is to move `DockerBackendError` into a leaf module and re-export it from `docker_backend`, a change to `docker_backend.py` that B03's file list does not include).
+2. **"Absent" is read as "off" only when `/proc/sys/net` is present.** The specification's wording would treat a missing `/proc/sys/net/ipv6` as off even when procfs is not mounted, in which case the absence proves nothing. This narrows the rule in the refusing direction only; the case is UNKNOWN.
+3. **The detection rule is weaker than its name suggests (finding, not changed).** The kernel's own documentation of `conf/all/disable_ipv6`, as proposed in the 2021 documentation patch "doc: networking: ip-sysctl: Document conf/all/disable_ipv6 and conf/default/disable_ipv6" (read as a mailing-list posting, not as the current `ip-sysctl` page, which could not be fetched), says that reading it "does not have any particular meaning", that it "does not say whether IPv6 support is enabled or disabled", and that it can read 1 while some interface has `disable_ipv6` set to 0 and IPv6 addresses configured; `conf/default/*` applies to interfaces created afterwards. So `all` = 1 and `default` = 1 (the rule of §9, implemented exactly) does not prove that no existing interface has IPv6; `default` = 1 is what governs the sandbox networks created later. §9 also requires that sandbox networks are created with IPv6 disabled and validated (B11, TC-08), which is the stronger control. The question of whether the host-level rule should additionally require every `conf/<interface>/disable_ipv6` to be 1 is a change to the specification and is **not made here**; it needs a ruling, and it matters for B11 and B14.
+4. **The procfs layout is not observed on this host.** `conf/all/disable_ipv6` and `conf/default/disable_ipv6` under `/proc/sys/net/ipv6` come from the kernel documentation; this host has no `/proc/sys/net/ipv6` (it boots with `ipv6.disable=1`). The real-kernel `ON` and `OFF`-by-value branches are exercised only against injected sources and a temporary directory tree; the real host reading gives `OFF` ("the kernel exposes no ipv6 sysctl directory"), which is the absent branch. TC-15 and B14 are where a real IPv6 kernel is read.
+5. **The limiter counts reservations, not networks.** It is an in-process counter. It does not ask the daemon how many networks exist, it starts at zero in a new process, and a controller that is killed and restarted forgets its slots while the labeled networks remain. INV-7 is a statement about networks that exist, so the wiring batch must (a) share one limiter instance across the backend, (b) reconcile it with the labeled networks at start-up (the reaper of §10, TC-11) and (c) run TC-13 against a real daemon. None of that is B03's.
+6. **Probe failure raises; it does not mean "limit 0".** A probe that cannot run is an error that stops limiter construction (fail closed with a distinct, named reason), not a limit of 0 that would refuse every sandbox with a capacity message that is false. A host that really can hold none gives a result of 0 and a limit of 0. A probe result above 29 is clamped to 29 by `min`; the ceiling is not exceeded and a warning is not raised for it.
+7. **The procfs reads are synchronous.** `proc_ipv6_sources()` does up to three small reads of procfs; from async code the guard must be called through `asyncio.to_thread`. Noted in the module docstring for B11.
+8. **The inertness pin is temporary by design.** `test_nothing_in_core_imports_the_guard_module_yet` fails the moment anything in `core/` references the module. B11 replaces it with its wiring tests in the same change.
+
+### 22.6 Limits of this evidence, and the reconciliation duty
+
+- Unit level only. TC-13 (the effective limit against a real daemon, the next request refused with no residue) and TC-15 (an IPv6 listener from a sandbox) were not run and are not claimed; the capacity probe has no implementation, so the figure 29 was **not re-measured**, and no Docker network was created by B03.
+- Concurrency evidence is in-process threads on a 2 CPU host under CPython 3.13 with the GIL; a free-threaded build was not tested. The limiter is synchronous and is not awaited; its use from `asyncio` code is a plain call and was not exercised under an event loop.
+- Everything about IPv6 is **UNVERIFIED** in the sense of §9: no host with IPv6 was available, and the unit tests prove the decision logic, not that a sandbox cannot reach a `::`-bound listener.
+- **Reconciliation duty (second review, point 4).** B03's capacity portion presumes per-sandbox networks. If DG-1 selects a mechanism that does not use them, the capacity portion must be explicitly reconciled before B11 continues. H2 as currently specified also uses per-sandbox networks, so today B03 is a guard against silently reusing an assumption. Nothing in this section pre-decides DG-1.
+
+### 22.7 Effects and what B03 did not do
+
+**Effects.** `core/sandbox/backends/_sandbox_network.py` and its tests exist; nothing else changed. No import, no call, no runtime behavior of `DockerBackend`, `NamespaceBackend` or `check_admission()` differs from `b01-base`.
+
+**What B03 did not do.** No wiring, no network, rule, canary or capacity probe implementation, no change to `docker_backend.py`, `admission.py`, `contracts.py` or `_net_proxy.py`, no new `SandboxCapability`, no change to C2, A1, the B01 suite or its markers, no debt closed or registered (`KNOWN_ISSUES.md` and `CURRENT_STATE.md` untouched), no security gate claimed. **Next (each needing the user's go, none started):** B05 (H2 study), B04, then DG-1 and DG-2; B11 and B12 only after DG-1 and, for B11, B10.
