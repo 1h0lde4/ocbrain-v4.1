@@ -173,6 +173,16 @@ lines.
   never exposed, or never answered in any exposed trial, makes the run
   INCONCLUSIVE even when the others were fine; one exposed, answered trial still
   counts as tested (§7).
+  **Review finding — harness self-coverage invariant missing; no demonstrated
+  current exploit** (post-approval addition, recorded Oct 18, 2026 on the
+  reconciliation line only; **not part of the Oct 6 approval and awaiting the
+  owner's review**; from a static review, not exercised by a test; `18d2705` is
+  unchanged and carries no patch for it): the set of payloads judged
+  for per-payload completeness (`per_payload`) is not checked to equal exactly
+  the declared `PAYLOADS` set. This is a latent integrity weakness of the
+  instrument, not a demonstrated bypass and not a claim about the production
+  path. The review judged its other probes (aggregation, verdict precedence,
+  event naming, part-A completeness) covered. Open; separate from R5.
 
 ## 7. Verification evidence
 
