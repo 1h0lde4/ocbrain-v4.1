@@ -4,7 +4,7 @@
 
 ## 1. Handoff Metadata
 
-- Handoff version: 3.1 — **corrected**: the chromadb decision and PR #25's nature were already visible in the repo; v3's §6/§15 framing of both was wrong (fixed below)
+- Handoff version: 3.2 — Oct 16 decisions recorded; freeze-manifest DRAFT v0.1 written (criteria proposed, verdict NOT rendered); PR #25 closed; PR #79 synced. (v3.1 corrected two earlier wrong framings: chromadb was already decided; PR #25 was stale)
 - Created at: 2026-10-15 00:28 UTC
 - Workstream: CodeQL-findings triage and its follow-ups — **the engineering work is done**; what remains is decisions, merges, and the freeze-manifest
 - Source session purpose: continue after another session's report (§3) — fix R6, sweep R7, reconcile that report against live data
@@ -47,7 +47,7 @@ only once these are finished do we start the freeze-manifest
 | R5 | Category 3 | **DONE upstream** | 3 `py/stack-trace-exposure` alerts `fixed` |
 | R6 | `PrivacyGuard.wipe_module_data` deletion sink | **FIXED — PR #79 open, awaiting Moncif** | §6, §7 |
 | R7 | Sweep for other destructive sinks | **DONE, with stated caveats** | `R7_DESTRUCTIVE_SINK_SWEEP_OCT2026.md` + `r7_destructive_sink_sweep.py` (this branch) |
-| R8 | Freeze-manifest | **Scoped (reconnaissance done); needs his go-ahead** | `FREEZE_MANIFEST_SCOPING_OCT2026.md`; executable baseline pinned at `main` @ `3f8ef97` |
+| R8 | Freeze-manifest | **IN PROGRESS — `FREEZE_MANIFEST_DRAFT_488129b.md` (DRAFT v0.1); owner said proceed with a pinned SHA, explicit evidence, predeclared criteria, no verdict until reconciled** | Criteria §3 await owner ratification; §4 evidence inventory filled; §5 gate unanswered |
 | R9 | Decisions only Moncif can make | **OPEN** | §15 |
 
 ## 6. Current Verified State
@@ -71,7 +71,7 @@ only once these are finished do we start the freeze-manifest
 
 | Branch | Head | vs `main` | Contents | PR |
 |---|---|---|---|---|
-| `security/privacy-wipe-containment-oct2026` | `e54b2c6` | based on `1d813bd`; behind 20 | **R6**: `core/privacy.py` (CRLF, +6/−1), `tests/test_privacy.py` (CRLF; vacuous test replaced by 14 real ones), `KNOWN_ISSUES.md` (+1 row `DEBT-042`) | **#79 open** |
+| `security/privacy-wipe-containment-oct2026` | `bcbe574` | **synced to `main` @ `488129b`, 0 behind** (merged cleanly; all register rows verified; full suite 2082 passed / 1 xfailed; drift 15/15) | **R6**: `core/privacy.py` (CRLF), `tests/test_privacy.py` (CRLF), `KNOWN_ISSUES.md` (+1 row `DEBT-042`) | **#79 open** — merge on Moncif's word |
 | `security/codeql-findings-sep2026` | transfer commit `02c798a5086dce32cbb172845d7269e5b5efe1d2` (+ this file on top) | behind 47, ahead 8 | audit trail: working notes, R7 write-up + sweep script, +3 end-to-end export tests (`tests/test_brain_export_security.py`), Packet E correction | **none** |
 
 PR #79's commits:
@@ -165,6 +165,10 @@ R6 (reproduce → fix → gate); the R7 AST sweep and its triage (§6; every `PA
 | U6 | Latent output-path sinks (`export_jsonl`, `export_training_dataset`): confine to an export root if ever routed | When wired |
 | U7 | Option: a drift check flagging new `rmtree`/`unlink` not via `module_child()` | Policy call |
 | U8 | The token pasted in chat has **admin scope on a public repo — rotate it**; the saved `userPreferences` token is the old revoked one | Moncif |
+| U9 | **Branch protection is stale in the docs:** live `enforce_admins` is **`true`** (PR #57 saw it Oct 5); my memory notes, `DEBT-033`'s register text, and v1–v3 of this handoff said admins are exempt | Update `DEBT-033`'s row; owner to confirm the intent |
+| U10 | **The Oct 1 audit's original document is not recoverable** (searched every file ever added on any fetched ref and all issue/PR titles); reconstructed from the register + PRs #51/#53/#55/#57/#67/#71/#83 | Owner: does a copy exist? |
+| U11 | Pending owner dispositions: **FZ-D3**, **`REM-004`** sufficiency, **`CTX-EXPORT-001`** classification, whether FZ-05/06/07 are blockers, the two pinned FZ-02 outcomes (**not accepted**), merges of PRs #83 and #79 | Owner |
+| U12 | Register ↔ code gaps G1–G9 in the manifest §6 (FZ-02 lag; `CURRENT_STATE.md` Sept 23 verdict unreconciled; FZ-06 ≡ `DEBT-030` unlinked; …) | PR #83 fixes G1 |
 
 **Dependabot (live):**
 
@@ -201,10 +205,10 @@ R6 (reproduce → fix → gate); the R7 AST sweep and its triage (§6; every `PA
 ## 17. Next Steps
 
 1. **Verify the transfer** (§18); rebuild the environment if the container reset (§14).
-2. **PR #79:** re-check CI and mergeability; if `main` moved and conflicts, merge `main` into its branch and verify `KNOWN_ISSUES.md` per-row (and re-check the highest `DEBT-` id — rename `DEBT-042` if taken). **Merge only on Moncif's instruction.**
+2. **PR #79:** already synced with `main` @ `488129b` (0 behind, gates green; CI result recorded in the manifest §4). If `main` has moved again, re-sync and re-verify (per-row register check). **Merge only on Moncif's instruction.**
 3. **Put U2, U8 and the PR #25 question to Moncif.** (U1 is already decided in the repo. Don't merge #33; closing Dependabot PRs is his call.)
 4. *If he wants the audit trail on `main`:* on `security/codeql-findings-sep2026` do `git rm handoff.md`, merge `main`, open a docs+tests PR; wait for the 5 checks; merge only on his word.
-5. **Freeze-manifest — only with his go-ahead.** Start from `docs/Bugs Hunt & fix reports/FREEZE_MANIFEST_SCOPING_OCT2026.md` (the Oct 1 audit's FZ-01..07 series is the spine; PR #25 is stale, not a competing effort; first reconcile the register's FZ-02 status with the merged B2a/B2b). A fresh evidence-first reconciliation of the register against live `main`: `DEBT-032…036`, `DEBT-042`, CTX-AUTH-001b (implemented upstream), ADR-KERNEL-07 (proposed), `DEBT-025` (unauthenticated control plane), `DEBT-033` (admin bypass), the chromadb CVE question, and the Kernel v1.0 verdict.
+5. **Freeze-manifest:** continue from `docs/Bugs Hunt & fix reports/FREEZE_MANIFEST_DRAFT_488129b.md` — its §10 lists the steps (ratify §3 criteria → re-run the FZ-01 repro → answer the §5 gate → reconcile §6 → owner dispositions for §8 → re-pin and re-run → only then the verdict).
 6. *Optional:* trace the sandbox/`STATE` sinks (U5); the drift-check idea (U7).
 
 ## 18. Resume Instructions
