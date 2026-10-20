@@ -224,3 +224,180 @@ class TestExitCodeContract:
         assert code == 2, out
         assert "INCONCLUSIVE" in out
         assert "invariant held" not in out
+
+
+# ── CTX-AUTH-002 remediation: harness self-coverage and per-trial provenance ──
+#
+# Requirement source: handoff v3 section 4 (owner's gate order) and ADR-KERNEL-08
+# section 6 R6 + section 8.1 item 1: the harness must (a) check that it measured
+# exactly the payloads it declares, and (b) record per trial which provider and
+# model answered, whether the completion came from the prompt cache, that the
+# cache was cleared between trials, and the harness hash / commit / non-secret
+# config in the run metadata. Fails closed (exit 2) when it cannot.
+
+import hashlib
+import json
+from pathlib import Path
+
+
+class _FakeProvider:
+    """Provider-like object that goes through the REAL provider mesh and the REAL
+    prompt cache, with a scripted answer. Counts the calls that reach it."""
+
+    def __init__(self, model="model-x", endpoint=None, mode="compliant"):
+        self.model = model
+        self.endpoint = endpoint
+        self.calls = 0
+        self._fake = lcc._make_fake(mode)
+
+    @property
+    def name(self):
+        return f"FakeProvider({self.model})" + (f"@{self.endpoint}" if self.endpoint else "")
+
+    def is_available(self):
+        return True
+
+    async def generate(self, prompt):
+        self.calls += 1
+        return await self._fake(self, prompt)
+
+
+@pytest.fixture
+def clean_prompt_cache():
+    from core.prompt import cache as prompt_cache
+    prompt_cache._prompt_cache.clear()
+    yield prompt_cache
+    prompt_cache._prompt_cache.clear()
+
+
+def _run_real(capsys, provider, **overrides):
+    with patch("core.cognitive.intent.resolve_provider", return_value=[provider]):
+        code = asyncio.run(lcc._amain(_args(dry_run=None, **overrides)))
+    return code, capsys.readouterr().out
+
+
+class TestSelfCoverageInvariant:
+    """The harness must verify that the set of payloads it judged for completeness
+    equals exactly the declared PAYLOADS set. Before the fix a declared payload that
+    silently dropped out of the measurement was simply not judged, and the run
+    passed (exit 0) on the others."""
+
+    def test_a_declared_payload_missing_from_the_measurement_is_inconclusive(self, capsys):
+        class SkipsOne(dict):
+            def items(self):
+                return [(k, v) for k, v in dict.items(self) if k != "line-spoof"]
+
+        with patch.object(lcc, "PAYLOADS", new=SkipsOne(lcc.PAYLOADS)):
+            code, out = _run(capsys)
+        verdict = _verdict_line(out)
+        assert code == 2, out
+        assert "self-coverage" in verdict and "line-spoof" in verdict, verdict
+        assert "invariant held" not in out
+
+    def test_a_measured_payload_that_is_not_declared_is_inconclusive(self, capsys):
+        class AddsGhost(dict):
+            def items(self):
+                return list(dict.items(self)) + [("ghost", lcc.PAYLOADS["naive"])]
+
+        with patch.object(lcc, "PAYLOADS", new=AddsGhost(lcc.PAYLOADS)):
+            code, out = _run(capsys)
+        verdict = _verdict_line(out)
+        assert code == 2, out
+        assert "self-coverage" in verdict and "ghost" in verdict, verdict
+
+    def test_coverage_gaps_helper_reports_both_directions_sorted(self):
+        missing, undeclared = lcc._coverage_gaps({"a", "b", "c"}, {"b", "z", "y"})
+        assert missing == ["a", "c"] and undeclared == ["y", "z"]
+        assert lcc._coverage_gaps({"a"}, {"a"}) == ([], [])
+
+
+class TestProvenancePerTrial:
+    def test_every_trial_records_provider_model_and_a_cache_miss(self, capsys, tmp_path, clean_prompt_cache):
+        provider = _FakeProvider(model="model-x")
+        out_json = tmp_path / "out.json"
+        code, out = _run_real(capsys, provider, requests=1, trials=2, json=str(out_json))
+        assert code == 0, out
+        data = json.loads(out_json.read_text(encoding="utf-8"))
+        records = data["benign"] + [r for runs in data["poisoned"].values() for r in runs]
+        assert records and all("error" not in r for r in records)
+        for r in records:
+            prov = r["provenance"]
+            assert prov["mode"] == "real" and prov["cache_cleared_before_trial"] is True
+            answering = prov["answered_by"]
+            assert answering["provider"] == "FakeProvider(model-x)"
+            assert answering["model"] == "model-x"
+            assert answering["cache"] == "miss"
+        assert "NOT real-provider evidence" not in out
+
+    def test_the_prompt_cache_is_cleared_between_trials_so_trials_are_independent(
+            self, capsys, tmp_path, clean_prompt_cache):
+        """Two trials of the same request build the same prompt. Without clearing,
+        trial 2 is served from the cache and never reaches the model."""
+        provider = _FakeProvider()
+        out_json = tmp_path / "out.json"
+        code, out = _run_real(capsys, provider, requests=1, trials=2, json=str(out_json))
+        data = json.loads(out_json.read_text(encoding="utf-8"))
+        total_runs = len(data["benign"]) + sum(len(v) for v in data["poisoned"].values())
+        assert total_runs == 2 + 4 * 2
+        assert provider.calls == total_runs, (provider.calls, total_runs)
+
+    def test_a_completion_served_from_the_cache_is_inconclusive(self, capsys, clean_prompt_cache):
+        provider = _FakeProvider()
+        with patch.object(lcc, "_clear_prompt_cache", new=lambda: None):
+            code, out = _run_real(capsys, provider, requests=1, trials=2)
+        verdict = _verdict_line(out)
+        assert code == 2, out
+        assert "prompt cache" in verdict, verdict
+        assert "invariant held" not in out
+
+    def test_a_cache_that_cannot_be_cleared_is_an_error_not_a_pass(self, capsys, clean_prompt_cache):
+        provider = _FakeProvider()
+
+        def boom():
+            raise RuntimeError("cache module changed shape")
+
+        with patch.object(lcc, "_clear_prompt_cache", new=boom):
+            code, out = _run_real(capsys, provider, requests=1, trials=1)
+        assert code == 2, out
+        assert "cache module changed shape" in out
+        assert "invariant held" not in out
+
+    def test_run_metadata_has_harness_hash_commit_and_non_secret_config(
+            self, capsys, tmp_path, clean_prompt_cache):
+        provider = _FakeProvider(model="model-x",
+                                 endpoint="https://user:SECRETPASS@api.example.test:8443/v1?key=SECRETKEY")
+        out_json = tmp_path / "out.json"
+        code, out = _run_real(capsys, provider, requests=1, trials=1, json=str(out_json))
+        assert code == 0, out
+        raw = out_json.read_text(encoding="utf-8")
+        assert "SECRETPASS" not in raw and "SECRETKEY" not in raw
+        assert "SECRETPASS" not in out and "SECRETKEY" not in out
+        meta = json.loads(raw)["provenance"]["run"]
+        assert meta["mode"] == "real" and meta["real_provider_evidence"] is True
+        expected = hashlib.sha256(Path(lcc.__file__).read_bytes()).hexdigest()
+        assert meta["harness_sha256"] == expected
+        assert isinstance(meta["git_commit"], str) and meta["git_commit"]
+        assert meta["git_dirty_tracked"] in (True, False, None)
+        configured = meta["providers_configured"]
+        assert configured and configured[0]["model"] == "model-x"
+        assert configured[0]["endpoint"] == "https://api.example.test:8443"
+        summary = json.loads(raw)["provenance"]["summary"]
+        assert summary["cache_hits"] == 0 and summary["runs_without_provenance"] == 0
+        # the provider name embeds its endpoint; the harness must record it with credentials stripped
+        assert summary["answered_by"] == {"FakeProvider(model-x)@https://api.example.test:8443": summary["runs"]}
+
+    def test_dry_run_is_labelled_as_not_real_provider_evidence(self, capsys, tmp_path):
+        out_json = tmp_path / "out.json"
+        code, out = _run(capsys, json=str(out_json))
+        assert code == 0, out
+        assert "NOT real-provider evidence" in out
+        meta = json.loads(out_json.read_text(encoding="utf-8"))["provenance"]["run"]
+        assert meta["mode"] == "stand-in" and meta["real_provider_evidence"] is False
+
+    def test_endpoint_sanitizer_keeps_only_scheme_host_and_port(self):
+        f = lcc._sanitize_endpoint
+        assert f("https://user:pw@h.example:8443/v1?key=K#frag") == "https://h.example:8443"
+        assert f("http://localhost:11434") == "http://localhost:11434"
+        assert f(None) is None
+        assert f("not a url") is None
+
