@@ -182,7 +182,31 @@ lines.
   the declared `PAYLOADS` set. This is a latent integrity weakness of the
   instrument, not a demonstrated bypass and not a claim about the production
   path. The review judged its other probes (aggregation, verdict precedence,
-  event naming, part-A completeness) covered. Open; separate from R5.
+  event naming, part-A completeness) covered. Separate from R5.
+  **Remediation status (post-approval addition, recorded Oct 20, 2026 on the
+  remediation line only; not part of the Oct 6 approval; awaiting the owner's
+  review).** The gap was reproduced against the unfixed harness: with a declared
+  payload silently dropped from the measurement, 3 of 4 payloads were measured and
+  the run exited 0 ("invariant held"). A second harness-validity gap was found
+  while reproducing it: in real mode the trials of one request build the same
+  prompt and `core.prompt.cache` keys on the prompt, so trials after the first are
+  served from the in-memory cache and never reach the model (5 provider calls for
+  10 trials in the reproduction). Fixed in `live_citation_check.py` on the
+  remediation line: exit 2 when a declared payload was not measured or an
+  undeclared one was; in real mode the prompt cache is cleared before every trial
+  and each provider attempt is recorded per trial (provider, model,
+  credential-stripped endpoint, cache hit or miss); a completion served from the
+  cache, or with no provider attempt on record, exits 2; the run metadata records
+  the harness sha256, git commit, tracked-file state, arguments and configured
+  providers; a `--dry-run` is labelled "NOT real-provider evidence". Covered by
+  23 tests in `tests/test_live_citation_check.py` and 35 mutants in
+  `scripts/mutation_check_ctx_auth_002.py` (nine new, all caught). Not
+  established: real-model behavior (R3, R5); the owner's independent review of the
+  amended harness (§8.1 item 1) remains open. The Oct 8 and Oct 9 preliminary
+  real-provider runs predate the provenance and cannot be attributed to a
+  provider, model or fresh call, and by construction of the unfixed harness
+  repeated trials within one process were exposed to cache reuse: they are not
+  acceptance evidence.
 
 ## 7. Verification evidence
 
