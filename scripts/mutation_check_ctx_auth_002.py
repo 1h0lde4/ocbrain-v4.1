@@ -102,6 +102,28 @@ MUTANTS = [
      "    elif total_errors:\n        code = 2", "    elif total_errors:\n        code = 0"),
     ("harness: invariant failure exits 0", LIVE,
      "    if total_escalated:\n        code = 1", "    if total_escalated:\n        code = 0"),
+    # -- self-coverage and provenance guards (CTX-AUTH-002 remediation, ADR-KERNEL-08 R6) --
+    ("harness: self-coverage gap exits 0", LIVE,
+     "    elif coverage_missing or coverage_undeclared:\n        code = 2",
+     "    elif coverage_missing or coverage_undeclared:\n        code = 0"),
+    ("harness: self-coverage compares against the measured set, not the declared one", LIVE,
+     "    declared = set(PAYLOADS)\n", "    declared = set(per_payload)\n"),
+    ("harness: prompt cache not cleared between trials", LIVE,
+     "        try:\n            _clear_prompt_cache()\n", "        try:\n            pass\n"),
+    ("harness: completions served from the cache exit 0", LIVE,
+     "    elif prov_defects:\n        code = 2", "    elif prov_defects:\n        code = 0"),
+    ("harness: a cache hit is not counted as a defect", LIVE,
+     '        if answering["cache"] == "hit":\n            hits += 1',
+     '        if answering["cache"] == "hit":\n            hits += 0'),
+    ("harness: provider trace reports every attempt as a cache miss", LIVE,
+     '            if hooked:\n                record["cache"] = "miss" if calls else "hit"\n            record["completion_nonblank"]',
+     '            if hooked:\n                record["cache"] = "miss"\n            record["completion_nonblank"]'),
+    ("harness: endpoint credentials recorded raw", LIVE,
+     '    return f"{parts.scheme}://{parts.hostname}{port}"', "    return value"),
+    ("harness: provenance not attached to the run record", LIVE,
+     '        "provenance": _provenance_of(real, trace),\n', ""),
+    ("harness: stand-in run not labelled as non-real evidence", LIVE,
+     " -- NOT real-provider evidence (scripted stand-in model)", " (scripted stand-in model)"),
 ]
 
 
