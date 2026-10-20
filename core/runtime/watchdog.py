@@ -27,13 +27,13 @@ import logging
 import time
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
 from core.runtime.execution_graph import ExecutionGraph, ExecutionStatus
 from core.runtime.progress import ProgressMonitor
 from core.runtime.watchdog_decision import CancelReason, WatchdogVerdict, decide
-
-logger = logging.getLogger(__name__)
 
 # The one verdict that should write a fresh graph touch: the instant an
 # extension is actually granted. Writing again on every subsequent
@@ -133,47 +133,16 @@ class GraphExecutionWatchdog:
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
-        """Cancel and drain the watchdog without swallowing caller cancellation."""
-        task, self._task = self._task, None
-        if task is None:
+        if self._task is None:
             return
-
-        current_task = asyncio.current_task()
-        cancellations_before = (
-            current_task.cancelling() if current_task is not None else 0
-        )
+        task, self._task = self._task, None
         task.cancel()
         try:
-            await asyncio.shield(task)
+            await task
         except asyncio.CancelledError:
-            # shield() raises both when the watchdog's own cancellation finishes
-            # and when this stop() caller is cancelled. Only a *new* cancellation
-            # of the caller should interrupt this cleanup operation.
-            caller_cancelled = (
-                current_task is not None
-                and current_task.cancelling() > cancellations_before
-            )
-            if caller_cancelled:
-                outcome = await asyncio.gather(task, return_exceptions=True)
-                if outcome and isinstance(outcome[0], Exception):
-                    logger.warning(
-                        "GraphExecutionWatchdog task exited with exception during stop: %s",
-                        outcome[0],
-                    )
-                raise
-            # The watchdog's own CancelledError is expected. If the caller was
-            # already unwinding cancellation when stop() began, its original
-            # CancelledError remains in control and propagates after cleanup.
+            pass
         except Exception as e:
-            logger.warning(
-                "GraphExecutionWatchdog task exited with exception during stop: %s", e
-            )
-            if (
-                current_task is not None
-                and current_task.cancelling() > cancellations_before
-            ):
-                await asyncio.gather(task, return_exceptions=True)
-                raise asyncio.CancelledError
+            logger.warning("GraphExecutionWatchdog task exited with exception during stop: %s", e)
 
     async def inspect(self, now: Optional[float] = None) -> str:
         """Inspect the graph once; useful for tests and manual polling.

@@ -546,7 +546,6 @@ class WorkflowRuntime:
                 elif state.status == NodeStatus.FAILED:
                     await monitor.record_failure(node_id, (state.result.error if state.result else "") or "Restored from checkpoint (failed)")
         watchdog.start()
-
         try:
             # ── Step 1: Validate ─────────────────────────────────────────────
             errors = definition.validate()
@@ -604,112 +603,111 @@ class WorkflowRuntime:
                     error=f"Unexpected workflow error: {e}",
                     duration_ms=(time.time() - start_time) * 1000,
                 )
-
-            # ── Step 4: Aggregate result ─────────────────────────────────────
-            # Workflow success is defined by whether execution terminated along
-            # a successful path -- i.e. the outcome of `last_result`, which is
-            # whatever _execute_from actually returned last (it follows
-            # error_branch redirection on failure, so a node that failed but
-            # was recovered via its error_branch surfaces here as a success --
-            # that redirection is the entire point of error_branch, and a
-            # workflow that recovered must not be reported as failed).
-            #
-            # This also correctly handles the cancellation case: a pre-
-            # cancelled token makes _execute_from return
-            # WorkerResult(success=False, error="Workflow cancelled") before
-            # touching node_states/node_results at all, so those two
-            # collections stay empty/PENDING -- checking them (as an earlier
-            # version of this method did) reports success=True for a workflow
-            # that never ran. Checking last_result.success avoids that: an
-            # empty node_results with a failed last_result correctly reports
-            # failure.
-            #
-            # last_result is None -> False, not True (changed 2026-09-13,
-            # adopted from an independent parallel DEBT-020 implementation
-            # after comparing both against current main -- see ADR-KERNEL-04's
-            # addendum). Not proven reachable via the current call graph, but
-            # not provably unreachable either: a node whose state.status is
-            # already COMPLETED/FAILED (e.g. a hand-constructed
-            # WorkflowNodeState, or a future caller of resume()'s checkpoint
-            # path with an inconsistent node_results entry) with no
-            # corresponding node_results[node_id] falls through exactly this
-            # branch. A workflow the Kernel cannot account for is not
-            # evidence of success -- assume systems fail under scale, per this
-            # project's own engineering standards, and fail closed instead of
-            # open on a case that was never meant to be reachable.
-            success = last_result.success if last_result is not None else False
-            duration_ms = (time.time() - start_time) * 1000
-
-            # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
-            # completing without error is not the same thing as the request
-            # actually being satisfied. Only checked when node-level success
-            # already holds -- a workflow that genuinely errored is already
-            # correctly reported as failed above, and constraint-checking an
-            # error's output would be checking data that was never meant to
-            # be the final answer. Only HARD constraints can fail a workflow;
-            # SOFT constraints are advisory, matching how _detect_contradictions
-            # (core/cognitive/planner.py) already treats the same distinction.
-            constraint_violations: List[str] = []
-            if success and definition.constraints:
-                constraint_violations = _check_constraints(
-                    definition.constraints, last_result.output if last_result else None,
-                )
-                if constraint_violations:
-                    success = False
-
-            if not success:
-                self._total_failures += 1
-
-            await monitor.record_status(
-                graph.root.node_id,
-                ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
-                summary="Execution completed" if success else "Execution failed",
-                current_action="",
-            )
-            await self._emit_event(
-                "execution.completed" if success else "execution.failed",
-                {
-                    "execution_id": execution_id,
-                    "node_id": graph.root.node_id,
-                    "status": "completed" if success else "failed",
-                    "summary": "Execution completed" if success else "Execution failed",
-                    **({"constraint_violations": constraint_violations} if constraint_violations else {}),
-                },
-            )
-            if constraint_violations:
-                error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
-            elif last_result and not last_result.success:
-                error_text = last_result.error
-            else:
-                error_text = ""
-
-            result = WorkflowResult(
-                success=success,
-                workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                node_results=node_results,
-                output=last_result.output if last_result else None,
-                error=error_text,
-                constraint_violations=constraint_violations,
-                duration_ms=duration_ms,
-                metadata={"query": query, "session_id": session_id,
-                          "execution_id": execution_id,
-                          "budget": budget},
-            )
-
-            # ── Step 5: Emit workflow.completed ──────────────────────────────
-            await self._emit_event("workflow.completed", {
-                "workflow_id": definition.workflow_id,
-                "instance_id": instance_id,
-                "success": success,
-                "duration_ms": duration_ms,
-                "nodes_executed": len(node_results),
-            })
-
-            return result
-
         finally:
             await watchdog.stop()
+
+        # ── Step 4: Aggregate result ─────────────────────────────────────
+        # Workflow success is defined by whether execution terminated along
+        # a successful path -- i.e. the outcome of `last_result`, which is
+        # whatever _execute_from actually returned last (it follows
+        # error_branch redirection on failure, so a node that failed but
+        # was recovered via its error_branch surfaces here as a success --
+        # that redirection is the entire point of error_branch, and a
+        # workflow that recovered must not be reported as failed).
+        #
+        # This also correctly handles the cancellation case: a pre-
+        # cancelled token makes _execute_from return
+        # WorkerResult(success=False, error="Workflow cancelled") before
+        # touching node_states/node_results at all, so those two
+        # collections stay empty/PENDING -- checking them (as an earlier
+        # version of this method did) reports success=True for a workflow
+        # that never ran. Checking last_result.success avoids that: an
+        # empty node_results with a failed last_result correctly reports
+        # failure.
+        #
+        # last_result is None -> False, not True (changed 2026-09-13,
+        # adopted from an independent parallel DEBT-020 implementation
+        # after comparing both against current main -- see ADR-KERNEL-04's
+        # addendum). Not proven reachable via the current call graph, but
+        # not provably unreachable either: a node whose state.status is
+        # already COMPLETED/FAILED (e.g. a hand-constructed
+        # WorkflowNodeState, or a future caller of resume()'s checkpoint
+        # path with an inconsistent node_results entry) with no
+        # corresponding node_results[node_id] falls through exactly this
+        # branch. A workflow the Kernel cannot account for is not
+        # evidence of success -- assume systems fail under scale, per this
+        # project's own engineering standards, and fail closed instead of
+        # open on a case that was never meant to be reachable.
+        success = last_result.success if last_result is not None else False
+        duration_ms = (time.time() - start_time) * 1000
+
+        # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
+        # completing without error is not the same thing as the request
+        # actually being satisfied. Only checked when node-level success
+        # already holds -- a workflow that genuinely errored is already
+        # correctly reported as failed above, and constraint-checking an
+        # error's output would be checking data that was never meant to
+        # be the final answer. Only HARD constraints can fail a workflow;
+        # SOFT constraints are advisory, matching how _detect_contradictions
+        # (core/cognitive/planner.py) already treats the same distinction.
+        constraint_violations: List[str] = []
+        if success and definition.constraints:
+            constraint_violations = _check_constraints(
+                definition.constraints, last_result.output if last_result else None,
+            )
+            if constraint_violations:
+                success = False
+
+        if not success:
+            self._total_failures += 1
+
+        await monitor.record_status(
+            graph.root.node_id,
+            ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
+            summary="Execution completed" if success else "Execution failed",
+            current_action="",
+        )
+        await self._emit_event(
+            "execution.completed" if success else "execution.failed",
+            {
+                "execution_id": execution_id,
+                "node_id": graph.root.node_id,
+                "status": "completed" if success else "failed",
+                "summary": "Execution completed" if success else "Execution failed",
+                **({"constraint_violations": constraint_violations} if constraint_violations else {}),
+            },
+        )
+        if constraint_violations:
+            error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
+        elif last_result and not last_result.success:
+            error_text = last_result.error
+        else:
+            error_text = ""
+
+        result = WorkflowResult(
+            success=success,
+            workflow_id=definition.workflow_id,
+            instance_id=instance_id,
+            node_results=node_results,
+            output=last_result.output if last_result else None,
+            error=error_text,
+            constraint_violations=constraint_violations,
+            duration_ms=duration_ms,
+            metadata={"query": query, "session_id": session_id,
+                      "execution_id": execution_id,
+                      "budget": budget},
+        )
+
+        # ── Step 5: Emit workflow.completed ──────────────────────────────
+        await self._emit_event("workflow.completed", {
+            "workflow_id": definition.workflow_id,
+            "instance_id": instance_id,
+            "success": success,
+            "duration_ms": duration_ms,
+            "nodes_executed": len(node_results),
+        })
+
+        return result
 
     async def _execute_from(
         self,
