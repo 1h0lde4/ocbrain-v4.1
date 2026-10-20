@@ -547,39 +547,38 @@ class WorkflowRuntime:
                     await monitor.record_failure(node_id, (state.result.error if state.result else "") or "Restored from checkpoint (failed)")
         watchdog.start()
 
-        # ── Step 1: Validate ─────────────────────────────────────────────
-        errors = definition.validate()
-        if errors:
-            self._total_failures += 1
-            await watchdog.stop()
-            return WorkflowResult(
-                success=False,
-                workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=f"Invalid workflow: {'; '.join(errors)}",
-                duration_ms=(time.time() - start_time) * 1000,
-            )
-
-        # ── Step 2: Emit workflow.started / workflow.resumed ─────────────
-        await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
-            "workflow_id": definition.workflow_id,
-            "instance_id": instance_id,
-            "name": definition.name,
-            "entry_node": definition.entry_node,
-            "node_count": len(definition.nodes),
-            **({"checkpoint": resumed_from,
-                "nodes_already_done": sum(
-                    1 for s in node_states.values()
-                    if s.status in (NodeStatus.COMPLETED, NodeStatus.FAILED))}
-               if resumed_from else {}),
-        })
-
-        # ── Step 3: Execute DAG from entry_node ──────────────────────────
-        run_metadata = {
-            **(metadata or {}), "instance_id": instance_id,
-            "execution_id": execution_id,
-        }
         try:
+            # ── Step 1: Validate ─────────────────────────────────────────────
+            errors = definition.validate()
+            if errors:
+                self._total_failures += 1
+                return WorkflowResult(
+                    success=False,
+                    workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=f"Invalid workflow: {'; '.join(errors)}",
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
+            # ── Step 2: Emit workflow.started / workflow.resumed ─────────────
+            await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
+                "workflow_id": definition.workflow_id,
+                "instance_id": instance_id,
+                "name": definition.name,
+                "entry_node": definition.entry_node,
+                "node_count": len(definition.nodes),
+                **({"checkpoint": resumed_from,
+                    "nodes_already_done": sum(
+                        1 for s in node_states.values()
+                        if s.status in (NodeStatus.COMPLETED, NodeStatus.FAILED))}
+                   if resumed_from else {}),
+            })
+
+            # ── Step 3: Execute DAG from entry_node ──────────────────────────
+            run_metadata = {
+                **(metadata or {}), "instance_id": instance_id,
+                "execution_id": execution_id,
+            }
             try:
                 last_result = await self._execute_from(
                     definition=definition,
@@ -592,21 +591,22 @@ class WorkflowRuntime:
                     metadata=run_metadata,
                     cancel_token=cancel_token,
                 )
-            finally:
-                await watchdog.stop()
-        except Exception as e:
-            # Should never happen — _execute_from contains failures.
-            # But if it does, we contain it here.
-            logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
-            self._total_failures += 1
-            return WorkflowResult(
-                success=False,
-                workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                node_results=node_results,
-                error=f"Unexpected workflow error: {e}",
-                duration_ms=(time.time() - start_time) * 1000,
-            )
+            except Exception as e:
+                # Should never happen — _execute_from contains failures.
+                # But if it does, we contain it here.
+                logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
+                self._total_failures += 1
+                return WorkflowResult(
+                    success=False,
+                    workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    node_results=node_results,
+                    error=f"Unexpected workflow error: {e}",
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+
+        finally:
+            await watchdog.stop()
 
         # ── Step 4: Aggregate result ─────────────────────────────────────
         # Workflow success is defined by whether execution terminated along
