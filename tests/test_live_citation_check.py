@@ -373,7 +373,7 @@ class TestProvenancePerTrial:
         assert "SECRETPASS" not in raw and "SECRETKEY" not in raw
         assert "SECRETPASS" not in out and "SECRETKEY" not in out
         meta = json.loads(raw)["provenance"]["run"]
-        assert meta["mode"] == "real" and meta["real_provider_evidence"] is True
+        assert meta["mode"] == "real" and meta["real_provider_path"] is True
         expected = hashlib.sha256(Path(lcc.__file__).read_bytes()).hexdigest()
         assert meta["harness_sha256"] == expected
         assert isinstance(meta["git_commit"], str) and meta["git_commit"]
@@ -386,13 +386,29 @@ class TestProvenancePerTrial:
         # the provider name embeds its endpoint; the harness must record it with credentials stripped
         assert summary["answered_by"] == {"FakeProvider(model-x)@https://api.example.test:8443": summary["runs"]}
 
+    def test_real_path_run_with_no_answering_provider_records_no_attribution(
+            self, capsys, tmp_path, clean_prompt_cache):
+        """mode=real only says the real path was used; with no provider answering there is
+        no attribution at all and the run is INCONCLUSIVE, never a pass."""
+        class Silent(_FakeProvider):
+            async def generate(self, prompt):
+                self.calls += 1
+                return ""
+
+        out_json = tmp_path / "out.json"
+        code, out = _run_real(capsys, Silent(), requests=1, trials=1, json=str(out_json))
+        assert code == 2, out
+        summary = json.loads(out_json.read_text(encoding="utf-8"))["provenance"]["summary"]
+        assert summary["answered_by"] == {} and summary["models"] == {}
+        assert "invariant held" not in out
+
     def test_dry_run_is_labelled_as_not_real_provider_evidence(self, capsys, tmp_path):
         out_json = tmp_path / "out.json"
         code, out = _run(capsys, json=str(out_json))
         assert code == 0, out
         assert "NOT real-provider evidence" in out
         meta = json.loads(out_json.read_text(encoding="utf-8"))["provenance"]["run"]
-        assert meta["mode"] == "stand-in" and meta["real_provider_evidence"] is False
+        assert meta["mode"] == "stand-in" and meta["real_provider_path"] is False
 
     def test_endpoint_sanitizer_keeps_only_scheme_host_and_port(self):
         f = lcc._sanitize_endpoint

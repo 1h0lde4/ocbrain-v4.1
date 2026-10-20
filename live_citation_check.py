@@ -381,7 +381,7 @@ def _run_metadata(args, real, configured):
         "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "mode": "real" if real else "stand-in",
         "stand_in": None if real else args.dry_run,
-        "real_provider_evidence": bool(real),
+        "real_provider_path": bool(real),   # the real provider path was used; says nothing about whether a provider answered
         "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "git_commit": commit,
         "git_dirty_tracked": dirty,

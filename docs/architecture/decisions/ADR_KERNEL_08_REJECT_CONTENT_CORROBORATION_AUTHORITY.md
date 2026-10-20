@@ -199,7 +199,7 @@ lines.
   cache, or with no provider attempt on record, exits 2; the run metadata records
   the harness sha256, git commit, tracked-file state, arguments and configured
   providers; a `--dry-run` is labelled "NOT real-provider evidence". Covered by
-  23 tests in `tests/test_live_citation_check.py` and 35 mutants in
+  24 tests in `tests/test_live_citation_check.py` and 35 mutants in
   `scripts/mutation_check_ctx_auth_002.py` (nine new, all caught). Not
   established: real-model behavior (R3, R5); the owner's independent review of the
   amended harness (§8.1 item 1) remains open. The Oct 8 and Oct 9 preliminary
