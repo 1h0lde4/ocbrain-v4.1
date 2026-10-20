@@ -1018,6 +1018,48 @@ class TestWorkflowRuntimeConcurrencyLocking:
             )
 
     @pytest.mark.asyncio
+    async def test_watchdog_remains_active_through_workflow_completed(self, monkeypatch):
+        """Keep watchdog lifecycle semantics: stop only after workflow.completed emission."""
+        watchdogs = []
+        real_watchdog = workflow_runtime_module.GraphExecutionWatchdog
+
+        class TrackingWatchdog(real_watchdog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                watchdogs.append(self)
+
+        monkeypatch.setattr(workflow_runtime_module, "GraphExecutionWatchdog", TrackingWatchdog)
+        runtime = _make_workflow_runtime(EchoNodeWorker)
+        definition = WorkflowDefinition(
+            workflow_id="w-watchdog-lifecycle",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+        instance_id = "watchdog-lifecycle-inst"
+        await runtime._save_checkpoint(instance_id, "w-watchdog-lifecycle", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        completion_event_seen = asyncio.Event()
+        original_emit_event = runtime._emit_event
+
+        async def observe_completion_event(event_type, payload):
+            if event_type == "workflow.completed":
+                assert len(watchdogs) == 1
+                assert watchdogs[0]._task is not None
+                assert not watchdogs[0]._task.done()
+                completion_event_seen.set()
+            await original_emit_event(event_type, payload)
+
+        runtime._emit_event = observe_completion_event
+        result = await asyncio.wait_for(runtime.resume(definition, instance_id), timeout=2.0)
+
+        assert result.success is True
+        assert completion_event_seen.is_set()
+        assert runtime._instance_locks == {}
+        assert watchdogs[0]._task is None
+
+    @pytest.mark.asyncio
     async def test_outer_resume_cancellation_during_initial_event_stops_watchdog(self, monkeypatch):
         """Cancellation of resume itself while workflow.started is awaited must drain its watchdog."""
         watchdogs = []
