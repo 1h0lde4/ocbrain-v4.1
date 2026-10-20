@@ -165,10 +165,10 @@ R6 (reproduce → fix → gate); the R7 AST sweep and its triage (§6; every `PA
 | U6 | Latent output-path sinks (`export_jsonl`, `export_training_dataset`): confine to an export root if ever routed | When wired |
 | U7 | Option: a drift check flagging new `rmtree`/`unlink` not via `module_child()` | Policy call |
 | U8 | The token pasted in chat has **admin scope on a public repo — rotate it**; the saved `userPreferences` token is the old revoked one | Moncif |
-| U9 | **Branch protection is stale in the docs:** live `enforce_admins` is **`true`** (PR #57 saw it Oct 5); my memory notes, `DEBT-033`'s register text, and v1–v3 of this handoff said admins are exempt | Update `DEBT-033`'s row; owner to confirm the intent |
+| U9 | **Branch protection is stale in the docs:** live `enforce_admins` is **`true`** (PR #57 saw it Oct 5); my memory notes, `DEBT-033`'s register text, and v1–v3 of this handoff said admins are exempt | **PR #87** (docs-only, 2-line diff) corrects `DEBT-033`'s row; CI: CodeQL=success, drift-and-ownership=success, tests=success, Analyze (python)=success, Analyze (actions)=success. Owner to confirm whether the change to `enforce_admins: true` was intended |
 | U10 | **The Oct 1 audit's original document is not recoverable** (searched every file ever added on any fetched ref and all issue/PR titles); reconstructed from the register + PRs #51/#53/#55/#57/#67/#71/#83 | Owner: does a copy exist? |
 | U11 | Pending owner dispositions: **FZ-D3**, **`REM-004`** sufficiency, **`CTX-EXPORT-001`** classification, whether FZ-05/06/07 are blockers, the two pinned FZ-02 outcomes (**not accepted**), merges of PRs #83 and #79 | Owner |
-| U12 | Register ↔ code gaps G1–G9 in the manifest §6 (FZ-02 lag; `CURRENT_STATE.md` Sept 23 verdict unreconciled; FZ-06 ≡ `DEBT-030` unlinked; …) | PR #83 fixes G1 |
+| U12 | Register ↔ code gaps G1–G9 in the manifest §6 (FZ-02 lag; `CURRENT_STATE.md` Sept 23 verdict unreconciled; FZ-06 ≡ `DEBT-030` unlinked; …) | PR #83 fixes G1; **PR #87 fixes G3 and the `DEBT-030` side of G5** (the FZ-06 row is left for #83's block / the owner) |
 
 **Dependabot (live):**
 

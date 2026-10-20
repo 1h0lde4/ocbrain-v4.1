@@ -105,9 +105,9 @@ To be answered at the pin *after* ratification of §3. Evidence that already bea
 |---|---|---|
 | G1 | Register says FZ-02 "OPEN — BLOCKED on D2" and "Open maintainer decisions (none taken)"; B2a/B2b are merged and tests cite D1=(a), D2=(i) | PR #83 (open, CI 5/5 green) would correct it |
 | G2 | `CURRENT_STATE.md`'s Sept 23 verdict wording is unreconciled with the Oct 1 audit | PR #57 states it |
-| G3 | **`DEBT-033`'s text is stale**: it records an admin-exemption scope limit; the live setting is `enforce_admins: true` | live API |
+| G3 | **`DEBT-033`'s text is stale**: it records an admin-exemption scope limit; the live setting is `enforce_admins: true` | live API; **PR #87 opened** (CI: CodeQL=success, drift-and-ownership=success, tests=success, Analyze (python)=success, Analyze (actions)=success) |
 | G4 | CodeQL fixed-count: docs say 34, API lists 33 | one-alert mismatch, cause unknown |
-| G5 | FZ-06 ≡ `DEBT-030`, unlinked | both rows read |
+| G5 | FZ-06 ≡ `DEBT-030`, unlinked | both rows read; **`DEBT-030` now cites FZ-06 in PR #87**; the FZ-06 row itself is untouched (PR #83 edits that block) |
 | G6 | The Oct 1 audit's original document is missing | §2 |
 | G7 | Decision IDs (D1..Dn) are reused across tracks (FZ, K4.2-H, `/import` issue #54, H2 packets) — qualify as *FZ-D2* etc. | register text |
 | G8 | `DEBT-031` partly superseded by FZ-07 | register says so |
