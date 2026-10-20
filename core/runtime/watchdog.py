@@ -27,13 +27,13 @@ import logging
 import time
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
 from core.runtime.execution_graph import ExecutionGraph, ExecutionStatus
 from core.runtime.progress import ProgressMonitor
 from core.runtime.watchdog_decision import CancelReason, WatchdogVerdict, decide
+
+logger = logging.getLogger(__name__)
 
 # The one verdict that should write a fresh graph touch: the instant an
 # extension is actually granted. Writing again on every subsequent
