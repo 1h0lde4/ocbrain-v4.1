@@ -5,7 +5,7 @@
 
 Evidence labels: **VERIFIED** (I ran it / read live API data at the pin) · **READ** (seen in a file or PR body; not exercised) · **REPORTED** (a record asserts it; I did not re-verify) · **NOT CHECKED**.
 
-Historical baselines referenced: `ecddbff` (the Oct 1 audit's baseline) · `3f8ef97` (my scoping memo's pin). A verdict about any *later* `main` needs a fresh pin and a re-run.
+Historical baselines referenced: `ecddbff` (the Oct 1 audit's baseline) · `3f8ef97` (my scoping memo's pin). \1 **As of Oct 18, `origin/main` is `ef426e9` (2 commits ahead of the pin); the pin is unchanged.**
 
 ---
 
@@ -55,11 +55,11 @@ Evidence at the pin was produced in a throwaway `git worktree` of exactly this S
 
 | Item | Registered status | Evidence at the pin | Label |
 |---|---|---|---|
-| **FZ-01** K4.2 path has no failure channel | OPEN; FZ-D1=(a) accepted Oct 16; implementation pending (batches B3/B4) | `core/orchestrator.py` K4.2 branch (lines ~526–556) reads `answer = wf_result.output or ""` and handles only `constraint_violations`; its **own comment (lines 547–555)** says genuine node errors are "deliberately left … still not checked on this branch. That is a real, separate gap." The legacy branch (line 715) does check `wf_result.success`. **This is the gap `DEBT-020`'s Sept 6 fix explicitly declined to close** — not a new discovery. No repro re-run | READ |
+| **FZ-01** K4.2 path has no failure channel | OPEN; FZ-D1=(a) accepted Oct 16; implementation pending (batches B3/B4) | `core/orchestrator.py` K4.2 branch (lines ~526–556) reads `answer = wf_result.output or ""` and handles only `constraint_violations`; its **own comment (lines 547–555)** says genuine node errors are "deliberately left … still not checked on this branch. That is a real, separate gap." The legacy branch (line 715) does check `wf_result.success`. **This is the gap `DEBT-020`'s Sept 6 fix explicitly declined to close** — not a new discovery. **Repro not re-run:** no orchestrator-level harness exists — the Sept 6 `test_genuine_node_failure_is_not_relabeled_as_a_constraint_violation` exercises only `WorkflowRuntime.execute()` (a failed node ⇒ `success is False`), and `tests/core/cognitive/test_k42_completion.py` covers intent/language propagation. The gap is in how the *orchestrator consumes* that result | READ |
 | **FZ-02** ModelRouter false completion | **Register on `main`: "OPEN — BLOCKED on D2 (not started)"** (stale — §6 G1). PR #83: "implemented + verified for provider-failure and stalled/deadline classes; residual outcome policy OPEN" | B2a (#67) and B2b (#71) merged; `test_fz02_provider_failure.py` fakes only the HTTP client (`httpx.ConnectError`) against the real router+adapter and asserts `success is False`; both FZ-02 test files pass. **Residual:** `EMPTY_RESPONSE`, `COMPLETED_WITH_PARTIAL_OUTPUT` remain `success=True` ("pinned") — **owner: not accepted** | VERIFIED (tests) / READ (test content) |
 | **FZ-03** scheduler import failure killed `main.py` | FIXED + VERIFIED (PR #53) | `test_scheduler_failure_containment.py` passes. Residuals listed in PR #57 (`cleaner.run_all` still blocks the loop, etc.) | VERIFIED (tests) |
 | **FZ-04** `AdaptiveSemaphore` permit loss | FIXED + VERIFIED (PR #51) | `test_adaptive_semaphore_permit_conservation.py` passes | VERIFIED (tests) |
-| **FZ-05** unbounded growth (a: registry; b: EventStore) | OPEN — blocked (a: B6 after FZ-01/06; b: B7, needs FZ-D3) | Not re-measured; audit figures (20,000 IDs → +89.7 MB; ~13.4 kB/request) are REPORTED | REPORTED |
+| **FZ-05** unbounded growth (a: registry; b: EventStore) | OPEN — blocked (a: B6 after FZ-01/06; b: B7, needs FZ-D3) | **FZ-05a re-measured at the pin** (TestClient, `GET /executions/<random uuid>`): every unknown ID returns `200` and creates state in **both** `execution_registry._graphs` and `._queues`; after +1,000 IDs both = 1,000 (5.17 MB retained, ≈5,171 B/request), after +4,000 more both = **5,000** (+16.98 MB, ≈4,246 B/request) — **linear, no cap or eviction observed through 5,000 entries**. Extrapolating at ≈4.2–5.2 kB/request gives ≈85–100 MB per 20,000 IDs, consistent with the audit's reported +89.7 MB, but 20,000 itself was **not** run (a cap above 5,000 cannot be excluded). FZ-05b (EventStore retention) not re-measured | VERIFIED (5a, to 5,000) / REPORTED (20,000-scale, 5b) |
 | **FZ-06** identity not joinable (4 namespaces) | OPEN | **Same defect as my Packet C `C-1` / `DEBT-030`** (`CapabilityRequest.trace_id` is a fresh random UUID); the two register rows **do not cite each other** | REPORTED |
 | **FZ-07** CI gate discarded pytest's exit code | FIXED + VERIFIED (PR #55); residual R-1 open | `test_ci_test_gate.py` passes. Supersedes part of `DEBT-031` (the register says so) | VERIFIED (tests) |
 | `DEBT-020` false completion | **Resolved Sept 6** (ADR-KERNEL-04) | Resolved section of the register; documented residual = FZ-01 (above) | READ |
@@ -112,6 +112,7 @@ To be answered at the pin *after* ratification of §3. Evidence that already bea
 | G7 | Decision IDs (D1..Dn) are reused across tracks (FZ, K4.2-H, `/import` issue #54, H2 packets) — qualify as *FZ-D2* etc. | register text |
 | G8 | `DEBT-031` partly superseded by FZ-07 | register says so |
 | G9 | Two test files say "this repository has no xfail convention"; one slice uses a strict xfail | READ |
+| G10 | **17 compiled `.pyc` files are tracked in git** (`tests/__pycache__`: 10; `tests/core/cognitive/__pycache__`: 7; CPython 3.14 / pytest 9.0.3 bytecode) although `.gitignore` covers `__pycache__/`. Long-standing, not new (first added in commit 00386ea 2026-08-06). Harmless to behaviour; noise in diffs and `git grep` output | hygiene; owner call |
 
 ---
 
@@ -141,8 +142,8 @@ Recorded (PR #83, Oct 16): **FZ-D1 = (a)** keep `handle() -> str`, add a structu
 
 ## 9. What this manifest cannot claim
 
-The Oct 1 audit's own criteria are unverifiable (original not recovered) · FZ-01/05/06 repros were **not re-run** — they rest on code inspection and the audit's recorded measurements · the evidence is at one SHA that will move · the sandbox lacks the heavy ML stack (CI has it; both green) · the destructive-sink sweep is a heuristic · the Sept 6 resolved blockers were not individually re-verified at the pin.
+The Oct 1 audit's own criteria are unverifiable (original not recovered) · FZ-01 and FZ-06 repros were **not re-run** (code inspection and the audit's recorded measurements only; there is no orchestrator-level harness for FZ-01); FZ-05a **was** re-measured at the pin, to 5,000 entries · the evidence is at one SHA that will move · the sandbox lacks the heavy ML stack (CI has it; both green) · the destructive-sink sweep is a heuristic · the Sept 6 resolved blockers were not individually re-verified at the pin.
 
 ## 10. To complete the manifest
 
-1. Owner ratifies or amends §3. 2. Re-run the FZ-01 repro (and FZ-05a, which is cheap) at the pin. 3. Answer the §5 gate. 4. Reconcile §6 (merge #83; update `CURRENT_STATE.md`; update `DEBT-033`; link FZ-06 ↔ `DEBT-030`). 5. Obtain owner dispositions for §8's pending items. 6. **Re-pin**, re-run §4.1, then — and only then — apply §3 and write the verdict.
+1. Owner ratifies or amends §3. 2. FZ-05a is re-measured at the pin (done, §4). An FZ-01 repro needs an orchestrator-level harness that does not exist — decide whether building one is worth it, since the code comment, the register and the audit already agree. 3. Answer the §5 gate. 4. Reconcile §6 (merge #83; update `CURRENT_STATE.md`; update `DEBT-033`; link FZ-06 ↔ `DEBT-030`). 5. Obtain owner dispositions for §8's pending items. 6. **Re-pin**, re-run §4.1, then — and only then — apply §3 and write the verdict.
