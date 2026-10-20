@@ -132,12 +132,14 @@ class GraphExecutionWatchdog:
     async def stop(self) -> None:
         if self._task is None:
             return
-        self._task.cancel()
+        task, self._task = self._task, None
+        task.cancel()
         try:
-            await self._task
+            await task
         except asyncio.CancelledError:
             pass
-        self._task = None
+        except Exception as e:
+            logger.warning("GraphExecutionWatchdog task exited with exception during stop: %s", e)
 
     async def inspect(self, now: Optional[float] = None) -> str:
         """Inspect the graph once; useful for tests and manual polling.

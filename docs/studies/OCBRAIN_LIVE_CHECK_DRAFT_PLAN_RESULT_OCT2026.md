@@ -174,7 +174,7 @@ section does not accept ADR-KERNEL-07, applies no containment, and does not choo
 |---|---|
 | Valid runs | **3 of 3** (LIVE; no degraded row in any run; no replay flag) |
 | Independent samples | three **distinct** output fingerprints; wall-clock 7.2–7.8 min per run (the suspected replays took 0–15 s) |
-| Recomputation | `compare` re-run on the supplied archive with the tool at `e305f20`, and again with the final tool (`7044fdb`, identical to `main`): `report.md` and `compare.json` **byte-identical** to the supplied ones |
+| Recomputation | `compare` re-run on the supplied archive. With the tool at `e305f20`, `report.md` and `compare.json` are **byte-identical** to the supplied ones. With the final tool (`7044fdb`, identical to `main`), `report.md` is **byte-identical**, and `compare.json` differs only by one added field, `evaluation.model_identity` (the Deviation 2 record in the next row: `established: true`, `365c0bd3c000` before and after); the verdict (FAIL on C1) and every other field are unchanged |
 | Model identity (Deviation 2) | **established**: the `ollama list` ID was `365c0bd3c000` before and after the batch. The rule was added after the batch ran; the final tool gives the same verdicts for it |
 | Harness label | `speculative` on 11 of 11 plans in every run — saturated, **carries no information** (as in run 0) |
 
@@ -301,8 +301,19 @@ require re-qualifying these findings.
 | C | cap at 3 steps and fix the `; ` joining | keeps a (shorter) plan; the first three steps are the most content-presupposing |
 | D | keep as is | the plan does signal that missing content is self-generated, but the question already says so |
 The experiment **supports changing** the behavior but does not by itself prove that any one option is the only
-correct implementation — choosing among A–D is a product/architecture decision. D-5 as decided says an ESCALATE
-*may* surface a question paired with the plan/intent, so A and B stay inside it.
+correct implementation — choosing among A–D is a product/architecture decision.
+
+**Correction (2026-10-17) — D-5 plan-pairing applicability is unresolved.** An earlier version of this record said A
+and B "stay inside" D-5; that assertion is withdrawn. It inferred that the word "may" makes the concrete-plan pairing
+optional, which the text does not support. D-5 (ADR §10.3) describes the detector-specific clarification question as
+paired with the concrete interpreted plan/intent required by K4.2. Options A and B remove the plan; options C and D
+retain it. The existing wording therefore does not establish that A and B conform. The remaining owner decision is
+whether the pairing requirement applies to this response path. No containment option is accepted, excluded or selected
+by this correction. If the requirement is binding, A and B need to be excluded or the authoritative wording explicitly
+revised; if it is not binding, D-5/K4.2 must be reconciled to make that boundary clear. This correction concerns plan
+pairing only: it does not resolve the separate defect that the stated interpretation is the raw request (it equals the
+request in 33 of 33 escalating rows).
+
 Any of A–C also needs `tests/core/cognitive/test_creative_content_anchor.py` (`TestClarificationResponse`, the
 orchestrator "question and plan" test) updated. Independently of A–D, the question's example text should adapt to the
 artifact (separate, small change). Re-running the harness on a second model, or twice on this one, would address

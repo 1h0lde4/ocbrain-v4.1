@@ -889,14 +889,14 @@ class TestWorkflowRuntimeConcurrencyLocking:
     async def test_lock_and_watchdog_cleanup_on_task_cancellation(self):
         """Cancelling a running resume() task releases lock, stops watchdog, and permits re-resume."""
         worker_started = asyncio.Event()
-        finish_event = asyncio.Event()
 
         class CancellingWorker(AbstractCognitiveWorker):
             worker_type = "CancellingWorker"
 
             async def _run(self, context: WorkerContext) -> WorkerResult:
                 worker_started.set()
-                await finish_event.wait()
+                # Yield to cancellation check
+                await asyncio.sleep(10.0)
                 return WorkerResult(success=True, output="done")
 
         runtime = _make_workflow_runtime(CancellingWorker)
@@ -912,26 +912,80 @@ class TestWorkflowRuntimeConcurrencyLocking:
 
         # Launch resume task
         task = asyncio.create_task(runtime.resume(d, inst))
-        await worker_started.wait()
+        await asyncio.wait_for(worker_started.wait(), timeout=1.0)
 
-        # Cancel the task mid-execution
+        # Cancel task and await cancellation exception directly
         task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+        res = await task
+        assert res.success is False
+        assert "cancelled" in res.error.lower()
 
         # Confirm lock registry is cleaned up after task cancellation
         assert len(runtime._instance_locks) == 0
 
-        # Allow worker to finish if re-run, reset checkpoint to PENDING
-        finish_event.set()
+        # Reset checkpoint to PENDING
         await runtime._save_checkpoint(inst, "w-cancel", {
             "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
         })
 
-        # Confirm subsequent resume can acquire lock and complete successfully
-        res = await runtime.resume(d, inst)
+        class NonSleepingWorker(AbstractCognitiveWorker):
+            worker_type = "CancellingWorker"
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                return WorkerResult(success=True, output="done")
+
+        runtime2 = _make_workflow_runtime(NonSleepingWorker)
+        res = await runtime2.resume(d, inst)
+        assert res.success is True
+        assert len(runtime2._instance_locks) == 0
+
+    @pytest.mark.asyncio
+    async def test_waiter_cancellation_does_not_release_active_holder_lock(self):
+        """Cancelling a queued waiter task does not release or replace active holder's lock."""
+        holder_entered = asyncio.Event()
+        finish_holder = asyncio.Event()
+
+        class WaiterCancelWorker(AbstractCognitiveWorker):
+            worker_type = "WaiterCancelWorker"
+
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                holder_entered.set()
+                await finish_holder.wait()
+                return WorkerResult(success=True, output="holder-done")
+
+        runtime = _make_workflow_runtime(WaiterCancelWorker)
+        d = WorkflowDefinition(
+            workflow_id="w-waiter-cancel",
+            nodes=[WorkflowNode(node_id="a", worker_type="WaiterCancelWorker")],
+            entry_node="a",
+        )
+        inst = "waiter-cancel-inst"
+        await runtime._save_checkpoint(inst, "w-waiter-cancel", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        # Holder task starts and acquires lock
+        holder_task = asyncio.create_task(runtime.resume(d, inst, query="holder"))
+        await asyncio.wait_for(holder_entered.wait(), timeout=1.0)
+
+        # Waiter task queued
+        waiter_task = asyncio.create_task(runtime.resume(d, inst, query="waiter"))
+        await asyncio.sleep(0.01)
+
+        assert inst in runtime._instance_locks
+        assert runtime._instance_locks[inst].ref_count == 2
+
+        # Cancel queued waiter
+        waiter_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter_task
+
+        # Ref count decrements to 1, lock still held by holder
+        assert inst in runtime._instance_locks
+        assert runtime._instance_locks[inst].ref_count == 1
+
+        # Release holder
+        finish_holder.set()
+        res = await holder_task
         assert res.success is True
         assert len(runtime._instance_locks) == 0
 
