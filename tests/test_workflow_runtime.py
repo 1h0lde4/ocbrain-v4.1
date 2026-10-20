@@ -24,7 +24,11 @@ Architecture:
 import asyncio
 import os
 import tempfile
+
 import pytest
+
+import core.workflow.runtime as workflow_runtime_module
+from core.runtime.watchdog import GraphExecutionWatchdog
 
 from core.workflow.definition import (
     NodeStatus,
@@ -756,28 +760,37 @@ class TestWorkflowRuntimeCheckpointResume:
 
 
 class TestWorkflowRuntimeConcurrencyLocking:
-    """DEBT-028: Concurrent resume() instance serialization tests."""
+    """DEBT-028: resume serialization and watchdog lifecycle/cancellation tests."""
+
+    @staticmethod
+    async def _wait_for_ref_count(runtime, instance_id: str, expected: int) -> None:
+        async def wait_until_registered():
+            while True:
+                entry = runtime._instance_locks.get(instance_id)
+                if entry is not None and entry.ref_count >= expected:
+                    return
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(wait_until_registered(), timeout=1.0)
 
     @pytest.mark.asyncio
     async def test_concurrent_resumes_for_same_instance_id_are_serialized(self):
-        """Concurrent resume() calls on the same instance_id must be serialized.
-        Uses asyncio.Event to coordinate lock-waiting deterministically."""
         instance_id = "resume-serialized-deterministic"
         invocations = []
-        first_entered_event = asyncio.Event()
-        release_first_event = asyncio.Event()
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
 
         class DeterministicLockWorker(AbstractCognitiveWorker):
             worker_type = "DeterministicLockWorker"
 
             async def _run(self, context: WorkerContext) -> WorkerResult:
-                invocations.append(asyncio.get_event_loop().time())
-                first_entered_event.set()
-                await release_first_event.wait()
+                invocations.append(asyncio.get_running_loop().time())
+                first_entered.set()
+                await release_first.wait()
                 return WorkerResult(success=True, output="node-b-done")
 
         runtime = _make_workflow_runtime(DeterministicLockWorker)
-        d = WorkflowDefinition(
+        definition = WorkflowDefinition(
             workflow_id="w-resume-lock-det",
             nodes=[
                 WorkflowNode(node_id="a", worker_type="DeterministicLockWorker"),
@@ -786,43 +799,44 @@ class TestWorkflowRuntimeConcurrencyLocking:
             edges=[WorkflowEdge(from_node="a", to_node="b")],
             entry_node="a",
         )
-
-        # 1. Incomplete checkpoint with node 'a' completed, node 'b' pending
         await runtime._save_checkpoint(instance_id, "w-resume-lock-det", {
-            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED,
-                                    result=WorkerResult(success=True, output="node-a-done")),
+            "a": WorkflowNodeState(
+                node_id="a", status=NodeStatus.COMPLETED,
+                result=WorkerResult(success=True, output="node-a-done"),
+            ),
             "b": WorkflowNodeState(node_id="b", status=NodeStatus.PENDING),
         })
 
-        # 2. Launch first resume()
-        task1 = asyncio.create_task(runtime.resume(d, instance_id, query="caller1"))
-        await first_entered_event.wait()
+        tasks = []
+        try:
+            task1 = asyncio.create_task(runtime.resume(definition, instance_id, query="caller1"))
+            tasks.append(task1)
+            await asyncio.wait_for(first_entered.wait(), timeout=1.0)
 
-        # 3. Launch second resume() while first is held inside worker execution
-        task2 = asyncio.create_task(runtime.resume(d, instance_id, query="caller2"))
-        await asyncio.sleep(0.01)
+            task2 = asyncio.create_task(runtime.resume(definition, instance_id, query="caller2"))
+            tasks.append(task2)
+            await self._wait_for_ref_count(runtime, instance_id, 2)
+            assert runtime._instance_locks[instance_id].lock.locked()
+            assert runtime._instance_locks[instance_id].ref_count == 2
 
-        # Verify second caller is waiting on lock
-        assert instance_id in runtime._instance_locks
-        assert runtime._instance_locks[instance_id].ref_count == 2
-
-        # 4. Release first worker
-        release_first_event.set()
-        r1, r2 = await asyncio.gather(task1, task2)
-
-        # 5. Prove both callers succeed and node 'b' was invoked exactly once
-        assert r1.success is True
-        assert r2.success is True
-        assert len(invocations) == 1
-        assert r1.node_results["b"].output == "node-b-done"
-        assert r2.node_results["b"].output == "node-b-done"
-        assert len(runtime._instance_locks) == 0
+            release_first.set()
+            r1, r2 = await asyncio.wait_for(asyncio.gather(task1, task2), timeout=2.0)
+            assert r1.success is True and r2.success is True
+            assert len(invocations) == 1
+            assert r1.node_results["b"].output == r2.node_results["b"].output == "node-b-done"
+            assert runtime._instance_locks == {}
+        finally:
+            release_first.set()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     @pytest.mark.asyncio
     async def test_concurrent_resumes_for_distinct_instance_ids_run_in_parallel(self):
-        """Concurrent resume() calls for distinct instance_ids run in parallel using asyncio.Event."""
-        both_entered_event = asyncio.Event()
-        release_all_event = asyncio.Event()
+        both_entered = asyncio.Event()
+        release_all = asyncio.Event()
         active_count = 0
 
         class DeterministicParallelWorker(AbstractCognitiveWorker):
@@ -832,109 +846,310 @@ class TestWorkflowRuntimeConcurrencyLocking:
                 nonlocal active_count
                 active_count += 1
                 if active_count == 2:
-                    both_entered_event.set()
-                await release_all_event.wait()
-                inst = context.metadata.get("instance_id")
-                return WorkerResult(success=True, output=f"done:{inst}")
+                    both_entered.set()
+                await release_all.wait()
+                instance_id = context.metadata.get("instance_id")
+                return WorkerResult(success=True, output=f"done:{instance_id}")
 
         runtime = _make_workflow_runtime(DeterministicParallelWorker)
-        d = WorkflowDefinition(
+        definition = WorkflowDefinition(
             workflow_id="w-parallel-det",
             nodes=[WorkflowNode(node_id="a", worker_type="DeterministicParallelWorker")],
             entry_node="a",
         )
+        instances = ("inst-det-p1", "inst-det-p2")
+        for instance_id in instances:
+            await runtime._save_checkpoint(instance_id, "w-parallel-det", {
+                "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+            })
 
-        inst1, inst2 = "inst-det-p1", "inst-det-p2"
-        await runtime._save_checkpoint(inst1, "w-parallel-det", {
-            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
-        })
-        await runtime._save_checkpoint(inst2, "w-parallel-det", {
-            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
-        })
-
-        t1 = asyncio.create_task(runtime.resume(d, inst1, metadata={"instance_id": inst1}))
-        t2 = asyncio.create_task(runtime.resume(d, inst2, metadata={"instance_id": inst2}))
-
-        # Wait until BOTH tasks are actively executing inside their workers concurrently
-        await asyncio.wait_for(both_entered_event.wait(), timeout=1.0)
-        assert active_count == 2
-
-        release_all_event.set()
-        r1, r2 = await asyncio.gather(t1, t2)
-        assert r1.success is True
-        assert r2.success is True
-        assert len(runtime._instance_locks) == 0
+        tasks = [
+            asyncio.create_task(runtime.resume(definition, instance_id, metadata={"instance_id": instance_id}))
+            for instance_id in instances
+        ]
+        try:
+            await asyncio.wait_for(both_entered.wait(), timeout=1.0)
+            assert active_count == 2
+            release_all.set()
+            results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=2.0)
+            assert all(result.success for result in results)
+            assert runtime._instance_locks == {}
+        finally:
+            release_all.set()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @pytest.mark.asyncio
     async def test_lock_cleanup_on_missing_checkpoint_and_mismatch(self):
-        """Lock registry is cleaned up on missing checkpoint or workflow_id mismatch."""
         runtime = _make_workflow_runtime(EchoNodeWorker)
-        d1 = WorkflowDefinition(workflow_id="w1", nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")], entry_node="a")
-        d2 = WorkflowDefinition(workflow_id="w2", nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")], entry_node="a")
+        definition1 = WorkflowDefinition(
+            workflow_id="w1",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+        definition2 = WorkflowDefinition(
+            workflow_id="w2",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
 
-        inst1 = "missing-ckpt-inst"
-        r1 = await runtime.resume(d1, inst1)
-        assert r1.success is False
-        assert len(runtime._instance_locks) == 0
+        missing = await runtime.resume(definition1, "missing-ckpt-inst")
+        assert missing.success is False
+        assert runtime._instance_locks == {}
 
-        inst2 = "mismatch-inst"
-        await runtime._save_checkpoint(inst2, "w1", {
-            "a": WorkflowNodeState(node_id="a", status=NodeStatus.COMPLETED, result=WorkerResult(success=True))
+        mismatch_id = "mismatch-inst"
+        await runtime._save_checkpoint(mismatch_id, "w1", {
+            "a": WorkflowNodeState(
+                node_id="a", status=NodeStatus.COMPLETED,
+                result=WorkerResult(success=True),
+            )
         })
-        r2 = await runtime.resume(d2, inst2)
-        assert r2.success is False
-        assert len(runtime._instance_locks) == 0
+        mismatch = await runtime.resume(definition2, mismatch_id)
+        assert mismatch.success is False
+        assert runtime._instance_locks == {}
 
     @pytest.mark.asyncio
-    async def test_lock_and_watchdog_cleanup_on_task_cancellation(self):
-        """Cancelling a running resume() task releases lock, stops watchdog, and permits re-resume."""
+    async def test_waiter_cancellation_does_not_release_active_holder_lock(self):
+        holder_entered = asyncio.Event()
+        finish_holder = asyncio.Event()
+
+        class WaiterCancelWorker(AbstractCognitiveWorker):
+            worker_type = "WaiterCancelWorker"
+
+            async def _run(self, context: WorkerContext) -> WorkerResult:
+                holder_entered.set()
+                await finish_holder.wait()
+                return WorkerResult(success=True, output="holder-done")
+
+        runtime = _make_workflow_runtime(WaiterCancelWorker)
+        definition = WorkflowDefinition(
+            workflow_id="w-waiter-cancel",
+            nodes=[WorkflowNode(node_id="a", worker_type="WaiterCancelWorker")],
+            entry_node="a",
+        )
+        instance_id = "waiter-cancel-inst"
+        await runtime._save_checkpoint(instance_id, "w-waiter-cancel", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+
+        holder_task = asyncio.create_task(runtime.resume(definition, instance_id, query="holder"))
+        waiter_task = None
+        try:
+            await asyncio.wait_for(holder_entered.wait(), timeout=1.0)
+            waiter_task = asyncio.create_task(runtime.resume(definition, instance_id, query="waiter"))
+            await self._wait_for_ref_count(runtime, instance_id, 2)
+            assert runtime._instance_locks[instance_id].lock.locked()
+
+            waiter_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(waiter_task, timeout=1.0)
+            assert runtime._instance_locks[instance_id].ref_count == 1
+            assert runtime._instance_locks[instance_id].lock.locked()
+
+            finish_holder.set()
+            result = await asyncio.wait_for(holder_task, timeout=2.0)
+            assert result.success is True
+            assert runtime._instance_locks == {}
+        finally:
+            finish_holder.set()
+            for task in (holder_task, waiter_task):
+                if task is not None and not task.done():
+                    task.cancel()
+            await asyncio.gather(
+                *(task for task in (holder_task, waiter_task) if task is not None),
+                return_exceptions=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_worker_level_cancellation_returns_failed_result_and_releases_lock(self):
+        """Worker.execute translates its own implementation cancellation to WorkerResult."""
         worker_started = asyncio.Event()
-        finish_event = asyncio.Event()
 
         class CancellingWorker(AbstractCognitiveWorker):
             worker_type = "CancellingWorker"
 
             async def _run(self, context: WorkerContext) -> WorkerResult:
                 worker_started.set()
-                await finish_event.wait()
-                return WorkerResult(success=True, output="done")
+                await asyncio.Event().wait()
+                return WorkerResult(success=True, output="unreachable")
 
         runtime = _make_workflow_runtime(CancellingWorker)
-        d = WorkflowDefinition(
-            workflow_id="w-cancel",
+        definition = WorkflowDefinition(
+            workflow_id="w-worker-cancel",
             nodes=[WorkflowNode(node_id="a", worker_type="CancellingWorker")],
             entry_node="a",
         )
-        inst = "cancel-inst"
-        await runtime._save_checkpoint(inst, "w-cancel", {
+        instance_id = "worker-cancel-inst"
+        await runtime._save_checkpoint(instance_id, "w-worker-cancel", {
             "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
         })
 
-        # Launch resume task
-        task = asyncio.create_task(runtime.resume(d, inst))
-        await worker_started.wait()
-
-        # Cancel the task mid-execution
-        task.cancel()
+        task = asyncio.create_task(runtime.resume(definition, instance_id))
         try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+            await asyncio.wait_for(worker_started.wait(), timeout=1.0)
+            task.cancel()
+            result = await asyncio.wait_for(task, timeout=2.0)
+            assert result.success is False
+            assert "cancelled" in result.error.lower()
+            assert runtime._instance_locks == {}
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
-        # Confirm lock registry is cleaned up after task cancellation
-        assert len(runtime._instance_locks) == 0
+    @pytest.mark.asyncio
+    async def test_outer_resume_cancellation_during_initial_event_stops_watchdog(self, monkeypatch):
+        """Outer cancellation during workflow.resumed propagates and drains watchdog and lock."""
+        watchdogs = []
+        real_watchdog = workflow_runtime_module.GraphExecutionWatchdog
 
-        # Allow worker to finish if re-run, reset checkpoint to PENDING
-        finish_event.set()
-        await runtime._save_checkpoint(inst, "w-cancel", {
+        class TrackingWatchdog(real_watchdog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                watchdogs.append(self)
+
+        monkeypatch.setattr(workflow_runtime_module, "GraphExecutionWatchdog", TrackingWatchdog)
+        runtime = _make_workflow_runtime(EchoNodeWorker)
+        definition = WorkflowDefinition(
+            workflow_id="w-outer-cancel",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+        instance_id = "outer-cancel-inst"
+        await runtime._save_checkpoint(instance_id, "w-outer-cancel", {
             "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
         })
 
-        # Confirm subsequent resume can acquire lock and complete successfully
-        res = await runtime.resume(d, inst)
-        assert res.success is True
-        assert len(runtime._instance_locks) == 0
+        event_entered = asyncio.Event()
+        release_event = asyncio.Event()
+        original_emit_event = runtime._emit_event
 
+        async def block_initial_lifecycle_event(event_type, payload):
+            if event_type in {"workflow.started", "workflow.resumed"}:
+                event_entered.set()
+                await release_event.wait()
+            await original_emit_event(event_type, payload)
+
+        runtime._emit_event = block_initial_lifecycle_event
+        task = asyncio.create_task(runtime.resume(definition, instance_id))
+        try:
+            await asyncio.wait_for(event_entered.wait(), timeout=1.0)
+            assert len(watchdogs) == 1
+            watch_task = watchdogs[0]._task
+            assert watch_task is not None and not watch_task.done()
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=1.0)
+
+            assert runtime._instance_locks == {}
+            assert watchdogs[0]._task is None
+            assert watch_task.done() and watch_task.cancelled()
+        finally:
+            release_event.set()
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            for wd in watchdogs:
+                if wd._task is not None:
+                    await wd.stop()
+
+    @pytest.mark.asyncio
+    async def test_watchdog_remains_active_through_workflow_completed(self, monkeypatch):
+        """Watchdog is still alive for the completion event and stopped before resume returns."""
+        watchdogs = []
+        real_watchdog = workflow_runtime_module.GraphExecutionWatchdog
+
+        class TrackingWatchdog(real_watchdog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                watchdogs.append(self)
+
+        monkeypatch.setattr(workflow_runtime_module, "GraphExecutionWatchdog", TrackingWatchdog)
+        runtime = _make_workflow_runtime(EchoNodeWorker)
+        definition = WorkflowDefinition(
+            workflow_id="w-watchdog-lifecycle",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+        instance_id = "watchdog-lifecycle-inst"
+        await runtime._save_checkpoint(instance_id, "w-watchdog-lifecycle", {
+            "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
+        })
+        completion_seen = asyncio.Event()
+        original_emit_event = runtime._emit_event
+
+        async def observe_completion_event(event_type, payload):
+            if event_type == "workflow.completed":
+                assert len(watchdogs) == 1
+                assert watchdogs[0]._task is not None
+                assert not watchdogs[0]._task.done()
+                completion_seen.set()
+            await original_emit_event(event_type, payload)
+
+        runtime._emit_event = observe_completion_event
+        result = await asyncio.wait_for(runtime.resume(definition, instance_id), timeout=2.0)
+        assert result.success is True
+        assert completion_seen.is_set()
+        assert runtime._instance_locks == {}
+        assert watchdogs[0]._task is None
+
+    @pytest.mark.asyncio
+    async def test_watchdog_stop_propagates_caller_cancellation_after_draining(self):
+        """stop() must propagate cancellation but not abandon slow child-task cleanup."""
+        child_started = asyncio.Event()
+        cleanup_started = asyncio.Event()
+        finish_cleanup = asyncio.Event()
+
+        async def child():
+            child_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cleanup_started.set()
+                await finish_cleanup.wait()
+                raise
+
+        watchdog = object.__new__(GraphExecutionWatchdog)
+        child_task = asyncio.create_task(child())
+        await asyncio.wait_for(child_started.wait(), timeout=1.0)
+        watchdog._task = child_task
+        stop_task = asyncio.create_task(watchdog.stop())
+        try:
+            await asyncio.wait_for(cleanup_started.wait(), timeout=1.0)
+            stop_task.cancel()
+            await asyncio.sleep(0)
+            assert not stop_task.done(), "stop() must drain the child before propagating caller cancellation"
+
+            finish_cleanup.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(stop_task, timeout=1.0)
+            assert watchdog._task is None
+            assert child_task.done() and child_task.cancelled()
+        finally:
+            finish_cleanup.set()
+            if not stop_task.done():
+                stop_task.cancel()
+            await asyncio.gather(stop_task, return_exceptions=True)
+            await asyncio.gather(child_task, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_watchdog_stop_logs_child_task_failure_and_clears_reference(self, caplog):
+        async def fail_watchdog():
+            raise RuntimeError("simulated watchdog failure")
+
+        watchdog = object.__new__(GraphExecutionWatchdog)
+        failed_task = asyncio.create_task(fail_watchdog())
+        watchdog._task = failed_task
+        await asyncio.sleep(0)
+        with caplog.at_level("WARNING"):
+            await watchdog.stop()
+
+        assert watchdog._task is None
+        assert failed_task.done()
+        assert "simulated watchdog failure" in caplog.text
 
 class TestWorkflowRuntimeStats:
     @pytest.mark.asyncio
