@@ -22,12 +22,13 @@ Architecture:
 """
 
 import asyncio
-import core.workflow.runtime as workflow_runtime_module
-from core.runtime.watchdog import GraphExecutionWatchdog
 import os
 import tempfile
+
 import pytest
 
+import core.workflow.runtime as workflow_runtime_module
+from core.runtime.watchdog import GraphExecutionWatchdog
 from core.workflow.definition import (
     NodeStatus,
     RetryPolicy,
@@ -948,7 +949,13 @@ class TestWorkflowRuntimeConcurrencyLocking:
             await runtime._save_checkpoint(instance_id, "w-worker-cancel", {
                 "a": WorkflowNodeState(node_id="a", status=NodeStatus.PENDING)
             })
-            runtime2 = _make_workflow_runtime(EchoNodeWorker)
+            class NonSleepingWorker(AbstractCognitiveWorker):
+                worker_type = "CancellingWorker"
+
+                async def _run(self, context: WorkerContext) -> WorkerResult:
+                    return WorkerResult(success=True, output="done")
+
+            runtime2 = _make_workflow_runtime(NonSleepingWorker)
             resumed = await runtime2.resume(definition, instance_id)
             assert resumed.success is True
             assert runtime2._instance_locks == {}
