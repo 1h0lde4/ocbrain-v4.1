@@ -1045,7 +1045,7 @@ class TestWorkflowRuntimeConcurrencyLocking:
         original_emit_event = runtime._emit_event
 
         async def block_initial_lifecycle_event(event_type, payload):
-            if event_type == "workflow.started":
+            if event_type in {"workflow.started", "workflow.resumed"}:
                 lifecycle_event_entered.set()
                 await release_lifecycle_event.wait()
             await original_emit_event(event_type, payload)
