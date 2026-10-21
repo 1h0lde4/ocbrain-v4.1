@@ -38,7 +38,7 @@ def test_a_sqlite_transaction_rollback(tmp_path, monkeypatch):
     trigger = "fail_later_entity_insert"
 
     try:
-        with patch("core.context.privacy.can_save_history", return_value=True):
+        with patch("core.privacy.privacy.can_save_history", return_value=True):
             ctx.save(
                 "baseline query", ["knowledge"], "baseline answer",
                 {"urls": ["https://baseline.example"]}, scope="baseline-scope",
@@ -338,7 +338,13 @@ async def test_f_defensive_retry_enabled_workflow_save_failure():
             from core.model_router import RouteResult
             return RouteResult(answer="Retry-enabled answer sentinel", source="test")
 
-    event_stream = AsyncMock()
+    event_stream = MagicMock()
+    event_stream.append = AsyncMock()
+    event_stream.create_checkpoint = AsyncMock()
+    # EventStream subscribe/unsubscribe are synchronous APIs; using AsyncMock
+    # here causes unawaited-coroutine warnings from the real runtime stack.
+    event_stream.subscribe = MagicMock()
+    event_stream.unsubscribe = MagicMock()
     registry = WorkerRegistry()
     registry.register(PlannerWorker, constructor_kwargs={
         "modules": {"knowledge": MagicMock()},
@@ -452,7 +458,7 @@ def test_h_commit_failure_rolls_back_uncommitted_turn_and_entities(tmp_path, mon
 
     proxy = FailFirstCommit(real_conn)
     try:
-        with patch("core.context.privacy.can_save_history", return_value=True):
+        with patch("core.privacy.privacy.can_save_history", return_value=True):
             ctx.save(
                 "baseline commit query", ["knowledge"], "baseline commit answer",
                 {"urls": ["https://commit-baseline.example"]}, scope="commit-baseline",
@@ -523,7 +529,7 @@ def test_i_rollback_failure_fails_closed_and_preserves_primary_error(
 
     proxy = FailRollbackProxy(real_conn)
     try:
-        with patch("core.context.privacy.can_save_history", return_value=True):
+        with patch("core.privacy.privacy.can_save_history", return_value=True):
             ctx.save(
                 "rollback baseline query", ["knowledge"], "rollback baseline answer",
                 {"urls": ["https://rollback-baseline.example"]}, scope="rollback-baseline",
@@ -601,7 +607,7 @@ def test_j_privacy_guard_still_skips_history_persistence(tmp_path, monkeypatch):
         cache_before = dict(ctx._prompt_cache)
         dirty_before = ctx._turns_cache_dirty
         prompt_turn_before = ctx._prompt_cache_turn
-        with patch("core.context.privacy.can_save_history", return_value=False):
+        with patch("core.privacy.privacy.can_save_history", return_value=False):
             ctx.save(
                 "privacy-disabled query", ["knowledge"], "privacy-disabled answer",
                 {"urls": ["https://privacy-disabled.example"]},
