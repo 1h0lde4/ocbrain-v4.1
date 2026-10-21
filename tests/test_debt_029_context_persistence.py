@@ -583,6 +583,12 @@ def test_i_rollback_failure_fails_closed_and_preserves_primary_error(
 
             with pytest.raises(sqlite3.ProgrammingError, match="disabled after rollback failure"):
                 ctx.save("later query", ["knowledge"], "later answer")
+            with pytest.raises(sqlite3.ProgrammingError, match="disabled after rollback failure"):
+                ctx.last_n(10)
+            with pytest.raises(sqlite3.ProgrammingError, match="disabled after rollback failure"):
+                ctx.get_entity("urls")
+            with pytest.raises(sqlite3.ProgrammingError, match="disabled after rollback failure"):
+                ctx.format_for_prompt(5)
 
             # Release the real connection if the simulated close also failed.
             try:
