@@ -2,15 +2,15 @@
 tests/test_workflow_failure_disclosure.py -- a failed workflow run must not hand
 its raw error text to the caller as the answer (CWE-209/497).
 
-Orchestrator.handle()'s K2.2 workflow path returned
-f"Sorry, I encountered an internal error: {wf_result.error}", and
-wf_result.error is the failing worker's own string. For PlannerWorker that is
-"PlannerWorker pipeline error: <str(exception)>", so a ContextMemory / memory /
-router failure anywhere in its pipeline put filesystem paths, hosts or config
-values into the /query answer. This is answer text, not an internal channel;
-DEBT-037 fixed the sibling sites (core/error_ref.py states the rule) and left
-this one: "whether PlannerWorker's WorkerResult.error ever reaches a caller has
-not been traced". It does, through this branch.
+Orchestrator.handle()'s K2.2 workflow path must not expose raw worker
+failure details in caller-visible answer text. These tests inject a genuine
+pre-persistence PlannerWorker pipeline failure through
+ContextMemory.set_long_term_memories_string(), not ContextMemory.save():
+DEBT-029 deliberately contains the latter after completed work. The real
+failure still travels through PlannerWorker -> WorkflowRuntime -> Orchestrator,
+where it must be logged under a reference and redacted from the answer.
+DEBT-037 fixed sibling sites (core/error_ref.py states the rule); this test
+exercises the remaining workflow-runtime caller boundary.
 
 Contract (the answer-text rule of DEBT-037 / core/error_ref.py, applied here):
   C1  the answer is exactly
@@ -94,7 +94,7 @@ async def _handle(orch, query="what is OCBrain?"):
         await orch.close()
 
 
-def _failing_context():
+def _failing_pipeline_context():
     ctx = MagicMock(spec=ContextMemory)
     ctx.set_long_term_memories_string = MagicMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))
     return ctx
@@ -117,7 +117,7 @@ def test_log_text_and_ref_returns_a_uuid_and_logs_the_text_under_it(caplog):
 
 @pytest.mark.asyncio
 async def test_planner_pipeline_failure_does_not_reach_the_caller(caplog):
-    orch = _orchestrator(_failing_context())
+    orch = _orchestrator(_failing_pipeline_context())
     with caplog.at_level(logging.ERROR):
         answer = await _handle(orch)
     m = ANSWER_RE.fullmatch(answer)
@@ -147,23 +147,27 @@ async def test_the_boundary_redacts_any_worker_failure_not_only_the_planners_for
 
 @pytest.mark.asyncio
 async def test_each_failure_gets_its_own_ref():
-    a1 = await _handle(_orchestrator(_failing_context()))
-    a2 = await _handle(_orchestrator(_failing_context()))
+    a1 = await _handle(_orchestrator(_failing_pipeline_context()))
+    a2 = await _handle(_orchestrator(_failing_pipeline_context()))
     assert ANSWER_RE.fullmatch(a1) and ANSWER_RE.fullmatch(a2)
     assert a1 != a2
 
 
 @pytest.mark.asyncio
 async def test_a_failing_answer_is_still_a_string_not_an_exception():
-    answer = await _handle(_orchestrator(_failing_context()))
+    answer = await _handle(_orchestrator(_failing_pipeline_context()))
     assert isinstance(answer, str)
+    assert ANSWER_RE.fullmatch(answer), answer
+    for fragment in ("SECRET-DETAIL", "hunter2", "context.sqlite", "PlannerWorker pipeline error"):
+        assert fragment not in answer
+    assert RAW_FAILURE_TEXT not in answer
 
 
 # ── C3: internal channels unchanged ───────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_the_internal_failure_event_still_carries_the_raw_error():
-    orch = _orchestrator(_failing_context())
+    orch = _orchestrator(_failing_pipeline_context())
     events = _recording_events(orch)
     await _handle(orch)
     failed = [p for name, p in events if name == "orchestrator.query_failed"]
