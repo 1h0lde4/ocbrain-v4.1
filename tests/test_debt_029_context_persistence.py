@@ -186,7 +186,7 @@ async def test_b_planner_worker_context_save_failure(caplog):
 # ── Test C: K4.2 Orchestrator boundary around save failure ───────────────────
 
 @pytest.mark.asyncio
-async def test_c_k42_canonical_request_path_save_failure():
+async def test_c_k42_canonical_request_path_save_failure(caplog):
     """Boundary test only: WorkflowRuntime returns a mocked successful result."""
     from core.orchestrator import Orchestrator
     from core.workflow.runtime import WorkflowResult
@@ -232,7 +232,8 @@ async def test_c_k42_canonical_request_path_save_failure():
              patch("core.cognitive.intent.interpret_request", AsyncMock(return_value=[fake_goal])), \
              patch("core.cognitive.planner.plan", AsyncMock(return_value=MagicMock(status="ready_for_compilation", execution_plan=fake_plan))), \
              patch("core.cognitive.compiler.compile", AsyncMock(return_value=fake_compilation)), \
-             patch("core.shadow.shadow_learner.shadow_learner.record_interaction"):
+             patch("core.shadow.shadow_learner.shadow_learner.record_interaction"), \
+             caplog.at_level(logging.WARNING):
             answer = await orch.handle(query, execution_id=execution_id)
     finally:
         await orch.close()
@@ -245,12 +246,15 @@ async def test_c_k42_canonical_request_path_save_failure():
     event_types = [name for name, _ in events_emitted]
     assert event_types.count("orchestrator.query_completed") == 1
     assert event_types.count("orchestrator.query_failed") == 0
+    assert "Context save failed" in caplog.text
+    assert query not in caplog.text
+    assert answer_expected not in caplog.text
 
 
 # ── Test D: Legacy Orchestrator compatibility path ────────────────────────────
 
 @pytest.mark.asyncio
-async def test_d_legacy_orchestrator_compatibility_path_save_failure():
+async def test_d_legacy_orchestrator_compatibility_path_save_failure(caplog):
     from core.orchestrator import Orchestrator
     from core.model_router import RouteResult
 
@@ -274,7 +278,8 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure():
     try:
         with patch("core.parser.parse", return_value=parsed), \
              patch("core.orchestrator.classify", return_value=[{"module": "knowledge"}]), \
-             patch("core.shadow.shadow_learner.shadow_learner.record_interaction"):
+             patch("core.shadow.shadow_learner.shadow_learner.record_interaction"), \
+             caplog.at_level(logging.WARNING):
             answer = await orch.handle(query, execution_id=execution_id)
     finally:
         await orch.close()
@@ -284,6 +289,9 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure():
     failing_ctx.save.assert_called_once_with(
         query, ["knowledge"], answer, expected_entities, scope=execution_id
     )
+    assert "Context save failed" in caplog.text
+    assert query not in caplog.text
+    assert answer not in caplog.text
 
 
 # ── Test E: Streaming helper containment and safe diagnostics ─────────────────
@@ -317,7 +325,7 @@ async def test_e_streaming_save_failure_containment(caplog):
 # ── Test F: Real retry-enabled WorkflowRuntime coverage ──────────────────────
 
 @pytest.mark.asyncio
-async def test_f_defensive_retry_enabled_workflow_save_failure():
+async def test_f_defensive_retry_enabled_workflow_save_failure(caplog):
     query = "Defensive retry query"
     execution_id = "exec-retry-save-failure"
     scope = execution_id
@@ -383,7 +391,8 @@ async def test_f_defensive_retry_enabled_workflow_save_failure():
 
     with patch("core.parser.parse", return_value=parsed), \
          patch("core.memory.assembly.context_assembler.assemble_context", AsyncMock(return_value="")), \
-         patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]):
+         patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]), \
+         caplog.at_level(logging.WARNING):
         result = await workflow_runtime.execute(
             definition, query=query, metadata={"execution_id": execution_id}
         )
@@ -397,6 +406,9 @@ async def test_f_defensive_retry_enabled_workflow_save_failure():
     failing_ctx.save.assert_called_once_with(
         query, ["knowledge"], result.output, expected_entities, scope=scope
     )
+    assert "Context save failed" in caplog.text
+    assert query not in caplog.text
+    assert result.output not in caplog.text
 
 
 # ── Test G: Genuine pre-persistence errors remain failures ────────────────────
