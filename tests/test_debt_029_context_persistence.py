@@ -306,7 +306,7 @@ async def test_e_streaming_save_failure_containment(caplog):
 
     query = "stream query sentinel"
     answer = "stream answer sentinel"
-    execution_id = "exec-stream-save-failure"
+    execution_id = f"{query} :: {answer}"
     failing_orch = MagicMock()
     failing_orch.context.save.side_effect = sqlite3.OperationalError(f"database locked; query={query}; answer={answer}")
 
@@ -319,12 +319,11 @@ async def test_e_streaming_save_failure_containment(caplog):
         query, ["coding"], answer, scope=execution_id
     )
     assert "Context save failed" in caplog.text
-    assert execution_id in caplog.text
     assert "OperationalError" in caplog.text
     assert "database locked" not in caplog.text
     assert query not in caplog.text
     assert answer not in caplog.text
-    assert "database locked" not in caplog.text
+    assert execution_id not in caplog.text
 
 
 # ── Test F: Real retry-enabled WorkflowRuntime coverage ──────────────────────
