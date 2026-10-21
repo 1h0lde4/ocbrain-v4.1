@@ -1,14 +1,14 @@
 """
 tests/test_debt_029_context_persistence.py — DEBT-029 Regression Tests
 
-Tests for:
-1. ContextMemory.save() SQLite transaction rollback atomicity.
-2. PlannerWorker Step 8 best-effort context history save containment.
-3. Orchestrator K4.2 canonical request path context history save containment.
-4. Orchestrator legacy compatibility path context history save containment.
-5. Streaming helper context history save containment.
-6. Defensive retry-enabled workflow execution test.
-7. Negative control: genuine execution errors remain failures.
+DEBT-029 regression coverage:
+- Mid-transaction entity-insert rollback and cache atomicity.
+- Controlled commit failure and rollback-failure fail-closed behavior.
+- Privacy-policy preservation.
+- Best-effort context-save containment in PlannerWorker, both Orchestrator
+  paths, and the streaming helper.
+- A real positive-retry WorkflowRuntime execution.
+- Genuine pre-persistence failures and caller-safe disclosure.
 """
 
 import logging
@@ -613,3 +613,30 @@ async def test_g_negative_control_genuine_execution_failures_still_fail():
     assert res.success is False
     assert "No query provided" in res.error
     assert ctx_mock.save.call_count == 0
+
+
+// ── Test J: history-saving privacy guard remains authoritative ───────────────
+
+def test_j_privacy_guard_still_skips_history_persistence(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.context.DB_PATH", tmp_path / "privacy_disabled.sqlite")
+    ctx = ContextMemory()
+    try:
+        cache_before = dict(ctx._prompt_cache)
+        dirty_before = ctx._turns_cache_dirty
+        prompt_turn_before = ctx._prompt_cache_turn
+        with patch("core.context.privacy.can_save_history", return_value=False):
+            ctx.save(
+                "privacy-disabled query", ["knowledge"], "privacy-disabled answer",
+                {"urls": ["https://privacy-disabled.example"]},
+                scope="privacy-disabled",
+            )
+        with ctx._lock:
+            turns = ctx._conn.execute("SELECT query, answer FROM turns").fetchall()
+            entities = ctx._conn.execute("SELECT type, value FROM entities").fetchall()
+        assert turns == []
+        assert entities == []
+        assert ctx._prompt_cache == cache_before
+        assert ctx._turns_cache_dirty is dirty_before
+        assert ctx._prompt_cache_turn == prompt_turn_before
+    finally:
+        ctx._conn.close()
