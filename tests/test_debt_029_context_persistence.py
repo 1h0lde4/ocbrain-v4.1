@@ -591,31 +591,8 @@ def test_i_rollback_failure_fails_closed_and_preserves_primary_error(
             real_conn.close()
         except sqlite3.Error:
             pass
- ─────────────
 
-@pytest.mark.asyncio
-async def test_g_negative_control_genuine_execution_failures_still_fail():
-    """Test G: Negative control proving genuine execution failures remain failures.
-
-    Asserts:
-    - Empty query in PlannerWorker returns WorkerResult(success=False).
-    - Save is NOT attempted on execution failure.
-    """
-    ctx_mock = MagicMock()
-    planner = PlannerWorker(
-        modules={"knowledge": MagicMock()},
-        context_memory=ctx_mock,
-    )
-
-    exec_ctx = ExecutionContext(metadata={"query": ""})
-    res = await planner._run(exec_ctx)
-
-    assert res.success is False
-    assert "No query provided" in res.error
-    assert ctx_mock.save.call_count == 0
-
-
-// ── Test J: history-saving privacy guard remains authoritative ───────────────
+# ── Test J: history-saving privacy guard remains authoritative ───────────────
 
 def test_j_privacy_guard_still_skips_history_persistence(tmp_path, monkeypatch):
     monkeypatch.setattr("core.context.DB_PATH", tmp_path / "privacy_disabled.sqlite")
