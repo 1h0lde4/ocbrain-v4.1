@@ -117,9 +117,10 @@ def test_log_text_and_ref_returns_a_uuid_and_logs_the_text_under_it(caplog):
 
 @pytest.mark.asyncio
 async def test_planner_pipeline_failure_does_not_reach_the_caller(caplog):
-    orch = _orchestrator(_failing_context())
-    with caplog.at_level(logging.ERROR):
-        answer = await _handle(orch)
+    orch = _orchestrator()
+    with patch("core.merger.merge", AsyncMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))):
+        with caplog.at_level(logging.ERROR):
+            answer = await _handle(orch)
     m = ANSWER_RE.fullmatch(answer)
     assert m, answer
     for fragment in ("SECRET-DETAIL", "hunter2", "context.sqlite", "PlannerWorker pipeline error"):
@@ -147,25 +148,30 @@ async def test_the_boundary_redacts_any_worker_failure_not_only_the_planners_for
 
 @pytest.mark.asyncio
 async def test_each_failure_gets_its_own_ref():
-    a1 = await _handle(_orchestrator(_failing_context()))
-    a2 = await _handle(_orchestrator(_failing_context()))
+    with patch("core.merger.merge", AsyncMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))):
+        a1 = await _handle(_orchestrator())
+        a2 = await _handle(_orchestrator())
     assert ANSWER_RE.fullmatch(a1) and ANSWER_RE.fullmatch(a2)
     assert a1 != a2
 
 
 @pytest.mark.asyncio
 async def test_a_failing_answer_is_still_a_string_not_an_exception():
-    answer = await _handle(_orchestrator(_failing_context()))
+    with patch("core.merger.merge", AsyncMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))):
+        answer = await _handle(_orchestrator())
     assert isinstance(answer, str)
+    assert ANSWER_RE.fullmatch(answer), answer
+    assert RAW_FAILURE_TEXT not in answer
 
 
 # ── C3: internal channels unchanged ───────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_the_internal_failure_event_still_carries_the_raw_error():
-    orch = _orchestrator(_failing_context())
+    orch = _orchestrator()
     events = _recording_events(orch)
-    await _handle(orch)
+    with patch("core.merger.merge", AsyncMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))):
+        await _handle(orch)
     failed = [p for name, p in events if name == "orchestrator.query_failed"]
     assert len(failed) == 1
     assert "hunter2" in failed[0]["error"]            # unchanged: internal channel
