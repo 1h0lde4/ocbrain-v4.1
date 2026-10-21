@@ -270,3 +270,40 @@ def test_j_privacy_opt_out_skips_writes_and_preserves_cache(tmp_path,monkeypatch
             assert conn.execute("SELECT COUNT(*) FROM entities WHERE value='must-not-save'").fetchone()[0]==0
     finally:
         if ctx._conn is not None: ctx._conn.close()
+
+
+# K — Entity preparation is execution logic, not a best-effort save operation.
+@pytest.mark.asyncio
+async def test_k_entity_preparation_failure_is_not_swallowed():
+    ctx = MagicMock(spec=ContextMemory)
+    router = MagicMock()
+    router.route = AsyncMock(
+        return_value=RouteResult(answer="module result", source="test")
+    )
+    worker = PlannerWorker(
+        modules={"knowledge": MagicMock()},
+        context_memory=ctx,
+        model_router=router,
+    )
+    malformed_parse = patch(
+        "core.parser.parse",
+        return_value=SimpleNamespace(entities=None),
+    )
+    assemble = patch(
+        "core.memory.assembly.context_assembler.assemble_context",
+        new=AsyncMock(return_value=""),
+    )
+    classify = patch(
+        "core.classifier_v3.classify",
+        return_value=[{"module": "knowledge"}],
+    )
+    merge = patch("core.merger.merge", new=AsyncMock(return_value="merged answer"))
+
+    with malformed_parse, assemble, classify, merge:
+        result = await worker._run(
+            ExecutionContext(metadata={"query": Q})
+        )
+
+    assert result.success is False
+    assert "has no attribute 'get'" in result.error
+    ctx.save.assert_not_called()
