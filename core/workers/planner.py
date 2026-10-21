@@ -238,7 +238,7 @@ class PlannerWorker(AbstractCognitiveWorker):
                 try:
                     self._context_memory.save(query, modules_used, answer, entities, scope=scope)
                 except Exception as e:
-                    logger.warning("[PlannerWorker] Context save failed (non-blocking): %s", e)
+                    logger.warning("[PlannerWorker] Context save failed (non-blocking; error_type=%s; scope=%s)", type(e).__name__, scope)
 
             await self.emit_progress(context, "Complete", percent=100.0)
 
