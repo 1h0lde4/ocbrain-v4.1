@@ -7,6 +7,9 @@ containment; the disposition is Moncif's. Method: `OCBRAIN_LIVE_CHECK_DRAFT_PLAN
 > "Repeated-run evidence" below: **Overall FAIL (C1)** — a rare single-step plan. Its limits replace "one run" for
 > questions of stability; everything else in this record still describes run 0.
 
+> **Update (2026-10-19).** The response-path disposition for the DEBT-043 remediation is recorded under "Disposition options" below
+> and in ADR-KERNEL-07 §10.5 (C-plus selected for implementation; evidence, thresholds and verdicts unchanged).
+
 > **Read first — limits.** 11 prompts, **one** model, **one** run. These are *observations*, not evidence of
 > general behavior across models, runs, or a populated memory store. The model identity was recovered only after the
 > fact and sampling was uncontrolled, so a re-run is expected to differ (see Provenance). Nothing here proves that any particular response to it (options A–D) is correct.
@@ -321,3 +324,13 @@ the main limits; it is optional. *(Done once on this model: the 3-run batch abov
 
 The repeated-run evidence does not select among A–D and applies none: choosing is Moncif's explicit decision, to be
 implemented, if any change is chosen, in a separate PR from `main`.
+
+**Update (2026-10-19) — current disposition.** For the DEBT-043 remediation the owner retained the K4.2 pairing
+requirement and selected containment option **C-plus** (at most three genuine plan steps, corrected formatting, an
+honest representation of the intent, an artifact-appropriate question); options A, B and D are **not selected**.
+C-plus extends candidate C, was not selected by the experiment, and is not part of the D-5 decision of 2026-09-29. The
+"remaining owner decision" sentence in the 2026-10-17 correction above is **historical and superseded for this
+response path**; the correction's withdrawal of the A/B claim stands, and the notes above about choosing among A–D
+describe the position before this disposition. Status: selected for implementation, not yet implemented or verified;
+ADR PROPOSED. See ADR-KERNEL-07 §10.5. The experimental evidence, thresholds, criteria and verdicts in this record are
+unchanged.
