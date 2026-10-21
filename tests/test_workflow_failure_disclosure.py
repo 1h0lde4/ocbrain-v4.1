@@ -26,7 +26,7 @@ Not covered: the K4.2 front-end branch, which never reads wf_result.error.
 import logging
 import re
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
