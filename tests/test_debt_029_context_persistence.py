@@ -137,7 +137,8 @@ def test_a_sqlite_transaction_rollback(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_b_planner_worker_context_save_failure(caplog):
-    query = "What is OCBrain?"
+    query = "What is OCBrain? sentinel"
+    answer = "Capability output answer sentinel"
     scope = "exec-planner-save-failure"
     expected_entities = {
         "urls": ["https://planner.example"],
@@ -146,7 +147,7 @@ async def test_b_planner_worker_context_save_failure(caplog):
     }
     parsed = SimpleNamespace(entities=expected_entities)
     failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("database is locked")
+    failing_ctx.save.side_effect = sqlite3.OperationalError(f"database is locked; query={query}; answer={answer}")
     invocation_count = 0
 
     class CountingRouter:
@@ -154,7 +155,7 @@ async def test_b_planner_worker_context_save_failure(caplog):
             nonlocal invocation_count
             invocation_count += 1
             from core.model_router import RouteResult
-            return RouteResult(answer="Capability output answer", source="test")
+            return RouteResult(answer=answer, source="test")
 
     planner = PlannerWorker(
         modules={"knowledge": MagicMock()},
@@ -170,13 +171,14 @@ async def test_b_planner_worker_context_save_failure(caplog):
         result = await planner._run(exec_ctx)
 
     assert result.success is True
-    assert result.output == "Capability output answer"
+    assert result.output == answer
     assert result.metadata.get("outcome") == "success"
     assert invocation_count == 1
     failing_ctx.save.assert_called_once_with(
         query, ["knowledge"], "Capability output answer", expected_entities, scope=scope
     )
     assert "database is locked" not in result.output
+    assert "OperationalError" in caplog.text
     assert "database is locked" not in str(result.metadata)
     assert "Context save failed" in caplog.text
     assert query not in caplog.text
@@ -195,7 +197,7 @@ async def test_c_k42_canonical_request_path_save_failure(caplog):
     execution_id = "exec-k42-save-failure"
     answer_expected = "Computed K4.2 answer sentinel"
     failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("controlled disk I/O error")
+    failing_ctx.save.side_effect = sqlite3.OperationalError(f"controlled disk I/O error; query={query}; answer={answer_expected}")
 
     mock_wf_runtime = AsyncMock()
     mock_wf_runtime.execute.return_value = WorkflowResult(
@@ -247,6 +249,7 @@ async def test_c_k42_canonical_request_path_save_failure(caplog):
     assert event_types.count("orchestrator.query_completed") == 1
     assert event_types.count("orchestrator.query_failed") == 0
     assert "Context save failed" in caplog.text
+    assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert answer_expected not in caplog.text
 
@@ -267,7 +270,7 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure(caplog):
     }
     parsed = SimpleNamespace(entities=expected_entities)
     failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("controlled database failure")
+    failing_ctx.save.side_effect = sqlite3.OperationalError(f"controlled database failure; query={query}; answer=Legacy answer sentinel")
     mock_router = AsyncMock()
     mock_router.route.return_value = RouteResult(answer="Legacy answer sentinel", source="test")
     orch = Orchestrator(
@@ -290,6 +293,7 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure(caplog):
         query, ["knowledge"], answer, expected_entities, scope=execution_id
     )
     assert "Context save failed" in caplog.text
+    assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert answer not in caplog.text
 
@@ -304,7 +308,7 @@ async def test_e_streaming_save_failure_containment(caplog):
     answer = "stream answer sentinel"
     execution_id = "exec-stream-save-failure"
     failing_orch = MagicMock()
-    failing_orch.context.save.side_effect = sqlite3.OperationalError("database locked")
+    failing_orch.context.save.side_effect = sqlite3.OperationalError(f"database locked; query={query}; answer={answer}")
 
     with caplog.at_level(logging.WARNING, logger="interface.api"):
         await _save_context_background(
@@ -317,6 +321,7 @@ async def test_e_streaming_save_failure_containment(caplog):
     assert "Context save failed" in caplog.text
     assert execution_id in caplog.text
     assert "OperationalError" in caplog.text
+    assert "database locked" not in caplog.text
     assert query not in caplog.text
     assert answer not in caplog.text
     assert "database locked" not in caplog.text
@@ -336,7 +341,7 @@ async def test_f_defensive_retry_enabled_workflow_save_failure(caplog):
     }
     parsed = SimpleNamespace(entities=expected_entities)
     failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("controlled locked database")
+    failing_ctx.save.side_effect = sqlite3.OperationalError(f"controlled locked database; query={query}; answer=Retry-enabled answer sentinel")
 
     capability_invocations = 0
     class CountingRouter:
@@ -407,6 +412,7 @@ async def test_f_defensive_retry_enabled_workflow_save_failure(caplog):
         query, ["knowledge"], result.output, expected_entities, scope=scope
     )
     assert "Context save failed" in caplog.text
+    assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert result.output not in caplog.text
 
