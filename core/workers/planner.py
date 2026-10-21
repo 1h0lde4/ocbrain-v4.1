@@ -230,15 +230,15 @@ class PlannerWorker(AbstractCognitiveWorker):
             # isolates this caller's saved turn from other callers sharing
             # the same ContextMemory singleton.
             if self._context_memory:
+                entities = {
+                    "urls": parsed.entities.get("urls", []),
+                    "languages": parsed.entities.get("languages", []),
+                    "filenames": parsed.entities.get("filenames", []),
+                }
                 try:
-                    entities = {
-                        "urls": parsed.entities.get("urls", []),
-                        "languages": parsed.entities.get("languages", []),
-                        "filenames": parsed.entities.get("filenames", []),
-                    }
                     self._context_memory.save(query, modules_used, answer, entities, scope=scope)
                 except Exception as e:
-                    logger.warning("[PlannerWorker] Context save failed (non-blocking): %s", e)
+                    logger.warning("[PlannerWorker] Context save failed (non-blocking; error_type=%s)", type(e).__name__)
 
             await self.emit_progress(context, "Complete", percent=100.0)
 
