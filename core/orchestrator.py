@@ -616,8 +616,8 @@ class Orchestrator:
                     try:
                         self.context.save(query, capability_types, answer, {}, scope=execution_id)
                     except Exception as e:
-                        logger.warning("[Orchestrator] Context save failed "
-                                       "(non-blocking): %s", e)
+                        logger.warning("[Orchestrator] Context save failed (non-blocking; error_type=%s; execution_id=%s)",
+                                       type(e).__name__, execution_id)
                     try:
                         await self.memory.write(
                             content=answer,
@@ -849,7 +849,7 @@ class Orchestrator:
                 try:
                     self.context.save(query, modules_used, answer, entities, scope=execution_id)
                 except Exception as e:
-                    logger.warning("[Orchestrator] Context save failed (non-blocking): %s", e)
+                    logger.warning("[Orchestrator] Context save failed (non-blocking; error_type=%s; execution_id=%s)", type(e).__name__, execution_id)
 
                 # 6b. Persist interaction to UnifiedMemory.
                 #
