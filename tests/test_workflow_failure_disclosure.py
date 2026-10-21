@@ -2,15 +2,14 @@
 tests/test_workflow_failure_disclosure.py -- a failed workflow run must not hand
 its raw error text to the caller as the answer (CWE-209/497).
 
-Orchestrator.handle()'s K2.2 workflow path returned
-f"Sorry, I encountered an internal error: {wf_result.error}", and
-wf_result.error is the failing worker's own string. For PlannerWorker that is
-"PlannerWorker pipeline error: <str(exception)>", so a ContextMemory / memory /
-router failure anywhere in its pipeline put filesystem paths, hosts or config
-values into the /query answer. This is answer text, not an internal channel;
-DEBT-037 fixed the sibling sites (core/error_ref.py states the rule) and left
-this one: "whether PlannerWorker's WorkerResult.error ever reaches a caller has
-not been traced". It does, through this branch.
+Orchestrator.handle()'s K2.2 workflow path returns worker failure details
+through a caller-visible boundary unless the failure is redacted. These tests
+inject genuine pre-persistence PlannerWorker pipeline failures (for example,
+a merger failure), not ContextMemory.save() failures: DEBT-029 now deliberately
+contains the latter after completed work. A raw pipeline error must remain an
+internal diagnostic tied to a reference, never become answer text. DEBT-037
+fixed sibling sites (core/error_ref.py states the rule); this test exercises
+the remaining workflow-runtime caller boundary.
 
 Contract (the answer-text rule of DEBT-037 / core/error_ref.py, applied here):
   C1  the answer is exactly
@@ -92,12 +91,6 @@ async def _handle(orch, query="what is OCBrain?"):
         return await orch.handle(query)
     finally:
         await orch.close()
-
-
-def _failing_context():
-    ctx = MagicMock(spec=ContextMemory)
-    ctx.save = MagicMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))  # outside dispatch try/except
-    return ctx
 
 
 # ── the helper ────────────────────────────────────────────────────────────
