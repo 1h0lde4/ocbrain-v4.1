@@ -131,23 +131,31 @@ class ContextMemory:
         if not privacy.can_save_history():
             return
         with self._lock:
-            cur = self._conn.cursor()
-            cur.execute(
-                "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
-                "VALUES (?,?,?,?,?)",
-                (time.time(), query, json.dumps(modules_used), answer, scope),
-            )
-            turn_id = cur.lastrowid
-            if entities:
-                for etype, values in entities.items():
-                    vals = values if isinstance(values, list) else [values]
-                    for v in vals:
-                        cur.execute(
-                            "INSERT INTO entities (turn_id, type, value) VALUES (?,?,?)",
-                            (turn_id, etype, str(v)),
-                        )
-            self._conn.commit()
-            # Invalidate caches on write
+            try:
+                cur = self._conn.cursor()
+                cur.execute(
+                    "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
+                    "VALUES (?,?,?,?,?)",
+                    (time.time(), query, json.dumps(modules_used), answer, scope),
+                )
+                turn_id = cur.lastrowid
+                if entities:
+                    for etype, values in entities.items():
+                        vals = values if isinstance(values, list) else [values]
+                        for v in vals:
+                            cur.execute(
+                                "INSERT INTO entities (turn_id, type, value) VALUES (?,?,?)",
+                                (turn_id, etype, str(v)),
+                            )
+                self._conn.commit()
+            except BaseException as primary_exc:
+                try:
+                    self._conn.rollback()
+                except Exception as rollback_exc:
+                    log.warning("[ContextMemory] Rollback failed after save error: %s", rollback_exc)
+                raise primary_exc
+
+            # Invalidate caches on write only after commit succeeds
             self._turns_cache_dirty = True
             self._prompt_cache.clear()
             self._prompt_cache_turn = turn_id
