@@ -413,8 +413,12 @@ async def _save_context_background(
     """
     try:
         orchestrator.context.save(query, modules, answer, scope=execution_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Diagnostic only: never log the query or computed answer here.
+        log.warning(
+            "[StreamingAPI] Context save failed (non-blocking; execution_id=%s; error_type=%s)",
+            execution_id, type(exc).__name__,
+        )
 
 
 @app.get("/status")
