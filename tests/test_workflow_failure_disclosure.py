@@ -160,7 +160,6 @@ async def test_a_failing_answer_is_still_a_string_not_an_exception():
     assert ANSWER_RE.fullmatch(answer), answer
     for fragment in ("SECRET-DETAIL", "hunter2", "context.sqlite", "PlannerWorker pipeline error"):
         assert fragment not in answer
-    assert ANSWER_RE.fullmatch(answer), answer
     assert RAW_FAILURE_TEXT not in answer
 
 
