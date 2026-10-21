@@ -614,7 +614,14 @@ class Orchestrator:
                     # query is not. This mirrors PlannerWorker's own pattern
                     # exactly, including non-blocking failure handling.
                     try:
+                        try:
                         self.context.save(query, capability_types, answer, {}, scope=execution_id)
+                    except Exception as e:
+                        logger.warning(
+                            "[Orchestrator] Context save failed "
+                            "(non-blocking; error_type=%s)",
+                            type(e).__name__,
+                        )
                     except Exception as e:
                         logger.warning("[Orchestrator] Context save failed "
                                        "(non-blocking): %s", e)
@@ -847,7 +854,14 @@ class Orchestrator:
                     "filenames": parsed.entities.get("filenames", []),
                 }
                 try:
+                    try:
                     self.context.save(query, modules_used, answer, entities, scope=execution_id)
+                except Exception as e:
+                    logger.warning(
+                        "[Orchestrator] Context save failed "
+                        "(non-blocking; error_type=%s)",
+                        type(e).__name__,
+                    )
                 except Exception as e:
                     logger.warning("[Orchestrator] Context save failed (non-blocking): %s", e)
 

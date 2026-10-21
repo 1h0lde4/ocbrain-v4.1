@@ -1,324 +1,272 @@
-"""
-tests/test_debt_029_context_persistence.py — DEBT-029 Regression Tests
-
-Tests for:
-1. ContextMemory.save() SQLite transaction rollback atomicity.
-2. PlannerWorker Step 8 best-effort context history save containment.
-3. Orchestrator K4.2 canonical request path context history save containment.
-4. Orchestrator legacy compatibility path context history save containment.
-5. Streaming helper context history save containment.
-6. Defensive retry-enabled workflow execution test.
-7. Negative control: genuine execution errors remain failures.
-"""
-
-import asyncio
+"""DEBT-029 tests: atomicity, best-effort persistence, and retry isolation."""
+import logging
 import sqlite3
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from core.context import ContextMemory
+from core.events.event_stream import get_event_stream
+from core.governance.governance_kernel import get_governance_kernel
+from core.model_router import RouteResult
 from core.runtime.execution_context import ExecutionContext
+from core.runtime.execution_runtime import ExecutionRuntime
+from core.runtime.worker_registry import WorkerRegistry
 from core.workers.planner import PlannerWorker
-from core.workers.base import WorkerResult
+from core.workflow.definition import RetryPolicy, WorkflowDefinition, WorkflowNode
+from core.workflow.runtime import WorkflowRuntime
 
+Q="QUERY_PRIVATE_SENTINEL"
+A="ANSWER_PRIVATE_SENTINEL"
+S="EXECUTION_PRIVATE_SENTINEL"
+E="EXCEPTION_TEXT_MUST_NOT_BE_LOGGED"
 
-# ── Test A: Real SQLite Transaction Rollback ──────────────────────────────────
+def _cache(ctx):
+    return (dict(ctx._prompt_cache),ctx._prompt_cache_turn,ctx._turns_cache_dirty,
+            {k:list(v) for k,v in ctx._long_term_memories_by_scope.items()},
+            dict(ctx._long_term_memories_string_by_scope))
 
-def test_a_sqlite_transaction_rollback(tmp_path, monkeypatch):
-    """Test A: Real SQLite failure during entity persistence rolls back turn insert.
+def _parsed():
+    return SimpleNamespace(entities={"urls":[],"languages":[],"filenames":[]})
 
-    Asserts:
-    1. save() raises the original persistence failure.
-    2. No partial turn row remains.
-    3. No partial entity rows remain.
-    4. Connection is usable after rollback.
-    5. Subsequent save succeeds.
-    6. last_n() reflects only committed state.
-    7. Caches reflect only committed state.
-    """
-    db_file = tmp_path / "test_debt029_rollback.sqlite"
-    monkeypatch.setattr("core.context.DB_PATH", db_file)
-
-    ctx = ContextMemory()
-
-    # Create a trigger on 'entities' that aborts any insert
-    with ctx._lock:
-        ctx._conn.execute(
-            "CREATE TRIGGER fail_entities_insert BEFORE INSERT ON entities "
-            "BEGIN SELECT RAISE(FAIL, 'simulated entity insert error'); END;"
-        )
-        ctx._conn.commit()
-
-    # Attempt save with entities - should fail in entity loop after turn row inserted
-    with pytest.raises(sqlite3.Error, match="simulated entity insert error"):
-        ctx.save(
-            query="failed query",
-            modules_used=["knowledge"],
-            answer="failed answer",
-            entities={"urls": ["http://fail.com"]},
-        )
-
-    # Check DB state directly
-    with ctx._lock:
-        cur = ctx._conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM turns")
-        turn_count = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM entities")
-        entity_count = cur.fetchone()[0]
-
-    assert turn_count == 0, "Failed save left partial turn row in database"
-    assert entity_count == 0, "Failed save left partial entity rows in database"
-
-    # Connection and instance should be usable; drop trigger and save again
-    with ctx._lock:
-        ctx._conn.execute("DROP TRIGGER fail_entities_insert")
-        ctx._conn.commit()
-
-    ctx.save(
-        query="successful query",
-        modules_used=["knowledge"],
-        answer="successful answer",
-        entities={"urls": ["http://success.com"]},
+def _patch_pipeline(answer):
+    return (
+        patch("core.parser.parse",return_value=_parsed()),
+        patch("core.memory.assembly.context_assembler.assemble_context",new=AsyncMock(return_value="")),
+        patch("core.classifier_v3.classify",return_value=[{"module":"knowledge"}]),
+        patch("core.merger.merge",new=AsyncMock(return_value=answer)),
     )
 
-    turns = ctx.last_n(10)
-    assert len(turns) == 1
-    assert turns[0].query == "successful query"
-    assert turns[0].answer == "successful answer"
+# A: fail on a later entity insert, verify total rollback and cache invariance.
+def test_a_sqlite_late_entity_failure_rolls_back_all_writes_and_caches(tmp_path,monkeypatch):
+    monkeypatch.setattr("core.context.DB_PATH",tmp_path/"atomicity.sqlite")
+    ctx=ContextMemory()
+    try:
+        ctx.save("baseline",["knowledge"],"baseline answer",{"urls":["base-url"]},scope="scope-a")
+        ctx.last_n(10,scope="scope-a"); ctx.get_entity("urls")
+        prompt=ctx.format_for_prompt(5,scope="scope-a"); before=_cache(ctx)
+        with ctx._lock:
+            conn=ctx._require_connection()
+            conn.execute("CREATE TRIGGER fail_language BEFORE INSERT ON entities WHEN NEW.type='languages' BEGIN SELECT RAISE(ABORT,'PRIMARY_ENTITY_INSERT_SENTINEL'); END")
+            conn.commit()
+        with pytest.raises(sqlite3.IntegrityError,match="PRIMARY_ENTITY_INSERT_SENTINEL"):
+            ctx.save("failed query",["knowledge"],"failed answer",
+                     {"urls":["url-must-rollback"],"languages":["lang-must-rollback"]},scope="scope-a")
+        assert _cache(ctx)==before
+        with ctx._lock:
+            conn=ctx._require_connection()
+            assert conn.execute("SELECT COUNT(*) FROM turns WHERE query='failed query'").fetchone()[0]==0
+            assert conn.execute("SELECT COUNT(*) FROM entities WHERE value IN (?,?)",("url-must-rollback","lang-must-rollback")).fetchone()[0]==0
+        assert ctx.format_for_prompt(5,scope="scope-a")==prompt
+        with ctx._lock:
+            conn=ctx._require_connection(); conn.execute("DROP TRIGGER fail_language"); conn.commit()
+        ctx.save("success",["knowledge"],"success answer",{"urls":["new-url"]},scope="scope-a")
+        assert [t.query for t in ctx.last_n(10,scope="scope-a")]==["baseline","success"]
+        assert ctx.get_entity("urls")==["new-url","base-url"]
+    finally:
+        if ctx._conn is not None: ctx._conn.close()
 
-    prompt_str = ctx.format_for_prompt(5)
-    assert "successful query" in prompt_str
-    assert "failed query" not in prompt_str
-
-
-# ── Test B: PlannerWorker History Save Failure ────────────────────────────────
-
+# B: PlannerWorker's save failure is non-blocking and sanitized.
 @pytest.mark.asyncio
-async def test_b_planner_worker_context_save_failure():
-    """Test B: PlannerWorker._run() returns success=True when context.save() fails.
+async def test_b_planner_save_failure_preserves_answer_and_logs_only_type(caplog):
+    ctx=MagicMock(spec=ContextMemory)
+    ctx.save.side_effect=sqlite3.OperationalError(f"{E}::{Q}::{A}::{S}")
+    calls=0
+    class Router:
+        async def route(self,*args,**kwargs):
+            nonlocal calls
+            calls+=1
+            return RouteResult(answer="router answer",source="test")
+    worker=PlannerWorker(modules={"knowledge":MagicMock()},context_memory=ctx,model_router=Router())
+    p1,p2,p3,p4=_patch_pipeline(A)
+    with caplog.at_level(logging.WARNING),p1,p2,p3,p4:
+        result=await worker._run(ExecutionContext(metadata={"query":Q,"execution_id":S}))
+    assert result.success and result.output==A and result.metadata["outcome"]=="success"
+    assert calls==1 and ctx.save.call_count==1
+    for secret in (E,Q,A,S): assert secret not in caplog.text
+    assert "OperationalError" in caplog.text
 
-    Asserts:
-    - Merged answer is returned unchanged.
-    - WorkerResult.success is True.
-    - Modules/capabilities invoked exactly once.
-    - No raw exception text in answer/output/metadata.
-    """
-    failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("database is locked")
-
-    invocation_count = 0
-
-    class CountingRouter:
-        async def route(self, mod_name, query, ctx, scope=""):
-            nonlocal invocation_count
-            invocation_count += 1
-            from core.model_router import RouteResult
-            return RouteResult(answer="Capability output answer", source="test")
-
-    planner = PlannerWorker(
-        modules={"knowledge": MagicMock()},
-        context_memory=failing_ctx,
-        model_router=CountingRouter(),
-    )
-
-    exec_ctx = ExecutionContext(metadata={"query": "What is OCBrain?"})
-
-    with patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]):
-        res = await planner._run(exec_ctx)
-
-    assert res.success is True
-    assert "Capability output answer" in res.output
-    assert invocation_count == 1
-    assert "database is locked" not in res.output
-    assert res.metadata.get("outcome") == "success"
-
-
-# ── Test C: K4.2 Canonical Request Path Context Save Failure ──────────────────
-
+# C: K4.2 boundary; WorkflowRuntime is deliberately mocked (not a worker-level test).
 @pytest.mark.asyncio
-async def test_c_k42_canonical_request_path_save_failure():
-    """Test C: K4.2 Orchestrator path returns completed answer when context.save fails.
-
-    Asserts:
-    - Original computed answer is returned.
-    - Query is not marked as failed.
-    - orchestrator.query_completed event is emitted.
-    - orchestrator.query_failed event is NOT emitted for save failure.
-    - Capability executed exactly once.
-    """
+async def test_c_k42_orchestrator_save_failure_keeps_mocked_success(caplog):
     from core.orchestrator import Orchestrator
-    from core.workflow.definition import WorkflowDefinition, WorkflowNode
     from core.workflow.runtime import WorkflowResult
+    ctx=MagicMock(spec=ContextMemory); ctx.save.side_effect=sqlite3.OperationalError(f"{E}::{Q}::{A}::{S}")
+    runtime=AsyncMock()
+    runtime.execute.return_value=WorkflowResult(instance_id="i",workflow_id="w",success=True,output=A,node_results={})
+    events=[]
+    async def emit(kind,payload): events.append((kind,payload))
+    orch=Orchestrator(modules={"knowledge":MagicMock()},context=ctx,router=MagicMock(),
+       memory=AsyncMock(),workflow_runtime=runtime,capability_registry=MagicMock(),use_k42_frontend=True)
+    orch._emit_event=emit
+    goal=MagicMock(resource_id="goal")
+    plan=MagicMock(resource_id="plan",confidence=0.9,steps=[MagicMock(capability_type="llm_completion")])
+    compiled=MagicMock(status="compiled")
+    compiled.workflow_definition=WorkflowDefinition(workflow_id="w")
+    with patch("core.cognitive.intent.load_known_categories",AsyncMock(return_value=[])), \
+         patch("core.cognitive.intent.interpret_request",AsyncMock(return_value=[goal])), \
+         patch("core.cognitive.planner.plan",AsyncMock(return_value=MagicMock(status="ready_for_compilation",execution_plan=plan))), \
+         patch("core.cognitive.compiler.compile",AsyncMock(return_value=compiled)), \
+         patch("core.shadow.shadow_learner.shadow_learner.record_interaction"),caplog.at_level(logging.WARNING):
+        answer=await orch.handle(Q,execution_id=S)
+    assert answer==A
+    runtime.execute.assert_awaited_once()
+    types=[kind for kind,_ in events]
+    assert "orchestrator.query_completed" in types and "orchestrator.query_failed" not in types
+    for secret in (E,Q,A,S): assert secret not in caplog.text
+    assert "OperationalError" in caplog.text
 
-    failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("disk I/O error")
-
-    mock_wf_runtime = AsyncMock()
-    mock_wf_result = WorkflowResult(
-        instance_id="inst-1",
-        workflow_id="wf-1",
-        success=True,
-        output="Computed K4.2 answer",
-        node_results={},
-    )
-    mock_wf_runtime.execute.return_value = mock_wf_result
-
-    events_emitted = []
-
-    async def mock_emit_event(event_type, payload):
-        events_emitted.append((event_type, payload))
-
-    orch = Orchestrator(
-        modules={"knowledge": MagicMock()},
-        context=failing_ctx,
-        router=MagicMock(),
-        memory=AsyncMock(),
-        workflow_runtime=mock_wf_runtime,
-        capability_registry=MagicMock(),
-        use_k42_frontend=True,
-    )
-    orch._emit_event = mock_emit_event
-
-    # Mock the front-end planning/compilation pipeline
-    fake_goal = MagicMock()
-    fake_goal.resource_id = "goal-1"
-    fake_plan = MagicMock()
-    fake_plan.resource_id = "plan-1"
-    fake_plan.confidence = 0.9
-    fake_step = MagicMock()
-    fake_step.capability_type = "llm_completion"
-    fake_plan.steps = [fake_step]
-
-    fake_compilation = MagicMock()
-    fake_compilation.status = "compiled"
-    fake_compilation.workflow_definition = WorkflowDefinition(workflow_id="wf-1")
-
-    with patch("core.cognitive.intent.load_known_categories", AsyncMock(return_value=[])), \
-         patch("core.cognitive.intent.interpret_request", AsyncMock(return_value=[fake_goal])), \
-         patch("core.cognitive.planner.plan", AsyncMock(return_value=MagicMock(status="ready_for_compilation", execution_plan=fake_plan))), \
-         patch("core.cognitive.compiler.compile", AsyncMock(return_value=fake_compilation)), \
-         patch("core.shadow.shadow_learner.shadow_learner.record_interaction"):
-
-        answer = await orch.handle("Test query")
-
-    assert answer == "Computed K4.2 answer"
-    event_types = [e[0] for e in events_emitted]
-    assert "orchestrator.query_completed" in event_types
-    assert "orchestrator.query_failed" not in event_types
-
-
-# ── Test D: Legacy Orchestrator Direct Compatibility Path ─────────────────────
-
+# D: Legacy Orchestrator path also contains persistence failure.
 @pytest.mark.asyncio
-async def test_d_legacy_orchestrator_compatibility_path_save_failure():
-    """Test D: Legacy Orchestrator path (workflow_runtime=None) handles save failure.
-
-    Asserts:
-    - Computed answer is returned successfully.
-    - Query is not failed because of context.save error.
-    - Module executed once.
-    """
+async def test_d_legacy_orchestrator_save_failure_is_non_blocking_and_sanitized(caplog):
     from core.orchestrator import Orchestrator
-    from core.model_router import RouteResult
+    ctx=MagicMock(spec=ContextMemory); ctx.save.side_effect=sqlite3.OperationalError(f"{E}::{Q}::{A}::{S}")
+    router=MagicMock(); router.route=AsyncMock(return_value=RouteResult(answer=A,source="test"))
+    orch=Orchestrator(modules={"knowledge":MagicMock()},context=ctx,router=router,
+      memory=AsyncMock(),workflow_runtime=None,use_k42_frontend=False)
+    with patch("core.classifier_v3.classify",return_value=[{"module":"knowledge"}]), \
+         patch("core.parser.parse",return_value=_parsed()), \
+         patch("core.shadow.shadow_learner.shadow_learner.record_interaction"),caplog.at_level(logging.WARNING):
+        answer=await orch.handle(Q,execution_id=S)
+    assert answer==A and ctx.save.call_count==1 and router.route.await_count==1
+    for secret in (E,Q,A,S): assert secret not in caplog.text
+    assert "OperationalError" in caplog.text
 
-    failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("database disk image is malformed")
-
-    mock_router = AsyncMock()
-    mock_router.route.return_value = RouteResult(answer="Legacy answer text", source="test")
-
-    orch = Orchestrator(
-        modules={"knowledge": MagicMock()},
-        context=failing_ctx,
-        router=mock_router,
-        memory=AsyncMock(),
-        workflow_runtime=None,
-        use_k42_frontend=False,
-    )
-
-    with patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]), \
-         patch("core.shadow.shadow_learner.shadow_learner.record_interaction"):
-        answer = await orch.handle("Legacy query")
-
-    assert answer == "Legacy answer text"
-    failing_ctx.save.assert_called_once()
-    assert failing_ctx.save.call_args[0][0] == "Legacy query"
-
-
-# ── Test E: Streaming Helper Save Failure Containment ────────────────────────
-
+# E: SSE background persistence has safe observability, rather than silent pass.
 @pytest.mark.asyncio
-async def test_e_streaming_save_failure_containment():
-    """Test E: Streaming _save_context_background contains save exceptions safely."""
+async def test_e_streaming_save_failure_logs_type_only(caplog):
     from interface.api import _save_context_background
+    orch=MagicMock(); orch.context.save.side_effect=sqlite3.OperationalError(f"{E}::{Q}::{A}::{S}")
+    with caplog.at_level(logging.WARNING):
+        await _save_context_background(orch,Q,["knowledge"],A,S)
+    orch.context.save.assert_called_once_with(Q,["knowledge"],A,scope=S)
+    for secret in (E,Q,A,S): assert secret not in caplog.text
+    assert "OperationalError" in caplog.text
 
-    failing_orch = MagicMock()
-    failing_orch.context.save.side_effect = sqlite3.OperationalError("database locked")
-
-    # Calling background save directly
-    await _save_context_background(failing_orch, "stream query", ["coding"], "stream answer", "exec-123")
-
-    failing_orch.context.save.assert_called_once_with("stream query", ["coding"], "stream answer", scope="exec-123")
-
-
-# ── Test F: Defensive Retry-Enabled Workflow Test ─────────────────────────────
-
+# F: real runtime path, with positive retries configured and one capability call.
 @pytest.mark.asyncio
-async def test_f_defensive_retry_enabled_workflow_save_failure():
-    """Test F: Defensive coverage for a workflow with RetryPolicy(max_retries=2).
+async def test_f_real_retry_enabled_workflow_does_not_retry_persistence_failure(caplog):
+    ctx=MagicMock(spec=ContextMemory); ctx.save.side_effect=sqlite3.OperationalError(f"{E}::{Q}::{A}::{S}")
+    calls=0
+    class Router:
+        async def route(self,*args,**kwargs):
+            nonlocal calls
+            calls+=1
+            return RouteResult(answer="router answer",source="test")
+    registry=WorkerRegistry()
+    registry.register(PlannerWorker,constructor_kwargs={"modules":{"knowledge":MagicMock()},
+      "context_memory":ctx,"model_router":Router(),"memory":None})
+    stream=get_event_stream()
+    execution=ExecutionRuntime(registry,governance=get_governance_kernel(),event_stream=stream)
+    workflow=WorkflowRuntime(execution,event_stream=stream)
+    definition=WorkflowDefinition(workflow_id="debt029-retry",name="retry-test",
+      nodes=[WorkflowNode(node_id="planner",worker_type="PlannerWorker",
+       retry_policy=RetryPolicy(max_retries=2,backoff_seconds=0,max_backoff_seconds=0))],
+      edges=[],entry_node="planner")
+    p1,p2,p3,p4=_patch_pipeline(A)
+    with caplog.at_level(logging.WARNING),p1,p2,p3,p4:
+        result=await workflow.execute(definition,query=Q,metadata={"execution_id":S})
+    assert result.success and result.output==A and result.node_results["planner"].success
+    assert calls==1 and ctx.save.call_count==1
+    for secret in (E,Q,A,S): assert secret not in caplog.text
+    assert "OperationalError" in caplog.text
 
-    Asserts:
-    - Context save failure inside worker is contained.
-    - Worker completes successfully on attempt 1.
-    - Capability invocation count remains 1 (no spurious retry triggered).
-    """
-    failing_ctx = MagicMock()
-    failing_ctx.save.side_effect = sqlite3.OperationalError("locked")
-
-    capability_invocations = 0
-
-    class CountingRouter:
-        async def route(self, mod_name, query, ctx, scope=""):
-            nonlocal capability_invocations
-            capability_invocations += 1
-            from core.model_router import RouteResult
-            return RouteResult(answer="Retry-enabled answer", source="test")
-
-    planner = PlannerWorker(
-        modules={"knowledge": MagicMock()},
-        context_memory=failing_ctx,
-        model_router=CountingRouter(),
-    )
-
-    exec_ctx = ExecutionContext(metadata={"query": "Defensive retry query"})
-
-    with patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]):
-        res = await planner._run(exec_ctx)
-
-    assert res.success is True
-    assert res.output == "Retry-enabled answer"
-    assert capability_invocations == 1
-
-
-# ── Test G: Negative Control: Genuine Execution Errors Still Fail ─────────────
-
+# G: a genuine pre-persistence failure remains a pipeline failure.
 @pytest.mark.asyncio
-async def test_g_negative_control_genuine_execution_failures_still_fail():
-    """Test G: Negative control proving genuine execution failures remain failures.
+async def test_g_genuine_merger_failure_is_not_swallowed():
+    ctx=MagicMock(spec=ContextMemory)
+    router=MagicMock(); router.route=AsyncMock(return_value=RouteResult(answer="result",source="test"))
+    worker=PlannerWorker(modules={"knowledge":MagicMock()},context_memory=ctx,model_router=router)
+    p1,p2,p3,_=_patch_pipeline("unused")
+    p4=patch("core.merger.merge",new=AsyncMock(side_effect=RuntimeError("MERGER_PIPELINE_FAILURE_SENTINEL")))
+    with p1,p2,p3,p4:
+        result=await worker._run(ExecutionContext(metadata={"query":Q}))
+    assert not result.success and "MERGER_PIPELINE_FAILURE_SENTINEL" in result.error
+    ctx.save.assert_not_called()
 
-    Asserts:
-    - Empty query in PlannerWorker returns WorkerResult(success=False).
-    - Save is NOT attempted on execution failure.
-    """
-    ctx_mock = MagicMock()
-    planner = PlannerWorker(
-        modules={"knowledge": MagicMock()},
-        context_memory=ctx_mock,
-    )
+# H: commit failure rolls back rows and leaves cache untouched; retry can succeed.
+def test_h_commit_failure_rolls_back_and_allows_same_instance_recovery(tmp_path,monkeypatch):
+    monkeypatch.setattr("core.context.DB_PATH",tmp_path/"commit.sqlite")
+    ctx=ContextMemory(); real=ctx._conn
+    class Proxy:
+        def __init__(self): self.fail=True
+        def cursor(self): return real.cursor()
+        def commit(self):
+            if self.fail: raise sqlite3.OperationalError("COMMIT_FAILURE_SENTINEL")
+            real.commit()
+        def rollback(self): real.rollback()
+        def close(self): real.close()
+    proxy=Proxy()
+    try:
+        ctx.save("baseline",["x"],"answer",{"urls":["base-url"]}); ctx.format_for_prompt()
+        before=_cache(ctx); ctx._conn=proxy
+        with pytest.raises(sqlite3.OperationalError,match="COMMIT_FAILURE_SENTINEL"):
+            ctx.save("partial",["x"],"answer",{"urls":["partial-url"]})
+        assert _cache(ctx)==before
+        assert real.execute("SELECT COUNT(*) FROM turns WHERE query='partial'").fetchone()[0]==0
+        assert real.execute("SELECT COUNT(*) FROM entities WHERE value='partial-url'").fetchone()[0]==0
+        proxy.fail=False; ctx.save("recovered",["x"],"answer")
+        assert [t.query for t in ctx.last_n(10)]==["baseline","recovered"]
+    finally:
+        real.close()
 
-    exec_ctx = ExecutionContext(metadata={"query": ""})
-    res = await planner._run(exec_ctx)
+# I: rollback/close failure must not leak exception text or reuse disabled conn.
+@pytest.mark.parametrize("close_fails",[False,True],ids=["close-ok","close-fails"])
+def test_i_rollback_failure_disables_reads_and_writes_and_redacts(caplog,tmp_path,monkeypatch,close_fails):
+    path=tmp_path/f"rollback-{close_fails}.sqlite"
+    monkeypatch.setattr("core.context.DB_PATH",path)
+    ctx=ContextMemory(); real=ctx._conn
+    class Proxy:
+        def cursor(self): return real.cursor()
+        def rollback(self): raise RuntimeError("ROLLBACK_PRIVATE_DIAGNOSTIC")
+        def close(self):
+            if close_fails: raise RuntimeError("CLOSE_PRIVATE_DIAGNOSTIC")
+            real.close()
+    try:
+        ctx.save("baseline",["x"],"answer",{"urls":["base-url"]}); ctx.format_for_prompt()
+        before=_cache(ctx)
+        with ctx._lock:
+            real.execute("CREATE TRIGGER fail_language BEFORE INSERT ON entities WHEN NEW.type='languages' BEGIN SELECT RAISE(ABORT,'PRIMARY_ENTITY_INSERT_SENTINEL'); END")
+            real.commit()
+        ctx._conn=Proxy()
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(sqlite3.IntegrityError,match="PRIMARY_ENTITY_INSERT_SENTINEL"):
+                ctx.save(Q,["x"],A,{"urls":["partial-url"],"languages":["partial-language"]},scope=S)
+        assert ctx._conn is None and ctx._connection_error=="disabled after rollback failure"
+        assert _cache(ctx)==before
+        for op in (lambda:ctx.save("later",["x"],"answer"),lambda:ctx.last_n(5),
+                   lambda:ctx.get_entity("urls"),lambda:ctx.format_for_prompt(5)):
+            with pytest.raises(sqlite3.ProgrammingError,match="disabled after rollback failure"): op()
+        for secret in ("ROLLBACK_PRIVATE_DIAGNOSTIC","CLOSE_PRIVATE_DIAGNOSTIC",
+                       "PRIMARY_ENTITY_INSERT_SENTINEL",Q,A,S):
+            assert secret not in caplog.text
+        assert "RuntimeError" in caplog.text
+        assert ("Connection close failed" in caplog.text) is close_fails
+    finally:
+        try: real.close()
+        except sqlite3.Error: pass
+    verify=sqlite3.connect(str(path))
+    try:
+        assert verify.execute("SELECT COUNT(*) FROM turns WHERE query=?",(Q,)).fetchone()[0]==0
+        assert verify.execute("SELECT COUNT(*) FROM entities WHERE value IN (?,?)",
+                              ("partial-url","partial-language")).fetchone()[0]==0
+        assert verify.execute("SELECT COUNT(*) FROM turns WHERE query='baseline'").fetchone()[0]==1
+    finally: verify.close()
 
-    assert res.success is False
-    assert "No query provided" in res.error
-    assert ctx_mock.save.call_count == 0
+# J: privacy opt-out still skips DB writes and cache mutation.
+def test_j_privacy_opt_out_skips_writes_and_preserves_cache(tmp_path,monkeypatch):
+    from core.privacy import privacy
+    monkeypatch.setattr("core.context.DB_PATH",tmp_path/"privacy.sqlite")
+    ctx=ContextMemory()
+    try:
+        ctx.save("baseline",["x"],"answer",{"urls":["base-url"]}); ctx.format_for_prompt()
+        before=_cache(ctx); monkeypatch.setattr(privacy,"can_save_history",lambda:False)
+        assert ctx.save(Q,["x"],A,{"urls":["must-not-save"]},scope=S) is None
+        assert _cache(ctx)==before
+        with ctx._lock:
+            conn=ctx._require_connection()
+            assert conn.execute("SELECT COUNT(*) FROM turns WHERE query=?",(Q,)).fetchone()[0]==0
+            assert conn.execute("SELECT COUNT(*) FROM entities WHERE value='must-not-save'").fetchone()[0]==0
+    finally:
+        if ctx._conn is not None: ctx._conn.close()

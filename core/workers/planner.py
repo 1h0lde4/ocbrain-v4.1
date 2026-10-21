@@ -236,7 +236,16 @@ class PlannerWorker(AbstractCognitiveWorker):
                         "languages": parsed.entities.get("languages", []),
                         "filenames": parsed.entities.get("filenames", []),
                     }
-                    self._context_memory.save(query, modules_used, answer, entities, scope=scope)
+                    try:
+                    self._context_memory.save(
+                        query, modules_used, answer, entities, scope=scope
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "[PlannerWorker] Context save failed "
+                        "(non-blocking; error_type=%s)",
+                        type(e).__name__,
+                    )
                 except Exception as e:
                     logger.warning("[PlannerWorker] Context save failed (non-blocking): %s", e)
 
