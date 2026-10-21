@@ -613,7 +613,15 @@ class Orchestrator:
                     # conversational continuity, while every K2.2-processed
                     # query is not. This mirrors PlannerWorker's own pattern
                     # exactly, including non-blocking failure handling.
-                    self.context.save(query, capability_types, answer, {}, scope=execution_id)
+                    try:
+                        self.context.save(query, capability_types, answer, {}, scope=execution_id)
+                    except Exception as e:
+                        logger.warning(
+                            "[Orchestrator] Context save failed "
+                            "(non-blocking; error_type=%s)",
+                            type(e).__name__,
+                        )
+
                     try:
                         await self.memory.write(
                             content=answer,
@@ -842,20 +850,15 @@ class Orchestrator:
                     "languages": parsed.entities.get("languages", []),
                     "filenames": parsed.entities.get("filenames", []),
                 }
-                self.context.save(query, modules_used, answer, entities, scope=execution_id)
+                try:
+                    self.context.save(query, modules_used, answer, entities, scope=execution_id)
+                except Exception as e:
+                    logger.warning(
+                        "[Orchestrator] Context save failed "
+                        "(non-blocking; error_type=%s)",
+                        type(e).__name__,
+                    )
 
-                # 6b. Persist interaction to UnifiedMemory.
-                #
-                # Session 4:  activated UnifiedMemory as production memory owner.
-                # Session 4B: structured payload, stable identity, enriched metadata.
-                # Session 4C: fixed identity semantics (query-only hash, not Q+A hash)
-                #             and removed summary=query (summary is reserved for
-                #             LLM-generated summaries by MemoryCuratorWorker at v4.3.6).
-                #             The query is fully preserved in metadata["query"] for
-                #             analytics, replay, and future metadata-aware retrieval
-                #             (v4.3.8 Cognitive Retrieval Engine).
-                # interaction_id computed once at the top of handle() (Session 5:
-                # reused here rather than recomputed -- same deterministic value).
                 try:
                     await self.memory.write(
                         content=answer,
