@@ -182,6 +182,7 @@ async def test_b_planner_worker_context_save_failure(caplog):
     assert "database is locked" not in str(result.metadata)
     assert "Context save failed" in caplog.text
     assert query not in caplog.text
+    assert scope not in caplog.text
     assert "Capability output answer" not in caplog.text
 
 
@@ -252,6 +253,7 @@ async def test_c_k42_canonical_request_path_save_failure(caplog):
     assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert answer_expected not in caplog.text
+    assert execution_id not in caplog.text
 
 
 # ── Test D: Legacy Orchestrator compatibility path ────────────────────────────
@@ -296,6 +298,7 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure(caplog):
     assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert answer not in caplog.text
+    assert execution_id not in caplog.text
 
 
 # ── Test E: Streaming helper containment and safe diagnostics ─────────────────
@@ -414,6 +417,7 @@ async def test_f_defensive_retry_enabled_workflow_save_failure(caplog):
     assert "OperationalError" in caplog.text
     assert query not in caplog.text
     assert result.output not in caplog.text
+    assert execution_id not in caplog.text
 
 
 # ── Test G: Genuine pre-persistence errors remain failures ────────────────────
