@@ -230,13 +230,14 @@ class PlannerWorker(AbstractCognitiveWorker):
             # isolates this caller's saved turn from other callers sharing
             # the same ContextMemory singleton.
             if self._context_memory:
+                entities = {
+                    "urls": parsed.entities.get("urls", []),
+                    "languages": parsed.entities.get("languages", []),
+                    "filenames": parsed.entities.get("filenames", []),
+                }
+                # Only the persistence operation is best-effort; entity
+                # preparation above remains part of the execution pipeline.
                 try:
-                    entities = {
-                        "urls": parsed.entities.get("urls", []),
-                        "languages": parsed.entities.get("languages", []),
-                        "filenames": parsed.entities.get("filenames", []),
-                    }
-                    try:
                     self._context_memory.save(
                         query, modules_used, answer, entities, scope=scope
                     )
@@ -246,8 +247,6 @@ class PlannerWorker(AbstractCognitiveWorker):
                         "(non-blocking; error_type=%s)",
                         type(e).__name__,
                     )
-                except Exception as e:
-                    logger.warning("[PlannerWorker] Context save failed (non-blocking): %s", e)
 
             await self.emit_progress(context, "Complete", percent=100.0)
 
