@@ -30,6 +30,7 @@ class Turn:
 class ContextMemory:
     def __init__(self):
         self._lock = threading.RLock()
+        self._connection_error: Optional[str] = None
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
 
@@ -77,9 +78,23 @@ class ContextMemory:
         self._turns_cache_dirty = True
         self._prompt_cache.clear()
 
+    def _require_connection(self):
+        """Return the live SQLite connection or fail closed after recovery failure.
+
+        A connection whose rollback failed is never reused: a later commit on
+        that connection could make remnants of the failed save durable.
+        """
+        if self._conn is None:
+            raise sqlite3.ProgrammingError(
+                self._connection_error or
+                "ContextMemory SQLite connection is unavailable"
+            )
+        return self._conn
+
     def _init_db(self):
         with self._lock:
-            cur = self._conn.cursor()
+            conn = self._require_connection()
+            cur = conn.cursor()
             cur.executescript("""
                 CREATE TABLE IF NOT EXISTS turns (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +129,7 @@ class ContextMemory:
             existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(turns)").fetchall()}
             if "scope" not in existing_cols:
                 cur.execute("ALTER TABLE turns ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
-            self._conn.commit()
+            conn.commit()
 
     def save(self, query: str, modules_used: list[str], answer: str,
              entities: Optional[dict] = None, scope: str = ""):
@@ -131,8 +146,9 @@ class ContextMemory:
         if not privacy.can_save_history():
             return
         with self._lock:
+            conn = self._require_connection()
             try:
-                cur = self._conn.cursor()
+                cur = conn.cursor()
                 cur.execute(
                     "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
                     "VALUES (?,?,?,?,?)",
@@ -147,13 +163,31 @@ class ContextMemory:
                                 "INSERT INTO entities (turn_id, type, value) VALUES (?,?,?)",
                                 (turn_id, etype, str(v)),
                             )
-                self._conn.commit()
-            except BaseException as primary_exc:
+                conn.commit()
+            except BaseException:
                 try:
-                    self._conn.rollback()
+                    conn.rollback()
                 except Exception as rollback_exc:
-                    log.warning("[ContextMemory] Rollback failed after save error: %s", rollback_exc)
-                raise primary_exc
+                    # Never expose query/answer or raw secondary exception text.
+                    log.error(
+                        "[ContextMemory] Rollback failed after save error "
+                        "(rollback_error_type=%s); disabling SQLite connection",
+                        type(rollback_exc).__name__,
+                    )
+                    self._connection_error = (
+                        "ContextMemory SQLite connection disabled after "
+                        "rollback failure; restart required"
+                    )
+                    self._conn = None
+                    try:
+                        conn.close()
+                    except Exception as close_exc:
+                        log.error(
+                            "[ContextMemory] Failed to close unusable SQLite "
+                            "connection (close_error_type=%s)",
+                            type(close_exc).__name__,
+                        )
+                raise
 
             # Invalidate caches on write only after commit succeeds
             self._turns_cache_dirty = True
@@ -166,7 +200,7 @@ class ContextMemory:
         explicit scope to restrict results to turns saved with that same
         scope (CTX-SCOPE-001)."""
         with self._lock:
-            cur = self._conn.cursor()
+            cur = self._require_connection().cursor()
             if scope is None:
                 cur.execute(
                     "SELECT id, timestamp, query, modules_used, answer "
@@ -185,7 +219,7 @@ class ContextMemory:
 
     def get_entity(self, etype: str, limit: int = 5) -> list[str]:
         with self._lock:
-            cur = self._conn.cursor()
+            cur = self._require_connection().cursor()
             cur.execute(
                 "SELECT value FROM entities WHERE type=? "
                 "ORDER BY id DESC LIMIT ?", (etype, limit)
@@ -239,6 +273,7 @@ class ContextMemory:
         interactions system-wide, regardless of who produced them.
         """
         with self._lock:
+            self._require_connection()
             cache_key = (n, scope)
             if cache_key in self._prompt_cache and not self._turns_cache_dirty:
                 return self._prompt_cache[cache_key]
