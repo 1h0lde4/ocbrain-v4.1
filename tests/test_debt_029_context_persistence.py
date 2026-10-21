@@ -273,7 +273,7 @@ async def test_d_legacy_orchestrator_compatibility_path_save_failure():
     )
     try:
         with patch("core.parser.parse", return_value=parsed), \
-             patch("core.classifier_v3.classify", return_value=[{"module": "knowledge"}]), \
+             patch("core.orchestrator.classify", return_value=[{"module": "knowledge"}]), \
              patch("core.shadow.shadow_learner.shadow_learner.record_interaction"):
             answer = await orch.handle(query, execution_id=execution_id)
     finally:
