@@ -175,7 +175,7 @@ async def test_b_planner_worker_context_save_failure(caplog):
     assert result.metadata.get("outcome") == "success"
     assert invocation_count == 1
     failing_ctx.save.assert_called_once_with(
-        query, ["knowledge"], "Capability output answer", expected_entities, scope=scope
+        query, ["knowledge"], answer, expected_entities, scope=scope
     )
     assert "database is locked" not in result.output
     assert "OperationalError" in caplog.text
