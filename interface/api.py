@@ -416,8 +416,8 @@ async def _save_context_background(
     except Exception as exc:
         # Diagnostic only: never log the query or computed answer here.
         log.warning(
-            "[StreamingAPI] Context save failed (non-blocking; execution_id=%s; error_type=%s)",
-            execution_id, type(exc).__name__,
+            "[StreamingAPI] Context save failed (non-blocking; error_type=%s)",
+            type(exc).__name__,
         )
 
 
