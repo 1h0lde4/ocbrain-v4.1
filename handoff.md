@@ -1,3 +1,1103 @@
+# Session Handoff (version 4, 2026-10-21)
+
+> Versions 1–3 of this file are retained verbatim below the markers "ARCHIVED: handoff version 3" and "ARCHIVED: earlier handoff content". Where they disagree with this version, this version and the live repository win. A handoff is a transfer record, not an authority (`PROJECT_INSTRUCTIONS.md` §18.4.9). Everything below the line "Appendix A" marker at the end of this version is verbatim source material.
+
+## 1. Handoff Metadata
+
+- Handoff version: 4
+- Created at: 2026-10-21 22:00 UTC (sandbox clock; the session's conversation date was 2026-10-22)
+- Workstream: Verification / Critic / Evidence, Phase C, Batch 3C-B **design analysis** (Q2, Q4, Q5 decision packs), plus a closed side thread (ADR-KERNEL-07 live-check PRs #45, #61, #80)
+- Task identifier: Q4-b "Final Analytical Closure, Source Audit, and Decision-Readiness" (pending mission, Appendix A)
+- Source session purpose: resume from handoff v3, reconcile and document the 3C-B source study, prepare Q2/Q5/Q4/Q4-b decision briefs (analysis only), and handle the PR queue that interleaved with it
+- Transfer status: see §19
+
+## 2. Original Starting Prompt
+
+The session began with the user supplying three documents and no instruction text: `PROJECT_INSTRUCTIONS.md` (the governing contract, in the repository), handoff version 3 (the file now archived below) and `docs/reports/verification-state-reconciliation-2026-10-09.md`. The first user messages afterwards were "Continue". Under `PROJECT_INSTRUCTIONS.md` §18.4.9 this meant: perform fresh-session recovery from handoff v3, verify, and resume at its §17 step 1. The pending task is the user's most recent mission prompt, preserved verbatim in **Appendix A** (Q4-b closure). No earlier prompt is lost: the original prompts of the earlier phases are in the archived versions.
+
+## 3. Subsequent User Instructions / Corrections
+
+Condensed, chronological. Wording that matters is quoted.
+
+1. Resume from v3. The user later supplied the full master prompt text (§0–§117) and asked that Q2 and Q5 be closed against it.
+2. **Documentation-only addendum to tracker §10** (§10.6): prove repository state first; document Q1–Q6 without closing any; keep source-verified facts, interpretations, candidates and decisions apart; state that the master prompt is "not confirmed byte-identical"; change only the tracker; `git diff --check`; "one narrowly scoped local commit. Do not push, open a PR, merge, or modify any remote state."
+3. Provenance: the user reported that `9216b181653b9088b120f1b63069c83e4d1960e293d4b2d64649495693a20105` is the hash of the original master prompt file and that the copy supplied in this session matches ("they match"). Instruction: record it as a **second local commit** on top of the first, with the user's replacement sentence for the bolded sentence in §10.6; preserve the first commit and its patch; no push.
+4. Keep the "this session" wording as is (no third commit). Park C3 (the 3C-A independent-review claim): "evidence-blocked, not reopened". 3C-A stays "ACCEPTED / GATE SATISFIED (qualified)"; 3C-B stays design-blocked.
+5. PR queue (a separate thread): review PR #45 read-only; "You do it, use the token" (push the one-line runbook fix to PR #45's branch); the user confirmed in plain words that they authorized the merges of #61 and #45 ("Yes"); "Fix it" (the `compare.json` byte-identity wording, PR #80); "check first if there are any changes before merging, if everything is okey then merge" (#80 merged with `premerge_guard.py`).
+6. The user recommended, in order: Q2/Q5 decision briefs first (Q2 first, Q5 designed around its dependencies), then the dependency matrix, then the ADR-KERNEL-07 retrospective as a separate governance task. Boundaries: no implementation; a recommendation is not an accepted decision; branch integration is separate.
+7. Q4 brief specification (analysis only, ten acceptance criteria). Then a series of reviews applied to the Q4 brief and the Q2/Q5 pack. The user's stances, all **candidates, none accepted**: D6's ratified wording is the tracker's ("recorded on two independent axes, kept distinguishable"), "independently typed and queryable" is a pre-ratification proposal; lifecycle FAILED is attempt-scoped, a run may hold several attempts (Q2-g); a retry example must not assume the later conclusion governs the target; coverage counts targets, not attempts; Q4-g conditional candidate (explicit non-conclusion where an assessment exists but cannot conclude; activity records where none was produced; preserve criterion results where aggregation is undefined); Q4-a interpretation boundary; Q4-b is three questions (trigger, level and terminality, outcome obligation).
+8. Latest user messages: the Q4-b closure mission prompt (Appendix A), then: "push the finished work to the repo, then create a handoff file for a new session to resume and continue this work."
+9. **Credentials.** The user supplied a GitHub token in user preferences and said "use the token". They also stated it is compromised and should be rotated. It is never written to the repository, memory or any output. If the user supplies a replacement, use it the same way (HTTP `extraheader`, environment variable, no persistence). Do not ask each time.
+10. Standing process rules from the user: label every claim ([R] [NI] [A] [P] [K] [D]); never promote a candidate to a decision; never invent vocabularies, states, identities, relations or aggregation rules; no code, enum, schema or contract change; update the tracker only when a decision is accepted; discrepancies are findings, not decisions.
+
+## 4. Goal, Scope & Success Criteria
+
+### Goal
+Carry the 3C-B design analysis to decision-ready briefs so the owner can accept or reject candidates on Q2, Q4, Q5 (then Q1, Q6, Q3) without rediscovering distinctions, and so that implementation can start only after explicit acceptance.
+
+### In scope
+Analysis documents (Claude Docs), read-only repository audit, tracker documentation edits only when authorized, the handoff.
+
+### Out of scope
+Any code, enum, schema, lifecycle, contract, ADR or test change; frozen v1–v3 edits; changing D1–D10 or ODI-3C-B-01/02/03; accepting candidates; integrating the Verification branch into `main` (separate decision); implementing `FAILED`, run/step/attempt contracts or any aggregation rule.
+
+### Success criteria
+The pending mission's definition of done (Appendix A §23), plus: every open item states its alternatives, consequences, dependencies and closure condition; the Q4-b brief and the Q4 brief ledger agree; the repository stays unchanged unless authorized.
+
+## 5. Requirement Ledger
+
+| ID | Requirement | Source | Status | Evidence | Notes |
+|---|---|---|---|---|---|
+| R1 | Tracker §10.6 documents Q1–Q6 without closing any | User instruction 2 | VERIFIED, pushed | commit `b52c53e`; remote tip `2221ac1` | |
+| R2 | Provenance wording for the master prompt hash | User instruction 3 | VERIFIED as recorded, pushed | commit `2221ac1` | The match is user-reported, not computed by any session |
+| R3 | Q2/Q5 decision pack | User instruction 6 | IMPLEMENTED (Claude Doc, external), candidates only | doc id in §8 | Corrected for the `resume()` error on 2026-10-21 |
+| R4 | Q4 brief (queryable non-conclusion) | User instruction 7 | IMPLEMENTED (Claude Doc, external), candidates only | doc id in §8 | Ledger §10.3, model §10.4 |
+| R5 | Q4-b brief, first version | User instruction 7 | IMPLEMENTED (rev 1) | doc id in §8 | **Revision 2 not applied** (R6) |
+| R6 | Q4-b closure per Appendix A | User instruction 8 | IN PROGRESS: audit about 70 percent done, revision 2 text drafted in the session but not saved | §11 | The bulk-update attempt was refused (§12) |
+| R7 | Publish the finished repository work | User instruction 8 | VERIFIED | `git ls-remote` shows `2221ac1` | Plain fast-forward from `dbdfcb7`, no force |
+| R8 | Handoff for a fresh session | User instruction 8 | IMPLEMENTED in this file | commit recorded in §7 | |
+| R9 | ADR-KERNEL-07 retrospective disposition | User instruction 6 | OPEN | four-fact text drafted in the session, not recorded anywhere | Separate governance task |
+| R10 | M4 hunk in `CURRENT_STATE.md` | v3 R10 | OPEN | never answered | Pushed as is; drop only on the user's word |
+| R11 | Rotate the exposed GitHub token | User statement | OPEN, user action | | |
+| R12 | Export the three Claude Docs into the repository | `PROJECT_INSTRUCTIONS` §18.4.8.13 | OPEN | not done: cost and the user's acceptance | See §19 |
+
+## 6. Current Verified State
+
+**VERIFIED (2026-10-21)**
+- Remote `feature/verification-critic-evidence-phase-c` = `2221ac1d33d0c41d7bc70a716425d689d161ffcc` after this session's push (fast-forward from `dbdfcb7`). Two documentation commits only; the only changed file is the Phase C tracker.
+- `core/verification/` and its tests unchanged since `fe338ed`: pytest 424 passed, stdlib mirror 424 OK, `mypy` clean on 28 files (run today).
+- `main` = `f13bfde`. `core/verification` is not on `main`, and no module outside the package, its tests and the docs imports it on either ref. Divergence of the branch from `main`: 171 commits only on `main`, 58 only on the branch.
+- PRs #61, #45, #80 are merged (merge commits `4b90ed9`, `3f8ef97`, `488129b`). ADR-KERNEL-07 is still PROPOSED and `creative_content_anchor_enabled` is `false`.
+- 3C-A: ACCEPTED / GATE SATISFIED (qualified). 3C-B: design-blocked.
+
+**IMPLEMENTED BUT NOT VERIFIED BY ANYONE ELSE:** the Claude Docs (analysis), the tracker §10.6 addendum text.
+
+**PROPOSED (candidates only):** all dispositions in §10.
+
+**DEFERRED:** V2 and high-assurance items, `VerifiedState`, C-MoE, Lab, Context and Memory integration.
+
+**BLOCKED:** 3C-B implementation (open decisions), publication of the branch into `main` (integration strategy undecided).
+
+**UNKNOWN:** the original C3 claim text and the verbatim S13 row (never recovered); whether Graphify will re-review the merged head; who else edits the Docs.
+
+## 7. Git / Repository Checkpoint
+
+- Primary repository: `https://github.com/1h0lde4/ocbrain-v4.1` (public)
+- Branch: `feature/verification-critic-evidence-phase-c`
+- Base branch: `main` at `f13bfde` (divergence 171 only-on-main / 58 only-on-branch)
+- HEAD before handoff: `2221ac1d33d0c41d7bc70a716425d689d161ffcc`
+- Transfer commit (the implementation state being transferred): `2221ac1`. It sits on `b52c53e`, on the previous remote tip `dbdfcb7`. Both are documentation commits that touch only the Phase C tracker.
+- Handoff commit: the latest commit touching `handoff.md` (`git log -1 -- handoff.md`). A file cannot contain its own hash.
+- Parent of the handoff commit: `2221ac1`
+- Working tree status: clean (scratch clone `/home/claude/recov`, which is ephemeral)
+- Relevant untracked or ignored files: none (ignored caches only)
+- Submodules: none
+- Remote push status: `2221ac1` pushed 2026-10-21 by plain fast-forward (`dbdfcb7..2221ac1`), no force, using the user-authorized token through an HTTP `extraheader`
+- Remote verification status: `git ls-remote` returned `2221ac1…` for the branch right after the push; `main` stayed at `f13bfde`. The handoff commit is verified the same way (§19)
+
+## 8. Active Files / Modified Files / Artifacts
+
+**In the repository**
+- `docs/architecture/verification-critic-evidence-system-phase-c-semantic-pipeline-reconciliation.md`: §10.6 added (3C-B source study against the master prompt; no question closed); one provenance sentence replaced. Edit only on the user's authorization.
+- `handoff.md`: this file.
+
+**Outside the repository (Claude Docs in the claude.ai project; not reproducible automatically)**
+- "Verification 3C-B: Q2 and Q5 decision pack": project id `b5227c99-327f-483d-b726-3f93d37b8265`, content node `4a3bfaae-440e`, `https://claude.ai/artifact/PNJZ381PjSfzMiKeYcaAvg`, revision 28.
+- "Verification 3C-B: Q4 queryable non-conclusion brief": project id `85f80a7c-c273-4902-b8f1-fe009d3a3de5`, content node `35e76bcb-57e5`, `https://claude.ai/artifact/HYVpzUxz9PspA4hmUcPLHS`, revision 13. Sections 1 to 10.4; ledger in §10.3.
+- "Verification 3C-B: Q4-b trigger boundary of D6": project id `a8a1f900-2bb0-46ad-8ead-e055cf939aa9`, content node `c9bfd0a8-bd8a`, `https://claude.ai/artifact/MpmCtTRoaiHKQiQkJNCJLG`, revision 1 (first version; revision 2 not applied).
+- To read them, load the Claude Docs `read` tool (tool search), read the project, then the content node (outline projection first). `Artifact read` does not return their text.
+
+**Project memory (outside the repository):** `areas/verification-3cb-decision-pack.md` (current thread), `areas/verification.md` (earlier notes, near its size cap), `areas/adr-kernel-07-live-check.md`, `decisions-and-principles.md`. Notes are written in French.
+
+**Other:** `premerge_guard.py` lives only at `handoff/premerge_guard.py` in commit `cae4859` (a "do not merge" handoff branch), not on `main`.
+
+## 9. Changes Made
+
+- **Repository (documentation only):** tracker §10.6 and its provenance sentence (commits `b52c53e`, `2221ac1`). No code, test, schema, contract or ADR change on the Verification branch.
+- **Merged in the closed PR thread (on `main`):** runbook line 44 (commit `6b6cf25`, inside PR #45) and the `compare.json` byte-identity wording row (commit `9491fb9`, PR #80).
+- **Docs:** the three analysis documents were created and revised. On 2026-10-21 the `resume()` claim was corrected in the pack and in the Q4 brief.
+- **Behavior, schema, governance, security:** none.
+
+## 10. Decisions & Rationale
+
+**Ratified earlier:** D1–D10 (tracker §10.2). Still open: ODI-3C-B-01 (scope assignment), ODI-3C-B-02 (lifecycle FAILED ownership), ODI-3C-B-03 (type names).
+
+**Accepted this session (by the user):** the documentation-only §10.6 addendum; the provenance sentence; leaving "this session" wording as is; the authorization of the PR #61, #45 and #80 merges; the process rules in §3 item 10.
+
+**Candidate ledger (none accepted; reopen only on a verified contradiction, new evidence, a changed dependency, a governance or security concern, a higher authority, or the user's request).**
+
+| ID | Question | Candidate | Boundary |
+|---|---|---|---|
+| Q2-a | Where does lifecycle FAILED live | Operational failure of one verification attempt, not a durable result | Departs from the literal title of master §66 and needs §66's list split |
+| Q2-b | Partition of §66's 15 states | Operational: REQUESTED, IN_PROGRESS, FAILED, CANCELLED; assessment states; validity states | ESCALATED ambiguous; owner of the operational ones unresolved |
+| Q2-c | Cause vocabulary | `VerificationExecutionFailure` as the one vocabulary | Occurrence record unresolved (Q2-h) |
+| Q2-d | Retry identity and history | A verification-attempt identity distinct from execution `attempt_id` (DEBT-015) | Names are Q3 |
+| Q2-e | Does a failed execution emit a result | Open | D6's two facts must stay exposed (Q4) |
+| Q2-f | `verification.failed` placement | Open | Events unbuilt |
+| Q2-g | Attempt/run relationship | Open | Blocks Q4-e and parts of Q4-b |
+| Q2-h | Cause vocabulary versus cause record | Open | Links to Q6 |
+| Q4-a | Which D6 wording | The tracker's; the design question (typed, queryable axes) is separate | Not claimed that D6 mandates queryability or an object type |
+| Q4-b1 to b5 | Trigger of D6's pairing; level, terminality, recovery; outcome policy and lifecycle-recording policy; `TOOL_FAILURE` referent; who detects and records a silent crash | Not accepted; this is the pending mission (Appendix A) | b1 and b3 can be stated as policy independently of Q2's schema; b2 propagation, b4 and b5 depend on Q2-g, Q4-h and owner clarification |
+| Q4-c | Does §85's "non-definitive result" presuppose an object | Keep both readings; accept structured, machine-readable reasons as a candidate requirement | Code catalogue unresolved |
+| Q4-d | Distinct "cannot be established" answer | Three distinguishable answers [NI from master §1 and §26] | Owner to confirm it as normative |
+| Q4-e | Unit of a non-conclusion assertion | None | Depends on Q2-g |
+| Q4-f | Retention and recovery | None | Sources set none |
+| Q4-g | Which object carries a non-conclusion | Conditional: explicit non-conclusion where an assessment exists but cannot conclude; activity and verification records where none was produced; criterion results preserved while aggregation is undefined | Aggregation (master §46) unbuilt; what counts as a produced assessment is undefined |
+| Q4-h | Writer when the verifier crashes | The supervising execution boundary or an activity or event mechanism, recording an observed fact only | Owner, persistence failure and linkage unspecified |
+| Q4-i | Meaning of "non-conclusion" | No definitive semantic conclusion established from the available evidence; never read as false, contradicted or successful | |
+| Q5-a to e | Coverage ontology (§24 versus frozen v2 §13), measurement rules, representation (per-disposition counts preferred as a base), summary status (not adopted, 3B refuses "overall"), counting of targets versus attempts | See the Q2/Q5 pack | Q5 counts targets, not attempts |
+| Q1, Q3, Q6 | Scope assignment; names; `failure_control` derivation, vocabulary and references | Open | Q6 must not map the four causes mechanically to controllability |
+
+Candidate resolution order: Q2, Q4, Q5 (ontology, measurement, representation), Q1, Q6, Q3.
+
+## 11. Investigation Already Performed
+
+| Area | Inspected | Result | Revisit trigger |
+|---|---|---|---|
+| Branch and remote | 2026-10-21 | Branch pushed at `2221ac1`; `main` at `f13bfde`; no `core/verification` on `main`; no importer outside package, tests, docs on either ref | Remote moved |
+| Tracker §10 | D1–D10 verbatim, §10.3, §10.6 | D6 and D7 wording verified; tracker D1 is v1 §20 authority | Tracker edited |
+| Master prompt sections | Quotes taken from the supplied text (§1, 24, 26, 36, 42, 43, 45, 46, 59, 61–69, 85, 86, 91, 93, 98, 99, 100, 104-J) | Quotations match the supplied text | A different file version appears |
+| Frozen v1, v2, v3 | v1 §11, §20, §23, §25, Self-Review Pass 3; v2 §7, §11, §13, §30, §31, §40, Review C | Verified; v2 §7's pointer to §17 for events is stale (events are §31) | |
+| Built contracts | `verdict.py`, `criterion_result.py`, `method.py`, `receipt.py` | `execution_failure` is single-valued and requires UNVERIFIABLE at result level; at criterion level it requires ATTEMPTED and UNVERIFIABLE; no lifecycle field; no run, step or attempt contract; the criterion docstring says the stricter mapping "cites no architectural source" and was written in 3C-A, before D6 | Package changed |
+| 3C-A C3 numbers | Enumerated all 165 combinations | 16 accepted (1, 1, 14); 44 of the 60 state/verdict combinations rejected by the crash rule | Never needed again |
+| Runtime on `main` (read-only) | `core/workflow/runtime.py`, `core/orchestrator.py`, `core/runtime/execution_outcome.py` | `execute()` does not raise; `_emit_event` logs and swallows failures; `resume()` resets only RUNNING and CANCELLED nodes and skips COMPLETED and FAILED ones; workflow success is computed from the last result, so an error-branch recovery can read as success; the K4.2 orchestrator path still ignores node errors (FZ-01 open in code); `FailureType` has success, completed_with_partial_output, stalled, hard_deadline, cancelled, provider_failure, empty_response, validation_error, other_failure | Runtime changed |
+| Freeze-remediation | `KNOWN_ISSUES.md` FZ-01 to FZ-07, DEBT-015, DEBT-007 | FZ-02 B2a (PR #67, 2026-10-07) and B2b (PR #71, 2026-10-09, "Decision D2=(i)") are merged, but the FZ-02 row still says open and blocked: stale. FZ-06 open (identity not joinable). DEBT-015 open (no stable identity across retries). DEBT-007 open (nothing increments step or token counts), so `BUDGET_EXHAUSTED` has no wired producer | KNOWN_ISSUES synced |
+| Label collisions | Tracker, project notes, KNOWN_ISSUES | "D1" means (1) tracker D1, v1 §20 authority; (2) K4.2 D1, layered semantic authority; (3) freeze-remediation open decision D1 for FZ-01, the public result contract. The mission's "D1 failure-reporting path" matches (3). "D2" means tracker D2 (FAILED as result status) and freeze D2 (stalled and deadline outcomes). The owner should confirm the intended D1 | Owner clarifies |
+| **Not yet inspected for the mission** | `EvaluatorWorker` and supervisor failure handling; Runtime cancellation semantics beyond the token; which Runtime failure-path tests exist; whether a node recovered through an error branch keeps its FAILED state; DEBT-015 code beyond its KNOWN_ISSUES row; external research | | Needed by Appendix A §§11 to 17 |
+
+## 12. Failed Attempts / Dead Ends
+
+- **Unauthenticated GitHub API** is rate-limited for the shared sandbox address. Use `git ls-remote` and `git fetch` for refs and commits, and `web_fetch` for public pages. Use the token only on the user's explicit instruction.
+- **Bulk rewrite of the Q4-b brief:** an `update` that deleted all body blocks and inserted a drafted Part 1 was refused with an "artifact-content-authored-by-others" error. The brief is believed unchanged at revision 1: read its outline first. Do not retry a bulk delete. Add sections with inserts after known block ids and edit with find-and-replace.
+- **`Artifact read` on a Claude Doc** copies only the viewer shell (85 files, 18 MB), not the text. Remove `/mnt/user-data/outputs/artifacts` if it recurs.
+- **Docs find-and-replace:** find strings that contain apostrophes or curly quotes can fail to match; verify by viewing the paragraph (runs display split in the XML).
+- **The claim that `resume()` resets failed nodes** was wrong; corrected on 2026-10-21. The 2026-10-09 reconciliation report (§6) repeats the error and was not edited.
+- `/bin/sh` is dash: no arrays, no process substitution; use `bash -c`. A polling loop with nested quoting failed; use a small script file.
+
+## 13. Verification Evidence
+
+All run 2026-10-21 unless noted.
+- `python -m pytest tests/test_verification_contracts.py -q -p no:cacheprovider` on the branch: 424 passed.
+- `python tests/verification_run_tests_stdlib.py`: 424 tests, OK.
+- `python -m mypy --explicit-package-bases core/verification`: no issues in 28 source files.
+- `git push origin HEAD:refs/heads/feature/verification-critic-evidence-phase-c`: `dbdfcb7..2221ac1`; `git ls-remote` then showed `2221ac1…`.
+- Earlier (2026-10-12): patches `0001-tracker-10-6-3cb-source-study.patch` (SHA-256 `8bd1b2ca7746d9b4fb305ef877af330b7f233a03e57570ab90eee4b31f29fb16`) and the combined two-commit patch (`7af3f154e33fda938015915a562da6cb19598641247cc4b64ae98fb18f2bd198`) applied to a clean `dbdfcb7` reproduce the commit trees; the tree after both commits is `3c6ff63aa00316c2299c87869032e23bc7c0e500`.
+- PR #80: guard self-test 25 of 25, dry run and `--merge` pinned to head `9491fb9`; CI #254 Success; guard script SHA-256 `a0a9018ec6f6c30747a9cca6837e6b3053924042a808b7fe7ee62f84003f151b`.
+- Not run: the broader repository suite; runtime tests; any live Verification path (none exists).
+
+## 14. Environment / Tooling Assumptions
+
+- Python 3.12.3; scratch venv `/home/claude/venv-recov` with pytest, pytest-asyncio and mypy (ephemeral; recreate it). Runtime tests need `pytest-asyncio` (declared in `pyproject.toml`).
+- Scratch clones `/home/claude/recov` (Verification branch) and `/home/claude/pr45` (a `main` checkout) are ephemeral. Clone with `git clone --filter=blob:none` and no credentials; check out blobs on demand.
+- Network: github.com, PyPI and npm allowed; the unauthenticated `api.github.com` is rate-limited.
+- Claude Docs tools: `batch`, `guide`, `update` are available; `read`, `create`, `export`, `query` and `delete` load through tool search. After creating a Doc, open it with the Artifact tool's `open` action.
+- Project memory notes are in French.
+- No secret is recorded here. The GitHub token is supplied in the user's preferences; pass it through an environment variable and an HTTP `extraheader`, never in a remote URL or a file.
+
+## 15. Unresolved Questions / Risks / Blockers
+
+- All candidate decisions in §10 await the owner. The first permissible ones are Q4-a to Q4-d, Q4-g and Q4-i, then Q4-b1 and Q4-b3 (neither depends on Q2's schema).
+- The "D1" reference in the Q4-b mission (§11).
+- Q2-g (attempt/run relationship) blocks Q4-e, Q4-b2 and Q4-b5.
+- The original C3 claim and the verbatim S13 row are unrecovered; C3 stays parked.
+- The M4 hunk (R10) is unanswered.
+- Branch integration into `main` is undecided (171/58 divergence and growing). Pushing the branch does not integrate it.
+- The ADR-KERNEL-07 retrospective disposition is drafted but unrecorded; Graphify has not re-reviewed the merged head; the other claude.ai session (`Claude-claude.ai-sandbox`) must fetch `main` before any push; branch protection and `enforce_admins` were never checked.
+- The GitHub token is exposed in plain text; rotation is a user action.
+- Risk: the three Docs exist only outside the repository; revision 2 of the Q4-b brief exists only as a plan.
+
+## 16. Relevant Information / References
+
+`PROJECT_INSTRUCTIONS.md` (§16.4, §16.5, §18.4.8 to §18.4.13, §22); tracker §10 (`docs/architecture/verification-critic-evidence-system-phase-c-semantic-pipeline-reconciliation.md`); frozen `docs/architecture/verification-critic-evidence-system-architecture-v1.md`, `-v2-frozen.md`, `-v3-final.md`; `docs/reports/verification-state-reconciliation-2026-10-09.md` (§6 has the `resume()` error); `KNOWN_ISSUES.md` on `main` (FZ-01 to FZ-07, DEBT-007, DEBT-015); `core/verification/verdict.py`, `criterion_result.py`, `method.py`, `receipt.py`; on `main`: `core/workflow/runtime.py`, `core/orchestrator.py`, `core/runtime/execution_outcome.py`, `tests/test_fz02_stalled_deadline_failure.py`. The master prompt (§0–§117) is not in the repository; its hash match is user-reported (`9216b181653b9088b120f1b63069c83e4d1960e293d4b2d64649495693a20105`). PRs #45, #61, #80 on GitHub.
+
+## 17. Next Steps
+
+1. **Verify the transfer** (§18).
+2. **Apply revision 2 of the Q4-b brief** per Appendix A, using §11's findings and the sections planned in the session: baseline and authority; verified sources; what D6 and D7 establish and the scope safeguard (three readings: unit-scoped, enclosing-scoped, terminality-scoped); terminology table; the precise fail-closed invariant; failure event, terminality and recovery (ten cases); execution scopes; completion stages and finalization cases; observed versus inferred cause (fourteen cases); the outcome and lifecycle-recording split of Q4-b3; `TOOL_FAILURE`; partial, late and retried results; failure-reporting path (freeze D1, FZ-01 and the Runtime); identity and provenance; an end-to-end failure-path audit; dependencies; two linked tables for the twenty scenarios; the ledger with all required fields; the closure test; the definition-of-done check; limits. Use small inserts and find-and-replace, not a bulk rewrite. Keep a revision log.
+3. **Finish the audit gaps** listed under "Not yet inspected" in §11 before claiming the failure path is traced.
+4. **Align the Q4 brief's ledger rows** with the Q4-b brief and fix any remaining `resume()` statement.
+5. **Report per Appendix A Deliverable C.** Make no repository change unless the user authorizes it.
+6. Hand the owner the decision order in §10. Do not accept anything for them.
+7. Separate tasks, each needing the user's go-ahead: export the three Docs into the repository (R12); record the ADR-KERNEL-07 retrospective disposition (R9); decide the integration strategy for the Verification branch; tighten the "S13 alone allows 60" wording; the F1 and F2 wording items; rotate the token.
+
+## 18. Resume Instructions
+
+1. Fetch and verify: `git fetch origin`, then `git rev-parse origin/feature/verification-critic-evidence-phase-c`. Expect the latest commit touching `handoff.md`, or a later commit; `2221ac1` is the transfer commit and an ancestor.
+2. Check that the commits in §7 are on the remote (`git ls-remote`). If the branch was rewritten, compare before changing anything.
+3. Re-measure `main` (it moves) and the divergence. Re-run the package checks in §13 if the branch changed.
+4. Read this file fully, then the project memory notes, then open the three Docs and read each outline (note their revisions in §8).
+5. Resolve any mismatch before changing anything. Do not trust this file over the repository.
+6. Begin at §17 step 2. Do not redo the investigation in §11 unless the repository moved.
+
+## 19. Transfer Status
+
+**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING.**
+
+All repository work is committed and pushed, and the remote tip was verified. The one missing item is the full-text export of the three Claude Docs (§8), which exist only in the claude.ai project; `PROJECT_INSTRUCTIONS.md` §18.4.8.13 asks that nothing required for continuation lives only outside the repository. The substantive content is replicated in §10 (decision ledger), §11 (audit findings) and §17 (revision plan), and the Docs can be read through the Docs tools, so a fresh session can resume from this file; but the long-form tables and quotations are not reproducible automatically. To close it: either the user accepts the dependency, or authorizes an export of the three Docs into the repository (a documentation-only commit). The unsaved revision-2 text of the Q4-b brief is not preserved anywhere and must be re-created.
+
+---
+
+## Appendix A: pending mission prompt (verbatim)
+
+Preserved verbatim from the user's message that preceded the instruction to push and write this handoff. It is the task a fresh session should continue (R6).
+
+``````text
+# OCBrain Verification 3C-B — Q4-b Final Analytical Closure, Source Audit, and Decision-Readiness
+
+**Workstream:** Verification / Critic / Evidence — Phase C
+**Decision area:** Q4-b — D6 trigger boundary, failure scope, lifecycle obligations, and epistemic outcomes
+**Task type:** Source-grounded repository audit and analysis-document correction
+**Authorization:** Documentation and analysis only
+**Required result:** A corrected, internally consistent, decision-ready analytical brief, an aligned analysis-only decision ledger where safe, a verified diff, and a factual completion report
+
+---
+
+## 1. Mission
+
+Complete the remaining analytical work on:
+
+**“Verification 3C-B: Q4-b trigger boundary of D6”**
+
+The brief correctly establishes the central distinction: D6 and master §104-J establish a pairing for a verifier crash—lifecycle/execution failure and epistemic result `UNVERIFIABLE`, never `PASS`. They do not establish that every `UNVERIFIABLE` result means a crash occurred, nor do they automatically extend the same pairing to every timeout, tool failure, budget exhaustion, or other infrastructure incident.
+
+The built Phase C contracts enforce a narrower and differently shaped rule. Their behavior is implementation precedent unless an authoritative project decision establishes otherwise.
+
+The remaining task is to determine exactly what the existing sources establish, inspect how the repository implements or fails to implement the relevant behavior, correct any analytical gaps, and expose the actual decisions still required.
+
+**Do not return only another review or a plan. Inspect the available sources, make the permitted documentary corrections, verify the resulting changes, and deliver the artifacts and findings.**
+
+The objective is analytical closure, not fabricated consensus. A question may remain open if its authority or evidence is insufficient, but it must be stated precisely enough that the appropriate decision-maker can resolve it without rediscovering the same ambiguities.
+
+## 2. Current status and governing boundaries
+
+The source brief reports the following status. Verify it against the live materials rather than assuming it remains current:
+
+- The work is analysis only.
+- Q2-a remains a candidate.
+- No enum, lifecycle, schema, contract, ADR, or implementation change is authorized.
+- D1–D10 retain their existing status and meaning.
+- ODI-3C-B-01, ODI-3C-B-02, and ODI-3C-B-03 retain their existing status and meaning.
+- The Phase C contracts are not wired into a production path, according to the source brief; verify whether this remains true.
+- The master prompt's file-level hash match with an earlier-session file was previously reported by the user. It must not be represented as independently verified unless the evidence supports that claim in the current environment.
+
+The original brief treats these five items as decisions required:
+
+- **Q4-b1:** Which execution failures trigger D6's crash-specific pairing?
+- **Q4-b2:** At what execution level is failure classified, and how does failure propagate?
+- **Q4-b3:** What epistemic outcome is required for non-crash failures, and when is lifecycle failure recorded separately?
+- **Q4-b4:** What does `TOOL_FAILURE` refer to?
+- **Q4-b5:** Who detects and records a silent crash?
+
+Retain existing decision identifiers wherever possible. Split independent policy dimensions into explicit sub-items when necessary, without breaking existing references or pretending that an unratified decision is accepted.
+
+## 3. Non-negotiable authorization limits
+
+### 3.1 Permitted work
+
+You MAY:
+
+- Inspect the current repository, branch, commit history, worktree, relevant remote state, source documents, contracts, tests, trackers, and known-issues material.
+- Trace relevant code paths in read-only fashion, including exception handling, timeout handling, worker/supervisor boundaries, failure reporting, result construction, aggregation, persistence, and delivery.
+- Consult external research, standards, or GitHub implementations where a specific question warrants corroboration. Such material cannot override OCBrain's own governing decisions unless the project has explicitly adopted that authority.
+- Revise the Q4-b analysis brief in place.
+- Update directly associated analysis-only ledger entries if this can be done without changing unrelated decisions or ratified content.
+- Add source-grounded terminology tables, decision matrices, scenarios, precise unresolved questions, and cross-references.
+- Run targeted read-only validation and document-consistency checks.
+- Produce a narrowly scoped proposed diff rather than changing a shared tracker if a safe, scoped edit is not possible.
+
+### 3.2 Prohibited work
+
+You MUST NOT:
+
+- Modify production code, implementation behavior, enums, schemas, lifecycle models, contracts, ADRs, or test expectations.
+- Modify frozen v1, v2, or v3 documents to make them conform to the current candidate.
+- Promote an unaccepted candidate into an accepted decision.
+- Treat current implementation behavior as architectural authority.
+- Resolve Q2-a, Q2-g, Q4-g, Q4-h, or Q6 by implication.
+- Change D1–D10 or ODI-3C-B-01/02/03.
+- Introduce a new epistemic verdict such as `FAILED`.
+- Invent lifecycle states, identity fields, event types, cause enums, relations, retry rules, aggregation rules, or transitions to make the analysis appear complete.
+- Push or merge changes, open a pull request, create unnecessary branches, or discard unrelated user work.
+- Claim tests passed, files were inspected, hashes matched, or execution paths were traced unless the evidence shows that they did.
+
+If a source, dependency, owner, or implementation path cannot be verified, report the limitation explicitly and continue with the available evidence.
+
+## 4. Establish the live baseline before editing
+
+Begin by inspecting:
+
+1. The current branch, HEAD commit, working-tree status, relevant remote state, and recent history.
+2. The live Q4 brief and its decision ledger.
+3. Tracker §10.2, including D6 and D7.
+4. The master prompt, including §§43, 46, 66, 68, 85, 91, 93, 98, and 104-J.
+5. Relevant frozen v1, v2, and v3 passages.
+6. Q2-a and Q2-g material.
+7. Q4-g, Q4-h, and Q6 material.
+8. D1 and all available failure-channel documentation.
+9. Current `KNOWN_ISSUES` material and relevant issue/PR/branch status.
+10. The implementation files, including `verdict.py`, `criterion_result.py`, and `method.py`.
+11. Relevant verification-result, run, step, attempt, evidence, identity, provenance, and lifecycle contracts.
+12. DEBT-015 execution-identity material, if it remains applicable on the current repository.
+13. Relevant tests and actual execution entry points, as well as any available evidence about whether the Phase C code is wired into a real execution route.
+
+The historical references `488129b`, `1d813bd`, `fe338ed`, `dbdfcb7`, `2221ac1`, and other commits mentioned in earlier reports are pointers, not presumed current baselines. Establish the actual current state before relying on any of them.
+
+Inspect surrounding sections and relevant history, not merely quoted excerpts. Establish whether each source is ratified, frozen, proposed, superseded, implementation-only, or otherwise non-authoritative.
+
+Preserve pre-existing user changes. Do not force the worktree to be clean by overwriting unrelated modifications.
+
+If a referenced document is missing, inaccessible, or different from the expected version, record that fact and its consequence. Do not search for or substitute a similarly named artifact while claiming it is the original.
+
+## 5. Source hierarchy, evidence discipline, and status labels
+
+Retain the original analytical labels:
+
+- **[R]** Explicit normative requirement.
+- **[NI]** Necessary implication.
+- **[A]** Interpretation requiring a decision.
+- **[P]** Implementation precedent.
+- **[K]** Candidate, not accepted.
+- **[D]** Decision required.
+
+Apply the labels to individual claims rather than using one label to characterize an entire section that contains several types of assertion.
+
+For every material conclusion:
+
+- Cite the exact authoritative section or implementation location.
+- Verify quotations against the actual source.
+- Separate direct source language from logical inference.
+- Distinguish ratified requirements from candidate interpretations.
+- Identify contradictions between architectural documents and implementation.
+- Identify any claim whose meaning depends on an unresolved scope or identity question.
+- State when a source does not answer the question.
+- Do not treat repeated wording as normative merely because it appears in several documents.
+- Do not rely on the previous review's analysis instead of checking the underlying evidence.
+
+External standards, research, and GitHub projects may corroborate technical observations, but cannot settle an OCBrain architectural decision unless their authority has been adopted by the project.
+
+If a previous-session file-hash match was user-reported but cannot be independently verified, preserve that provenance qualification.
+
+Do not invent decision owners. If ownership is not established, state that the owner is unassigned and identify the assignment or dependency required to close the item.
+
+## 6. Reconcile the established D6/D7 rule without altering its meaning
+
+The source brief quotes D6 in tracker §10.2:
+
+> “A crash is recorded on two independent axes, kept distinguishable: lifecycle/execution `FAILED` and the epistemic result `UNVERIFIABLE`; not ‘crash = semantic `FAILED`’.”
+
+Master §104-J describes a silent verifier crash with the expected outcome:
+
+> “FAILED / UNVERIFIABLE”, “never PASS”.
+
+D7 states:
+
+> “A not-assessable execution is never forced into semantic `FAILED`; it yields no semantic binary conclusion plus `UNVERIFIABLE`/`INSUFFICIENT_EVIDENCE`/`ESCALATE` as appropriate; execution/lifecycle failure is recorded separately.”
+
+Master §93 prohibits silent exception → `PASS` and silent timeout → `PASS`, and describes the alternatives when verification cannot be completed.
+
+Master §98 names several infrastructure fault cases and prohibits infrastructure failure from masquerading as semantic success.
+
+Master §91 names a failure taxonomy including `tool_failure`, `environment_unavailable`, `verification_timeout`, `verification_budget_exhausted`, and `unverifiable`.
+
+Master §85 includes reason-code examples such as `SOURCE_UNAVAILABLE`, `TOOL_FAILURE`, `BUDGET_EXHAUSTED`, and `RECURSION_LIMIT`.
+
+Verify these quotations and their context against the live sources before incorporating them into the revised document.
+
+The analysis must preserve the following boundaries:
+
+1. **Crash pairing:** D6 establishes a separate lifecycle/execution failure fact and an epistemic `UNVERIFIABLE` result for the stated verifier-crash condition.
+2. **No converse implication:** `UNVERIFIABLE` does not prove a crash occurred. A successful abstention may also be `UNVERIFIABLE`.
+3. **No automatic generalization:** D6 alone does not establish that every timeout, tool failure, budget exhaustion, evidence-provider failure, or other infrastructure incident must produce the same pairing.
+4. **No false success:** A verifier or verification-infrastructure failure must not masquerade as a positive semantic verification result.
+5. **No semantic conflation:** A failure of the target that the verifier successfully establishes may be a valid semantic finding rather than a verifier execution failure.
+6. **Separate axes:** Lifecycle/execution `FAILED` must not be introduced as an epistemic verdict.
+7. **D7 alternatives:** The three non-conclusive outcomes cannot be mechanically mapped from cause codes alone without authoritative support.
+8. **Representation remains open:** The eventual storage of lifecycle failure and epistemic outcome remains subject to Q2 and other governing decisions.
+
+### 6.1 Critical scope safeguard
+
+**Do not infer a failure scope that the governing sources do not establish.**
+
+D6 and master §104-J establish the crash pairing, but the source brief notes that D6 does not specify whether the crash is classified at the method, attempt, criterion, run, request, or another level.
+
+Do not silently narrow D6 to crashes that terminate the entire verification request. The sources do not expressly establish that condition merely because the wider system could recover.
+
+Equally, do not infer that every method-level or attempt-level failure automatically makes the enclosing request `UNVERIFIABLE`.
+
+State separately:
+
+- What pairing D6 expressly requires.
+- What scope the wording explicitly identifies, if any.
+- Whether the epistemic result applies to the failed execution unit or the enclosing verification.
+- Whether a recovered local crash can coexist with a conclusive enclosing result.
+- Whether the governing sources establish any such exception or propagation rule.
+- What decisions are still required.
+
+If the sources do not reconcile those questions, present the competing interpretations and their consequences. Do not choose the narrowest scope, broadest scope, or implementation-compatible scope merely to simplify the model.
+
+## 7. Correct the failure taxonomy: occurrence, terminality, and recovery
+
+The existing analysis identifies several execution levels but does not sufficiently distinguish a failure event from a failure that prevents an enclosing operation from completing.
+
+Define and use these three distinct concepts:
+
+**Failure event:** A method, tool invocation, attempt, or other execution unit encounters a failure condition.
+
+**Terminality at a specified scope:** The event prevents the relevant execution unit from completing under its governing completion conditions.
+
+**Recovery or continuation:** The system retries, restarts, invokes a fallback, uses other methods, or otherwise continues after a lower-level failure.
+
+These are analytical distinctions, not proposed new lifecycle states.
+
+Examine at least these cases:
+
+- A method fails, but other methods continue.
+- An individual method crashes and the enclosing verification still obtains sufficient evidence.
+- An attempt fails and a later attempt succeeds.
+- A verifier crashes and a supervisor restarts the operation.
+- A fallback method completes the required assessment.
+- Several criteria complete before later execution terminates.
+- A run terminates while criterion results are already available.
+- A timed-out operation subsequently returns a result.
+- Cancellation is requested while the operation continues running.
+- A superseded operation completes after a replacement operation starts.
+
+For each scenario, establish which facts are observed, which scope is affected, whether the event is terminal at that scope, whether recovery occurred, and which outcome requirements actually follow from the sources.
+
+Do not infer that successful recovery erases the historical failure event. Equally, do not assume that preserving a failure record requires invalidating every result produced by the enclosing verification.
+
+Q4-b2 must distinguish the failure level, terminality, recovery, and any proposed propagation rule. The policy implications must be described without prematurely choosing a lifecycle schema.
+
+## 8. Define the execution scopes without inventing the data model
+
+Include a conceptual scope table covering:
+
+| Scope | Question |
+|---|---|
+| Method invocation | Did this method fail to execute or finish? |
+| Attempt or step | Did this particular execution attempt terminate unsuccessfully? |
+| Criterion | Can this criterion be assessed from the valid results available to it? |
+| Run | Did the relevant verification run complete according to its governing contract? |
+| Request | Did the complete verification request produce an admissible final result? |
+
+Treat these as analytical categories. Do not assume that every category already exists as a distinct entity in the current schema.
+
+For each scope, separately establish:
+
+1. What the sources explicitly require.
+2. What is a necessary implication of those requirements.
+3. Whether a failure at that level is terminal, recoverable, or unresolved.
+4. Whether the enclosing level can continue.
+5. Whether an epistemic result exists and what scope it describes.
+6. Whether the rule depends on Q2's unresolved lifecycle representation.
+
+Align the scope of the lifecycle failure fact and the scope of the epistemic result. Do not conflate them, but do not assume that they necessarily describe the same entity until the sources establish that relationship.
+
+Q2 determines representation. Q4-b must still explain the logical requirements that can be established independently of that representation.
+
+## 9. Distinguish every stage of completion
+
+Do not use “completion” as if it described one event.
+
+Separate these stages:
+
+1. Process or worker termination.
+2. Completion or termination of a method, attempt, or step.
+3. Production of a criterion assessment.
+4. Completion of the relevant verification execution.
+5. Completion of result aggregation and finalization.
+6. Persistence of the result.
+7. Delivery or return of the result.
+8. Completion of the enclosing verification request.
+
+These stages are analytical distinctions, not proposed lifecycle states.
+
+For each relevant scenario, identify which stage is known to have completed, which failed or timed out, and which remains unknown.
+
+Explicitly distinguish:
+
+- No assessment was produced.
+- An assessment was produced but is non-conclusive.
+- Criterion assessments exist but aggregation did not complete.
+- Aggregation completed but persistence or delivery failed.
+- No result was received and the cause of non-completion is unknown.
+- The verifier's execution may have completed, but no trustworthy completion signal was received.
+- A result was durably finalized and delivered before an unrelated later failure.
+
+Do not equate an absent delivered result with proof that no assessment exists, proof of a crash, or proof that the full execution failed.
+
+### 9.1 Finalization boundary
+
+Explicitly analyze:
+
+1. Crash before any assessment is produced.
+2. Crash while assessment or aggregation is in progress.
+3. Crash after a result is constructed but before persistence.
+4. Crash after persistence but before delivery.
+5. Crash after the result has been durably finalized and delivered.
+6. An unrelated worker or process failure after verification has already completed.
+
+Do not assume that an unrelated crash invalidates an already completed result. Equally, do not exempt a crash from D6 merely because recovery or another result is possible unless the governing sources support that interpretation.
+
+If the relationship between D6 and these boundaries remains ambiguous, state it as an explicit policy question.
+
+## 10. State the fail-closed invariant precisely
+
+Audit every use of language equivalent to:
+
+> No failure of any kind becomes PASS.
+
+The intent is to prevent a verifier or infrastructure failure from masquerading as semantic success. The wording must not conflate distinct facts about the verifier, target, evidence, or completion.
+
+Include a terminology table covering the actual source-defined meanings and scopes of:
+
+- Lifecycle/execution status, including `FAILED`.
+- Epistemic verification verdict, including `PASS` and `UNVERIFIABLE`.
+- Semantic outcome or finding about the target.
+- Criterion assessment status.
+- Run/request completion and finalization status.
+
+Verify the meaning of `VERIFIED` and any related semantic outcome terminology against the actual sources.
+
+Preserve these distinctions:
+
+**Verifier or infrastructure failure:** The verification mechanism crashes, times out, loses required infrastructure access, or fails to complete required work.
+
+**Semantic target failure:** The verifier successfully establishes that the target operation or behavior failed. This may constitute a valid semantic finding under the governing contract.
+
+**Insufficient evidence:** The available evidence does not establish the required proposition. This can arise without a failed execution.
+
+**Escalation:** The completed assessment requires review or a decision outside the verifier's authority, where the governing policy permits that outcome.
+
+The invariant should prohibit verifier-execution failure and missing completion from being treated as a positive semantic verification result.
+
+Do not prescribe that every infrastructure failure must yield `UNVERIFIABLE`; that mapping is one of the open questions.
+
+Do not prescribe that a verified target failure must yield `UNVERIFIABLE` merely because a target operation failed.
+
+The terminology table must make clear that:
+
+- D6's lifecycle/execution `FAILED` is not a new epistemic verdict.
+- `UNVERIFIABLE` does not prove that a crash occurred.
+- A verified target failure may be a valid semantic finding.
+- Execution failure does not establish a semantic finding about the target.
+- A non-conclusive epistemic result does not, by itself, establish lifecycle failure.
+- Result production, aggregation, persistence, delivery, and request completion are distinct stages.
+
+Where a source uses a term ambiguously, flag that ambiguity rather than silently normalizing it.
+
+## 11. Separate observed causes from inferred causes
+
+Q4-b5 must address what evidence permits the system to classify an event specifically as a crash.
+
+Examine at least the following cases:
+
+1. Independently observed abnormal verifier process termination.
+2. A verifier exceeding its declared deadline.
+3. A verifier ceasing to respond, without definitive evidence of termination.
+4. No result arriving before the caller's completion deadline.
+5. A verifier completing but result persistence or delivery failing.
+6. A tool used by the verifier failing.
+7. A target-invoked tool failing, with the failure independently observed and verified.
+8. A failure whose precise cause cannot be determined.
+9. A failed execution attempt subsequently recovered.
+10. A tool failure followed by a verification timeout.
+11. A timeout followed by evidence of abnormal process termination.
+12. A failure in the reporting channel that prevents durable recording of the failure observation.
+13. A cancellation or timeout after which the original work continues.
+14. A late result arriving after timeout, cancellation, or supersession.
+
+For each case, state:
+
+- The observed fact.
+- What cause can legitimately be asserted.
+- Whether execution is known to have terminated, is known only to be incomplete, or remains uncertain.
+- Which completion stages are known to have succeeded or failed.
+- Minimum fail-closed handling supported by the sources.
+- Whether D6's crash-specific pairing is required, a candidate extension, or not established by the available evidence.
+- What remains undecided and which decision or owner is responsible.
+
+**Mandatory safeguard:** The absence of a result alone must not be treated as proof of a verifier crash.
+
+A system may need to represent non-completion without being able to attribute the cause to a crash. Distinguish observed facts from inferred causal relationships.
+
+Do not assume that:
+
+- Only one failure cause can occur.
+- The first observed cause is necessarily the root cause.
+- The last observed cause explains the entire incident.
+- A reason code is an exhaustive causal diagnosis.
+- A later observation proves what occurred earlier.
+
+Inspect the contracts for cause cardinality, precedence, and attribution rules. If the sources do not establish them, identify the ambiguity rather than introducing a primary-cause algorithm or changing the schema.
+
+Distinguish the historical failure event, the state of the affected execution, and the epistemic status of any resulting assessment.
+
+## 12. Separate epistemic-outcome policy from lifecycle-recording policy
+
+The existing Q4-b3 bundles two independent policy decisions. Separate them conceptually, whether or not the tracker requires the original identifier to remain intact.
+
+### 12.1 Outcome-policy question
+
+For timeouts, verifier-owned tool failures, budget exhaustion, and other non-crash execution failures, under what conditions is `UNVERIFIABLE` mandatory, and when may the system produce `INSUFFICIENT_EVIDENCE` or `ESCALATE` as appropriate?
+
+Reconcile:
+
+- D6's explicit crash pairing.
+- D7's exact wording.
+- Master §§91, 93, and 98.
+- The reason-code examples in §85.
+- The built execution-failure mapping.
+- The actual observed completion and evidence state, where established.
+
+Do not infer a complete cause-to-verdict mapping from the failure taxonomy alone.
+
+Explain why the same broad cause may have different implications depending on what the system established, whether the relevant assessment completed, whether usable evidence exists, and what the governing completion conditions require.
+
+Treat the built four-cause rule as implementation precedent unless an authoritative source establishes that mapping as normative.
+
+### 12.2 Lifecycle-policy question
+
+For which events must a separate lifecycle/execution failure fact be recorded, and at what scope?
+
+Keep this separate from the choice of epistemic outcome. Do not assume every non-conclusive outcome represents a failed execution.
+
+Preserve the distinction between:
+
+- An execution that failed to complete.
+- An execution that completed but could not establish the required fact.
+- An execution that completed and appropriately escalated.
+- A successful abstention.
+- A lower-level failure that did not terminate the enclosing operation.
+
+Use D7's precise wording. Determine what “not-assessable execution” means in context rather than treating it as synonymous with every non-conclusive outcome.
+
+For each dimension, provide the source evidence, competing interpretations, consequences, current status, unresolved choices, and dependencies.
+
+## 13. Analyze `TOOL_FAILURE` without silently deciding its meaning
+
+Inspect the actual contracts, relevant D2 material, surrounding terminology, source history, and any existing cause definitions.
+
+Determine:
+
+1. What the sources currently establish about the referent of `TOOL_FAILURE`.
+2. Whether the failure concerns a tool the verifier used or a tool call made by the target.
+3. Why a verifier-owned tool failure may be an execution failure of the verification mechanism.
+4. Why an observed failure of a target-invoked tool may instead constitute a valid semantic finding.
+5. Whether the current vocabulary conflates those referents.
+6. What owner clarification or project decision is required if the referent remains unresolved.
+
+Do not resolve the ambiguity by choosing whichever interpretation best fits the current enum or docstring.
+
+Do not rename or split the existing enum or modify the code.
+
+If authoritative evidence does not resolve the referent, keep Q4-b4 explicitly open.
+
+## 14. Preserve partial results and keep aggregation semantics open
+
+Cross-reference Q4-g and master §46. Respect the current status of Q2-g.
+
+For each case, distinguish:
+
+- Criterion results already established by valid completed work.
+- A criterion whose attempt failed.
+- A criterion for which no assessment was produced.
+- An assessment produced with a non-conclusive outcome.
+- A run or request that terminated before aggregation completed.
+- A result that arrived late after timeout, cancellation, or supersession.
+
+The revised analysis must establish, where supported:
+
+1. A subsequent execution failure does not by itself prove that previously established criterion results were false or invalid.
+2. Preserving criterion results does not establish that aggregation completed successfully.
+3. A missing result is not equivalent to a result whose verdict is `UNVERIFIABLE`.
+4. A failed attempt is not automatically a failed criterion, run, or request.
+5. A late result must not silently overwrite an authoritative terminal outcome unless a governing contract permits that transition.
+6. No final aggregation, retry, supersession, or late-result semantics may be invented where the sources leave them unresolved.
+
+Inspect existing identity and provenance contracts to establish whether a late result can be associated with the correct execution.
+
+If relevant transition or result-identity behavior cannot be established, record the gap and the decision needed.
+
+## 15. Investigate D1's failure-reporting path
+
+Q4-b5 asks who detects and records a silent crash, but the requirement to record a crash is not proof that the existing system can actually do so.
+
+Inspect D1 and the failure-channel material, then trace the actual recording path where possible.
+
+Determine:
+
+- Which component can observe abnormal termination or missed completion.
+- Whether the observer is independent of the component that may fail.
+- How the observation is associated with the originating verification.
+- Whether recording depends on the failed verifier constructing an ordinary result object.
+- Whether the lifecycle failure and epistemic outcome are expected to be separate records, fields, or a relation between records.
+- What happens if only one of the two facts can be persisted.
+- What happens if the reporting or persistence channel is itself unavailable.
+- What evidence demonstrates whether the failure path is wired into a real execution route.
+- Whether the relevant behavior is implemented, normatively required, tested, or unresolved.
+
+Do not redesign D1 or introduce new reporting architecture.
+
+Do not assume that the verifier can record its own crash, or that an independent recording path exists, unless the actual source and call path demonstrate it.
+
+If the architecture requires the two D6 facts but the available implementation cannot demonstrate that both can be recorded, report the gap explicitly and identify the required follow-up decision.
+
+## 16. Verify execution identity and provenance
+
+Inspect the actual identity/provenance contracts and DEBT-015 if it remains relevant on the live repository.
+
+For crashes, retries, cancellation, supersession, and late results, determine whether available evidence can reliably associate each event and result with its originating request, run, step, attempt, and criterion—to the extent these entities actually exist.
+
+Identify risks of:
+
+- Attributing a late result to the wrong attempt or run.
+- Treating an earlier attempt's result as the result of a retry.
+- Overwriting or contradicting a terminal outcome without an authorized transition.
+- Losing the relationship between preserved criterion results and a subsequently failed run.
+- Recording a failure against the wrong verification request.
+- Treating the same cause code as proof that two events share the same causal origin.
+
+Do not invent identity fields, relations, or lifecycle transitions.
+
+Separate provenance from policy: identifying which execution produced a result does not by itself determine its required epistemic verdict.
+
+If identity or lineage cannot be demonstrated by the actual contracts or execution path, record the gap and its owner/dependency.
+
+## 17. Complete the end-to-end failure-path audit
+
+Perform a read-only trace through the actual invocation and failure-handling path where the repository permits it.
+
+Inspect relevant:
+
+- Invocation points.
+- Exception handlers.
+- Worker and supervisor boundaries.
+- Timeout and cancellation handling.
+- Failure-event recording.
+- Result construction.
+- Criterion-result retention.
+- Aggregation and finalization.
+- Persistence and delivery.
+- Test coverage and actual route wiring.
+
+Do not claim operational behavior based solely on isolated validators, types, or docstrings.
+
+For each relevant path, establish:
+
+1. Which component observes the event.
+2. Which component determines execution or completion status.
+3. Which component records the lifecycle/execution failure.
+4. How the event is correlated with its originating verification.
+5. Whether an epistemic result can be produced independently of the failed component.
+6. Whether the path is used in an actual execution route or only exists as an isolated contract or test.
+7. Which tests provide evidence and which critical paths lack coverage.
+
+Distinguish implementation evidence from normative authority. An absent implementation does not negate D6. An isolated contract does not prove that the operational requirement is fulfilled.
+
+If the actual call path cannot be traced, state exactly what is unavailable and what evidence is needed. Do not present a conceptual architecture as an observed implementation.
+
+## 18. Reconcile cross-decision dependencies
+
+Maintain strict boundaries among Q4-b and related issues.
+
+### Q2 — lifecycle representation
+
+Q4-b may establish which logical facts are required where the sources support that conclusion. Q2 determines where and how lifecycle failure is represented.
+
+Do not use uncertainty about Q2's schema to leave independently decidable policy questions vague. Conversely, do not finalize lifecycle fields, relationships, or transitions through Q4-b.
+
+### Q2-g — run/step representation
+
+Where method, attempt, step, or run scope is uncertain, describe the policy question and leave the representation unresolved until its governing decision permits closure.
+
+### Q4-g — partial results and aggregation
+
+A crash, missing assessment, non-conclusive assessment, and incomplete aggregation are different situations. A failure category must not define when an assessment has been produced or imply that aggregation completed.
+
+### Q4-h — recording ownership
+
+A silent crash requires an observation and recording path beyond the assumption that the crashed verifier successfully produced a result. Identify the ownership question and dependencies without inventing an owner.
+
+### Q6 — `failure_control`
+
+Do not map the four built failure causes mechanically to `CONTROLLABLE`, `UNCONTROLLABLE`, `MIXED`, or `UNKNOWN`.
+
+Reconcile the applicable frozen v1 §20 material and current authoritative decisions. Preserve the distinction between controllability as an orthogonal finding and a governance decision.
+
+### D1 — failure-reporting channel
+
+A normative requirement to record a failure is distinct from evidence that the current channel can detect, associate, and persist it.
+
+### D6/D7 — trigger and non-conclusive outcome policy
+
+D6's crash-specific pairing and D7's broader not-assessable-execution guidance must not be conflated.
+
+Keep each dependency explicit in the decision ledger. Do not settle a related decision indirectly through wording changes to Q4-b.
+
+## 19. Build the complete scenario-based decision matrix
+
+Replace or strengthen the current scenario table with a matrix covering at least these cases:
+
+1. Silent verifier crash before any assessment is produced.
+2. Crash after some criterion results have been recorded.
+3. Method-level crash followed by sufficient successful work through other methods.
+4. Failed attempt followed by successful retry.
+5. Timeout that prevents the relevant verification from completing.
+6. Budget exhaustion with partial results.
+7. Verifier-owned tool failure.
+8. Verified failure of a target-invoked operation.
+9. Completed assessment with insufficient evidence.
+10. Completed assessment requiring escalation.
+11. Missing result with an unknown cause.
+12. Result arriving after timeout, cancellation, or supersession.
+13. Tool failure followed by a timeout.
+14. Result constructed but not persisted.
+15. Result persisted but not delivered.
+16. Failure of the failure-reporting path.
+17. Crash after durable finalization and delivery.
+18. Cancellation requested but not confirmed.
+19. Operation continuing after its deadline.
+20. Multiple failure events without a verified causal ordering.
+
+Use these columns:
+
+| Column | Required content |
+|---|---|
+| Scenario | Concrete execution conditions |
+| Established observations | Facts directly supported by the scenario |
+| Normative authority | Exact governing source |
+| Failure scope | Method, attempt, step, criterion, run, request, or unresolved |
+| Completion stage | Assessment, execution, aggregation, finalization, persistence, delivery, or unresolved |
+| Terminality/recovery | Terminal, recoverable, superseded, or unknown |
+| Cause attribution | Established cause, limited observation, or unknown cause |
+| Lifecycle obligation | Established requirement or open question |
+| Epistemic outcome | Required, permitted, or unresolved outcome |
+| Existing partial results | What is preserved and what remains unproven |
+| Decision dependency | Applicable D1, Q2, Q4-b, Q4-g, Q4-h, or Q6 item |
+| Status | Established, necessary implication, candidate, or open |
+
+Do not populate unresolved cells with assumptions. “Not determined by the current sources” is preferable to false precision.
+
+Every normative conclusion must trace to an authoritative source; every unratified interpretation must be labelled as a candidate or open decision.
+
+## 20. Rebuild the decision ledger
+
+Reconcile the current Q4-b ledger with the revised brief.
+
+Retain the original Q4-b identifiers where practical:
+
+**Q4-b1 — Trigger boundary**
+
+Does D6's crash pairing apply to verifier crashes only, or is the same policy extended to specified non-crash failures? What does the source establish about the scope of the crash and its epistemic result?
+
+Do not reduce this question to “crash only versus all four built causes” while overlooking scope and recoverability.
+
+**Q4-b2 — Failure scope, terminality, and recovery**
+
+At what level is failure classified? How do terminality, recovery, retries, and continuation govern propagation? Which rules are source-backed and which need decisions?
+
+**Q4-b3 — Outcome policy**
+
+For non-crash execution failures, when is `UNVERIFIABLE` mandatory and when may D7's other non-conclusive outcomes apply?
+
+**Q4-b3 lifecycle dimension — Separate failure fact**
+
+For which events must lifecycle/execution failure be recorded independently of the epistemic result, and at what scope?
+
+Keep the two Q4-b3 dimensions logically independent even if the tracker retains one identifier.
+
+**Q4-b4 — `TOOL_FAILURE` referent**
+
+Does the term refer to a tool used by the verifier, a tool invoked by the target, or a vocabulary that currently conflates both? Leave unresolved unless authoritative sources establish the answer.
+
+**Q4-b5 — Detection and recording**
+
+Who detects and records silent crashes or otherwise unobserved non-completion? What evidence supports cause attribution, execution identity, and durability of the record?
+
+For every item, provide:
+
+1. Exact decision question.
+2. Competing options stated as distinguishable policy positions.
+3. Normative source evidence.
+4. Necessary implications, if any.
+5. Implementation precedent, separated from authority.
+6. Consequences for D6/D7 compliance, recovery, partial results, aggregation, and the failure-reporting channel.
+7. Dependencies on Q2, Q4-g, Q4-h, Q6, or D1, as applicable.
+8. Questions that can be decided independently of the unresolved schema.
+9. Questions that must remain open.
+10. Specific evidence or clarification required for closure.
+11. Current status using the project's actual vocabulary.
+
+A decision is not adequately documented merely by saying “clarification required.” State what the decision-maker must choose and what each choice would establish.
+
+Where useful, provide a candidate recommendation labelled [K], but preserve alternatives and do not record the recommendation as accepted.
+
+Do not invent decision owners. Identify unassigned ownership as unassigned.
+
+## 21. Decision-ready closure test
+
+Evaluate each unresolved policy question individually.
+
+A valid decision record must distinguish:
+
+1. What the authoritative source establishes.
+2. What the existing implementation does.
+3. What interpretation is proposed.
+4. What the decision-maker must choose.
+5. What evidence or authority could resolve disagreement.
+6. What can be decided independently of the unresolved schema.
+7. What must remain open pending another decision.
+
+Q4-b1's general trigger principle and Q4-b3's policy dimensions may be considered independently of Q2's eventual schema, provided their operational wording remains precise about scope and completion.
+
+Q4-b2's lifecycle implementation implications and Q4-b5's recording ownership must remain open where Q2 or Q4-h dependencies remain unresolved.
+
+Do not leave a question open merely because its data-model representation is undecided if the policy meaning can genuinely be settled independently.
+
+Do not force closure where authority or evidence is insufficient.
+
+## 22. Deliverables
+
+### Deliverable A — Revised Q4-b brief
+
+Revise the original brief in place, preserving its analysis-only status and project conventions.
+
+The revised document must address:
+
+- D6's established meaning and unresolved scope.
+- The distinction between failure occurrence, terminality, and recovery.
+- The precise fail-closed invariant.
+- Failure levels and completion stages.
+- Cause attribution and multiple failure events.
+- Timeout, budget, and cancellation semantics where supported.
+- Partial results, retries, late results, and aggregation boundaries.
+- D1's failure-reporting path.
+- Execution identity and provenance.
+- `TOOL_FAILURE` ambiguity.
+- Outcome policy versus lifecycle-recording policy.
+- The scenario-based decision matrix.
+- Cross-decision dependencies.
+- Candidate disposition and the exact decisions required.
+
+Preserve correct existing material. Make each substantive change traceable to a source correction or identified analytical gap. Do not expand into an unrelated architectural redesign.
+
+### Deliverable B — Decision ledger
+
+Update the directly associated analysis-only Q4-b ledger if necessary to prevent contradictory or incomplete summaries.
+
+The revised brief and ledger must use consistent definitions, decision identifiers, cross-references, and statuses.
+
+Preserve unrelated decisions and ratified content. If a shared tracker cannot be safely edited without affecting out-of-scope decisions, prepare a narrowly scoped proposed diff instead.
+
+### Deliverable C — Change and findings report
+
+Report:
+
+- Exact files changed.
+- Actual baseline branch and commit, plus resulting commit identifier if a commit was created under existing project procedures.
+- Substantive changes for every identified gap.
+- Source discrepancies and authority conflicts.
+- Questions that can now be decided independently.
+- Questions that remain open, with exact reasons and dependencies.
+- Any unavailable sources or unverified assumptions.
+- Actual commands and checks performed, with their real results.
+- Whether the live failure-reporting path was traced.
+- Whether Phase C contracts are wired into a real execution route.
+- Whether execution identity and provenance were established from actual evidence.
+- Confirmation that the work remained within its authorized scope.
+
+Do not create a commit merely to claim completion if the existing workflow does not call for one.
+
+### Deliverable D — Patch and semantic verification
+
+Inspect the complete diff against the established baseline.
+
+Verify that:
+
+- No implementation, production behavior, schema, enum, contract, ADR, frozen source, or test expectation was changed.
+- No accepted decision was accidentally altered.
+- Q2-a and other unresolved issues retain their actual status.
+- D1–D10 and ODI-3C-B-01/02/03 retain their existing status and meaning.
+- All cross-references and section numbering resolve.
+- Quotations match the actual sources.
+- The scenario matrix and decision ledger agree.
+- No candidate was promoted to accepted status.
+- No unsupported lifecycle, retry, aggregation, or late-result rule was introduced.
+- The terminology remains consistent throughout the revised material.
+
+Search the revised materials for all significant uses of:
+
+- `FAILED`
+- `PASS`
+- `VERIFIED`
+- `UNVERIFIABLE`
+- `execution_failure`
+- Crash and timeout
+- Budget exhaustion
+- `TOOL_FAILURE`
+- `INSUFFICIENT_EVIDENCE`
+- `ESCALATE`
+- Failure, completion, recovery, finalization, and aggregation
+
+Confirm that no term has acquired inconsistent meanings across the source analysis, terminology table, scenarios, candidate disposition, and decision ledger.
+
+Use targeted document, reference, status, and diff checks. Do not modify code to make checks pass. Do not imply that implementation tests were run if they were not.
+
+## 23. Definition of done
+
+The task is complete only when every condition below has been addressed:
+
+1. All original Q4-b analytical gaps have an explicit treatment.
+2. D6's established crash pairing is neither weakened nor silently broadened.
+3. The scope of the crash and epistemic result is not inferred beyond source evidence.
+4. Failure occurrence, terminality, recovery, and execution scope are distinct.
+5. A lower-level failure does not automatically invalidate the enclosing verification.
+6. Successful recovery does not erase the historical failure event.
+7. The verifier-failure/target-failure distinction is explicit.
+8. The fail-closed invariant prohibits false semantic success without imposing an unsupported cause-to-verdict mapping.
+9. The evidence needed to classify a crash is distinguished from the evidence of non-completion.
+10. Missing output alone is not treated as proof of a crash.
+11. Timeout, budget, and cancellation scopes are not inferred from their reason codes.
+12. Multiple failures are not collapsed into an unsupported single-cause classification.
+13. Outcome policy and lifecycle-recording policy are separate decisions.
+14. D7's alternatives are not mechanically mapped from cause codes.
+15. Criterion-result preservation is distinct from aggregate completion.
+16. Retries, late results, persistence, delivery, and supersession are handled only to the extent the sources support them.
+17. D1's actual failure-reporting path and its limitations are inspected.
+18. Execution identity and provenance are established from evidence or explicitly left unresolved.
+19. The end-to-end execution path is traced where possible; isolated contracts are not misrepresented as operational guarantees.
+20. `TOOL_FAILURE` remains open unless authoritative evidence resolves its referent.
+21. Every scenario traces to source evidence or explicitly states that the outcome is unresolved.
+22. Every open policy item presents concrete alternatives, consequences, dependencies, and a closure condition.
+23. The brief and ledger agree.
+24. Unassigned owners, missing sources, and unverifiable claims are explicitly qualified.
+25. No implementation, schema, contract, ADR, frozen document, test expectation, or unrelated accepted decision was changed.
+26. The final diff has been reviewed and the completion report is evidence-based.
+
+If a condition cannot be satisfied, do not conceal the limitation. State the precise gap, why it remains open, which dependency or evidence is missing, and what is required to close it.
+
+## 24. Final execution instruction
+
+Execute the permitted documentary correction and verification work in the current authorized worktree.
+
+Do not return only a plan, repeat the existing findings, or promise future work.
+
+Where source evidence supports a precise correction, make it. Where a policy decision remains unratified, sharpen the competing alternatives and record the decision required without choosing on the project's behalf.
+
+The final product must be a **decision-ready Q4-b analytical brief**, an aligned decision ledger where safe, a verified diff, and an evidence-based report.
+
+The success criterion is that the next review can concentrate on genuine unresolved policy decisions rather than rediscovering missing distinctions, unsupported mappings, inconsistent terminology, unverified implementation claims, or hidden dependencies.
+
+**No implementation, schema, contract, ADR, frozen-document, or accepted-decision change is authorized by this prompt.**
+``````
+
+(End of Appendix A. Versions 3 and earlier of this file follow below.)
+
+---
+
+## ARCHIVED: handoff version 3 (superseded by version 4; retained verbatim below, together with versions 1 and 2)
+
 # Session Handoff (version 3, 2026-10-09)
 
 > Versions 1 and 2 of this file are retained verbatim below the marker "ARCHIVED: earlier handoff content". Where they disagree with this version, this version and the live repository win; the earlier text is a transfer record, not an authority (`PROJECT_INSTRUCTIONS.md` §18.4.9).
