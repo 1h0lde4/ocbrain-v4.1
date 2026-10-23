@@ -219,6 +219,63 @@ def test_registry_root_context_is_reset_after_loading(registry_env):
 
 
 
+def test_reload_rejects_invalid_names_and_source_symlinks_without_raising(registry_env):
+    _, requested_root, _, tmp_path = registry_env
+
+    # Invalid path components must fail closed rather than escape the registry API.
+    assert reload_module("../outside", {}, modules_dir=requested_root) is None
+
+    outside = tmp_path / "outside_source.py"
+    marker = tmp_path / "source_payload_executed"
+    outside.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed')\n"
+    )
+    module_dir = requested_root / "symlinked_source_probe"
+    module_dir.mkdir()
+    try:
+        (module_dir / "module.py").symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable on this platform")
+
+    existing = {"sentinel": object()}
+    result = reload_module("symlinked_source_probe", existing, modules_dir=requested_root)
+    assert result is None
+    assert list(existing) == ["sentinel"]
+    assert not marker.exists()
+    assert not (module_dir / "knowledge.db").exists()
+
+
+def test_reload_refreshes_relative_package_helpers(registry_env):
+    _, requested_root, _, _ = registry_env
+    module_dir = requested_root / "reload_helper_probe"
+    module_dir.mkdir()
+    (module_dir / "__init__.py").write_text("from .helper import VERSION\n")
+    helper = module_dir / "helper.py"
+    helper.write_text("VERSION = 'version-one'\n")
+    (module_dir / "module.py").write_text(
+        "from modules.base import BaseModule, ModuleResult\n"
+        "from .helper import VERSION\n"
+        "class Module(BaseModule):\n"
+        "    name = 'reload_helper_probe'\n"
+        "    desc = VERSION\n"
+        "    async def run(self, task: str, context) -> ModuleResult:\n"
+        "        return ModuleResult(answer=self.desc)\n"
+        "    async def run_own(self, task: str, context) -> ModuleResult:\n"
+        "        return ModuleResult(answer=self.desc)\n"
+    )
+
+    first = reload_module("reload_helper_probe", {}, modules_dir=requested_root)
+    assert first is not None
+    assert first.desc == "version-one"
+
+    helper.write_text("VERSION = 'version-two'\n")
+    second = reload_module("reload_helper_probe", {}, modules_dir=requested_root)
+    assert second is not None
+    assert second.desc == "version-two"
+    assert second.root == first.root
+
+
 def test_registry_rejects_module_class_name_mismatch_before_storage_write(registry_env):
     _, requested_root, _, _ = registry_env
     module_dir = requested_root / "requested_name"
