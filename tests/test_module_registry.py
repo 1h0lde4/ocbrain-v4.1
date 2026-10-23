@@ -30,8 +30,13 @@ def _cleanup_imports_beneath(root):
         if origin:
             locations.append(origin)
         search_path = getattr(module_obj, "__path__", None)
-        if search_path:
-            locations.extend(list(search_path))
+        if search_path is not None:
+            # Some third-party pseudo-packages expose a truthy but non-iterable
+            # __path__ sentinel; cleanup must not turn that into a teardown error.
+            try:
+                locations.extend(list(search_path))
+            except Exception:
+                pass
         if any(_is_beneath(location, root) for location in locations):
             remove.append(module_name)
     for module_name in sorted(remove, key=lambda name: name.count("."), reverse=True):
