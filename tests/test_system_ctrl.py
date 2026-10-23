@@ -8,6 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import modules.system_ctrl.module as system_ctrl_module
+from modules.embedding_fn import HashEmbeddingFunction
 from modules.system_ctrl.module import (
     ACTION_HANDLERS,
     Module,
@@ -16,6 +17,15 @@ from modules.system_ctrl.module import (
     _read_file,
     _write_file,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_embedding_function(monkeypatch):
+    """Avoid model downloads and make tests independent of model caches."""
+    monkeypatch.setattr(
+        "modules.embedding_fn.get_embedding_function",
+        lambda name: HashEmbeddingFunction(),
+    )
 
 
 @pytest.fixture
