@@ -107,11 +107,11 @@ def test_create_registers_in_config(isolated_factory_env):
 
     assert state.get("stage") == "bootstrap"
     assert state.get("bootstrap_model") == "llama3"
-    assert "https://example.com" in sources
+    assert sources == ["https://example.com"]
     assert "test" in kws
 
     # Verify readback from disk using a fresh isolated Config instance
     readback_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
     assert readback_cfg.get_module_state(name).get("bootstrap_model") == "llama3"
-    assert "https://example.com" in readback_cfg.get_sources(name)
+    assert readback_cfg.get_sources(name) == ["https://example.com"]
     assert "test" in readback_cfg.get_module_keywords(name)
