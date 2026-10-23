@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PROTECTED_ROOTS = ("config", "modules", "data/raw", "data/chunks")
+PROTECTED_ROOTS = ("config", "modules", "data/raw", "data/chunks", "workspace")
 
 
 def _entry(path: Path, relative: str) -> dict[str, Any]:
