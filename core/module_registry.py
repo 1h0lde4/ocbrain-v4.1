@@ -17,7 +17,7 @@ import types
 from pathlib import Path
 from typing import Optional
 
-from core.module_paths import module_child
+from core.module_paths import InvalidModuleName, module_child, validate_module_name
 from modules.base import BaseModule, module_storage_root
 
 MODULES_DIR = Path(__file__).parent.parent / "modules"
@@ -190,6 +190,7 @@ def _reject_module_tree_symlinks(module_dir: Path) -> None:
 def _source_for_module(root: Path, module_name: str) -> tuple[Path, Path]:
     """Resolve a module entry and reject symlinks anywhere in its source tree."""
     root = root.resolve()
+    validate_module_name(module_name)
     entry = root / module_name
     if entry.is_symlink():
         raise ImportError("Module directory must not be a symlink")
@@ -371,6 +372,11 @@ def reload_module(
     target_modules_dir = Path(modules_dir if modules_dir is not None else MODULES_DIR).resolve()
     try:
         _source_for_module(target_modules_dir, module_name)
+    except InvalidModuleName:
+        # Preserve the established public contract: malformed module names
+        # are programming/input errors, while a missing or unsafe module is
+        # represented as a failed load.
+        raise
     except FileNotFoundError:
         return None
     except Exception as exc:
