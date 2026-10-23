@@ -178,3 +178,21 @@ def test_registry_root_context_is_reset_after_loading(registry_env):
     assert loaded_b is not None
     _assert_loaded_from(loaded_b, root_b, "root B")
     assert base_module._ACTIVE_MODULES_DIR.get() is None
+
+
+
+def test_registry_rejects_module_class_name_mismatch_before_storage_write(registry_env):
+    _, requested_root, _, _ = registry_env
+    module_dir = requested_root / "requested_name"
+    module_dir.mkdir()
+    # The class is intentionally abstract: reject its name mismatch before
+    # trying construction or creating any storage.
+    (module_dir / "module.py").write_text(
+        "from modules.base import BaseModule\\n"
+        "class Module(BaseModule):\\n"
+        "    name = 'different_name'\\n"
+    )
+
+    assert load_all(modules_dir=requested_root) == {}
+    assert not (requested_root / "different_name").exists()
+    assert not (module_dir / "knowledge.db").exists()

@@ -10,6 +10,7 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import sys
+import threading
 import types
 from pathlib import Path
 from typing import Optional
@@ -20,6 +21,7 @@ from modules.base import BaseModule, module_storage_root
 MODULES_DIR = Path(__file__).parent.parent / "modules"
 _SKIP = {"__pycache__", "_template", "base"}
 _NAMESPACE_PREFIX = "_ocbrain_registry_"
+_REGISTRY_LOCK = threading.RLock()
 
 
 def _namespace_for_root(root: Path) -> str:
@@ -171,10 +173,14 @@ def _import_module_from_root(root: Path, module_name: str):
     return module
 
 
-def _instantiate_from_root(module, root: Path) -> BaseModule:
+def _instantiate_from_root(module, module_name: str, root: Path) -> BaseModule:
     module_class = getattr(module, "Module", None)
     if not isinstance(module_class, type) or not issubclass(module_class, BaseModule):
         raise TypeError("Module is not a BaseModule subclass")
+    if getattr(module_class, "name", None) != module_name:
+        raise TypeError("Module class name does not match its registry directory")
+
+    expected_root = module_child(root, module_name).resolve()
 
     # This context overrides constructor defaults. Legacy subclasses that call
     # super().__init__() still create weights and ChromaDB beneath this root.
@@ -187,8 +193,8 @@ def _instantiate_from_root(module, root: Path) -> BaseModule:
         instance_root = Path(instance.root).resolve(strict=True)
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
         raise RuntimeError("Module did not expose a valid storage root") from exc
-    if instance_root.parent != root.resolve():
-        raise RuntimeError("Module storage root escaped the requested modules_dir")
+    if instance_root != expected_root:
+        raise RuntimeError("Module storage root does not match the requested module directory")
     if not (instance_root / "knowledge.db").is_dir():
         raise RuntimeError("Module ChromaDB storage was not created under the requested root")
     return instance
@@ -211,9 +217,10 @@ def load_all(modules_dir: Path | None = None) -> dict[str, BaseModule]:
             continue
 
         try:
-            module_file = _import_module_from_root(target_modules_dir, path.name)
-            instance = _instantiate_from_root(module_file, target_modules_dir)
-            modules[path.name] = instance
+            with _REGISTRY_LOCK:
+                module_file = _import_module_from_root(target_modules_dir, path.name)
+                instance = _instantiate_from_root(module_file, path.name, target_modules_dir)
+                modules[path.name] = instance
             print(f"[registry] Loaded module: {path.name} (stage={instance.health()['stage']})")
         except Exception as exc:
             print(f"[registry] Failed to load {path.name}: {exc}")
@@ -234,9 +241,10 @@ def reload_module(
         return None
 
     try:
-        module_file = _import_module_from_root(target_modules_dir, module_name)
-        instance = _instantiate_from_root(module_file, target_modules_dir)
-        existing[module_name] = instance
+        with _REGISTRY_LOCK:
+            module_file = _import_module_from_root(target_modules_dir, module_name)
+            instance = _instantiate_from_root(module_file, module_name, target_modules_dir)
+            existing[module_name] = instance
         return instance
     except Exception as exc:
         print(f"[registry] Failed to reload {module_name}: {exc}")
