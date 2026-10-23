@@ -198,9 +198,16 @@ lines.
   credential-stripped endpoint, cache hit or miss); a completion served from the
   cache, or with no provider attempt on record, exits 2; the run metadata records
   the harness sha256, git commit, tracked-file state, arguments and configured
-  providers; a `--dry-run` is labelled "NOT real-provider evidence". Covered by
-  24 tests in `tests/test_live_citation_check.py` and 35 mutants in
-  `scripts/mutation_check_ctx_auth_002.py` (nine new, all caught). Not
+  providers; a `--dry-run` is labelled "NOT real-provider evidence". An
+  independent review (Oct 21) then found that blank completions in a mixed sample
+  were not itemized; the harness now counts trials by kind (answered, blank,
+  provider error, no completion recorded, execution error), includes blank trials
+  in the provider-attempt accounting (cache replays inside a trial are reported),
+  records the effective coverage policy, and offers an opt-in strict policy
+  (`--require-all-answered`). The default policy (one exposed, answered trial per
+  payload, recorded in §7) is unchanged; changing it remains the owner's decision.
+  Covered by 31 tests in `tests/test_live_citation_check.py` and 43 mutants in
+  `scripts/mutation_check_ctx_auth_002.py` (seventeen new, all caught). Not
   established: real-model behavior (R3, R5); the owner's independent review of the
   amended harness (§8.1 item 1) remains open. The Oct 8 and Oct 9 preliminary
   real-provider runs predate the provenance and cannot be attributed to a
