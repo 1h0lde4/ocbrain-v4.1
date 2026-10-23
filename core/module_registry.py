@@ -133,6 +133,35 @@ def _source_for_module(root: Path, module_name: str) -> tuple[Path, Path]:
     return module_dir, resolved_source
 
 
+def _validate_managed_storage_paths(module_root: Path) -> None:
+    """Refuse pre-existing storage symlinks before a constructor can write through them."""
+    module_root = module_root.resolve()
+    relatives = (
+        Path("weights"),
+        Path("weights/active"),
+        Path("weights/previous"),
+        Path("weights/pending"),
+        Path("knowledge.db"),
+    )
+    for relative in relatives:
+        candidate = module_root / relative
+        if candidate.is_symlink():
+            raise RuntimeError(
+                f"Module storage path '{relative.as_posix()}' must not be a symlink"
+            )
+        if candidate.exists():
+            try:
+                resolved = candidate.resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise RuntimeError(
+                    f"Module storage path '{relative.as_posix()}' cannot be resolved safely"
+                ) from exc
+            if resolved != candidate:
+                raise RuntimeError(
+                    f"Module storage path '{relative.as_posix()}' escapes its module directory"
+                )
+
+
 def _import_module_from_root(root: Path, module_name: str):
     root = root.resolve()
     module_dir, source = _source_for_module(root, module_name)
@@ -181,6 +210,7 @@ def _instantiate_from_root(module, module_name: str, root: Path) -> BaseModule:
         raise TypeError("Module class name does not match its registry directory")
 
     expected_root = module_child(root, module_name).resolve()
+    _validate_managed_storage_paths(expected_root)
 
     # This context overrides constructor defaults. Legacy subclasses that call
     # super().__init__() still create weights and ChromaDB beneath this root.

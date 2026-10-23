@@ -1,4 +1,5 @@
 """Regression tests for root-bound dynamic module discovery and loading."""
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -201,3 +202,31 @@ def test_registry_rejects_module_class_name_mismatch_before_storage_write(regist
     assert load_all(modules_dir=requested_root) == {}
     assert not (requested_root / "different_name").exists()
     assert not (module_dir / "knowledge.db").exists()
+
+
+
+@pytest.mark.parametrize(
+    "relative_storage_path",
+    ["weights", "weights/active", "weights/previous", "weights/pending", "knowledge.db"],
+)
+def test_registry_rejects_storage_symlinks_before_constructor_writes(
+    registry_env, relative_storage_path
+):
+    config, requested_root, _, tmp_path = registry_env
+    module_dir = _create_probe(config, requested_root, "symlinked storage")
+    outside = tmp_path / ("outside_" + relative_storage_path.replace("/", "_"))
+    outside.mkdir()
+    storage_path = module_dir / relative_storage_path
+
+    if storage_path.is_dir() and not storage_path.is_symlink():
+        shutil.rmtree(storage_path)
+    elif storage_path.exists() or storage_path.is_symlink():
+        storage_path.unlink()
+
+    try:
+        storage_path.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable on this platform")
+
+    assert load_all(modules_dir=requested_root) == {}
+    assert list(outside.iterdir()) == []
