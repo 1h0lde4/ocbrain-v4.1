@@ -10,8 +10,8 @@ class MockModule(BaseModule):
     async def run(self, task, context): pass
     async def run_own(self, task, context): pass
 
-async def test_cache_concurrency():
-    mod = MockModule()
+async def test_cache_concurrency(tmp_path):
+    mod = MockModule(modules_dir=tmp_path)
     
     # Fill the cache near limit
     for i in range(120):

@@ -37,8 +37,10 @@ _CRITICAL_STATE_KEYS = frozenset({
 
 
 class Config:
-    def __init__(self):
+    def __init__(self, config_dir: Path | str | None = None, start_watcher: bool = True):
         self._lock = threading.RLock()
+        self.config_dir = Path(config_dir) if config_dir is not None else CONFIG_DIR
+        self._start_watcher_flag = start_watcher
         self._settings: dict = {}
         self._sources: dict  = {}
         self._models: dict   = {}
@@ -46,12 +48,13 @@ class Config:
         self._user_prefs: dict    = {}   # from user_prefs.yaml
         self._models_dirty = False       # True when _models has unflushed writes
         self._load_all()
-        self._start_watcher()
+        if start_watcher:
+            self._start_watcher()
 
     def _load_all(self):
         with self._lock:
-            self._settings = self._read_toml(CONFIG_DIR / "settings.toml")
-            self._sources  = self._read_toml(CONFIG_DIR / "sources.toml")
+            self._settings = self._read_toml(self.config_dir / "settings.toml")
+            self._sources  = self._read_toml(self.config_dir / "sources.toml")
             # A6: if a deferred (non-critical) write is sitting in memory and
             # hasn't been flushed yet, do NOT clobber it by re-reading the
             # (now stale, from this instance's point of view) models.toml —
@@ -62,9 +65,9 @@ class Config:
             # outliving a `patch("core.config.CONFIG_DIR", ...)` block) can
             # never leak test-instance state onto the real config directory.
             if not self._models_dirty:
-                self._models = self._read_toml(CONFIG_DIR / "models.toml")
-            self._yaml_settings = self._read_yaml(CONFIG_DIR / "settings.yaml")
-            self._user_prefs    = self._read_yaml(CONFIG_DIR / "user_prefs.yaml")
+                self._models = self._read_toml(self.config_dir / "models.toml")
+            self._yaml_settings = self._read_yaml(self.config_dir / "settings.yaml")
+            self._user_prefs    = self._read_yaml(self.config_dir / "user_prefs.yaml")
 
     def _read_toml(self, path: Path) -> dict:
         if not path.exists():
@@ -86,11 +89,11 @@ class Config:
         def _watch():
             mtimes = {}
             files = [
-                CONFIG_DIR / "settings.toml",
-                CONFIG_DIR / "sources.toml",
-                CONFIG_DIR / "models.toml",
-                CONFIG_DIR / "settings.yaml",
-                CONFIG_DIR / "user_prefs.yaml",
+                self.config_dir / "settings.toml",
+                self.config_dir / "sources.toml",
+                self.config_dir / "models.toml",
+                self.config_dir / "settings.yaml",
+                self.config_dir / "user_prefs.yaml",
             ]
             while True:
                 for f in files:
@@ -129,7 +132,7 @@ class Config:
             for p in parts[:-1]:
                 obj = obj.setdefault(p, {})
             obj[parts[-1]] = value
-            with open(CONFIG_DIR / "settings.toml", "wb") as f:
+            with open(self.config_dir / "settings.toml", "wb") as f:
                 tomli_w.dump(self._settings, f)
 
     # ── YAML access ───────────────────────────────────────────
@@ -208,7 +211,7 @@ class Config:
 
     def _persist_models(self):
         """Write self._models to models.toml. Caller must hold self._lock."""
-        with open(CONFIG_DIR / "models.toml", "wb") as f:
+        with open(self.config_dir / "models.toml", "wb") as f:
             tomli_w.dump(self._models, f)
         self._models_dirty = False
 
@@ -245,11 +248,11 @@ class Config:
                 "staleness_decay": True, "max_kb_size_mb": 500,
                 "confidence_boost": 0.1, "pin_to_external": False,
             }
-            with open(CONFIG_DIR / "settings.toml", "wb") as f:
+            with open(self.config_dir / "settings.toml", "wb") as f:
                 tomli_w.dump(self._settings, f)
 
             self._sources[name] = {"sources": sources}
-            with open(CONFIG_DIR / "sources.toml", "wb") as f:
+            with open(self.config_dir / "sources.toml", "wb") as f:
                 tomli_w.dump(self._sources, f)
 
     def get_yaml_all(self) -> dict:

@@ -9,8 +9,8 @@ class MockModule(BaseModule):
     async def run(self, task, context): pass
     async def run_own(self, task, context): pass
 
-def test_empty_retrieve():
-    mod = MockModule()
+def test_empty_retrieve(tmp_path):
+    mod = MockModule(modules_dir=tmp_path)
     # Ensure collection is empty
     count = mod.db.count()
     if count > 0:
