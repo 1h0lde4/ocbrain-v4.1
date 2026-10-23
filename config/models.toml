@@ -37,4 +37,3 @@ base_model = "mistral:7b"
 active_weights = ""
 last_trained = ""
 train_pairs = 0
-
