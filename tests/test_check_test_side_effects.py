@@ -19,6 +19,7 @@ def test_snapshot_covers_untracked_nested_files_and_empty_directories(tmp_path):
     assert state["modules/generated/knowledge.db/chroma.sqlite3"]["kind"] == "file"
     assert state["modules/empty-generated-dir"]["kind"] == "directory"
     assert state["data/raw"]["kind"] == "missing"
+    assert state["workspace"]["kind"] == "missing"
 
 
 def test_verify_fails_for_ignored_like_file_and_toml_changes(tmp_path):
@@ -32,6 +33,17 @@ def test_verify_fails_for_ignored_like_file_and_toml_changes(tmp_path):
 
     (modules / "untracked-or-ignored.sqlite3").write_bytes(b"generated")
     (config / "settings.toml").write_text("[global]\nvalue = 2\n", encoding="utf-8")
+    assert main(["--verify", str(baseline), "--root", str(tmp_path)]) == 1
+
+
+def test_verify_detects_workspace_runtime_writes(tmp_path):
+    (tmp_path / "config").mkdir()
+    baseline = tmp_path / "baseline.json"
+    assert main(["--snapshot", str(baseline), "--root", str(tmp_path)]) == 0
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "generated.txt").write_text("runtime output", encoding="utf-8")
     assert main(["--verify", str(baseline), "--root", str(tmp_path)]) == 1
 
 
