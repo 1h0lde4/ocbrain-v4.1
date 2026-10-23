@@ -174,9 +174,29 @@ def _validate_managed_storage_paths(module_root: Path) -> None:
                 )
 
 
+def _clear_module_bytecode(module_dir: Path) -> None:
+    """Discard stale CPython bytecode before a requested-root module reload.
+
+    Same-size source edits within one timestamp tick can otherwise reuse a
+    timestamp-based .pyc even after the package is evicted from sys.modules.
+    The source tree is symlink-checked before this helper is called; only
+    interpreter-generated .pyc files in __pycache__ directories are removed.
+    """
+    for current, directory_names, file_names in os.walk(module_dir, followlinks=False):
+        if Path(current).name != "__pycache__":
+            continue
+        for name in file_names:
+            if name.endswith(".pyc"):
+                (Path(current) / name).unlink()
+    importlib.invalidate_caches()
+
+
 def _import_module_from_root(root: Path, module_name: str):
     root = root.resolve()
     module_dir, source = _source_for_module(root, module_name)
+    # A reload is expected to observe the current source, not just evict
+    # sys.modules. Invalidate timestamp-based bytecode for relative helpers too.
+    _clear_module_bytecode(module_dir)
     namespace = _namespace_for_root(root)
     _ensure_package(namespace, root)
 
