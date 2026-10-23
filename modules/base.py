@@ -6,8 +6,6 @@ import json
 import logging
 import time
 import threading
-from contextlib import contextmanager
-from contextvars import ContextVar
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,29 +14,10 @@ from typing import Optional
 import chromadb
 
 from core.runtime.resilience import CircuitBreaker
-from core.module_paths import module_child
 
 log = logging.getLogger(__name__)
 
 MODULES_DIR = Path(__file__).parent
-
-# Root chosen by the registry for the duration of a module constructor. This
-# preserves compatibility with subclasses whose __init__ calls super() without
-# forwarding modules_dir, while preventing alternate-root loads from touching
-# the production modules directory.
-_ACTIVE_MODULES_DIR: ContextVar[Path | None] = ContextVar(
-    "ocbrain_active_modules_dir", default=None
-)
-
-
-@contextmanager
-def module_storage_root(modules_dir: Path):
-    """Temporarily force BaseModule storage under a registry-selected root."""
-    token = _ACTIVE_MODULES_DIR.set(Path(modules_dir).resolve())
-    try:
-        yield
-    finally:
-        _ACTIVE_MODULES_DIR.reset(token)
 
 # Module-level retrieval cache: (module_name, query_hash, k) → list[str]
 # 128 slots, TTL enforced by timestamp in value tuple
@@ -81,14 +60,8 @@ class BaseModule(ABC):
     name: str = "base"
 
     def __init__(self, modules_dir: Path | None = None):
-        context_dir = _ACTIVE_MODULES_DIR.get()
-        target_dir = Path(
-            context_dir if context_dir is not None
-            else modules_dir if modules_dir is not None
-            else MODULES_DIR
-        ).resolve()
-        # Validate the module's name before creating anything on disk.
-        self.root: Path = module_child(target_dir, self.name)
+        target_dir = modules_dir or MODULES_DIR
+        self.root: Path = target_dir / self.name
         self.root.mkdir(parents=True, exist_ok=True)
 
         for sub in ["weights/active", "weights/previous", "weights/pending"]:
