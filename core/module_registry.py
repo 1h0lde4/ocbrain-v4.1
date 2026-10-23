@@ -7,6 +7,7 @@ derived from that canonical root, so stale modules in the ordinary modules.*
 namespace cannot redirect a load to another tree.
 """
 import hashlib
+import importlib.abc
 import importlib.machinery
 import importlib.util
 import os
@@ -23,6 +24,66 @@ MODULES_DIR = Path(__file__).parent.parent / "modules"
 _SKIP = {"__pycache__", "_template", "base"}
 _NAMESPACE_PREFIX = "_ocbrain_registry_"
 _REGISTRY_LOCK = threading.RLock()
+
+
+class _SourceOnlyLoader(importlib.machinery.SourceFileLoader):
+    """Compile from the current source; never execute stale timestamp-based .pyc."""
+
+    def get_code(self, fullname: str):
+        source = self.get_data(self.path)
+        return self.source_to_code(source, self.path)
+
+    def set_data(self, path, data, *, _mode=0o666):
+        # Root-bound hot reload must not leave bytecode caches that can shadow
+        # same-size source edits made within the filesystem timestamp window.
+        return None
+
+
+class _RootNamespaceFinder(importlib.abc.MetaPathFinder):
+    """Resolve relative imports strictly under one already-validated module tree."""
+
+    def __init__(self, namespace: str, module_root: Path):
+        self.namespace = namespace
+        self.module_root = module_root.resolve()
+
+    def find_spec(self, fullname: str, path=None, target=None):
+        if not fullname.startswith(self.namespace + "._module_"):
+            return None
+        parent_name, separator, leaf = fullname.rpartition(".")
+        if not separator:
+            return None
+        parent = sys.modules.get(parent_name)
+        search_paths = getattr(parent, "__path__", None) if parent is not None else None
+        if not search_paths:
+            return None
+
+        for search_path in search_paths:
+            directory = Path(search_path).resolve()
+            try:
+                directory.relative_to(self.module_root)
+            except ValueError:
+                raise ImportError("Relative import path escapes the requested module root")
+
+            package_dir = directory / leaf
+            init_file = package_dir / "__init__.py"
+            if init_file.is_file():
+                spec = importlib.util.spec_from_file_location(
+                    fullname,
+                    str(init_file),
+                    loader=_SourceOnlyLoader(fullname, str(init_file)),
+                    submodule_search_locations=[str(package_dir)],
+                )
+                if spec is not None:
+                    return spec
+
+            source = directory / f"{leaf}.py"
+            if source.is_file():
+                return importlib.util.spec_from_file_location(
+                    fullname,
+                    str(source),
+                    loader=_SourceOnlyLoader(fullname, str(source)),
+                )
+        return None
 
 
 def _namespace_for_root(root: Path) -> str:
@@ -85,7 +146,10 @@ def _ensure_package(name: str, path: Path, init_file: Path | None = None):
 
     if init_file is not None:
         spec = importlib.util.spec_from_file_location(
-            name, str(init_file), submodule_search_locations=[str(path)]
+            name,
+            str(init_file),
+            loader=_SourceOnlyLoader(name, str(init_file)),
+            submodule_search_locations=[str(path)],
         )
         if spec is None or spec.loader is None:
             raise ImportError("Unable to load module package initializer")
@@ -189,39 +253,57 @@ def _import_module_from_root(root: Path, module_name: str):
 
     name_digest = hashlib.sha256(module_name.encode("utf-8")).hexdigest()
     package_name = f"{namespace}._module_{name_digest}"
-    # Clear this module package and its relative-import cache on each load. A
-    # changed helper.py or __init__.py must not survive an explicit reload.
+    # Clear the module package and relative-import cache on each load.
+    # The custom finder ensures freshly edited helpers cannot be hidden by a
+    # same-size, same-second .pyc timestamp cache.
     _remove_import_tree(package_name)
     init_file = module_dir / "__init__.py"
-    _ensure_package(package_name, module_dir, init_file if init_file.is_file() else None)
-
     qualified_name = f"{package_name}.module"
-    _remove_import_tree(qualified_name)
-    spec = importlib.util.spec_from_file_location(qualified_name, str(source))
-    if spec is None or spec.loader is None:
-        raise ImportError("Unable to create a loader for the requested module source")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[qualified_name] = module
-    package = sys.modules[package_name]
-    setattr(package, "module", module)
+    finder = _RootNamespaceFinder(namespace, module_dir)
+    sys.meta_path.insert(0, finder)
     try:
-        spec.loader.exec_module(module)
-    except Exception:
-        _remove_import_tree(qualified_name)
-        raise
+        _ensure_package(package_name, module_dir, init_file if init_file.is_file() else None)
 
-    try:
-        imported_source = Path(module.__file__).resolve(strict=True)
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-        _remove_import_tree(qualified_name)
-        raise ImportError("Imported module has no verifiable source path") from exc
-    if imported_source != source:
-        _remove_import_tree(qualified_name)
-        raise ImportError("Imported module source does not match the requested root")
-    if not _package_matches(sys.modules[package_name], module_dir, init_file if init_file.is_file() else None):
-        _remove_import_tree(qualified_name)
-        raise ImportError("Imported module package no longer points at the requested root")
-    return module
+        # A package initializer may already have imported .module. Reuse that
+        # exact namespace-bound module rather than executing module-level code
+        # twice; otherwise load the requested source with the no-bytecode loader.
+        module = sys.modules.get(qualified_name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(
+                qualified_name,
+                str(source),
+                loader=_SourceOnlyLoader(qualified_name, str(source)),
+            )
+            if spec is None or spec.loader is None:
+                raise ImportError("Unable to create a loader for the requested module source")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[qualified_name] = module
+            package = sys.modules[package_name]
+            setattr(package, "module", module)
+            spec.loader.exec_module(module)
+
+        try:
+            imported_source = Path(module.__file__).resolve(strict=True)
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise ImportError("Imported module has no verifiable source path") from exc
+        if imported_source != source:
+            raise ImportError("Imported module source does not match the requested root")
+        if not _package_matches(
+            sys.modules[package_name],
+            module_dir,
+            init_file if init_file.is_file() else None,
+        ):
+            raise ImportError("Imported module package no longer points at the requested root")
+        return module
+    except Exception:
+        _remove_import_tree(package_name)
+        raise
+    finally:
+        # Avoid leaking a process-wide finder after the synchronous import.
+        try:
+            sys.meta_path.remove(finder)
+        except ValueError:
+            pass
 
 
 def _instantiate_from_root(module, module_name: str, root: Path) -> BaseModule:
