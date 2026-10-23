@@ -9,6 +9,7 @@ namespace cannot redirect a load to another tree.
 import hashlib
 import importlib.machinery
 import importlib.util
+import os
 import sys
 import threading
 import types
@@ -114,8 +115,16 @@ def _ensure_package(name: str, path: Path, init_file: Path | None = None):
     return package
 
 
+def _reject_module_tree_symlinks(module_dir: Path) -> None:
+    """Reject link-based escapes in relative-import helpers before any code executes."""
+    for current, directory_names, file_names in os.walk(module_dir, followlinks=False):
+        for name in (*directory_names, *file_names):
+            if (Path(current) / name).is_symlink():
+                raise ImportError("Module tree must not contain symlinks")
+
+
 def _source_for_module(root: Path, module_name: str) -> tuple[Path, Path]:
-    """Resolve a module entry and reject directory/file symlinks outside root."""
+    """Resolve a module entry and reject symlinks anywhere in its source tree."""
     root = root.resolve()
     entry = root / module_name
     if entry.is_symlink():
@@ -123,6 +132,9 @@ def _source_for_module(root: Path, module_name: str) -> tuple[Path, Path]:
     module_dir = module_child(root, module_name)
     if module_dir != entry:
         raise ImportError("Module directory is not the requested direct child")
+    # A symlinked relative helper can execute outside-root code while module.py
+    # is imported. Check the whole package tree before executing any of it.
+    _reject_module_tree_symlinks(module_dir)
     source = module_dir / "module.py"
     if source.is_symlink():
         raise ImportError("Module source must not be a symlink")
