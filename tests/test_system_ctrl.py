@@ -84,6 +84,13 @@ def test_read_nonexistent_file():
     assert "not found" in result.lower()
 
 
+def test_list_dir_of_fresh_workspace_is_empty_without_creation(tmp_path, monkeypatch):
+    root = tmp_path / "workspace-not-created"
+    monkeypatch.setattr(system_ctrl_module, "SAFE_ROOT", root)
+    assert _list_dir(".") == ""
+    assert not root.exists()
+
+
 def test_list_dir(safe_tmp_path):
     (safe_tmp_path / "file1.txt").write_text("a")
     (safe_tmp_path / "file2.py").write_text("b")
