@@ -2,13 +2,10 @@
 modules/base.py — V2.1: LRU cache on retrieve(), async ChromaDB wrapper.
 """
 import asyncio
-import hashlib
 import json
 import logging
 import time
 import threading
-from contextlib import contextmanager
-from contextvars import ContextVar
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,31 +14,12 @@ from typing import Optional
 import chromadb
 
 from core.runtime.resilience import CircuitBreaker
-from core.module_paths import module_child
 
 log = logging.getLogger(__name__)
 
 MODULES_DIR = Path(__file__).parent
 
-# Root chosen by the registry for the duration of a module constructor. This
-# preserves compatibility with subclasses whose __init__ calls super() without
-# forwarding modules_dir, while preventing alternate-root loads from touching
-# the production modules directory.
-_ACTIVE_MODULES_DIR: ContextVar[Path | None] = ContextVar(
-    "ocbrain_active_modules_dir", default=None
-)
-
-
-@contextmanager
-def module_storage_root(modules_dir: Path):
-    """Temporarily force BaseModule storage under a registry-selected root."""
-    token = _ACTIVE_MODULES_DIR.set(Path(modules_dir).resolve())
-    try:
-        yield
-    finally:
-        _ACTIVE_MODULES_DIR.reset(token)
-
-# Module-level retrieval cache: (canonical_storage_root, module_name, query_digest, k) → list[str]
+# Module-level retrieval cache: (module_name, query_hash, k) → list[str]
 # 128 slots, TTL enforced by timestamp in value tuple
 _RETRIEVE_CACHE: dict[tuple, tuple] = {}
 _CACHE_TTL_SEC  = 300   # 5 minutes — stale after this
@@ -82,18 +60,9 @@ class BaseModule(ABC):
     name: str = "base"
 
     def __init__(self, modules_dir: Path | None = None):
-        context_dir = _ACTIVE_MODULES_DIR.get()
-        target_dir = Path(
-            context_dir if context_dir is not None
-            else modules_dir if modules_dir is not None
-            else MODULES_DIR
-        ).resolve()
-        # Validate the module's name before creating anything on disk.
-        self.root: Path = module_child(target_dir, self.name)
+        target_dir = modules_dir or MODULES_DIR
+        self.root: Path = target_dir / self.name
         self.root.mkdir(parents=True, exist_ok=True)
-        # Root identity partitions cache entries when same-named modules are
-        # loaded from independent roots (for example, a test/plugin workspace).
-        self._cache_scope = str(self.root.resolve())
 
         for sub in ["weights/active", "weights/previous", "weights/pending"]:
             (self.root / sub).mkdir(parents=True, exist_ok=True)
@@ -124,14 +93,13 @@ class BaseModule(ABC):
     def retrieve(self, query: str, k: int = 5) -> list[str]:
         """
         Synchronous retrieval with LRU cache.
-        Cache key includes the canonical storage root to prevent cross-root leakage.
+        Cache key: (module_name, query_hash, k).
         ChromaDB query only runs on cache miss.
         """
         if k <= 0:
             return []
 
-        query_digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
-        cache_key = (self._cache_scope, self.name, query_digest, k)
+        cache_key = (self.name, hash(query), k)
         cached    = _cache_get(cache_key)
         if cached is not None:
             return cached
@@ -181,10 +149,7 @@ class BaseModule(ABC):
             self.db.upsert(documents=chunks, metadatas=metadatas, ids=ids)
             # Invalidate retrieval cache for this module on new ingest
             with _CACHE_LOCK:
-                keys_to_drop = [
-                    k for k in _RETRIEVE_CACHE
-                    if k[0] == self._cache_scope and k[1] == self.name
-                ]
+                keys_to_drop = [k for k in _RETRIEVE_CACHE if k[0] == self.name]
                 for k in keys_to_drop:
                     del _RETRIEVE_CACHE[k]
         except Exception as e:
@@ -247,10 +212,7 @@ class BaseModule(ABC):
 
     def _cache_entry_count(self) -> int:
         with _CACHE_LOCK:
-            return sum(
-                1 for k in _RETRIEVE_CACHE
-                if k[0] == self._cache_scope and k[1] == self.name
-            )
+            return sum(1 for k in _RETRIEVE_CACHE if k[0] == self.name)
 
     def _build_prompt(self, task: str, chunks: list[str], context) -> str:
         ctx_str = context.format_for_prompt(5) if context else ""
