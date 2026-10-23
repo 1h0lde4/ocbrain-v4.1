@@ -1,6 +1,8 @@
 """Regression tests for instance-scoped Config watcher paths."""
 from pathlib import Path
 
+import threading
+
 import pytest
 
 import core.config as config_module
@@ -46,8 +48,15 @@ def test_watcher_uses_instance_path_after_global_default_changes(tmp_path, monke
 
     assert captured["daemon"] is True
 
-    def stop_after_scan(_seconds):
-        raise StopAfterFirstScan
+    original_sleep = config_module.time.sleep
+    scan_thread_id = threading.get_ident()
+
+    def stop_after_scan(seconds):
+        # time is a shared module; keep the already-running singleton watcher
+        # unaffected and stop only the synchronously captured test target.
+        if threading.get_ident() == scan_thread_id:
+            raise StopAfterFirstScan
+        return original_sleep(seconds)
 
     monkeypatch.setattr(config_module.time, "sleep", stop_after_scan)
     with pytest.raises(StopAfterFirstScan):
