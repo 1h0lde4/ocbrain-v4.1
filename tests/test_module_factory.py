@@ -1,18 +1,11 @@
 """Tests for core/module_factory.py"""
-import importlib
-import sys
-import shutil
-from pathlib import Path
-
 import pytest
-import modules
 from core.module_factory import create
 from core.config import Config
-from modules.embedding_fn import HashEmbeddingFunction
 
 
 @pytest.fixture
-def isolated_factory_env(tmp_path, monkeypatch):
+def isolated_factory_env(tmp_path):
     """Isolated configuration, module directory, and import environment
     for module_factory tests."""
     tmp_config_dir = tmp_path / "config"
@@ -26,20 +19,7 @@ def isolated_factory_env(tmp_path, monkeypatch):
 
     test_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
 
-    monkeypatch.setattr("core.module_factory.config", test_cfg)
-    monkeypatch.setattr("core.module_factory.MODULES_DIR", tmp_modules_dir)
-    monkeypatch.setattr("core.module_registry.MODULES_DIR", tmp_modules_dir)
-    monkeypatch.setattr("modules.base.MODULES_DIR", tmp_modules_dir)
-
-    monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
-
-    orig_path = list(modules.__path__)
-    monkeypatch.setattr(modules, "__path__", [str(tmp_modules_dir)] + orig_path)
-    importlib.invalidate_caches()
-
     yield test_cfg, tmp_modules_dir, tmp_config_dir
-
-    importlib.invalidate_caches()
 
 
 def test_create_module_scaffolds_files(isolated_factory_env):

@@ -13,7 +13,6 @@ Covers:
 import os
 import sys
 import shutil
-import importlib
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,31 @@ from core.config import Config
 from core.module_factory import create
 from core.module_registry import reload_module
 from modules.embedding_fn import HashEmbeddingFunction
+
+
+def _is_beneath(path, root):
+    try:
+        return Path(path).resolve().is_relative_to(Path(root).resolve())
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+
+
+def _cleanup_imports_beneath(root):
+    """Remove only import entries whose origin/search path is inside this temp tree."""
+    root = Path(root).resolve()
+    remove = []
+    for module_name, module_obj in list(sys.modules.items()):
+        locations = []
+        origin = getattr(module_obj, "__file__", None)
+        if origin:
+            locations.append(origin)
+        search_path = getattr(module_obj, "__path__", None)
+        if search_path:
+            locations.extend(list(search_path))
+        if any(_is_beneath(location, root) for location in locations):
+            remove.append(module_name)
+    for module_name in sorted(remove, key=lambda name: name.count("."), reverse=True):
+        sys.modules.pop(module_name, None)
 
 
 @pytest.fixture
@@ -39,20 +63,16 @@ def isolated_factory_env(tmp_path, monkeypatch):
 
     test_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
 
-    monkeypatch.setattr("core.module_factory.config", test_cfg)
-    monkeypatch.setattr("core.module_factory.MODULES_DIR", tmp_modules_dir)
-    monkeypatch.setattr("core.module_registry.MODULES_DIR", tmp_modules_dir)
-    monkeypatch.setattr("modules.base.MODULES_DIR", tmp_modules_dir)
-
     monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
 
-    orig_path = list(modules.__path__)
-    monkeypatch.setattr(modules, "__path__", [str(tmp_modules_dir)] + orig_path)
-    importlib.invalidate_caches()
-
-    yield test_cfg, tmp_modules_dir, tmp_config_dir
-
-    importlib.invalidate_caches()
+    original_package_path = tuple(modules.__path__)
+    try:
+        yield test_cfg, tmp_modules_dir, tmp_config_dir
+    finally:
+        _cleanup_imports_beneath(tmp_path)
+        assert tuple(modules.__path__) == original_package_path, (
+            "registry tests must not mutate the production modules package path"
+        )
 
 
 def test_create_disabled_by_default(isolated_factory_env):
@@ -128,11 +148,12 @@ def test_desc_field_cannot_break_out_of_generated_source(isolated_factory_env):
         instance = reload_module(name, {}, modules_dir=tmp_modules_dir)
         assert instance is not None, "reload_module() returned None"
 
-        mod_sys_entry = sys.modules.get(f"modules.{name}.module")
+        mod_sys_entry = sys.modules.get(instance.__class__.__module__)
         assert mod_sys_entry is not None
         imported_file = Path(mod_sys_entry.__file__).resolve()
-        assert imported_file.is_relative_to(tmp_modules_dir.resolve()), (
-            f"Imported module file {imported_file} is outside {tmp_modules_dir}"
+        expected_file = (path / "module.py").resolve()
+        assert imported_file == expected_file, (
+            f"Registry imported {imported_file}, requested {expected_file}"
         )
         assert instance.root.resolve().is_relative_to(tmp_modules_dir.resolve()), (
             f"Module instance storage root {instance.root} is outside {tmp_modules_dir}"
@@ -188,16 +209,15 @@ def test_repeated_cycles_in_one_process(isolated_factory_env):
         assert instance.name == name
         assert instance.desc == f"Cycle {i} description"
 
-        imported_file = Path(sys.modules[f"modules.{name}.module"].__file__).resolve()
-        assert imported_file.is_relative_to(tmp_modules_dir.resolve())
+        imported_file = Path(sys.modules[instance.__class__.__module__].__file__).resolve()
+        assert imported_file == (path / "module.py").resolve()
         assert instance.root.resolve().is_relative_to(tmp_modules_dir.resolve())
 
-        # Clean up in-memory package/sys.modules state
-        sys.modules.pop(f"modules.{name}.module", None)
-        sys.modules.pop(f"modules.{name}", None)
-        if hasattr(modules, name):
-            delattr(modules, name)
-        importlib.invalidate_caches()
+        # Remove this root's private import namespace before deleting its files.
+        import_namespace = instance.__class__.__module__.split(".", 1)[0]
+        for cached_name in list(sys.modules):
+            if cached_name == import_namespace or cached_name.startswith(import_namespace + "."):
+                sys.modules.pop(cached_name, None)
 
         # Clean up module filesystem directory
         shutil.rmtree(path)
