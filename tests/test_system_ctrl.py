@@ -45,15 +45,15 @@ def test_allowlist_contains_expected_actions():
         assert action in ACTION_HANDLERS
 
 
-def test_unknown_action_rejected():
-    module = Module()
+def test_unknown_action_rejected(tmp_path):
+    module = Module(modules_dir=tmp_path / "modules")
     result = module._execute({"action": "run_shell", "cmd": "rm -rf /"})
     assert "not in the allowed list" in result
     assert "rm" not in result  # never echoed back as executed
 
 
-def test_empty_action_rejected():
-    module = Module()
+def test_empty_action_rejected(tmp_path):
+    module = Module(modules_dir=tmp_path / "modules")
     result = module._execute({})
     assert "not in the allowed list" in result
 
@@ -95,8 +95,8 @@ def test_delete_nonexistent_file():
     assert "not found" in result.lower()
 
 
-def test_execute_write_file():
-    module = Module()
+def test_execute_write_file(tmp_path):
+    module = Module(modules_dir=tmp_path / "modules")
     target = SAFE_ROOT / "test_system_ctrl" / "execute_write_file" / "hello.txt"
     shutil.rmtree(target.parent, ignore_errors=True)
     try:
