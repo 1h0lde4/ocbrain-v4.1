@@ -3,16 +3,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from modules.base import BaseModule
-from modules.embedding_fn import HashEmbeddingFunction
 
 class MockModule(BaseModule):
     name = "empty_test"
     async def run(self, task, context): pass
     async def run_own(self, task, context): pass
 
-def test_empty_retrieve(tmp_path, monkeypatch):
-    monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
-    mod = MockModule(modules_dir=tmp_path / "modules")
+def test_empty_retrieve(tmp_path):
+    mod = MockModule(modules_dir=tmp_path)
     # Ensure collection is empty
     count = mod.db.count()
     if count > 0:
