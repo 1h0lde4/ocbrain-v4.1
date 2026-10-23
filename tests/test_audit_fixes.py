@@ -369,69 +369,64 @@ class TestA6ConfigWrites:
 
     def test_critical_key_persists_immediately(self, tmp_path):
         """Stage changes must write models.toml immediately."""
-        from core.config import _CRITICAL_STATE_KEYS
+        from core.config import Config, _CRITICAL_STATE_KEYS
 
-        # Patch CONFIG_DIR before importing Config class
-        with patch("core.config.CONFIG_DIR", tmp_path):
-            # Create minimal required files
-            (tmp_path / "settings.toml").write_bytes(b"")
-            (tmp_path / "sources.toml").write_bytes(b"")
-            (tmp_path / "models.toml").write_bytes(b"")
+        # Create minimal required files
+        (tmp_path / "settings.toml").write_bytes(b"")
+        (tmp_path / "sources.toml").write_bytes(b"")
+        (tmp_path / "models.toml").write_bytes(b"")
 
-            from core.config import Config
-            cfg = Config()
+        cfg = Config(config_dir=tmp_path, start_watcher=False)
 
-            # Set a critical key
-            cfg.set_module_state("test_mod", "stage", "shadow")
-            assert not cfg._models_dirty, "Critical key should not leave dirty flag"
+        # Set a critical key
+        cfg.set_module_state("test_mod", "stage", "shadow")
+        assert not cfg._models_dirty, "Critical key should not leave dirty flag"
 
-            # Verify it was written to disk
-            if sys.version_info >= (3, 11):
-                import tomllib
-            else:
-                import tomli as tomllib
-            with open(tmp_path / "models.toml", "rb") as f:
-                persisted = tomllib.load(f)
-            assert persisted["test_mod"]["stage"] == "shadow"
+        # Verify it was written to disk
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:
+            import tomli as tomllib
+        with open(tmp_path / "models.toml", "rb") as f:
+            persisted = tomllib.load(f)
+        assert persisted["test_mod"]["stage"] == "shadow"
 
     def test_non_critical_key_deferred(self, tmp_path):
         """query_count changes must NOT write immediately."""
-        with patch("core.config.CONFIG_DIR", tmp_path):
-            (tmp_path / "settings.toml").write_bytes(b"")
-            (tmp_path / "sources.toml").write_bytes(b"")
-            (tmp_path / "models.toml").write_bytes(b"")
+        (tmp_path / "settings.toml").write_bytes(b"")
+        (tmp_path / "sources.toml").write_bytes(b"")
+        (tmp_path / "models.toml").write_bytes(b"")
 
-            from core.config import Config
-            cfg = Config()
+        from core.config import Config
+        cfg = Config(config_dir=tmp_path, start_watcher=False)
 
-            cfg.set_module_state("test_mod", "query_count", 42)
-            assert cfg._models_dirty, "Non-critical key should set dirty flag"
+        cfg.set_module_state("test_mod", "query_count", 42)
+        assert cfg._models_dirty, "Non-critical key should set dirty flag"
 
-            # In-memory state should be updated
-            assert cfg.get_module_state("test_mod")["query_count"] == 42
+        # In-memory state should be updated
+        assert cfg.get_module_state("test_mod")["query_count"] == 42
 
     def test_flush_persists_dirty_state(self, tmp_path):
         """flush() must write deferred state to disk."""
-        with patch("core.config.CONFIG_DIR", tmp_path):
-            (tmp_path / "settings.toml").write_bytes(b"")
-            (tmp_path / "sources.toml").write_bytes(b"")
-            (tmp_path / "models.toml").write_bytes(b"")
+        (tmp_path / "settings.toml").write_bytes(b"")
+        (tmp_path / "sources.toml").write_bytes(b"")
+        (tmp_path / "models.toml").write_bytes(b"")
 
-            from core.config import Config
-            cfg = Config()
-            cfg.set_module_state("test_mod", "query_count", 99)
-            assert cfg._models_dirty
+        from core.config import Config
+        cfg = Config(config_dir=tmp_path, start_watcher=False)
+        cfg.set_module_state("test_mod", "query_count", 99)
+        assert cfg._models_dirty
 
-            cfg.flush()
-            assert not cfg._models_dirty
+        cfg.flush()
+        assert not cfg._models_dirty
 
-            if sys.version_info >= (3, 11):
-                import tomllib
-            else:
-                import tomli as tomllib
-            with open(tmp_path / "models.toml", "rb") as f:
-                persisted = tomllib.load(f)
-            assert persisted["test_mod"]["query_count"] == 99
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:
+            import tomli as tomllib
+        with open(tmp_path / "models.toml", "rb") as f:
+            persisted = tomllib.load(f)
+        assert persisted["test_mod"]["query_count"] == 99
 
     def test_critical_keys_defined(self):
         """Verify the critical keys set exists and contains expected entries."""

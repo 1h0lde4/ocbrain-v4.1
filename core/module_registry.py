@@ -15,14 +15,15 @@ MODULES_DIR = Path(__file__).parent.parent / "modules"
 _SKIP = {"__pycache__", "_template", "base"}
 
 
-def load_all() -> dict[str, BaseModule]:
+def load_all(modules_dir: Path | None = None) -> dict[str, BaseModule]:
     """
     Returns dict of {module_name: Module instance}.
     Called once at startup by main.py.
     """
+    target_modules_dir = modules_dir if modules_dir is not None else MODULES_DIR
     modules: dict[str, BaseModule] = {}
 
-    for path in sorted(MODULES_DIR.iterdir()):
+    for path in sorted(target_modules_dir.iterdir()):
         if not path.is_dir():
             continue
         if path.name in _SKIP or path.name.startswith("."):
@@ -32,8 +33,8 @@ def load_all() -> dict[str, BaseModule]:
             continue
 
         try:
-            # Ensure modules dir is importable
-            root = str(MODULES_DIR.parent)
+            # Ensure modules dir parent is importable
+            root = str(target_modules_dir.parent)
             if root not in sys.path:
                 sys.path.insert(0, root)
 
@@ -55,9 +56,10 @@ def load_all() -> dict[str, BaseModule]:
     return modules
 
 
-def reload_module(module_name: str, existing: dict) -> Optional[BaseModule]:
+def reload_module(module_name: str, existing: dict, modules_dir: Path | None = None) -> Optional[BaseModule]:
     """Hot-reload a single module after weight update."""
-    path = module_child(MODULES_DIR, module_name) / "module.py"
+    target_modules_dir = modules_dir if modules_dir is not None else MODULES_DIR
+    path = module_child(target_modules_dir, module_name) / "module.py"
     if not path.exists():
         return None
     try:

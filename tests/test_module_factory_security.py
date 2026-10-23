@@ -1,85 +1,106 @@
 """
 Security regression tests for RCE-001 (KNOWN_ISSUES.md DEBT-021).
 
-Covers two independent invariants, deliberately not merged into one test:
-  1. Containment -- module creation is disabled unless explicitly enabled.
+Covers:
+  1. Containment -- module creation is disabled unless explicitly enabled,
+     verified against a clean baseline without pre-setting the flag to false.
   2. The actual fix -- create() cannot be used to inject and execute
      arbitrary Python via the desc field, through the *real* end-to-end
-     path (write generated source -> import it), not a narrow unit test
-     of module_factory.py in isolation.
+     path (write generated source -> import it -> instantiate BaseModule),
+     proving path, import, and ChromaDB/runtime storage isolation.
+  3. Repeated create/import/instantiate/cleanup cycles within one process.
 """
 import os
 import sys
 import shutil
+import importlib
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from core.config import config
+import modules
+from core.config import Config
 from core.module_factory import create
+from core.module_registry import reload_module
+from modules.embedding_fn import HashEmbeddingFunction
 
 
-MODULES_DIR = Path(__file__).parent.parent / "modules"
+@pytest.fixture
+def isolated_factory_env(tmp_path, monkeypatch):
+    """Isolated environment for security tests."""
+    tmp_config_dir = tmp_path / "config"
+    tmp_config_dir.mkdir(parents=True, exist_ok=True)
+    tmp_modules_dir = tmp_path / "modules"
+    tmp_modules_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write clean default settings (factory disabled by default)
+    (tmp_config_dir / "settings.toml").write_text("[global]\nlog_level = \"INFO\"\n")
+    (tmp_config_dir / "models.toml").write_text("")
+    (tmp_config_dir / "sources.toml").write_text("")
+
+    test_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
+
+    monkeypatch.setattr("core.module_factory.config", test_cfg)
+    monkeypatch.setattr("core.module_factory.MODULES_DIR", tmp_modules_dir)
+    monkeypatch.setattr("core.module_registry.MODULES_DIR", tmp_modules_dir)
+    monkeypatch.setattr("modules.base.MODULES_DIR", tmp_modules_dir)
+
+    monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
+
+    orig_path = list(modules.__path__)
+    monkeypatch.setattr(modules, "__path__", [str(tmp_modules_dir)] + orig_path)
+    importlib.invalidate_caches()
+
+    yield test_cfg, tmp_modules_dir, tmp_config_dir
+
+    importlib.invalidate_caches()
 
 
-def _cleanup(name):
-    dest = MODULES_DIR / name
-    if dest.exists():
-        shutil.rmtree(dest)
-    try:
-        if name in config._models:
-            del config._models[name]
-        if name in config._settings.get("modules", {}):
-            del config._settings["modules"][name]
-        if name in config._sources:
-            del config._sources[name]
-    except Exception:
-        pass
+def test_create_disabled_by_default(isolated_factory_env):
+    """Refusal test against a clean baseline without first mutating the flag."""
+    test_cfg, tmp_modules_dir, tmp_config_dir = isolated_factory_env
+
+    # 1. Assert disabled value without first setting it to false
+    assert test_cfg.get("global.module_factory_enabled", False) is False
+
+    # 2. Call factory and assert expected refusal
+    with pytest.raises(RuntimeError, match="RCE-001"):
+        create(
+            name="test_containment_tmp",
+            desc="should never get created",
+            model="mistral",
+            keywords=[],
+            sources=[],
+            config_obj=test_cfg,
+            modules_dir=tmp_modules_dir,
+        )
+
+    # 3. Assert no module directory created in temporary tree
+    assert not (tmp_modules_dir / "test_containment_tmp").exists()
+
+    # 4. Assert no module entry persisted in temporary config files
+    models_txt = (tmp_config_dir / "models.toml").read_text()
+    settings_txt = (tmp_config_dir / "settings.toml").read_text()
+    sources_txt = (tmp_config_dir / "sources.toml").read_text()
+
+    assert "test_containment_tmp" not in models_txt
+    assert "test_containment_tmp" not in settings_txt
+    assert "test_containment_tmp" not in sources_txt
 
 
-def test_create_disabled_by_default():
-    """No fixture enabling the flag here on purpose -- this test exercises
-    the real, un-overridden default a fresh install/deployment would see."""
-    previous = config.get("global.module_factory_enabled", False)
-    config.set("global.module_factory_enabled", False)
-    try:
-        with pytest.raises(RuntimeError, match="RCE-001"):
-            create(
-                name="test_containment_tmp",
-                desc="should never get created",
-                model="mistral",
-                keywords=[],
-                sources=[],
-            )
-    finally:
-        config.set("global.module_factory_enabled", previous)
-    # Confirm it genuinely didn't get created, not just that an exception
-    # happened to be raised somewhere.
-    assert not (MODULES_DIR / "test_containment_tmp").exists()
-
-
-def test_desc_field_cannot_break_out_of_generated_source():
+def test_desc_field_cannot_break_out_of_generated_source(isolated_factory_env):
     """
     RCE-001: a desc value shaped exactly like the traced exploit (a quote
     that would have broken the old pre-quoted template, followed by
     class-body-indented statements) must not execute anything when the
     generated module is imported.
-
-    Tests the real end-to-end path per the project owner's explicit
-    instruction: HTTP-shaped input -> create() writes the generated
-    source to disk -> core.module_registry.reload_module() imports it for
-    real (the same function interface/api.py's route calls) -- not a
-    narrow check of module_factory.py's string output in isolation, which
-    could pass while the dangerous execution path remains intact.
     """
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
+    test_cfg.set("global.module_factory_enabled", True)
+
     marker_key = "OCBRAIN_RCE001_TEST_MARKER"
+    orig_marker_val = os.environ.get(marker_key)
     os.environ.pop(marker_key, None)
 
-    # Shaped exactly like the traced chain: one clean breakout point (a
-    # single quote closing out the old `desc = "{{DESC}}"` template line),
-    # then two class-body-indented statements -- one with a real (if
-    # harmless) side effect, one that closes the syntax out cleanly so the
-    # file would still have been valid Python under the *old* code.
     payload = (
         'Legitimate-looking description"\n'
         '    import os\n'
@@ -88,9 +109,6 @@ def test_desc_field_cannot_break_out_of_generated_source():
     )
 
     name = "test_rce001_tmp"
-    previous = config.get("global.module_factory_enabled", False)
-    config.set("global.module_factory_enabled", True)
-    _cleanup(name)
     try:
         path = create(
             name=name,
@@ -98,60 +116,88 @@ def test_desc_field_cannot_break_out_of_generated_source():
             model="mistral",
             keywords=[],
             sources=[],
+            config_obj=test_cfg,
+            modules_dir=tmp_modules_dir,
         )
-        # The fix must not simply reject unusual content -- legitimate
-        # descriptions routinely contain quotes and punctuation. It must
-        # succeed, safely.
+
         assert path.exists()
+        assert path.is_relative_to(tmp_modules_dir)
         generated = (path / "module.py").read_text()
-        # The payload must appear only as data (inside repr()'s escaping),
-        # never as an unindented, independently-executable import
-        # statement.
         assert "\nimport os\n" not in generated
 
-        # Import through the real production path.
-        from core.module_registry import reload_module
-        instance = reload_module(name, {})
-        assert instance is not None, (
-            "reload_module() returned None -- the generated file failed "
-            "to import at all, which would itself be a regression"
+        instance = reload_module(name, {}, modules_dir=tmp_modules_dir)
+        assert instance is not None, "reload_module() returned None"
+
+        mod_sys_entry = sys.modules.get(f"modules.{name}.module")
+        assert mod_sys_entry is not None
+        imported_file = Path(mod_sys_entry.__file__).resolve()
+        assert imported_file.is_relative_to(tmp_modules_dir.resolve()), (
+            f"Imported module file {imported_file} is outside {tmp_modules_dir}"
+        )
+        assert instance.root.resolve().is_relative_to(tmp_modules_dir.resolve()), (
+            f"Module instance storage root {instance.root} is outside {tmp_modules_dir}"
         )
 
-        # The real assertion: the injected statement did not run.
-        assert os.environ.get(marker_key) is None, (
-            "RCE-001 regression: injected code executed on import"
-        )
-
-        # And the fix preserves the original content exactly -- this
-        # isn't passing by coincidence (e.g. by mangling or truncating
-        # desc rather than safely encoding it).
+        assert os.environ.get(marker_key) is None, "RCE-001 regression: injected code executed"
         assert instance.desc == payload
     finally:
-        _cleanup(name)
-        os.environ.pop(marker_key, None)
-        config.set("global.module_factory_enabled", previous)
+        if orig_marker_val is None:
+            os.environ.pop(marker_key, None)
+        else:
+            os.environ[marker_key] = orig_marker_val
 
 
-def test_name_field_also_uses_safe_literal_substitution():
-    """name is already constrained by .isidentifier(), so it can't carry
-    this specific payload shape -- but the substitution mechanism itself
-    (repr(), not raw concatenation) should apply uniformly rather than
-    depending on that upstream check to hold forever. Confirms the
-    generated source round-trips the name correctly under the new
-    substitution."""
+def test_name_field_also_uses_safe_literal_substitution(isolated_factory_env):
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
+    test_cfg.set("global.module_factory_enabled", True)
+
     name = "test_rce001_name_tmp"
-    previous = config.get("global.module_factory_enabled", False)
-    config.set("global.module_factory_enabled", True)
-    _cleanup(name)
-    try:
+    path = create(
+        name=name, desc="plain desc", model="mistral",
+        keywords=[], sources=[],
+        config_obj=test_cfg, modules_dir=tmp_modules_dir,
+    )
+    assert path.is_relative_to(tmp_modules_dir)
+
+    instance = reload_module(name, {}, modules_dir=tmp_modules_dir)
+    assert instance is not None
+    assert instance.name == name
+    assert instance.root.resolve().is_relative_to(tmp_modules_dir.resolve())
+
+
+def test_repeated_cycles_in_one_process(isolated_factory_env):
+    """Run 10 consecutive create/import/instantiate/cleanup cycles in one process."""
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
+    test_cfg.set("global.module_factory_enabled", True)
+
+    for i in range(10):
+        name = f"test_repeat_cycle_{i}"
         path = create(
-            name=name, desc="plain desc", model="mistral",
-            keywords=[], sources=[],
+            name=name,
+            desc=f"Cycle {i} description",
+            model="mistral",
+            keywords=[f"key{i}"],
+            sources=[f"https://example.com/{i}"],
+            config_obj=test_cfg,
+            modules_dir=tmp_modules_dir,
         )
-        from core.module_registry import reload_module
-        instance = reload_module(name, {})
+        assert path.is_relative_to(tmp_modules_dir)
+
+        instance = reload_module(name, {}, modules_dir=tmp_modules_dir)
         assert instance is not None
         assert instance.name == name
-    finally:
-        _cleanup(name)
-        config.set("global.module_factory_enabled", previous)
+        assert instance.desc == f"Cycle {i} description"
+
+        imported_file = Path(sys.modules[f"modules.{name}.module"].__file__).resolve()
+        assert imported_file.is_relative_to(tmp_modules_dir.resolve())
+        assert instance.root.resolve().is_relative_to(tmp_modules_dir.resolve())
+
+        # Clean up in-memory package/sys.modules state
+        sys.modules.pop(f"modules.{name}.module", None)
+        sys.modules.pop(f"modules.{name}", None)
+        if hasattr(modules, name):
+            delattr(modules, name)
+        importlib.invalidate_caches()
+
+        # Clean up module filesystem directory
+        shutil.rmtree(path)

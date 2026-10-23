@@ -4,7 +4,7 @@ Called by CLI wizard and Web UI form.
 """
 import shutil
 from pathlib import Path
-from core.config import config
+from core.config import config, Config
 from core.module_paths import module_child
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "modules" / "_template"
@@ -17,6 +17,8 @@ def create(
     model: str,
     keywords: list[str],
     sources: list[str],
+    config_obj: Config | None = None,
+    modules_dir: Path | None = None,
 ) -> Path:
     """
     Scaffold a new module. Returns the path to the new module folder.
@@ -29,7 +31,10 @@ def create(
     routers, and the local CLI wizard) converges on, rather than in any
     individual caller, so no entry point can bypass it by omission.
     """
-    if not config.get("global.module_factory_enabled", False):
+    target_config = config_obj if config_obj is not None else config
+    target_modules_dir = modules_dir if modules_dir is not None else MODULES_DIR
+
+    if not target_config.get("global.module_factory_enabled", False):
         raise RuntimeError(
             "Module creation is temporarily disabled (RCE-001 containment, "
             "see KNOWN_ISSUES.md DEBT-021). Set "
@@ -42,7 +47,7 @@ def create(
     if not name.isidentifier():
         raise ValueError(f"Invalid module name: '{name}'. Use only letters, digits, underscores.")
 
-    dest = module_child(MODULES_DIR, name)  # .isidentifier() above is the naming rule
+    dest = module_child(target_modules_dir, name)  # .isidentifier() above is the naming rule
     if dest.exists():
         # This message is returned verbatim in the 400 body of POST
         # /modules/new (HTTPException(400, str(e))), so it must not carry the
@@ -75,7 +80,7 @@ def create(
         (dest / sub).mkdir(parents=True, exist_ok=True)
 
     # 4. Register in all three config files
-    config.register_module(name, model, keywords, sources)
+    target_config.register_module(name, model, keywords, sources)
 
     print(f"[factory] Created module '{name}' at {dest}")
     return dest

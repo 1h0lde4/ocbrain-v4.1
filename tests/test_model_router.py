@@ -1,11 +1,28 @@
 """Tests for core/model_router.py (mocked Ollama)"""
 import sys
+import shutil
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
+from core.config import Config
 from core.model_router import ModelRouter, _cosine_sim_text
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(tmp_path, monkeypatch):
+    tmp_config_dir = tmp_path / "config"
+    tmp_config_dir.mkdir(parents=True, exist_ok=True)
+    real_config_dir = Path(__file__).parent.parent / "config"
+    for item in real_config_dir.iterdir():
+        if item.is_file():
+            shutil.copy(item, tmp_config_dir / item.name)
+
+    test_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
+    monkeypatch.setattr("core.model_router.config", test_cfg)
+    monkeypatch.setattr("core.config.config", test_cfg)
+    yield test_cfg
 
 
 def test_cosine_sim_identical():

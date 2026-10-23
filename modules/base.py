@@ -17,6 +17,8 @@ from core.runtime.resilience import CircuitBreaker
 
 log = logging.getLogger(__name__)
 
+MODULES_DIR = Path(__file__).parent
+
 # Module-level retrieval cache: (module_name, query_hash, k) → list[str]
 # 128 slots, TTL enforced by timestamp in value tuple
 _RETRIEVE_CACHE: dict[tuple, tuple] = {}
@@ -57,8 +59,9 @@ class ModuleResult:
 class BaseModule(ABC):
     name: str = "base"
 
-    def __init__(self):
-        self.root: Path = Path(__file__).parent / self.name
+    def __init__(self, modules_dir: Path | None = None):
+        target_dir = modules_dir or MODULES_DIR
+        self.root: Path = target_dir / self.name
         self.root.mkdir(parents=True, exist_ok=True)
 
         for sub in ["weights/active", "weights/previous", "weights/pending"]:

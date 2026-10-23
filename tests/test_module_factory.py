@@ -1,95 +1,102 @@
 """Tests for core/module_factory.py"""
+import importlib
 import sys
 import shutil
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
+import modules
 from core.module_factory import create
-from core.config import config
+from core.config import Config
+from modules.embedding_fn import HashEmbeddingFunction
 
 
-@pytest.fixture(autouse=True)
-def _enable_module_factory():
-    """RCE-001 containment (KNOWN_ISSUES.md DEBT-021) disables module
-    creation by default. Every test in this file is a legitimate,
-    trusted-caller use of create(), so enable it for the duration of each
-    test and restore whatever was there before."""
-    previous = config.get("global.module_factory_enabled", False)
-    config.set("global.module_factory_enabled", True)
-    yield
-    config.set("global.module_factory_enabled", previous)
+@pytest.fixture
+def isolated_factory_env(tmp_path, monkeypatch):
+    """Isolated configuration, module directory, and import environment
+    for module_factory tests."""
+    tmp_config_dir = tmp_path / "config"
+    tmp_config_dir.mkdir(parents=True, exist_ok=True)
+    tmp_modules_dir = tmp_path / "modules"
+    tmp_modules_dir.mkdir(parents=True, exist_ok=True)
+
+    (tmp_config_dir / "settings.toml").write_text("[global]\nmodule_factory_enabled = true\n")
+    (tmp_config_dir / "models.toml").write_text("")
+    (tmp_config_dir / "sources.toml").write_text("")
+
+    test_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
+
+    monkeypatch.setattr("core.module_factory.config", test_cfg)
+    monkeypatch.setattr("core.module_factory.MODULES_DIR", tmp_modules_dir)
+    monkeypatch.setattr("core.module_registry.MODULES_DIR", tmp_modules_dir)
+    monkeypatch.setattr("modules.base.MODULES_DIR", tmp_modules_dir)
+
+    monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
+
+    orig_path = list(modules.__path__)
+    monkeypatch.setattr(modules, "__path__", [str(tmp_modules_dir)] + orig_path)
+    importlib.invalidate_caches()
+
+    yield test_cfg, tmp_modules_dir, tmp_config_dir
+
+    importlib.invalidate_caches()
 
 
-def _cleanup(name):
-    """Remove a test module if it exists."""
-    dest = Path(__file__).parent.parent / "modules" / name
-    if dest.exists():
-        shutil.rmtree(dest)
-    # Remove from config
-    try:
-        if name in config._models:
-            del config._models[name]
-        if name in config._settings.get("modules", {}):
-            del config._settings["modules"][name]
-        if name in config._sources:
-            del config._sources[name]
-    except Exception:
-        pass
-
-
-def test_create_module_scaffolds_files():
+def test_create_module_scaffolds_files(isolated_factory_env):
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
     name = "test_finance_tmp"
-    _cleanup(name)
-    try:
-        path = create(
-            name=name,
-            desc="Financial analysis module",
-            model="mistral",
-            keywords=["stock", "market", "invest"],
-            sources=["https://finance.yahoo.com"],
-        )
-        assert path.exists()
-        assert (path / "module.py").exists()
-        assert (path / "weights" / "active").exists()
-        assert (path / "weights" / "previous").exists()
-        assert (path / "weights" / "pending").exists()
-    finally:
-        _cleanup(name)
+    path = create(
+        name=name,
+        desc="Financial analysis module",
+        model="mistral",
+        keywords=["stock", "market", "invest"],
+        sources=["https://finance.yahoo.com"],
+        config_obj=test_cfg,
+        modules_dir=tmp_modules_dir,
+    )
+    assert path.exists()
+    assert path.is_relative_to(tmp_modules_dir)
+    assert (path / "module.py").exists()
+    assert (path / "weights" / "active").exists()
+    assert (path / "weights" / "previous").exists()
+    assert (path / "weights" / "pending").exists()
 
 
-def test_create_module_substitutes_placeholders():
+def test_create_module_substitutes_placeholders(isolated_factory_env):
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
     name = "test_medical_tmp"
-    _cleanup(name)
-    try:
-        path = create(
-            name=name,
-            desc="Medical knowledge module",
-            model="mistral",
-            keywords=["doctor", "medicine", "symptom"],
-            sources=[],
-        )
-        content = (path / "module.py").read_text()
-        assert "{{NAME}}" not in content
-        assert "{{DESC}}" not in content
-        assert name in content
-        assert "Medical knowledge module" in content
-    finally:
-        _cleanup(name)
+    path = create(
+        name=name,
+        desc="Medical knowledge module",
+        model="mistral",
+        keywords=["doctor", "medicine", "symptom"],
+        sources=[],
+        config_obj=test_cfg,
+        modules_dir=tmp_modules_dir,
+    )
+    content = (path / "module.py").read_text()
+    assert "{{NAME}}" not in content
+    assert "{{DESC}}" not in content
+    assert name in content
+    assert "Medical knowledge module" in content
 
 
-def test_create_duplicate_raises():
+def test_create_duplicate_raises(isolated_factory_env):
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
     name = "test_dup_tmp"
-    _cleanup(name)
-    try:
-        create(name=name, desc="First", model="mistral", keywords=[], sources=[])
-        with pytest.raises(ValueError, match="already exists"):
-            create(name=name, desc="Second", model="mistral", keywords=[], sources=[])
-    finally:
-        _cleanup(name)
+    create(
+        name=name, desc="First", model="mistral", keywords=[], sources=[],
+        config_obj=test_cfg, modules_dir=tmp_modules_dir,
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        create(
+            name=name, desc="Second", model="mistral", keywords=[], sources=[],
+            config_obj=test_cfg, modules_dir=tmp_modules_dir,
+        )
 
 
-def test_create_invalid_name_raises():
+def test_create_invalid_name_raises(isolated_factory_env):
+    test_cfg, tmp_modules_dir, _ = isolated_factory_env
     with pytest.raises(ValueError, match="Invalid module name"):
         create(
             name="my module!",   # spaces and ! are invalid
@@ -97,27 +104,34 @@ def test_create_invalid_name_raises():
             model="mistral",
             keywords=[],
             sources=[],
+            config_obj=test_cfg,
+            modules_dir=tmp_modules_dir,
         )
 
 
-def test_create_registers_in_config():
+def test_create_registers_in_config(isolated_factory_env):
+    test_cfg, tmp_modules_dir, tmp_config_dir = isolated_factory_env
     name = "test_config_reg_tmp"
-    _cleanup(name)
-    try:
-        create(
-            name=name,
-            desc="Test registration",
-            model="llama3",
-            keywords=["test", "check"],
-            sources=["https://example.com"],
-        )
-        state   = config.get_module_state(name)
-        sources = config.get_sources(name)
-        kws     = config.get_module_keywords(name)
+    create(
+        name=name,
+        desc="Test registration",
+        model="llama3",
+        keywords=["test", "check"],
+        sources=["https://example.com"],
+        config_obj=test_cfg,
+        modules_dir=tmp_modules_dir,
+    )
+    state   = test_cfg.get_module_state(name)
+    sources = test_cfg.get_sources(name)
+    kws     = test_cfg.get_module_keywords(name)
 
-        assert state.get("stage") == "bootstrap"
-        assert state.get("bootstrap_model") == "llama3"
-        assert "https://example.com" in sources
-        assert "test" in kws
-    finally:
-        _cleanup(name)
+    assert state.get("stage") == "bootstrap"
+    assert state.get("bootstrap_model") == "llama3"
+    assert "https://example.com" in sources
+    assert "test" in kws
+
+    # Verify readback from disk using a fresh isolated Config instance
+    readback_cfg = Config(config_dir=tmp_config_dir, start_watcher=False)
+    assert readback_cfg.get_module_state(name).get("bootstrap_model") == "llama3"
+    assert "https://example.com" in readback_cfg.get_sources(name)
+    assert "test" in readback_cfg.get_module_keywords(name)
