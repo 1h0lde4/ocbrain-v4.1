@@ -144,6 +144,51 @@ def test_load_all_and_reload_module_honor_requested_root_despite_cached_name(
     _assert_loaded_from(loaded_a_again, root_a, "defined in root A")
 
 
+def test_reload_refreshes_relative_helpers_within_each_root(registry_env):
+    _, root_a, root_b, _ = registry_env
+    module_name = "registry_helper_probe"
+
+    def write_probe(root, value):
+        module_dir = root / module_name
+        module_dir.mkdir()
+        (module_dir / "helper.py").write_text(f"VALUE = {value!r}\n")
+        (module_dir / "module.py").write_text(
+            "from modules.base import BaseModule, ModuleResult\n"
+            "from .helper import VALUE\n"
+            "\n"
+            "class Module(BaseModule):\n"
+            f"    name = {module_name!r}\n"
+            "    desc = VALUE\n"
+            "    async def run(self, task, context):\n"
+            "        return ModuleResult(answer=VALUE)\n"
+            "    async def run_own(self, task, context):\n"
+            "        return ModuleResult(answer=VALUE)\n"
+        )
+        return module_dir / "helper.py"
+
+    helper_a = write_probe(root_a, "root A version 1")
+    write_probe(root_b, "root B version 1")
+
+    first_a = reload_module(module_name, {}, modules_dir=root_a)
+    assert first_a is not None and first_a.desc == "root A version 1"
+
+    # Force a distinct filesystem timestamp to avoid timestamp-granularity
+    # bytecode-cache ambiguity; this assertion targets import-cache refresh.
+    helper_a.write_text("VALUE = 'root A version 2'\n")
+    import os
+    stat = helper_a.stat()
+    os.utime(helper_a, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
+
+    second_a = reload_module(module_name, {}, modules_dir=root_a)
+    assert second_a is not None and second_a.desc == "root A version 2"
+    loaded_b = reload_module(module_name, {}, modules_dir=root_b)
+    assert loaded_b is not None and loaded_b.desc == "root B version 1"
+
+    # The A reload and B load must leave each other bound to the right helper.
+    third_a = reload_module(module_name, {}, modules_dir=root_a)
+    assert third_a is not None and third_a.desc == "root A version 2"
+
+
 def test_load_all_rejects_directory_and_file_symlinks_outside_root(registry_env):
     _, requested_root, _, tmp_path = registry_env
     outside_root = tmp_path / "outside"
