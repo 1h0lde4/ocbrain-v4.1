@@ -77,7 +77,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Snapshot protected runtime state
+        id: protected_runtime_snapshot
+        run: python3 scripts/check_test_side_effects.py --snapshot /tmp/ocbrain-protected-runtime-baseline.json
+
       - name: Run test suite
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
         # This step records pytest's REAL exit code and never fails by itself;
         # the gate step below decides. It must not discard the exit code (the
         # previous `... | tee ... || true` did, which let collection errors,
@@ -113,3 +119,7 @@ jobs:
             --output /tmp/pytest-output.txt \
             --exit-code-file /tmp/pytest-exit-code.txt \
             --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+
+      - name: Verify tests did not mutate protected runtime state
+        if: always() && steps.protected_runtime_snapshot.outcome == 'success'
+        run: python3 scripts/check_test_side_effects.py --verify /tmp/ocbrain-protected-runtime-baseline.json
