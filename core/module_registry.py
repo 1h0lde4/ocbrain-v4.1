@@ -177,6 +177,9 @@ def _import_module_from_root(root: Path, module_name: str):
 
     name_digest = hashlib.sha256(module_name.encode("utf-8")).hexdigest()
     package_name = f"{namespace}._module_{name_digest}"
+    # Clear this module package and its relative-import cache on each load. A
+    # changed helper.py or __init__.py must not survive an explicit reload.
+    _remove_import_tree(package_name)
     init_file = module_dir / "__init__.py"
     _ensure_package(package_name, module_dir, init_file if init_file.is_file() else None)
 
@@ -275,6 +278,12 @@ def reload_module(
     try:
         _source_for_module(target_modules_dir, module_name)
     except FileNotFoundError:
+        return None
+    except Exception as exc:
+        # Invalid names, source symlinks, and unresolvable paths fail closed
+        # just like ordinary missing modules; callers never see import paths
+        # escape as an uncaught exception.
+        print(f"[registry] Failed to reload {module_name}: {exc}")
         return None
 
     try:
