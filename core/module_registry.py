@@ -183,6 +183,10 @@ def _import_module_from_root(root: Path, module_name: str):
     name_digest = hashlib.sha256(module_name.encode("utf-8")).hexdigest()
     package_name = f"{namespace}._module_{name_digest}"
     init_file = module_dir / "__init__.py"
+    # Clear the complete module package before reloading. Relative imports
+    # (including __init__.py and helper.py) live beside module.py in sys.modules;
+    # clearing only the leaf module leaves stale helper code behind.
+    _remove_import_tree(package_name)
     _ensure_package(package_name, module_dir, init_file if init_file.is_file() else None)
 
     qualified_name = f"{package_name}.module"
@@ -284,6 +288,11 @@ def reload_module(
     except InvalidModuleName:
         # A path-shaped name is a caller error, not an absent module.
         raise
+    except Exception as exc:
+        # Filesystem/source failures fail closed; invalid names remain explicit
+        # caller errors via the branch above.
+        print(f"[registry] Failed to inspect module: {type(exc).__name__}")
+        return None
 
     try:
         with _REGISTRY_LOCK:
