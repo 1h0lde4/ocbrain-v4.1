@@ -44,7 +44,12 @@ def test_watcher_uses_instance_path_after_global_default_changes(tmp_path, monke
     class StopAfterFirstScan(Exception):
         pass
 
-    monkeypatch.setattr(config_module.time, "sleep", lambda _: (_ for _ in ()).throw(StopAfterFirstScan()))
+    assert captured["daemon"] is True
+
+    def stop_after_scan(_seconds):
+        raise StopAfterFirstScan
+
+    monkeypatch.setattr(config_module.time, "sleep", stop_after_scan)
     with pytest.raises(StopAfterFirstScan):
         captured["target"]()
 
