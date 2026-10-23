@@ -7,9 +7,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import modules.system_ctrl.module as system_ctrl_module
+from modules.embedding_fn import HashEmbeddingFunction
 from modules.system_ctrl.module import (
     ACTION_HANDLERS,
-    SAFE_ROOT,
     Module,
     _delete_file,
     _list_dir,
@@ -18,10 +19,21 @@ from modules.system_ctrl.module import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_embedding_function(monkeypatch):
+    """Avoid model downloads and make tests independent of model caches."""
+    monkeypatch.setattr(
+        "modules.embedding_fn.get_embedding_function",
+        lambda name: HashEmbeddingFunction(),
+    )
+
+
 @pytest.fixture
-def safe_tmp_path(tmp_path):
-    """Create an isolated test directory inside the system_ctrl sandbox."""
-    path = SAFE_ROOT / "test_system_ctrl" / tmp_path.name
+def safe_tmp_path(tmp_path, monkeypatch):
+    """Create an isolated test directory inside the temporary system_ctrl sandbox."""
+    root = tmp_path / "safe_root"
+    monkeypatch.setattr(system_ctrl_module, "SAFE_ROOT", root)
+    path = root / "test_system_ctrl" / tmp_path.name
     if path.exists():
         shutil.rmtree(path)
     path.mkdir(parents=True)
@@ -45,15 +57,15 @@ def test_allowlist_contains_expected_actions():
         assert action in ACTION_HANDLERS
 
 
-def test_unknown_action_rejected():
-    module = Module()
+def test_unknown_action_rejected(tmp_path):
+    module = Module(modules_dir=tmp_path / "modules")
     result = module._execute({"action": "run_shell", "cmd": "rm -rf /"})
     assert "not in the allowed list" in result
     assert "rm" not in result  # never echoed back as executed
 
 
-def test_empty_action_rejected():
-    module = Module()
+def test_empty_action_rejected(tmp_path):
+    module = Module(modules_dir=tmp_path / "modules")
     result = module._execute({})
     assert "not in the allowed list" in result
 
@@ -95,9 +107,11 @@ def test_delete_nonexistent_file():
     assert "not found" in result.lower()
 
 
-def test_execute_write_file():
-    module = Module()
-    target = SAFE_ROOT / "test_system_ctrl" / "execute_write_file" / "hello.txt"
+def test_execute_write_file(tmp_path, monkeypatch):
+    module = Module(modules_dir=tmp_path / "modules")
+    root = tmp_path / "safe_root"
+    monkeypatch.setattr(system_ctrl_module, "SAFE_ROOT", root)
+    target = root / "test_system_ctrl" / "execute_write_file" / "hello.txt"
     shutil.rmtree(target.parent, ignore_errors=True)
     try:
         result = module._execute(
