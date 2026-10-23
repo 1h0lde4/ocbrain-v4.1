@@ -10,6 +10,7 @@ import core.module_registry as registry_module
 from modules import base as base_module
 
 from core.config import Config
+from core.module_paths import InvalidModuleName
 from core.module_factory import create
 from core.module_registry import load_all, reload_module
 from modules.base import BaseModule
@@ -221,11 +222,13 @@ def test_registry_root_context_is_reset_after_loading(registry_env):
 
 
 
-def test_reload_rejects_invalid_names_and_source_symlinks_without_raising(registry_env):
+def test_reload_rejects_invalid_names_and_source_symlinks_without_writes(registry_env):
     _, requested_root, _, tmp_path = registry_env
 
-    # Invalid path components must fail closed rather than escape the registry API.
-    assert reload_module("../outside", {}, modules_dir=requested_root) is None
+    # Preserve the public contract for invalid path components: raise the
+    # stable validation error before trying to load or instantiate anything.
+    with pytest.raises(InvalidModuleName):
+        reload_module("../outside", {}, modules_dir=requested_root)
 
     outside = tmp_path / "outside_source.py"
     marker = tmp_path / "source_payload_executed"
