@@ -68,6 +68,7 @@ def registry_env(tmp_path, monkeypatch):
 
     original_package_path = tuple(modules.__path__)
     original_sys_path = tuple(sys.path)
+    original_meta_path = tuple(sys.meta_path)
     original_registry_root = registry_module.MODULES_DIR
     original_base_root = base_module.MODULES_DIR
     try:
@@ -78,6 +79,7 @@ def registry_env(tmp_path, monkeypatch):
             "registry loading must not mutate modules.__path__"
         )
         assert tuple(sys.path) == original_sys_path, "registry loading must not mutate sys.path"
+        assert tuple(sys.meta_path) == original_meta_path, "registry loading must not leak import hooks"
         assert registry_module.MODULES_DIR == original_registry_root
         assert base_module.MODULES_DIR == original_base_root
 
@@ -270,6 +272,7 @@ def test_reload_refreshes_relative_package_helpers(registry_env):
     assert first.desc == "version-one"
 
     helper.write_text("VERSION = 'version-two'\n")
+    assert helper.stat().st_size == len("VERSION = 'version-one'\n")
     second = reload_module("reload_helper_probe", {}, modules_dir=requested_root)
     assert second is not None
     assert second.desc == "version-two"
