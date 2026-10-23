@@ -16,7 +16,7 @@ import types
 from pathlib import Path
 from typing import Optional
 
-from core.module_paths import module_child
+from core.module_paths import InvalidModuleName, module_child
 from modules.base import BaseModule, module_storage_root
 
 MODULES_DIR = Path(__file__).parent.parent / "modules"
@@ -126,12 +126,9 @@ def _reject_module_tree_symlinks(module_dir: Path) -> None:
 def _source_for_module(root: Path, module_name: str) -> tuple[Path, Path]:
     """Resolve a module entry and reject symlinks anywhere in its source tree."""
     root = root.resolve()
-    entry = root / module_name
-    if entry.is_symlink():
-        raise ImportError("Module directory must not be a symlink")
+    # module_child validates a single path component and canonicalizes it to a
+    # direct child. Do not join raw caller input into a path before validation.
     module_dir = module_child(root, module_name)
-    if module_dir != entry:
-        raise ImportError("Module directory is not the requested direct child")
     # A symlinked relative helper can execute outside-root code while module.py
     # is imported. Check the whole package tree before executing any of it.
     _reject_module_tree_symlinks(module_dir)
@@ -291,11 +288,12 @@ def reload_module(
         _source_for_module(target_modules_dir, module_name)
     except FileNotFoundError:
         return None
+    except InvalidModuleName:
+        # Match module_child's public contract: malformed/path-shaped names
+        # are caller errors, not "not found" results.
+        raise
     except Exception as exc:
-        # Invalid names, source symlinks, and unresolvable paths fail closed
-        # just like ordinary missing modules; callers never see import paths
-        # escape as an uncaught exception.
-        print(f"[registry] Failed to reload {module_name}: {exc}")
+        print(f"[registry] Failed to reload module: {type(exc).__name__}")
         return None
 
     try:
