@@ -11,6 +11,7 @@ from modules import base as base_module
 
 from core.config import Config
 from core.module_factory import create
+from core.module_paths import InvalidModuleName
 from core.module_registry import load_all, reload_module
 from modules.base import BaseModule
 from modules.embedding_fn import HashEmbeddingFunction
@@ -264,11 +265,13 @@ def test_registry_root_context_is_reset_after_loading(registry_env):
 
 
 
-def test_reload_rejects_invalid_names_and_source_symlinks_without_raising(registry_env):
+def test_reload_rejects_invalid_names_and_source_symlinks(registry_env):
     _, requested_root, _, tmp_path = registry_env
 
-    # Invalid path components must fail closed rather than escape the registry API.
-    assert reload_module("../outside", {}, modules_dir=requested_root) is None
+    # Malformed names preserve module_child's public contract. A symlinked
+    # source, by contrast, is a load failure and returns None without execution.
+    with pytest.raises(InvalidModuleName):
+        reload_module("../outside", {}, modules_dir=requested_root)
 
     outside = tmp_path / "outside_source.py"
     marker = tmp_path / "source_payload_executed"
