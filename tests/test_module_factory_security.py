@@ -11,6 +11,7 @@ Covers:
   3. Repeated create/import/instantiate/cleanup cycles within one process.
 """
 import os
+import importlib
 import sys
 import shutil
 from pathlib import Path
