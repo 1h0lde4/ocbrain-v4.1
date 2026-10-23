@@ -19,7 +19,7 @@ def test_snapshot_covers_untracked_nested_files_and_empty_directories(tmp_path):
     assert state["config/settings.toml"]["kind"] == "file"
     assert state["modules/generated/knowledge.db/chroma.sqlite3"]["kind"] == "file"
     assert state["modules/empty-generated-dir"]["kind"] == "directory"
-    assert state["data/raw"]["kind"] == "missing"
+    assert state["data"]["kind"] == "missing"
     assert state["workspace"]["kind"] == "missing"
 
 
