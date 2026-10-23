@@ -10,6 +10,7 @@ Covers:
      proving path, import, and ChromaDB/runtime storage isolation.
   3. Repeated create/import/instantiate/cleanup cycles within one process.
 """
+import importlib
 import os
 import sys
 import shutil
