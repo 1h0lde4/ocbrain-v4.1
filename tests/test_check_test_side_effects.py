@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_test_side_effects import capture_state, main
 
 
@@ -55,6 +57,6 @@ def test_verify_detects_symlink_and_directory_changes(tmp_path):
     link = tmp_path / "modules" / "generated-link"
     try:
         link.symlink_to(generated, target_is_directory=True)
-    except (OSError, NotImplementedError):
-        link = None
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
     assert main(["--verify", str(baseline), "--root", str(tmp_path)]) == 1
