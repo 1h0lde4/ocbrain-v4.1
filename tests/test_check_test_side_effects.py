@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+import scripts.check_test_side_effects as guard
 
 from scripts.check_test_side_effects import capture_state, main
 
@@ -45,6 +46,44 @@ def test_verify_detects_workspace_runtime_writes(tmp_path):
     workspace.mkdir()
     (workspace / "generated.txt").write_text("runtime output", encoding="utf-8")
     assert main(["--verify", str(baseline), "--root", str(tmp_path)]) == 1
+
+
+def test_verify_detects_symlink_metadata_changes(tmp_path):
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    target = tmp_path / "outside-target"
+    target.write_text("outside", encoding="utf-8")
+    link = modules / "external-link"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    baseline = tmp_path / "baseline.json"
+    assert main(["--snapshot", str(baseline), "--root", str(tmp_path)]) == 0
+    info = link.lstat()
+    try:
+        import os
+        os.utime(
+            link,
+            ns=(info.st_atime_ns, info.st_mtime_ns + 2_000_000_000),
+            follow_symlinks=False,
+        )
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink timestamp updates unavailable: {exc}")
+    assert main(["--verify", str(baseline), "--root", str(tmp_path)]) == 1
+
+
+def test_snapshot_fails_closed_on_unreadable_protected_tree(monkeypatch, tmp_path):
+    (tmp_path / "modules").mkdir()
+
+    def denied_walk(path, *, followlinks, onerror):
+        onerror(PermissionError("simulated unreadable protected directory"))
+        return iter(())
+
+    monkeypatch.setattr(guard.os, "walk", denied_walk)
+    with pytest.raises(PermissionError, match="simulated unreadable"):
+        capture_state(tmp_path)
 
 
 def test_verify_detects_metadata_only_changes(tmp_path):
