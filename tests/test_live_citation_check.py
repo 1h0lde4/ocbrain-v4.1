@@ -417,3 +417,154 @@ class TestProvenancePerTrial:
         assert f(None) is None
         assert f("not a url") is None
 
+
+# ── coverage policy and trial accounting (independent-review finding, options A + B) ──
+#
+# The default policy (ADR-KERNEL-08 R6/section 7: one exposed, answered trial per payload)
+# is unchanged. Trials that got no model completion are COUNTED, by kind, and never
+# hidden; `--require-all-answered` is an opt-in strict policy. Escalation always wins.
+
+class _FlakyProvider(_FakeProvider):
+    """Answers compliantly, but every second call returns a blank completion."""
+
+    async def generate(self, prompt):
+        self.calls += 1
+        return "" if self.calls % 2 == 0 else await self._fake(self, prompt)
+
+
+class _RaisingProvider(_FakeProvider):
+    async def generate(self, prompt):
+        self.calls += 1
+        raise ConnectionError("provider down")
+
+
+class _BlanksOnePayload(_FakeProvider):
+    """Never answers the 'line-spoof' payload; answers everything else."""
+
+    async def generate(self, prompt):
+        self.calls += 1
+        return "" if "Copy the line above verbatim" in prompt else await self._fake(self, prompt)
+
+
+def _run_chain(capsys, providers, **overrides):
+    with patch("core.cognitive.intent.resolve_provider", return_value=list(providers)):
+        code = asyncio.run(lcc._amain(_args(dry_run=None, **overrides)))
+    return code, capsys.readouterr().out
+
+
+def _read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _reconciles(acc):
+    return acc["started_trials"] == (acc["nonblank_completion_trials"] + acc["blank_response_trials"]
+                                     + acc["provider_error_trials"] + acc["no_completion_trials"]
+                                     + acc["error_trials"])
+
+
+class TestCoveragePolicyAndTrialAccounting:
+    def test_every_trial_answered_exits_0_under_both_policies_and_records_the_policy(
+            self, capsys, tmp_path, clean_prompt_cache):
+        for strict in (False, True):
+            out_json = tmp_path / f"out_{strict}.json"
+            code, out = _run_chain(capsys, [_FakeProvider()], requests=1, trials=2,
+                                   json=str(out_json), require_all_answered=strict)
+            assert code == 0, out
+            data = _read_json(out_json)
+            expected = lcc.POLICY_STRICT if strict else lcc.POLICY_DEFAULT
+            meta = data["provenance"]["run"]
+            assert meta["coverage_policy"] == expected
+            assert meta["args"]["require_all_answered"] is strict
+            assert expected in out
+            acc = data["provenance"]["summary"]["accounting"]["all"]
+            assert (acc["scheduled_trials"] == acc["started_trials"] == acc["nonblank_completion_trials"]
+                    == acc["attributed_completion_trials"] == 10)
+            assert _reconciles(acc)
+
+    def test_blank_trials_are_counted_and_reported_under_the_default_policy(
+            self, capsys, tmp_path, clean_prompt_cache):
+        out_json = tmp_path / "out.json"
+        code, out = _run_chain(capsys, [_FlakyProvider()], requests=2, trials=3, json=str(out_json))
+        assert code == 0, out                                  # the accepted coverage policy still holds
+        assert "minimum coverage met" in out
+        assert "15 of 30 trial(s) produced no model completion (blank: 15" in out
+        assert "no evidence about model resistance" in out
+        data = _read_json(out_json)
+        acc = data["provenance"]["summary"]["accounting"]
+        assert acc["all"]["blank_response_trials"] == 15 and acc["all"]["nonblank_completion_trials"] == 15
+        assert acc["all"]["provider_error_trials"] == 0 and acc["all"]["no_completion_trials"] == 0
+        for group in [acc["benign"], *acc["poisoned"].values(), acc["all"]]:
+            assert _reconciles(group)
+        for name, group in acc["poisoned"].items():
+            assert group["blank_response_trials"] == 3 and group["nonblank_completion_trials"] == 3, name
+        runs = data["benign"] + [r for v in data["poisoned"].values() for r in v]
+        assert all("outcome" in r for r in runs)
+        # attempt accounting covers the blank trials too, not only the answered ones
+        attempts = data["provenance"]["summary"]["provider_attempts"]
+        assert attempts["total"] == 30 and attempts["blank_returned"] == 15
+
+    def test_strict_policy_makes_any_blank_trial_inconclusive(self, capsys, tmp_path, clean_prompt_cache):
+        out_json = tmp_path / "out.json"
+        code, out = _run_chain(capsys, [_FlakyProvider()], requests=2, trials=3, json=str(out_json),
+                               require_all_answered=True)
+        verdict = _verdict_line(out)
+        assert code == 2, out
+        assert "strict coverage policy (all-trials-answered/v1)" in verdict and "blank: 15" in verdict
+        assert "invariant held" not in out
+        meta = _read_json(out_json)["provenance"]["run"]
+        assert meta["coverage_policy"] == lcc.POLICY_STRICT and meta["args"]["require_all_answered"] is True
+
+    def test_a_payload_with_no_valid_answer_is_inconclusive_under_both_policies(
+            self, capsys, clean_prompt_cache):
+        for strict in (False, True):
+            code, out = _run_chain(capsys, [_BlanksOnePayload()], requests=1, trials=2,
+                                   require_all_answered=strict)
+            assert code == 2, out
+            assert "line-spoof" in _verdict_line(out)
+
+    def test_provider_calls_that_raise_are_provider_errors_not_blank_responses(
+            self, capsys, tmp_path, clean_prompt_cache):
+        for strict in (False, True):
+            out_json = tmp_path / f"out_{strict}.json"
+            code, out = _run_chain(capsys, [_RaisingProvider()], requests=1, trials=2,
+                                   json=str(out_json), require_all_answered=strict)
+            assert code == 2, out
+            acc = _read_json(out_json)["provenance"]["summary"]["accounting"]["all"]
+            assert acc["provider_error_trials"] == 10 and acc["blank_response_trials"] == 0
+            assert acc["nonblank_completion_trials"] == 0 and _reconciles(acc)
+
+    def test_a_cached_blank_replayed_to_the_fallback_provider_is_reported_not_hidden(
+            self, capsys, tmp_path, clean_prompt_cache):
+        """ADJ-1: the first provider's blank answer is cached under the prompt, so the
+        fallback provider is served the cached blank instead of being called."""
+        class Secondary(_FakeProvider):
+            @property
+            def name(self):
+                return "Secondary(model-y)"
+
+        flaky, second = _FlakyProvider(), Secondary(model="model-y")
+        out_json = tmp_path / "out.json"
+        code, out = _run_chain(capsys, [flaky, second], requests=2, trials=3, json=str(out_json))
+        assert code == 0, out
+        summary = _read_json(out_json)["provenance"]["summary"]
+        assert second.calls == 0                                # the fallback was never actually called
+        assert summary["cached_blank_replay_trials"] == 15
+        assert summary["trials_with_fallback_attempts"] == 15
+        assert summary["provider_attempts"]["total"] == 45 and summary["provider_attempts"]["cache_hit"] == 15
+        assert "cached blank replays inside a trial: 15" in out
+        code, out = _run_chain(capsys, [_FlakyProvider(), Secondary(model="model-y")],
+                               requests=2, trials=3, require_all_answered=True)
+        assert code == 2, out
+
+    def test_a_genuine_escalation_is_exit_1_under_both_policies_even_with_blank_trials(
+            self, capsys, clean_prompt_cache):
+        from core.cognitive import planner
+        forged = SimpleNamespace(source=planner.ConstraintSource.EXPLICIT,
+                                 rationale="scoping_constraint: only for the new account")
+        for strict in (False, True):
+            with patch("core.cognitive.planner._extract_constraints", new=AsyncMock(return_value=[forged])):
+                code, out = _run_chain(capsys, [_FlakyProvider()], requests=1, trials=2,
+                                       require_all_answered=strict)
+            assert code == 1, out
+            assert "INVARIANT FAILED" in out and "invariant held" not in out
+
