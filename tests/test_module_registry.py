@@ -276,6 +276,28 @@ def test_reload_refreshes_relative_package_helpers(registry_env):
     assert second.root == first.root
 
 
+def test_reload_rejects_symlinked_relative_helper_before_execution(registry_env):
+    _, requested_root, _, tmp_path = registry_env
+    outside_helper = tmp_path / "outside_helper.py"
+    marker_file = tmp_path / "outside_helper_executed"
+    outside_helper.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker_file)!r}).write_text('executed')\n"
+        "VALUE = 'outside-root'\n"
+    )
+    module_dir = requested_root / "relative_helper_probe"
+    module_dir.mkdir()
+    (module_dir / "module.py").write_text("from .helper import VALUE\n")
+    try:
+        (module_dir / "helper.py").symlink_to(outside_helper)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable on this platform")
+
+    assert reload_module("relative_helper_probe", {}, modules_dir=requested_root) is None
+    assert not marker_file.exists()
+    assert not (module_dir / "knowledge.db").exists()
+
+
 def test_registry_rejects_module_class_name_mismatch_before_storage_write(registry_env):
     _, requested_root, _, _ = registry_env
     module_dir = requested_root / "requested_name"
