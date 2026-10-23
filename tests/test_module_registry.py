@@ -188,9 +188,9 @@ def test_registry_rejects_module_class_name_mismatch_before_storage_write(regist
     # The class is intentionally abstract: reject its name mismatch before
     # trying construction or creating any storage.
     (module_dir / "module.py").write_text(
-        "from modules.base import BaseModule\\n"
-        "class Module(BaseModule):\\n"
-        "    name = 'different_name'\\n"
+        "from modules.base import BaseModule\n"
+        "class Module(BaseModule):\n"
+        "    name = 'different_name'\n"
     )
 
     assert load_all(modules_dir=requested_root) == {}
