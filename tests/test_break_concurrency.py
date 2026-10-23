@@ -4,13 +4,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from modules.base import BaseModule
+from modules.embedding_fn import HashEmbeddingFunction
 
 class MockModule(BaseModule):
     name = "mock"
     async def run(self, task, context): pass
     async def run_own(self, task, context): pass
 
-async def test_cache_concurrency(tmp_path):
+async def test_cache_concurrency(tmp_path, monkeypatch):
+    monkeypatch.setattr("modules.embedding_fn.get_embedding_function", lambda name: HashEmbeddingFunction())
     mod = MockModule(modules_dir=tmp_path / "modules")
     
     # Fill the cache near limit
