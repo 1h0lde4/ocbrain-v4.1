@@ -25,6 +25,7 @@ SYSTEM = platform.system()  # "Linux" | "Darwin" | "Windows"
 
 # V3.0.1 SECURITY: Sandbox root directory
 SAFE_ROOT = (Path.cwd() / "workspace").resolve()
+SAFE_ROOT.mkdir(exist_ok=True)
 
 
 def _safe_path(target: str) -> Path:
@@ -138,10 +139,6 @@ def _delete_file(path: str) -> str:
 
 def _list_dir(path: str = ".") -> str:
     p = _safe_path(path)
-    if not p.exists() and p == SAFE_ROOT.resolve():
-        # A fresh install has an empty logical workspace; represent it as such
-        # without creating a repository-local directory just by listing it.
-        return ""
     if not p.is_dir():
         return f"Not a directory: {path}"
     items = sorted(p.iterdir())
