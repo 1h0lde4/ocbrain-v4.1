@@ -21,7 +21,14 @@ PROTECTED_ROOTS = ("config", "modules", "data/raw", "data/chunks", "workspace")
 
 def _entry(path: Path, relative: str) -> dict[str, Any]:
     if path.is_symlink():
-        return {"kind": "symlink", "target": os.readlink(path)}
+        info = path.lstat()
+        return {
+            "kind": "symlink",
+            "target": os.readlink(path),
+            "mode": stat.S_IMODE(info.st_mode),
+            "mtime_ns": info.st_mtime_ns,
+            "ctime_ns": info.st_ctime_ns,
+        }
     try:
         info = path.stat()
     except FileNotFoundError:
@@ -47,6 +54,11 @@ def _entry(path: Path, relative: str) -> dict[str, Any]:
     return {"kind": "other", "mode": stat.S_IFMT(info.st_mode)}
 
 
+def _raise_walk_error(exc: OSError) -> None:
+    """Fail closed rather than silently skipping unreadable protected subtrees."""
+    raise exc
+
+
 def capture_state(root: Path) -> dict[str, dict[str, Any]]:
     """Record protected paths including ignored/untracked files and empty dirs."""
     root = Path(root).resolve()
@@ -58,7 +70,9 @@ def capture_state(root: Path) -> dict[str, dict[str, Any]]:
         if root_entry["kind"] != "directory":
             continue
 
-        for current, directory_names, file_names in os.walk(protected, followlinks=False):
+        for current, directory_names, file_names in os.walk(
+            protected, followlinks=False, onerror=_raise_walk_error
+        ):
             current_path = Path(current)
             for name in list(directory_names):
                 child = current_path / name
