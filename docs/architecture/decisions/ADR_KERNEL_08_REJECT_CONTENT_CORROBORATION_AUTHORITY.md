@@ -206,8 +206,11 @@ lines.
   records the effective coverage policy, and offers an opt-in strict policy
   (`--require-all-answered`). The default policy (one exposed, answered trial per
   payload, recorded in §7) is unchanged; changing it remains the owner's decision.
-  Covered by 31 tests in `tests/test_live_citation_check.py` and 43 mutants in
-  `scripts/mutation_check_ctx_auth_002.py` (seventeen new, all caught). Not
+  Covered, at the published candidate `7b57cf1`, by 31 tests in
+  `tests/test_live_citation_check.py` and 43 mutants in
+  `scripts/mutation_check_ctx_auth_002.py` (seventeen new, all caught); the
+  Oct 26 revision (§7) brings these to 58 tests and 48 mutants and redacts URLs
+  in provider names and error text. Not
   established: real-model behavior (R3, R5); the owner's independent review of the
   amended harness (§8.1 item 1) remains open. The Oct 8 and Oct 9 preliminary
   real-provider runs predate the provenance and cannot be attributed to a
@@ -311,6 +314,61 @@ real model provider (none available in this sandbox). Until one is done,
 R5 stands. `main` moves
 constantly: recheck ADR numbering (`ADR-KERNEL-07` belongs to another
 session) and re-merge before any PR.
+
+- **Revision evidence (Oct 26, 2026).** Branch
+  `revise/ctx-auth-002-evidence-from-7b57cf1-oct2026`, derived from the published
+  candidate `7b57cf1`; code commit `d8e8421`. Re-run in one environment (Python
+  3.12.3, chromadb 0.5.3, numpy 1.26.4, scipy 1.13.1, no sentence-transformers),
+  not inherited from the figures above, which are historical.
+  - Full suite, recorded invocation: unrevised candidate 2148 passed, 8 failed,
+    1 xfailed; `main` `f13bfde` 2064 passed, 8 failed, 1 xfailed; revision 2179
+    passed, 8 failed, 1 xfailed (+31 = 11 redaction + 16 event-contract and cache +
+    4 Q4 tests). The 8 failures are the same node IDs on all three
+    (`tests/core/sandbox/test_namespace_backend.py`): those tests execute
+    `sys.executable` inside the sandbox chroot, where a virtualenv outside the
+    system paths is not visible. Under a system interpreter with the same
+    site-packages all 14 pass. Environmental, not a product result.
+  - Negative control, by effect and not by import error. `80a1bb8` and `main` have
+    identical `intent.py`, `planner.py` and `compiler.py`. Against that code the
+    candidate's 32 `test_intent_security.py` tests give 22 failed, 10 passed (9 of
+    the 22 behavioral: USER-authority escalation x7, a fabricated explicit
+    constraint, a regained `authority` field; the rest fail on the absent new
+    fields and vocabulary), and the harness exits 2 in every dry-run mode. That is
+    fail-closed, not detection. The detecting control: with `_extract_constraints`
+    regressed to read `semantic_description`, the harness exits 1 for `obey-bait`
+    and `obey-padded` and 7 of 192 tests in the planner, security and harness
+    files fail. The earlier "14 fail, 3 pass" is not reproduced as a count because
+    the test file has since changed.
+  - Q4, downstream of discovery. `build_capability_discovery_request`, the only
+    consumer of `semantic_description`, has no production caller in this tree (a
+    search of `*.py`); production discovery requests are built from model-decomposed
+    steps of `description` (`planner.py` `_decompose`). `compile()` always
+    evaluates governance, and the action it shows the gate carries plan-level
+    facts (goal id, confidence, general-purpose flag, step count, clarification
+    thresholds and attempt, and the content-anchor observation), not step text or
+    category. `TestCtxAuth002DownstreamBoundary` pins, through the real
+    `interpret_request`, `plan()`, `discover_capabilities()` and `compile()`: the
+    user's text is untouched, no EXPLICIT constraint is derived from the label,
+    discovery executes no adapter, compilation cannot pass a governance REJECT, and
+    the gate is not shown the label. Not traced: per-step authorization when a
+    compiled plan is executed. Q4 is therefore verified for discovery and
+    compilation, not for execution.
+  - Harness (R6, still subject to the owner's review). Two redaction defects were
+    reproduced with synthetic markers and fixed: `_safe_provider_name` left
+    credentials for an upper-case scheme or a `)` or `]` in the URL, and an
+    exception escaping `interpret_request` was printed and written to `--json`
+    verbatim (provider-originated errors were already contained). Not covered:
+    whitespace inside a URL's userinfo in free text, which is not valid URL syntax;
+    a configured endpoint containing it is replaced as a literal string. Every
+    `_validate_events` branch and the unverifiable-cache case now have a test.
+    Mutation check 48/48 caught (43 plus 5), source byte-identical afterwards.
+  - Static: scoped mypy (`--follow-imports=silent --ignore-missing-imports
+    --explicit-package-bases`, the two cognitive files) 12 errors with an identical
+    normalized set on the candidate, `main` and the revision; the 11 recorded above
+    is not reproduced here and the cause is not established. `check_drift.py` 15/15.
+    No CI result exists for either branch.
+  - Unchanged: nothing here is a real-provider run (R3, R5 open), the owner's
+    review (§8.1 item 1) is open, and no status in this ADR changes.
 
 ## 8. Decisions (Moncif, Oct 6, 2026)
 
