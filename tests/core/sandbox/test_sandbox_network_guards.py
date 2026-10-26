@@ -210,6 +210,23 @@ def test_a_pickled_refusal_keeps_notes_added_to_it(make: Callable[[], BaseExcept
     assert clone.__notes__ == ["raised while reserving a slot"]
 
 
+def test_a_copied_refusal_keeps_the_subclass_it_was_raised_as() -> None:
+    """The rebuild goes through ``type(self)``, as ``BaseException`` does, not
+    through the base class. (``copy`` is used because a class defined inside a
+    test cannot be pickled by reference.)"""
+
+    class _Capacity(SandboxNetworkCapacityError):
+        pass
+
+    class _Refused(SandboxIPv6RefusedError):
+        pass
+
+    capacity = copy.copy(_Capacity(limit=1, in_use=1, owner="op-2"))
+    refused = copy.copy(_Refused(Ipv6Decision(Ipv6State.ON, "disable_ipv6 is 0 for 'all'")))
+    assert type(capacity) is _Capacity
+    assert type(refused) is _Refused
+
+
 def test_a_pickled_capacity_refusal_keeps_its_fields() -> None:
     clone = pickle.loads(pickle.dumps(SandboxNetworkCapacityError(limit=3, in_use=3, owner="op-9")))
     assert (clone.limit, clone.in_use, clone.owner) == (3, 3, "op-9")
