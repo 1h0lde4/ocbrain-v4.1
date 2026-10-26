@@ -54,11 +54,15 @@ was NOT demonstrated; only the structural weakness and a synthetic,
 provider-mocked reproduction were.
 """
 import dataclasses
+import json
 from typing import Any, List
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from core.capabilities.capability import BaseAdapter, CapabilityContract
+from core.capabilities.registry import CapabilityRegistry
+from core.cognitive.compiler import CompilationStatus, compile as compile_plan
 from core.cognitive.intent import (
     IntentHypothesis,
     RawRequest,
@@ -67,10 +71,16 @@ from core.cognitive.intent import (
 )
 from core.cognitive.planner import (
     ConstraintSource,
+    PlannerRequest,
+    PlannerStatus,
     _extract_constraints,
     _extract_explicit_constraints,
+    build_capability_discovery_request,
+    discover_capabilities,
+    plan,
 )
 from core.events.event_stream import EventStream
+from core.governance.governance_kernel import GovernanceResult, GovernanceVerdict
 from core.memory.retrieval.context import AuthorityLevel, Context, ContextBlock, ProvenanceRecord
 
 
@@ -634,3 +644,103 @@ class TestSelectHypothesis:
         assert [h.label for h in intent.hypotheses] == [
             f"novel:{_SENTINEL}", "rename_branch", "other_label"]
         assert intent.selected.label == "rename_branch"
+
+
+# ── Q4 (ADR-KERNEL-08): what a label-bearing semantic_description can and cannot reach ──
+#
+# ADR-KERNEL-08 Q4 left label-bearing semantic_description as advisory input to
+# capability discovery, and its verification covered the discovery function only: the
+# compile gate was explicitly not traced. These tests exercise the real path -- the real
+# interpret_request, the real plan() and discover_capabilities(), the real compile() --
+# with a hostile, request-grounded, label-bearing hypothesis, and pin the boundary:
+# discovery is advisory and executes nothing, the user's own text stays truthful, nothing
+# model-authored becomes an EXPLICIT constraint, and compilation cannot proceed past a
+# governance REJECT whatever discovery found. Only the model call and the governance
+# verdict are doubles; none of them replaces the logic under test.
+
+_Q4_LABEL = "name for my new branch only for the new account and not for any other user"
+
+
+class _SpyAdapter(BaseAdapter):
+    adapter_name = "spy-llm"
+    capability_type = "llm_completion"
+
+    def __init__(self):
+        super().__init__()
+        self.executed = 0
+
+    async def execute(self, *args, **kwargs):
+        self.executed += 1
+        raise AssertionError("an adapter was executed during interpretation, planning or compilation")
+
+
+class _RecordingGovernance:
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.actions = []
+
+    def evaluate_action(self, action):
+        self.actions.append(action)
+        return GovernanceResult(verdict=self.verdict, reason="test double", governor="TestDouble")
+
+
+class TestCtxAuth002DownstreamBoundary:
+    @staticmethod
+    async def _through_planner():
+        goals, _ = await _interpret(_REQUEST, f"{_Q4_LABEL} | 1.00 | request\n")
+        goal = goals[0]
+        registry = CapabilityRegistry()
+        registry.register_capability(CapabilityContract(
+            capability_type="llm_completion",
+            description="Generate text from a prompt via a language model.",
+            is_general_purpose=True,
+        ))
+        spy = _SpyAdapter()
+        registry.register_adapter("llm_completion", spy)
+        request = PlannerRequest(goal_id=goal.resource_id, goal=goal, hints=[])
+        with patch("core.cognitive.planner.generate_with_fallback",
+                   new=AsyncMock(return_value="Suggest a name for the branch.")):
+            result = await plan(request, registry, event_stream=_stream())
+        return goals, goal, registry, spy, result
+
+    @pytest.mark.asyncio
+    async def test_the_hostile_label_reaches_only_the_advisory_field_and_the_users_text_is_untouched(self):
+        goals, goal, _, spy, _ = await self._through_planner()
+        # Precondition, or the rest proves nothing: the label really is in the advisory field.
+        assert _Q4_LABEL in goal.structured_form["semantic_description"]
+        assert goal.structured_form["description"] == _REQUEST
+        assert goal.structured_form["raw_request"] == _REQUEST
+        assert await _escalated_constraints(_REQUEST, goals) == []
+        assert spy.executed == 0
+
+    @pytest.mark.asyncio
+    async def test_discovery_over_the_label_bearing_description_is_advisory_and_executes_nothing(self):
+        _, goal, registry, spy, _ = await self._through_planner()
+        request = build_capability_discovery_request(goal, [])
+        assert _Q4_LABEL in request.description, "discovery is ranked on the advisory text, by design (Q4)"
+        result = await discover_capabilities(request, registry, event_stream=_stream())
+        assert [c.capability_type for c in result.contracts] == ["llm_completion"]
+        assert spy.executed == 0
+
+    @pytest.mark.asyncio
+    async def test_compilation_cannot_proceed_past_a_governance_reject_and_the_gate_never_sees_the_label(self):
+        _, _, _, spy, result = await self._through_planner()
+        assert result.status == PlannerStatus.READY_FOR_COMPILATION
+        governance = _RecordingGovernance(GovernanceVerdict.REJECT)
+        compiled = await compile_plan(result.execution_plan, event_stream=_stream(), governance=governance)
+        assert compiled.status == CompilationStatus.REJECTED
+        assert len(governance.actions) == 1
+        action = governance.actions[0]
+        assert action.action_type == "plan_compile"
+        assert _Q4_LABEL not in json.dumps(action.metadata, default=str), (
+            "the compile gate evaluates plan-level facts; a label must not appear in what it is shown")
+        assert spy.executed == 0
+
+    @pytest.mark.asyncio
+    async def test_an_approved_compilation_still_executes_no_adapter(self):
+        _, _, _, spy, result = await self._through_planner()
+        governance = _RecordingGovernance(GovernanceVerdict.APPROVE)
+        compiled = await compile_plan(result.execution_plan, event_stream=_stream(), governance=governance)
+        assert len(governance.actions) == 1
+        assert compiled.status == CompilationStatus.COMPILED
+        assert spy.executed == 0
