@@ -27,7 +27,7 @@ Condensed, chronological. Wording that matters is quoted.
 6. The user recommended, in order: Q2/Q5 decision briefs first (Q2 first, Q5 designed around its dependencies), then the dependency matrix, then the ADR-KERNEL-07 retrospective as a separate governance task. Boundaries: no implementation; a recommendation is not an accepted decision; branch integration is separate.
 7. Q4 brief specification (analysis only, ten acceptance criteria). Then a series of reviews applied to the Q4 brief and the Q2/Q5 pack. The user's stances, all **candidates, none accepted**: D6's ratified wording is the tracker's ("recorded on two independent axes, kept distinguishable"), "independently typed and queryable" is a pre-ratification proposal; lifecycle FAILED is attempt-scoped, a run may hold several attempts (Q2-g); a retry example must not assume the later conclusion governs the target; coverage counts targets, not attempts; Q4-g conditional candidate (explicit non-conclusion where an assessment exists but cannot conclude; activity records where none was produced; preserve criterion results where aggregation is undefined); Q4-a interpretation boundary; Q4-b is three questions (trigger, level and terminality, outcome obligation).
 8. Latest user messages: the Q4-b closure mission prompt (Appendix A), then: "push the finished work to the repo, then create a handoff file for a new session to resume and continue this work."
-9. **Credentials.** The user supplied a GitHub token in user preferences and said "use the token". They also stated it is compromised and should be rotated. It is never written to the repository, memory or any output. If the user supplies a replacement, use it the same way (HTTP `extraheader`, environment variable, no persistence). On 2026-10-21 the token worked for the first push of the session and was then rejected with HTTP 401: treat it as revoked, and ask the user for a new credential only when a push is needed.
+9. **Credentials.** The user supplied a GitHub token in user preferences and said "use the token". They also stated it is compromised and should be rotated. It is never written to the repository, memory or any output. If the user supplies a replacement, use it the same way (HTTP `extraheader`, environment variable, no persistence). On 2026-10-21 that token worked for the first push of the session and was then rejected with HTTP 401; the user then supplied a replacement token in chat, which worked (its scopes include repo). Never store or repeat either token; ask the user for a credential only when a push is needed.
 10. Standing process rules from the user: label every claim ([R] [NI] [A] [P] [K] [D]); never promote a candidate to a decision; never invent vocabularies, states, identities, relations or aggregation rules; no code, enum, schema or contract change; update the tracker only when a decision is accepted; discrepancies are findings, not decisions.
 
 ## 4. Goal, Scope & Success Criteria
@@ -55,7 +55,7 @@ The pending mission's definition of done (Appendix A §23), plus: every open ite
 | R5 | Q4-b brief, first version | User instruction 7 | IMPLEMENTED (rev 1) | doc id in §8 | **Revision 2 not applied** (R6) |
 | R6 | Q4-b closure per Appendix A | User instruction 8 | IN PROGRESS: audit about 70 percent done, revision 2 text drafted in the session but not saved | §11 | The bulk-update attempt was refused (§12) |
 | R7 | Publish the finished repository work | User instruction 8 | VERIFIED | `git ls-remote` shows `2221ac1` | Plain fast-forward from `dbdfcb7`, no force |
-| R8 | Handoff for a fresh session | User instruction 8 | IMPLEMENTED, local commits only; push rejected | §7, §19 | Needs a valid credential or a push by the user |
+| R8 | Handoff for a fresh session | User instruction 8 | IMPLEMENTED and pushed (remote verified) | §7, §19 | |
 | R9 | ADR-KERNEL-07 retrospective disposition | User instruction 6 | OPEN | four-fact text drafted in the session, not recorded anywhere | Separate governance task |
 | R10 | M4 hunk in `CURRENT_STATE.md` | v3 R10 | OPEN | never answered | Pushed as is; drop only on the user's word |
 | R11 | Rotate the exposed GitHub token | User statement | OPEN, user action | | |
@@ -87,13 +87,13 @@ The pending mission's definition of done (Appendix A §23), plus: every open ite
 - Base branch: `main` at `f13bfde` (divergence 171 only-on-main / 58 only-on-branch)
 - HEAD before handoff: `2221ac1d33d0c41d7bc70a716425d689d161ffcc`
 - Transfer commit (the implementation state being transferred): `2221ac1`. It sits on `b52c53e`, on the previous remote tip `dbdfcb7`. Both are documentation commits that touch only the Phase C tracker.
-- Handoff commits: `5bb31aa` and a status-update commit (the latest commit touching `handoff.md`; a file cannot contain its own hash). **Local only: not pushed** (see §19).
+- Handoff commits: `5bb31aa`, `21bab65` and a final status-update commit (the latest commit touching `handoff.md`; a file cannot contain its own hash). `5bb31aa` and `21bab65` are pushed; the status-update commit is pushed and verified the same way (see §19).
 - Parent of the handoff commit: `2221ac1`
 - Working tree status: clean (scratch clone `/home/claude/recov`, which is ephemeral)
 - Relevant untracked or ignored files: none (ignored caches only)
 - Submodules: none
 - Remote push status: `2221ac1` pushed 2026-10-21 by plain fast-forward (`dbdfcb7..2221ac1`), no force, using the user-authorized token through an HTTP `extraheader`
-- Remote verification status: `git ls-remote` returned `2221ac1…` for the branch right after the first push; `main` stayed at `f13bfde`. **The handoff commits were not pushed.** The second push failed because GitHub rejected the token (HTTP 401, "Bad credentials"); it appears to have been rotated. The remote `handoff.md` is still version 3.
+- Remote verification status: `git ls-remote` returned `2221ac1…` for the branch right after the first push, then `21bab65…` after the second (`2221ac1..21bab65`, a plain fast-forward). The first attempt at the second push, with the old token, had been rejected (HTTP 401, "Bad credentials"); it succeeded once the user supplied a replacement token. `main` stayed at `f13bfde`. The remote `handoff.md` is version 4 after that push.
 
 ## 8. Active Files / Modified Files / Artifacts
 
@@ -203,8 +203,7 @@ All run 2026-10-21 unless noted.
 - The M4 hunk (R10) is unanswered.
 - Branch integration into `main` is undecided (171/58 divergence and growing). Pushing the branch does not integrate it.
 - The ADR-KERNEL-07 retrospective disposition is drafted but unrecorded; Graphify has not re-reviewed the merged head; the other claude.ai session (`Claude-claude.ai-sandbox`) must fetch `main` before any push; branch protection and `enforce_admins` were never checked.
-- The GitHub token was exposed in plain text and is now rejected (HTTP 401); it appears to have been rotated. Any push needs a new credential from the user.
-- The handoff commits are local only until pushed (§19).
+- GitHub tokens have been pasted in plain text in chat and in preferences, and the replacement token has broad scopes (repo, workflow, delete:packages and others). Rotating or narrowing it is a user action.
 - Risk: the three Docs exist only outside the repository; revision 2 of the Q4-b brief exists only as a plan.
 
 ## 16. Relevant Information / References
@@ -213,7 +212,7 @@ All run 2026-10-21 unless noted.
 
 ## 17. Next Steps
 
-1. **Push the handoff commits if they are still local (§19), then verify the transfer** (§18).
+1. **Verify the transfer** (§18).
 2. **Apply revision 2 of the Q4-b brief** per Appendix A, using §11's findings and the sections planned in the session: baseline and authority; verified sources; what D6 and D7 establish and the scope safeguard (three readings: unit-scoped, enclosing-scoped, terminality-scoped); terminology table; the precise fail-closed invariant; failure event, terminality and recovery (ten cases); execution scopes; completion stages and finalization cases; observed versus inferred cause (fourteen cases); the outcome and lifecycle-recording split of Q4-b3; `TOOL_FAILURE`; partial, late and retried results; failure-reporting path (freeze D1, FZ-01 and the Runtime); identity and provenance; an end-to-end failure-path audit; dependencies; two linked tables for the twenty scenarios; the ledger with all required fields; the closure test; the definition-of-done check; limits. Use small inserts and find-and-replace, not a bulk rewrite. Keep a revision log.
 3. **Finish the audit gaps** listed under "Not yet inspected" in §11 before claiming the failure path is traced.
 4. **Align the Q4 brief's ledger rows** with the Q4-b brief and fix any remaining `resume()` statement.
@@ -223,7 +222,7 @@ All run 2026-10-21 unless noted.
 
 ## 18. Resume Instructions
 
-1. Fetch and verify: `git fetch origin`, then `git rev-parse origin/feature/verification-critic-evidence-phase-c`. Expect the latest commit touching `handoff.md`, or a later commit; `2221ac1` is the transfer commit and an ancestor. If the remote tip is still `2221ac1`, the handoff is not on the remote yet: use the patches or bundle supplied with the session report.
+1. Fetch and verify: `git fetch origin`, then `git rev-parse origin/feature/verification-critic-evidence-phase-c`. Expect the latest commit touching `handoff.md`, or a later commit; `2221ac1` is the transfer commit and an ancestor.
 2. Check that the commits in §7 are on the remote (`git ls-remote`). If the branch was rewritten, compare before changing anything.
 3. Re-measure `main` (it moves) and the divergence. Re-run the package checks in §13 if the branch changed.
 4. Read this file fully, then the project memory notes, then open the three Docs and read each outline (note their revisions in §8).
@@ -232,9 +231,9 @@ All run 2026-10-21 unless noted.
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — PUSH FAILED** (and, separately, REQUIRED INFORMATION MISSING).
+**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING.**
 
-The implementation checkpoint `2221ac1` is pushed and verified. The handoff commits are local only: the push was rejected because the GitHub token returned HTTP 401. To complete it, push from the clone or apply the patches or bundle supplied with the session report (`git push origin feature/verification-critic-evidence-phase-c`, a plain fast-forward from `2221ac1`) using a valid credential. Until then a fresh session cannot read this file from the remote. The second gap is the full-text export of the three Claude Docs (§8), which exist only in the claude.ai project; `PROJECT_INSTRUCTIONS.md` §18.4.8.13 asks that nothing required for continuation lives only outside the repository. The substantive content is replicated in §10 (decision ledger), §11 (audit findings) and §17 (revision plan), and the Docs can be read through the Docs tools, so a fresh session can resume from this file; but the long-form tables and quotations are not reproducible automatically. To close it: either the user accepts the dependency, or authorizes an export of the three Docs into the repository (a documentation-only commit). The unsaved revision-2 text of the Q4-b brief is not preserved anywhere and must be re-created.
+The implementation checkpoint `2221ac1` and the handoff commits (`5bb31aa`, `21bab65` and the status-update commit that corrects this section) are pushed, and the remote tip was verified. The one missing item is the full-text export of the three Claude Docs (§8), which exist only in the claude.ai project; `PROJECT_INSTRUCTIONS.md` §18.4.8.13 asks that nothing required for continuation lives only outside the repository. The substantive content is replicated in §10 (decision ledger), §11 (audit findings) and §17 (revision plan), and the Docs can be read through the Docs tools, so a fresh session can resume from this file; but the long-form tables and quotations are not reproducible automatically. To close it: either the user accepts the dependency, or authorizes an export of the three Docs into the repository (a documentation-only commit). The unsaved revision-2 text of the Q4-b brief is not preserved anywhere and must be re-created.
 
 ---
 
