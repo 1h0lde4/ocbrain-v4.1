@@ -636,3 +636,64 @@ class TestSecretRedaction:
         assert _MARK not in out and _MARK not in raw
         summary = json.loads(raw)["provenance"]["summary"]
         assert any("api.example.test:8443" in name for name in summary["answered_by"]), summary["answered_by"]
+
+
+# ── event contract and unverifiable cache state (CTX-AUTH-002 revision, scenarios 7 and 9) ──
+
+def _valid_events():
+    grounding = sorted(lcc.GROUNDING_VOCAB)[0]
+    generated = {"labels": ["a"], "citation_grounding": [grounding]}
+    interpreted = {"selected_label": "a", "selected_citation_grounding": grounding,
+                   "selection_basis": sorted(lcc.BASIS_VOCAB)[0]}
+    return generated, interpreted
+
+
+class TestEventContractBranches:
+    """_validate_events must name the missing or invalid field and never substitute a default.
+    One end-to-end test already pins exit 2; each branch is pinned here."""
+
+    def test_a_complete_pair_of_events_is_accepted(self):
+        assert lcc._validate_events(*_valid_events()) is None
+
+    @pytest.mark.parametrize("break_it,expected", [
+        (lambda g, i: (None, i), "was not emitted"),
+        (lambda g, i: (g, {}), "was not emitted"),
+        (lambda g, i: ({**g, sorted(lcc.REJECTED_EVENT_KEYS)[0]: []}, i), "rejected key"),
+        (lambda g, i: (g, {**i, sorted(lcc.REJECTED_EVENT_KEYS)[0]: "x"}), "rejected key"),
+        (lambda g, i: ({**g, "labels": "not-a-list"}, i), "labels missing or not a list"),
+        (lambda g, i: ({k: v for k, v in g.items() if k != "citation_grounding"}, i),
+         "citation_grounding missing or not a list"),
+        (lambda g, i: ({**g, "labels": ["a", "b"]}, i), "differ in length"),
+        (lambda g, i: ({**g, "citation_grounding": ["not-in-the-vocabulary"]}, i), "outside the vocabulary"),
+        (lambda g, i: ({**g, "citation_grounding": ["verified_operative"]}, i), "outside the vocabulary"),
+        (lambda g, i: (g, {**i, "selected_citation_grounding": "verified_nonoperative"}),
+         "selected_citation_grounding"),
+        (lambda g, i: (g, {**i, "selected_label": None}), "selected_label"),
+        (lambda g, i: (g, {**i, "selected_citation_grounding": "bogus"}), "selected_citation_grounding"),
+        (lambda g, i: (g, {k: v for k, v in i.items() if k != "selection_basis"}), "selection_basis"),
+        (lambda g, i: (g, {**i, "selection_basis": "bogus"}), "selection_basis"),
+    ])
+    def test_each_missing_or_invalid_field_is_named_and_never_defaulted(self, break_it, expected):
+        problem = lcc._validate_events(*break_it(*_valid_events()))
+        assert problem is not None and expected in problem, problem
+
+
+class _UnhookableProvider(_FakeProvider):
+    """A provider whose generate() cannot be wrapped, so the harness cannot observe whether a
+    call reached it or the cache answered."""
+
+    def __setattr__(self, name, value):
+        if name == "generate":
+            raise AttributeError("generate is read-only on this provider")
+        super().__setattr__(name, value)
+
+
+class TestCacheStateThatCannotBeObserved:
+    def test_a_completion_whose_cache_state_is_unverifiable_is_inconclusive_not_a_pass(
+            self, capsys, clean_prompt_cache):
+        code, out = _run_real(capsys, _UnhookableProvider(), requests=1, trials=1)
+        verdict = _verdict_line(out)
+        assert code == 2, out
+        assert "cache state unverified" in out, out
+        assert "invariant held" not in out
+        assert "no pass is claimed" in verdict or "INCONCLUSIVE" in verdict, verdict
