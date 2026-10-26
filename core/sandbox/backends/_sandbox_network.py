@@ -58,6 +58,16 @@ Design decisions the wiring batch must know
   ``/proc/sys/net`` itself is present. If procfs is not readable the absence
   proves nothing, and that case is UNKNOWN (refused). This narrows the
   specification's wording in the refusing direction only.
+* The IPv6 rule is a conservative precheck of the network namespace this
+  process runs in: ``proc_ipv6_sources()`` reads that namespace's
+  ``/proc/sys/net/ipv6`` and no sandbox's. A pass says only that the
+  controller's own namespace reports IPv6 off. It does not show that any
+  sandbox network is isolated for IPv6, and ``enforce_ipv6_guard`` is not by
+  itself enforcement of INV-8 (spec section 9: IPv6 isolation is UNVERIFIED).
+  Which mechanism enforces INV-8, and over what scope, is not decided here.
+* The refusals are picklable and copyable (``__reduce__``): the worker pool,
+  the webhook process and the task runner are separate processes, so a refusal
+  must survive crossing one.
 """
 from __future__ import annotations
 
@@ -136,6 +146,19 @@ class SandboxNetworkCapacityError(SandboxNetworkGuardError):
         self.limit = limit
         self.in_use = in_use
         self.owner = owner
+
+    def __reduce__(self) -> tuple[object, ...]:
+        # ``args`` holds only the message, so the default reduction would call
+        # ``__init__`` with the wrong arguments on copy or unpickle. Rebuild
+        # from the real fields and carry ``__dict__`` (``add_note`` notes).
+        return (_rebuild_capacity_error, (type(self), self.limit, self.in_use, self.owner), dict(vars(self)))
+
+
+def _rebuild_capacity_error(
+    cls: type[SandboxNetworkCapacityError], limit: int, in_use: int, owner: str
+) -> SandboxNetworkCapacityError:
+    """Module-level so it can be pickled by reference; used by ``__reduce__``."""
+    return cls(limit=limit, in_use=in_use, owner=owner)
 
 
 class SandboxNetworkCapacityProbeError(SandboxNetworkGuardError):
@@ -335,6 +358,11 @@ class SandboxIPv6RefusedError(SandboxNetworkGuardError):
         )
         self.decision = decision
 
+    def __reduce__(self) -> tuple[object, ...]:
+        # ``args`` holds only the message, not the ``Ipv6Decision`` the
+        # constructor takes; rebuild from the decision and carry ``__dict__``.
+        return (type(self), (self.decision,), dict(vars(self)))
+
 
 @dataclass(frozen=True)
 class Ipv6Sources:
@@ -382,8 +410,9 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
     OFF only when the ipv6 sysctl directory is absent (with the net sysctl
     directory present) or ``disable_ipv6`` is 1 for both ``all`` and
     ``default``. A 0 for either scope is ON. Anything else, including an
-    unreadable or unrecognised value, is UNKNOWN. ON takes precedence over
-    UNKNOWN when both occur."""
+    unreadable or unrecognised value (a value that is not text is
+    unrecognised), is UNKNOWN. ON takes precedence over UNKNOWN when both
+    occur."""
     try:
         if not sources.sysctl_net_present():
             return Ipv6Decision(
@@ -403,9 +432,16 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
     unknown: list[str] = []
     for scope in _IPV6_SCOPES:
         try:
-            raw = sources.read_disable_ipv6(scope)
+            raw: object = sources.read_disable_ipv6(scope)
         except Exception as exc:
             unknown.append(f"{scope}: unreadable ({type(exc).__name__}: {exc})")
+            continue
+        if not isinstance(raw, str):
+            # A source that breaks its ``str`` contract is not a "1": UNKNOWN,
+            # never OFF and never an exception outside this module's hierarchy.
+            # The type name is used, not ``repr``, so an arbitrary object's own
+            # ``__repr__`` cannot raise inside the guard.
+            unknown.append(f"{scope}: unrecognised value of type {type(raw).__name__}")
             continue
         value = raw.strip()
         if value == "1":

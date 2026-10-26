@@ -28,27 +28,35 @@ Coverage:
       once however many threads release it (D11)
     - TC-14: the IPv6 detection matrix over injected sources, plus the real
       procfs sources against a temporary tree
+    - a source that breaks its own ``str`` contract is UNKNOWN, never OFF and
+      never an exception outside the guard hierarchy
+    - every refusal survives copy and pickle (the worker pool and the task
+      runner are separate processes)
     - INV-9: every refusal is logged with structured fields
 """
 from __future__ import annotations
 
 import ast
 import asyncio
+import copy
 import logging
 import os
+import pickle
 import re
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from core.sandbox.backends import _sandbox_network as sn
 from core.sandbox.backends._sandbox_network import (
     MAX_CONCURRENT_SANDBOX_NETWORKS,
+    Ipv6Decision,
     Ipv6Sources,
     Ipv6State,
     NetworkSlotLimiter,
@@ -147,6 +155,71 @@ def test_every_refusal_is_a_runtime_error_under_one_base() -> None:
     for error in (SandboxNetworkCapacityError, SandboxNetworkCapacityProbeError, SandboxIPv6RefusedError):
         assert issubclass(error, SandboxNetworkGuardError)
     assert issubclass(SandboxNetworkGuardError, RuntimeError)
+
+
+# ---------------------------------------------------------------- refusals cross process boundaries
+
+_REFUSALS = [
+    pytest.param(
+        lambda: SandboxNetworkCapacityError(limit=29, in_use=29, owner="op-1"),
+        id="capacity",
+    ),
+    pytest.param(
+        lambda: SandboxIPv6RefusedError(Ipv6Decision(Ipv6State.ON, "disable_ipv6 is 0 for 'all'")),
+        id="ipv6-refused",
+    ),
+    pytest.param(
+        lambda: SandboxNetworkCapacityProbeError("the probe failed"),
+        id="probe-failed",
+    ),
+]
+
+
+def _assert_same_refusal(clone: BaseException, original: BaseException) -> None:
+    assert type(clone) is type(original)
+    assert isinstance(clone, SandboxNetworkGuardError)
+    assert clone.args == original.args
+    assert str(clone) == str(original)
+    assert vars(clone) == vars(original)
+
+
+@pytest.mark.parametrize("make", _REFUSALS)
+@pytest.mark.parametrize("protocol", range(pickle.HIGHEST_PROTOCOL + 1))
+def test_a_refusal_survives_a_pickle_round_trip(make: Callable[[], BaseException], protocol: int) -> None:
+    """The worker pool, the webhook process and the task runner are separate
+    processes, so a refusal that cannot be pickled turns into an unrelated
+    error where it is re-raised."""
+    original = make()
+    _assert_same_refusal(pickle.loads(pickle.dumps(original, protocol)), original)
+
+
+@pytest.mark.parametrize("make", _REFUSALS)
+def test_a_refusal_survives_copy_and_deepcopy(make: Callable[[], BaseException]) -> None:
+    original = make()
+    _assert_same_refusal(copy.copy(original), original)
+    _assert_same_refusal(copy.deepcopy(original), original)
+
+
+@pytest.mark.parametrize("make", _REFUSALS)
+def test_a_pickled_refusal_keeps_notes_added_to_it(make: Callable[[], BaseException]) -> None:
+    """Whatever ``BaseException`` keeps across a round trip by default
+    (``add_note`` notes live in ``__dict__``) must still be kept."""
+    original = make()
+    original.add_note("raised while reserving a slot")
+    clone = pickle.loads(pickle.dumps(original))
+    assert clone.__notes__ == ["raised while reserving a slot"]
+
+
+def test_a_pickled_capacity_refusal_keeps_its_fields() -> None:
+    clone = pickle.loads(pickle.dumps(SandboxNetworkCapacityError(limit=3, in_use=3, owner="op-9")))
+    assert (clone.limit, clone.in_use, clone.owner) == (3, 3, "op-9")
+
+
+def test_a_pickled_ipv6_refusal_keeps_its_decision() -> None:
+    decision = Ipv6Decision(Ipv6State.UNKNOWN, "disable_ipv6 for 'all': unreadable")
+    clone = pickle.loads(pickle.dumps(SandboxIPv6RefusedError(decision)))
+    assert clone.decision == decision
+    assert clone.decision.state is Ipv6State.UNKNOWN
 
 
 # ---------------------------------------------------------------- effective limit
@@ -531,6 +604,87 @@ def test_tc14_a_zero_in_one_scope_is_still_checked_in_the_other() -> None:
     reads = _Reads(all_="0\n", default="0\n")
     decision = evaluate_ipv6(reads.sources())
     assert "'all'" in decision.reason and "'default'" in decision.reason
+
+
+# ---------------------------------------------------------------- TC-14: a source that breaks its contract
+
+
+def _sources_answering(values: dict[str, object]) -> Ipv6Sources:
+    """Sources whose scope reads return ``values`` unchecked, including values
+    that break the declared ``str`` contract (a faulty injected source)."""
+
+    def read(scope: str) -> str:
+        return cast(str, values[scope])
+
+    return Ipv6Sources(
+        sysctl_net_present=lambda: True,
+        ipv6_dir_present=lambda: True,
+        read_disable_ipv6=read,
+    )
+
+
+_NOT_TEXT = [
+    pytest.param(None, id="None"),
+    pytest.param(1, id="int-1"),
+    pytest.param(0, id="int-0"),
+    pytest.param(True, id="True"),
+    pytest.param(False, id="False"),
+    pytest.param(1.0, id="float-1"),
+    pytest.param(b"1", id="bytes-1"),
+    pytest.param(b"0", id="bytes-0"),
+    pytest.param(["1"], id="list"),
+    pytest.param(object(), id="object"),
+]
+
+
+@pytest.mark.parametrize("bad", _NOT_TEXT)
+@pytest.mark.parametrize("bad_scope", ["all", "default"])
+def test_tc14_a_non_text_value_is_unknown_never_off(bad: object, bad_scope: str) -> None:
+    """Even a value that looks like a one (``1``, ``True``, ``b"1"``) is not
+    the text ``"1"``, so it cannot make IPv6 count as off."""
+    other = "default" if bad_scope == "all" else "all"
+    decision = evaluate_ipv6(_sources_answering({bad_scope: bad, other: "1\n"}))
+    assert decision.state is Ipv6State.UNKNOWN, decision.reason
+    assert decision.supported is False
+    assert f"{bad_scope}:" in decision.reason
+
+
+@pytest.mark.parametrize("bad", _NOT_TEXT)
+def test_tc14_the_guard_refuses_with_its_own_error_for_a_non_text_value(bad: object) -> None:
+    """A faulty source must surface as the guard's defined refusal, not as an
+    ``AttributeError`` from inside the evaluation that a caller catching
+    ``SandboxNetworkGuardError`` would miss."""
+    with pytest.raises(SandboxNetworkGuardError) as info:
+        enforce_ipv6_guard(_sources_answering({"all": bad, "default": bad}))
+    assert isinstance(info.value, SandboxIPv6RefusedError)
+    assert info.value.decision.state is Ipv6State.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param({"all": "0\n", "default": None}, id="all-0-default-not-text"),
+        pytest.param({"all": None, "default": "0\n"}, id="all-not-text-default-0"),
+    ],
+)
+def test_tc14_a_zero_still_wins_over_a_non_text_value(values: dict[str, object]) -> None:
+    """ON takes precedence over UNKNOWN, as it does for an unreadable scope."""
+    decision = evaluate_ipv6(_sources_answering(values))
+    assert decision.state is Ipv6State.ON, decision.reason
+
+
+def test_tc14_both_scopes_are_still_read_after_a_non_text_value() -> None:
+    asked: list[str] = []
+
+    def read(scope: str) -> str:
+        asked.append(scope)
+        return cast(str, None if scope == "all" else "1\n")
+
+    decision = evaluate_ipv6(
+        Ipv6Sources(lambda: True, lambda: True, read),
+    )
+    assert asked == ["all", "default"]
+    assert decision.state is Ipv6State.UNKNOWN
 
 
 # ---------------------------------------------------------------- TC-14: real procfs sources
