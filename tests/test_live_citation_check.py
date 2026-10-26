@@ -568,3 +568,71 @@ class TestCoveragePolicyAndTrialAccounting:
             assert code == 1, out
             assert "INVARIANT FAILED" in out and "invariant held" not in out
 
+
+
+# ── secret redaction (CTX-AUTH-002 revision, harness audit finding H-1 / H-2) ────────────
+# Every marker below is a clearly-labelled synthetic string. None is a real credential, and
+# no test here contacts any provider: the "providers" are in-process fakes.
+
+_MARK = "SYNTHSECRET"
+
+
+class TestSecretRedaction:
+    """The harness prints and persists provider provenance and error text. A URL inside
+    either may carry userinfo, a query-string key or a fragment; none of it may survive."""
+
+    @pytest.mark.parametrize("name", [
+        f"OpenAICompat(m@https://u:{_MARK}1@h.example/v1?key={_MARK}2)",
+        f"OpenAICompat(m@HTTPS://u:{_MARK}3@h.example/v1?key={_MARK}4)",      # upper-case scheme
+        f"OpenAICompat(m@https://u:pa)ss{_MARK}5@h.example/v1)",             # ")" is legal in userinfo
+        f"OpenAICompat(m@https://h.example/v1?k=a]b{_MARK}6)",               # "]" inside a query
+        f"OpenAICompat(m@https://h.example/v1#{_MARK}7)",                    # fragment
+    ])
+    def test_provider_name_keeps_only_scheme_host_and_port(self, name):
+        shown = lcc._safe_provider_name(SimpleNamespace(name=name))
+        assert _MARK not in shown, shown
+        assert "h.example" in shown, "the non-secret host must stay, or the trial is not auditable"
+
+    def test_the_providers_own_endpoint_is_replaced_even_with_unusual_characters(self):
+        endpoint = f"https://u:pa ss{_MARK}8@h.example:8443/v1?key={_MARK}9"
+        provider = SimpleNamespace(name=f"OpenAICompat(m@{endpoint})", endpoint=endpoint)
+        shown = lcc._safe_provider_name(provider)
+        assert _MARK not in shown, shown
+        assert "https://h.example:8443" in shown, shown
+
+    def test_scrub_urls_leaves_text_that_is_not_a_url_unchanged(self):
+        text = "RuntimeError('cache module changed shape')"
+        assert lcc._scrub_urls(text) == text
+
+    def test_a_url_in_an_exception_is_reduced_and_trailing_punctuation_survives(self):
+        shown = lcc._safe_error(RuntimeError(f"failed for (https://u:{_MARK}a@h.example/p?k={_MARK}b)."))
+        assert _MARK not in shown, shown
+        assert "https://h.example" in shown, shown
+
+    def test_a_non_http_url_is_replaced_not_passed_through(self):
+        assert _MARK not in lcc._scrub_urls(f"dial wss://u:{_MARK}c@h.example/x failed")
+
+    def test_an_exception_escaping_interpret_request_reaches_neither_stdout_nor_the_json(
+            self, capsys, tmp_path, clean_prompt_cache):
+        """The error path used to print and persist repr(exc) verbatim."""
+        provider = _FakeProvider()
+        boom = RuntimeError(f"upstream failed for https://u:{_MARK}d@h.example/v1?key={_MARK}e")
+        out_json = tmp_path / "out.json"
+        with patch("core.cognitive.intent.interpret_request", new=AsyncMock(side_effect=boom)):
+            code, out = _run_real(capsys, provider, requests=1, trials=1, json=str(out_json))
+        raw = out_json.read_text(encoding="utf-8")
+        assert code == 2, out
+        assert _MARK not in out and _MARK not in raw
+        assert "upstream failed" in raw and "h.example" in raw, "the diagnosis must survive redaction"
+
+    def test_a_credential_bearing_provider_name_reaches_no_output_and_stays_auditable(
+            self, capsys, tmp_path, clean_prompt_cache):
+        endpoint = f"HTTPS://u:{_MARK}f@api.example.test:8443/v1?key={_MARK}g"
+        provider = _FakeProvider(model="model-x", endpoint=endpoint)
+        out_json = tmp_path / "out.json"
+        code, out = _run_real(capsys, provider, requests=1, trials=1, json=str(out_json))
+        raw = out_json.read_text(encoding="utf-8")
+        assert code == 0, out
+        assert _MARK not in out and _MARK not in raw
+        summary = json.loads(raw)["provenance"]["summary"]
+        assert any("api.example.test:8443" in name for name in summary["answered_by"]), summary["answered_by"]

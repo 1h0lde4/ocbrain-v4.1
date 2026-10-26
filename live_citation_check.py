@@ -266,13 +266,50 @@ def _sanitize_endpoint(value):
     return f"{parts.scheme}://{parts.hostname}{port}"
 
 
+# A URL inside free text (a provider display name, an exception message). Case-insensitive
+# on the scheme (urlsplit lower-cases it, so "HTTPS://" is a URL too) and greedy up to
+# whitespace: userinfo may legally contain ")" and query strings often contain "]", so a
+# character-class stop would leave the rest of the URL -- credentials included -- behind.
+# Whitespace inside userinfo is not valid URL syntax (RFC 3986 requires percent-encoding).
+_URL_IN_TEXT = re.compile(r"(?i)[a-z][a-z0-9+.\-]*://\S+")
+_URL_TRAILING = ")]}>'\".,;:"      # punctuation that follows a URL in prose, never part of its host
+
+
+def _scrub_urls(text):
+    """Reduce every URL inside free text to scheme://host[:port] (or <url> when it is not a
+    plain http(s) URL). Everything that is not a URL is returned unchanged."""
+    def reduce_url(match):
+        raw = match.group(0)
+        core = raw.rstrip(_URL_TRAILING)
+        return (_sanitize_endpoint(core) or "<url>") + raw[len(core):]
+    return _URL_IN_TEXT.sub(reduce_url, str(text))
+
+
+def _safe_error(exc):
+    """repr(exc) with any URL reduced to scheme://host[:port]. An exception raised below the
+    harness may quote the URL it was calling, and that URL may carry credentials."""
+    try:
+        return _scrub_urls(repr(exc))
+    except Exception:                                             # noqa: BLE001
+        return f"<{type(exc).__name__}: unprintable>"
+
+
 def _safe_provider_name(provider):
-    """Provider display name with any URL inside it reduced to scheme://host[:port]."""
+    """Provider display name with every URL inside it reduced to scheme://host[:port]. The
+    provider's own configured endpoint is replaced first, as a literal string, so credentials
+    in unusual characters cannot defeat the pattern match that follows."""
     try:
         name = str(provider.name)
     except Exception:                                             # noqa: BLE001
         name = type(provider).__name__
-    return re.sub(r"https?://[^\s)\]]+", lambda m: _sanitize_endpoint(m.group(0)) or "<url>", name)
+    for attr in ("endpoint", "_host"):
+        try:
+            raw = getattr(provider, attr, None)
+        except Exception:                                         # noqa: BLE001
+            raw = None
+        if isinstance(raw, str) and raw.strip():
+            name = name.replace(raw, _sanitize_endpoint(raw) or "<url>")
+    return _scrub_urls(name)
 
 
 def _clear_prompt_cache():
@@ -506,12 +543,12 @@ async def _run_once(intent, planner, text, memory, inner, real=False):
         try:
             _clear_prompt_cache()
         except Exception as exc:                                  # noqa: BLE001
-            return {"request": text, "error": f"prompt cache could not be cleared: {exc!r}"}
+            return {"request": text, "error": f"prompt cache could not be cleared: {_safe_error(exc)}"}
     with patch("core.cognitive.intent.generate_with_fallback", new=recorder), trace:
         try:
             goals = await intent.interpret_request(text, memory=memory, event_stream=stream)
         except Exception as exc:                                  # noqa: BLE001
-            return {"request": text, "error": repr(exc)}
+            return {"request": text, "error": _safe_error(exc)}
     events = {c.args[0]: c.kwargs["payload"] for c in stream.append.call_args_list}
     generated = events.get("cognitive.intent_hypotheses_generated")
     interpreted = events.get("cognitive.intent_interpreted")
@@ -534,7 +571,7 @@ async def _run_once(intent, planner, text, memory, inner, real=False):
                     produced.add(c.rationale)
         unexplained = sorted(produced - from_user)
     except Exception as exc:                                      # noqa: BLE001
-        return {"request": text, "error": f"escalation check failed: {exc!r}"}
+        return {"request": text, "error": f"escalation check failed: {_safe_error(exc)}"}
 
     if not goals:
         return {"request": text, "error": "interpret_request returned no goals; the escalation "
@@ -606,9 +643,10 @@ async def _amain(args):
     else:
         inner = intent.generate_with_fallback
         try:
-            provider_note = f"provider for intent_interpreter: {intent.resolve_provider('intent_interpreter')!r}"
+            provider_note = ("provider for intent_interpreter: "
+                         + _scrub_urls(repr(intent.resolve_provider('intent_interpreter'))))
         except Exception as exc:                                  # noqa: BLE001
-            provider_note = f"provider resolution failed: {exc!r}"
+            provider_note = f"provider resolution failed: {_safe_error(exc)}"
     print(provider_note)
     real = not args.dry_run
     configured = _configured_providers(intent) if real else []
