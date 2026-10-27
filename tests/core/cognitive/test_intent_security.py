@@ -66,6 +66,9 @@ from core.cognitive.compiler import CompilationStatus, compile as compile_plan
 from core.cognitive.intent import (
     IntentHypothesis,
     RawRequest,
+    _check_source_grounding,
+    _parse_hypotheses,
+    _select_hypothesis,
     generate_hypotheses,
     interpret_request,
 )
@@ -744,3 +747,54 @@ class TestCtxAuth002DownstreamBoundary:
         assert len(governance.actions) == 1
         assert compiled.status == CompilationStatus.COMPILED
         assert spy.executed == 0
+
+
+# ── Parser and grounding boundaries (CTX-AUTH-002 revision) ──────────────────────────────
+# ADR-KERNEL-08 §5.2 asks for malformed-source and contract-boundary coverage. Probed at the
+# published candidate; each case below is behavior that was observed, then pinned.
+
+_BOUNDARY_REQUEST = "please write a short summary of the quarterly report"
+
+
+class TestCtxAuth002ParserAndGroundingBoundaries:
+    @pytest.mark.parametrize("source", [
+        "[0]", "[01]", "Request", "REQUEST", "request2", "request extra", "[1] x",
+        "\uff3b1\uff3d",            # full-width brackets
+        "req\u200buest",            # zero-width space inside the word
+    ])
+    def test_a_near_miss_source_is_never_parsed_as_a_cited_source(self, source):
+        """Only the exact tokens "request" and "[N]" (N a positive integer, no leading zero)
+        name a source. Anything close to one is skipped, never read as "request"."""
+        assert _parse_hypotheses(f"summary | 0.9 | {source}\n") == []
+
+    @pytest.mark.parametrize("label,grounded", [
+        ("summary", True),
+        ("SUMMARY", True),                        # case-insensitive
+        ("of to", False),                         # only a 2-character overlap
+        ("xy za", False),                         # no overlap at all
+        ("sumM\u0430ry", False),                  # Cyrillic "a": a look-alike is not the same token
+    ])
+    def test_content_grounding_is_a_shared_token_of_three_or_more_characters(self, label, grounded):
+        verified, got = _check_source_grounding(label, "request", _BOUNDARY_REQUEST, [])
+        assert verified is True
+        assert got is grounded
+
+    @pytest.mark.parametrize("source", [None, "[0]", "[2]", "foo", "Request"])
+    def test_an_uncited_or_unresolvable_source_is_neither_verified_nor_grounded(self, source):
+        blocks = [_block("quarterly report of finances")]
+        assert _check_source_grounding("finances", source, _BOUNDARY_REQUEST, blocks) == (False, False)
+
+    def test_a_block_citation_is_never_eligible_however_high_its_score(self):
+        block_cited = IntentHypothesis(label="finances", score=1.0, embedding_ref=None, source="[1]",
+                                       source_verified=True, content_grounded=True)
+        selected, basis = _select_hypothesis([block_cited])
+        assert (selected.label, selected.score, basis) == ("novel", 0.1, "open_category_fallback")
+
+    @pytest.mark.asyncio
+    async def test_a_fault_while_grounding_degrades_to_the_open_category_fallback(self):
+        """A fault inside grounding must neither raise out of interpret_request nor leave a
+        model-chosen label selected."""
+        with patch("core.cognitive.intent._check_source_grounding", side_effect=TypeError("injected fault")):
+            intent = await _capture_intent(_REQUEST, "rename_branch | 0.9 | request\n")
+        assert (intent.selected.label, intent.selected.score) == ("novel", 0.1)
+        assert all(not (h.source_verified or h.content_grounded) for h in intent.hypotheses)
