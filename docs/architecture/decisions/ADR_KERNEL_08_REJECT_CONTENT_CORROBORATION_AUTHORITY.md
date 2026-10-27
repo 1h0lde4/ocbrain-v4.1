@@ -317,13 +317,13 @@ session) and re-merge before any PR.
 
 - **Revision evidence (Oct 26, 2026).** Branch
   `revise/ctx-auth-002-evidence-from-7b57cf1-oct2026`, derived from the published
-  candidate `7b57cf1`; code commit `d8e8421`. Re-run in one environment (Python
+  candidate `7b57cf1`; code commit `0e4a2f8`. Re-run in one environment (Python
   3.12.3, chromadb 0.5.3, numpy 1.26.4, scipy 1.13.1, no sentence-transformers),
   not inherited from the figures above, which are historical.
   - Full suite, recorded invocation: unrevised candidate 2148 passed, 8 failed,
-    1 xfailed; `main` `f13bfde` 2064 passed, 8 failed, 1 xfailed; revision 2179
-    passed, 8 failed, 1 xfailed (+31 = 11 redaction + 16 event-contract and cache +
-    4 Q4 tests). The 8 failures are the same node IDs on all three
+    1 xfailed; `main` `f13bfde` 2064 passed, 8 failed, 1 xfailed; revision 2200
+    passed, 8 failed, 1 xfailed (+52 = 11 redaction + 16 event-contract and cache +
+    4 Q4 + 21 parser, grounding and selection boundary tests). The 8 failures are the same node IDs on all three
     (`tests/core/sandbox/test_namespace_backend.py`): those tests execute
     `sys.executable` inside the sandbox chroot, where a virtualenv outside the
     system paths is not visible. Under a system interpreter with the same
@@ -362,6 +362,19 @@ session) and re-merge before any PR.
     a configured endpoint containing it is replaced as a literal string. Every
     `_validate_events` branch and the unverifiable-cache case now have a test.
     Mutation check 48/48 caught (43 plus 5), source byte-identical afterwards.
+  - Parser, grounding and selection boundaries, probed and then pinned (21 tests).
+    Near-miss sources (`[0]`, `[01]`, `Request`, `request2`, full-width brackets, a
+    zero-width space) are skipped, never read as `request`; grounding is a shared
+    token of 3 or more characters (a Cyrillic look-alike does not ground); a block
+    citation is never eligible at any score; a fault inside grounding degrades to
+    the open-category fallback. Four regressions (case-insensitive source, token
+    length 2, eligibility ignoring the source, an uncontained grounding fault) are
+    each caught. Observations, unchanged: a completion with CRLF line endings
+    parses to no hypotheses and falls back (relevant to R3); `_check_source_grounding`
+    raises on `blocks=None` or a block whose `content` is None, which
+    `generate_hypotheses` contains; `IntentHypothesis` is a mutable dataclass, as on
+    `main`, because the grounding flags are set after parsing and
+    `generate_hypotheses` is their only writer in non-test code.
   - Static: scoped mypy (`--follow-imports=silent --ignore-missing-imports
     --explicit-package-bases`, the two cognitive files) 12 errors with an identical
     normalized set on the candidate, `main` and the revision; the 11 recorded above
