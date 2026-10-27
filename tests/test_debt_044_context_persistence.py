@@ -1,4 +1,4 @@
-"""DEBT-029 tests: atomicity, best-effort persistence, and retry isolation."""
+"""DEBT-044 tests: atomicity, best-effort persistence, and retry isolation."""
 import logging
 import sqlite3
 from types import SimpleNamespace
