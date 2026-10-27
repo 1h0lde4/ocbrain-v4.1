@@ -44,7 +44,7 @@ Goal: expose the real state and establish verifiable fixes; first pass may end P
 
 ## 7. Git / repository checkpoint
 - Repo `github.com/1h0lde4/ocbrain-v4.1` (**public**). Pinned base: `main` @ `f13bfde`.
-- **New branch (docs only) `audit/freeze-remediation-batch0-oct2026`**: commit `84fe1a6` = the Batch 0 report; this handoff on top. **It exists only in the container and in the delivered `batch0-handoff.bundle` + files — it is NOT on the remote.** Push attempt 1: exit **128**, "could not read Password"; remote has 0 matching branches. Attempt 2: made after committing this file; its exit status is recorded in the follow-up commit and in the delivering message.
+- **New branch (docs only) `audit/freeze-remediation-batch0-oct2026`**: commit `84fe1a6` = the Batch 0 report; this handoff on top. **It exists only in the container and in the delivered `batch0-handoff.bundle` + files — it is NOT on the remote.** Push attempt 1: exit **128**, "could not read Password"; remote has 0 matching branches. Attempt 2: made after committing this file; **FAILED (exit 128) - the credential is rejected; the branch is not on the remote**.
 - **Already on the remote from earlier work (unchanged):** `security/codeql-findings-sep2026` @ `2d03b70` (handoff v3.2, manifest draft, R7 write-up, notes); PR #79 branch @ `bcbe574`; PR #87 branch @ `917bb37`.
 - **To publish later:** with a fresh credential, `git push <https-url-with-token> audit/freeze-remediation-batch0-oct2026` (non-forced). **Importing the bundle:** `git fetch batch0-handoff.bundle audit/freeze-remediation-batch0-oct2026:audit/freeze-remediation-batch0-oct2026` inside a clone of the repo.
 
