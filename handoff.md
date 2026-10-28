@@ -31,7 +31,7 @@ Goal: expose the real state and establish verifiable fixes; first pass may end P
 | ID | Requirement | Status |
 |---|---|---|
 | L1 | Batch 0 deliverables | **INCOMPLETE** — report written; see its §10 for what is not done |
-| L2 | Batch 1 (R-1) | **NOT STARTED.** State **OPEN** (register + source reading); no pre-fix measurement exists |
+| L2 | Batch 1 (R-1) | **Implementation NOT STARTED.** State **OPEN**; **pre-fix evidence captured (VERIFIED, report §9.1)** |
 | L3 | Push finished work | **FAILED** — credential rejected (§7) |
 | L4 | Independent review | **NOT POSSIBLE yet** (needs a result SHA and a separate reviewer) |
 | L5 | Stop before Batch 2 | in force |
@@ -39,7 +39,8 @@ Goal: expose the real state and establish verifiable fixes; first pass may end P
 ## 6. Current verified state
 - **VERIFIED:** `origin/main` = `f13bfdefcdd197ed1f966de0b1f93037a4168af4` (2026-10-19 08:59 UTC); workspace was clean (0 uncommitted, 0 stashes, 0 local-only commits); the GitHub token is **dead** (HTTP 401); `v1.0.0` → `0efa222` is 353 commits behind `main`; the Oct 1 audit file is **not in the repo** (every fetched ref searched); DEBT-023's docs claim a mitigation (`_net_proxy.py`, AF_ALG/AF_VSOCK) that `main`'s code lacks; `DEBT-042`/`DEBT-043` already exist on `main` (so PR #79's `DEBT-042` collides); live `enforce_admins: true`.
 - **READ (register line 131 + source):** R-1 OPEN — ` - ` truncation in `parse_failed_ids`; hand-truncated allowlist entries can tolerate a failing ` - ` id; the live gate matches by **node ID only**. 
-- **NOT VERIFIED:** any pre-fix behaviour (the probe was lost to a container reset); PR checks/mergeability since the credential died; #39/#40 states; everything the prompt attributes to the Oct 1 audit.
+- **VERIFIED (executed, local):** the live gate **tolerates a genuine `AssertionError` via a hand-truncated allowlist entry (S2) and via ID-only matching (S4)**, cannot tolerate a legitimate ` - ` ID (S1), and its count cross-check catches collisions (S3) — report §9.1.
+- **NOT VERIFIED:** D4/D5, the real entries' signatures; PR checks/mergeability since the credential died; #39/#40 states; everything the prompt attributes to the Oct 1 audit.
 - Full detail: `docs/Bugs Hunt & fix reports/FREEZE_REMEDIATION_BATCH0_REPORT_f13bfde.md`.
 
 ## 7. Git / repository checkpoint
@@ -65,7 +66,7 @@ Documentation only. No source, test, CI or dependency file was modified.
 | D6 | Deliver files + bundle when the push fails | A reset-prone container is not a safe sole copy |
 
 ## 11. Investigation performed / not performed
-Performed: baseline, preservation, PR heads via `refs/pull/*`, tags, ADR-branch scan, env configuration, DEBT-023 docs-vs-code, a full read of `ci_test_gate.py`, the register's R-1 text. **Not performed:** the pre-fix probe, `tests/test_ci_test_gate.py` contents, the allowlist's real failure signatures, any research of pytest's documented exit codes/hooks, crosswalk rows for REM-004 / CTX-EXPORT-001 / DEBT-025 / DEBT-028/029/036/015 / DEBT-012 / DEBT-031/032.
+Performed: the **pre-fix probe (S1–S4)**, baseline, preservation, PR heads via `refs/pull/*`, tags, ADR-branch scan, env configuration, DEBT-023 docs-vs-code, a full read of `ci_test_gate.py`, the register's R-1 text. **Not performed:** `tests/test_ci_test_gate.py` contents, the allowlist's real failure signatures, any research of pytest's documented exit codes/hooks, crosswalk rows for REM-004 / CTX-EXPORT-001 / DEBT-025 / DEBT-028/029/036/015 / DEBT-012 / DEBT-031/032.
 
 ## 12. Failed attempts and lessons
 | What happened | Lesson |
@@ -75,11 +76,12 @@ Performed: baseline, preservation, PR heads via `refs/pull/*`, tags, ADR-branch 
 | The probe never ran (env gone) | Rebuild first (§14), then probe |
 | The credential died mid-task | Test auth with a plain `curl` to `/user` first; unauthenticated API reads share an IP rate limit — use `refs/pull/*` over git instead |
 | Bash-isms in `/bin/sh` (`${v:0:7}`), `$?` inside a string after a `$(...)`, reversed `git worktree add` arguments | Use `cut`, save `RC=$?` immediately, `git worktree add <path> <commit>` |
+| **Probe harness bugs:** an invalid `-k` (`a - b`) exited 4 (usage error) and a bare `importlib` load broke `@dataclass` | Assert pytest's exit code ∈ {0,1} before feeding a gate; register the module in `sys.modules` first; print the module's blob hash and assert it is non-empty |
 | Earlier overstatements (above, D5) | Label equivalence as proven or inferred |
 | DEBT-id collisions with concurrent sessions (4 now, incl. `DEBT-042`) | Take the live max id at write time |
 
 ## 13. Verification evidence
-`git push` attempt 1 → **exit 128**, branch absent from the remote (**FAIL**). Token check → HTTP 401. Gate script and register: **READ**. Pre-fix probe: **NOT RUN**. Suite/drift: **not run this mission**. No CI result claimed.
+`git push` attempt 1 → **exit 128**, branch absent from the remote (**FAIL**). Token check → HTTP 401. Gate script and register: **READ**. Pre-fix probe: **RUN (local)** — S1 red, **S2 green (false)**, S3 red, **S4 green (ID-only)**; real pytest exit codes 1,1,1; no CI run. Suite/drift: **not run this mission**. No CI result claimed.
 
 ## 14. Environment and credentials
 - Rebuild (the tool shell is `/bin/sh`): `mkdir -p /home/claude/audit && cd /home/claude/audit && git clone https://github.com/1h0lde4/ocbrain-v4.1.git repo && cd repo && git fetch origin '+refs/pull/*/head:refs/remotes/pr/*'; grep -vE "^sentence-transformers" requirements.txt > /tmp/req_minimal.txt; pip install --no-cache-dir --break-system-packages -r /tmp/req_minimal.txt`. **Never plain `pip install -r requirements.txt`** (pulls `torch`).
@@ -96,7 +98,7 @@ The Batch 0 report; `scripts/ci_test_gate.py`; `KNOWN_ISSUES.md` line 131 (R-1);
 1. Re-paste the v2 mission prompt; read this file and the report; verify the transfer (§18).
 2. Obtain a credential; publish the branch non-forced (or import the bundle).
 3. Rebuild the environment (§14); re-pin `main`; `git status`.
-4. **Run the pre-fix probe** (report §9) — assert it is capable of producing output first; record exit statuses; this converts D1–D2 from READ to VERIFIED.
+4. ~~Run the pre-fix probe~~ **Done this session** (report §9.1) — re-run once on the new pin to confirm; the harness is described there.
 5. Finish only the Batch 0 remainders Batch 1 needs: read `ci_test_gate.py` + `tests/test_ci_test_gate.py` + allowlist header in full; research the 34 entries' failure signatures; consult pytest's documented exit codes/hooks; re-fetch PR checks if a credential exists. **Resolve or record Q3 before designing the signature.**
 6. Implement Batch 1 in a *separate worktree* from the re-pinned `main`: `git worktree add <path> -b fix/ci-gate-r1-parser-hardening-oct2026 origin/main`; bracket every test run with `git status`; preserve the allowlist and the D-4 strict xfail; run the real gate tests and the drift check.
 7. Freeze an immutable SHA, build the reviewer package, report in the prompt's format, **stop and wait.**
