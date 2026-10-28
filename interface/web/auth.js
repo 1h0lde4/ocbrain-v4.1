@@ -16,6 +16,8 @@
   'use strict';
   var KEY = 'ocbrain_api_token';
   var pendingPrompt = null;
+  var declinedAt = 0;          // time of the last cancelled prompt
+  var DECLINE_QUIET_MS = 30000; // do not nag again right after a cancel
 
   function adoptFragmentToken() {
     var m = /(?:^|[#&])token=([^&]+)/.exec(window.location.hash || '');
@@ -31,10 +33,12 @@
   }
 
   function askForToken() {
+    if (Date.now() - declinedAt < DECLINE_QUIET_MS) return Promise.resolve('');
     if (!pendingPrompt) {
       pendingPrompt = Promise.resolve().then(function () {
         var t = window.prompt('OCBrain API token (the contents of the data/api_token file on this machine):');
         t = t ? t.trim() : '';
+        if (!t) declinedAt = Date.now();
         try {
           if (t) sessionStorage.setItem(KEY, t); else sessionStorage.removeItem(KEY);
         } catch (e) { /* ignore */ }
@@ -54,9 +58,13 @@
   }
 
   window.ocFetch = async function (url, opts) {
-    var res = await fetch(url, withAuth(opts, getToken()));
+    var used = getToken();
+    var res = await fetch(url, withAuth(opts, used));
     if (res.status !== 401) return res;
-    var token = await askForToken();
+    // A concurrent call may already have obtained a new token while this request
+    // (sent with the old one) was in flight: retry with it instead of prompting again.
+    var current = getToken();
+    var token = (current && current !== used) ? current : await askForToken();
     if (!token) return res;
     return fetch(url, withAuth(opts, token));
   };

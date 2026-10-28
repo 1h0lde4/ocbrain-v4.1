@@ -84,3 +84,7 @@ Token required (29): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 6. `sessionStorage` is readable by any script on the page; the UI's own XSS exposure was not audited here.
 7. Control-plane governance (section 5) and `/health` for external monitors are unresolved by design.
 8. `web/wizard.html` targets routes that do not exist (E7).
+9. The web helpers (`web/auth.js`) are executed under Node against a live server (`tests/test_web_auth_js.py`,
+   skipped where Node is absent), not in a browser. That run found and fixed a double prompt on concurrent 401s.
+   The pages' own scripts, rendering, `sessionStorage` behaviour in real browsers and the tray's `webbrowser` call
+   were not exercised.
