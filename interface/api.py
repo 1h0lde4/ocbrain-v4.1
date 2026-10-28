@@ -449,8 +449,13 @@ async def _save_context_background(
     """
     try:
         orchestrator.context.save(query, modules, answer, scope=execution_id)
-    except Exception:
-        pass
+    except Exception as e:
+        # Keep best-effort failure observable without logging query, answer,
+        # scope, execution ID, or exception text.
+        log.warning(
+            "Streaming context save failed (non-blocking; error_type=%s)",
+            type(e).__name__,
+        )
 
 
 @app.get("/status")
