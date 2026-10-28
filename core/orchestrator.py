@@ -859,6 +859,18 @@ class Orchestrator:
                         type(e).__name__,
                     )
 
+                # 6b. Persist interaction to UnifiedMemory.
+                #
+                # Session 4:  activated UnifiedMemory as production memory owner.
+                # Session 4B: structured payload, stable identity, enriched metadata.
+                # Session 4C: fixed identity semantics (query-only hash, not Q+A hash)
+                #             and removed summary=query (summary is reserved for
+                #             LLM-generated summaries by MemoryCuratorWorker at v4.3.6).
+                #             The query is fully preserved in metadata["query"] for
+                #             analytics, replay, and future metadata-aware retrieval
+                #             (v4.3.8 Cognitive Retrieval Engine).
+                # interaction_id computed once at the top of handle() (Session 5:
+                # reused here rather than recomputed -- same deterministic value).
                 try:
                     await self.memory.write(
                         content=answer,
