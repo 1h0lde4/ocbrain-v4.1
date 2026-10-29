@@ -1208,11 +1208,20 @@ def _memory_object_escape_sites(scope: ast.AST) -> list[ast.AST]:
         elif isinstance(node, ast.Assign):
             # Only the exact dependency-default expression is exempt. An alias
             # such as a comprehension containing helper() must still be detected
-            # even though the RHS contains a different call.
+            # even though the RHS contains a different call. Direct memory writes
+            # and the one approved read-only contradiction lookup are validated
+            # separately by their dedicated structural checks.
+            approved_read_assignment = (
+                isinstance(node.value, ast.Await)
+                and isinstance(node.value.value, ast.Call)
+                and _is_approved_contradiction_read(node.value.value)
+            )
             if (
                 not _is_default_dependency_initialization(
                     node, "memory", "get_unified_memory"
                 )
+                and not _is_direct_entry_memory_write(node)
+                and not approved_read_assignment
                 and _contains_name_reference(node.value, "memory")
             ):
                 record(node)
