@@ -842,17 +842,6 @@ def test_check_drift_10_allows_terminal_learning_write_before_evolution_governan
 
 
 @pytest.mark.parametrize("inserted_statement", [
-    "    writer = memory.write\n    await writer(candidate)\n",
-    "    store = memory\n    await store.write(candidate)\n",
-    "    writer = getattr(memory, 'write')\n    await writer(candidate)\n",
-    "    writer = memory.__getattribute__('write')\n    await writer(candidate)\n",
-    "    writer = memory.__dict__['write']\n    await writer(candidate)\n",
-    "    writer = vars(memory)['write']\n    await writer(candidate)\n",
-    "    writer = memory.__dict__.get('write')\n    await writer(candidate)\n",
-    "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
-    "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
-])
-@pytest.mark.parametrize("inserted_statement", [
     "    mutate_memory(memory)\n",
     "    store = memory\n    mutate_memory(store)\n",
     "    store = (memory,)\n    mutate_memory(store[0])\n",
@@ -888,6 +877,17 @@ def test_check_drift_10_allows_exact_contradiction_reader_memory_argument(tmp_pa
     assert result.status == "PASS"
 
 
+@pytest.mark.parametrize("inserted_statement", [
+    "    writer = memory.write\n    await writer(candidate)\n",
+    "    store = memory\n    await store.write(candidate)\n",
+    "    writer = getattr(memory, 'write')\n    await writer(candidate)\n",
+    "    writer = memory.__getattribute__('write')\n    await writer(candidate)\n",
+    "    writer = memory.__dict__['write']\n    await writer(candidate)\n",
+    "    writer = vars(memory)['write']\n    await writer(candidate)\n",
+    "    writer = memory.__dict__.get('write')\n    await writer(candidate)\n",
+    "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
+    "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
+])
 def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
