@@ -600,11 +600,100 @@ DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
 }
 
 
-def _find_module_scope_bindings_for_name(tree: ast.Module, name: str) -> list[tuple[ast.AST, str]]:
-    """Return list of (node, description) for all module-scope bindings of `name`."""
-    bindings: list[tuple[ast.AST, str]] = []
+def _module_scope_named_exprs(node: ast.AST):
+    """Yield assignment expressions evaluated in module scope, not nested bodies."""
+    if isinstance(node, ast.NamedExpr):
+        yield node
 
-    def _visit_stmts(body: list[ast.stmt]):
+    # Definition bodies execute in their own namespaces. Their headers, however,
+    # are evaluated in the containing scope and can contain assignment expressions.
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        header_nodes = [*node.decorator_list, node.args]
+        if node.returns is not None:
+            header_nodes.append(node.returns)
+        header_nodes.extend(getattr(node, "type_params", ()))
+        for child in header_nodes:
+            yield from _module_scope_named_exprs(child)
+        return
+    if isinstance(node, ast.ClassDef):
+        header_nodes = [*node.decorator_list, *node.bases, *node.keywords]
+        header_nodes.extend(getattr(node, "type_params", ()))
+        for child in header_nodes:
+            yield from _module_scope_named_exprs(child)
+        return
+    if isinstance(node, ast.Lambda):
+        # Lambda defaults execute in the containing scope; its body does not.
+        yield from _module_scope_named_exprs(node.args)
+        return
+
+    for child in ast.iter_child_nodes(node):
+        yield from _module_scope_named_exprs(child)
+
+
+def _target_binds_name(
+    target: ast.AST, name: str, *, deleting: bool = False
+) -> bool:
+    """Check actual Name targets, without mistaking attribute/index references for binds."""
+    expected_context = ast.Del if deleting else ast.Store
+    if isinstance(target, ast.Name):
+        return target.id == name and isinstance(target.ctx, expected_context)
+    if isinstance(target, ast.Starred):
+        return _target_binds_name(target.value, name, deleting=deleting)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return any(
+            _target_binds_name(element, name, deleting=deleting)
+            for element in target.elts
+        )
+    # Attribute and subscript targets can contain Names in Load context; those
+    # Names are references, not bindings of the module-level name being checked.
+    return False
+
+
+def _pattern_binds_name(pattern: ast.AST, name: str) -> bool:
+    """Find capture names in structural-pattern-matching patterns."""
+    if isinstance(pattern, ast.MatchAs) and pattern.name == name:
+        return True
+    if isinstance(pattern, ast.MatchStar) and pattern.name == name:
+        return True
+    if isinstance(pattern, ast.MatchMapping) and pattern.rest == name:
+        return True
+    return any(
+        _pattern_binds_name(child, name)
+        for child in ast.iter_child_nodes(pattern)
+    )
+
+
+def _first_unconditional_return_or_raise(node: ast.AST) -> ast.Return | ast.Raise | None:
+    """Find unconditional early exits, without misclassifying tier-dependent branches."""
+    if isinstance(node, (ast.Return, ast.Raise)):
+        return node
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        return None
+    # Only descend through an if-statement when a literal condition selects the
+    # branch with certainty. Arbitrary conditions are domain control flow in
+    # ValidationGate (including legitimate non-Evolution exits), not proof of a
+    # governance bypass.
+    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Constant):
+        return None
+    selected_body = node.body if bool(node.test.value) else node.orelse
+    for stmt in selected_body:
+        found = _first_unconditional_return_or_raise(stmt)
+        if found is not None:
+            return found
+    return None
+
+
+def _find_module_scope_bindings_for_name(
+    tree: ast.Module, name: str
+) -> list[tuple[ast.AST, str]]:
+    """Return actual or potentially name-binding module-scope statements."""
+    bindings: list[tuple[ast.AST, str]] = []
+    type_alias_type = getattr(ast, "TypeAlias", None)
+
+    def record(node: ast.AST, description: str) -> None:
+        bindings.append((node, description))
+
+    def _visit_stmts(body: list[ast.stmt]) -> None:
         for stmt in body:
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 if stmt.name == name:
@@ -613,34 +702,50 @@ def _find_module_scope_bindings_for_name(tree: ast.Module, name: str) -> list[tu
                         if isinstance(stmt, ast.AsyncFunctionDef)
                         else ("function" if isinstance(stmt, ast.FunctionDef) else "class")
                     )
-                    bindings.append((stmt, f"{kind} definition '{name}'"))
+                    record(stmt, f"{kind} definition '{name}'")
             elif isinstance(stmt, ast.Assign):
-                for target in stmt.targets:
-                    for n in ast.walk(target):
-                        if isinstance(n, ast.Name) and n.id == name:
-                            bindings.append((stmt, f"assignment to '{name}'"))
+                if any(_target_binds_name(target, name) for target in stmt.targets):
+                    record(stmt, f"assignment to '{name}'")
             elif isinstance(stmt, ast.AnnAssign):
-                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
-                    bindings.append((stmt, f"annotated assignment to '{name}'"))
+                if _target_binds_name(stmt.target, name):
+                    record(stmt, f"annotated assignment to '{name}'")
             elif isinstance(stmt, ast.AugAssign):
-                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
-                    bindings.append((stmt, f"augmented assignment to '{name}'"))
+                if _target_binds_name(stmt.target, name):
+                    record(stmt, f"augmented assignment to '{name}'")
             elif isinstance(stmt, ast.Delete):
-                for target in stmt.targets:
-                    for n in ast.walk(target):
-                        if isinstance(n, ast.Name) and n.id == name:
-                            bindings.append((stmt, f"deletion of '{name}'"))
+                if any(_target_binds_name(target, name, deleting=True) for target in stmt.targets):
+                    record(stmt, f"deletion of '{name}'")
+            elif isinstance(stmt, ast.For):
+                if _target_binds_name(stmt.target, name):
+                    record(stmt, f"loop target binding '{name}'")
+            elif isinstance(stmt, ast.AsyncFor):
+                if _target_binds_name(stmt.target, name):
+                    record(stmt, f"async loop target binding '{name}'")
+            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+                for item in stmt.items:
+                    if item.optional_vars is not None and _target_binds_name(item.optional_vars, name):
+                        record(stmt, f"context-manager target binding '{name}'")
             elif isinstance(stmt, ast.Import):
                 for alias in stmt.names:
-                    bound = alias.asname or alias.name
+                    # An unaliased dotted import binds only its first component.
+                    bound = alias.asname or alias.name.split(".", 1)[0]
                     if bound == name:
-                        bindings.append((stmt, f"import binding '{name}'"))
+                        record(stmt, f"import binding '{name}'")
             elif isinstance(stmt, ast.ImportFrom):
                 for alias in stmt.names:
-                    bound = alias.asname or alias.name
-                    if bound == name:
-                        bindings.append((stmt, f"import-from binding '{name}'"))
+                    if alias.name == "*":
+                        # A star import could overwrite the protected name; fail closed.
+                        record(stmt, f"star import may bind '{name}'")
+                    else:
+                        bound = alias.asname or alias.name
+                        if bound == name:
+                            record(stmt, f"import-from binding '{name}'")
+            elif type_alias_type is not None and isinstance(stmt, type_alias_type):
+                if _target_binds_name(stmt.name, name):
+                    record(stmt, f"type-alias binding '{name}'")
 
+            # These suites execute in the module namespace. Recurse into them,
+            # while deliberately not traversing function or class bodies.
             if isinstance(stmt, (ast.If, ast.While, ast.For, ast.AsyncFor)):
                 _visit_stmts(stmt.body)
                 _visit_stmts(stmt.orelse)
@@ -649,39 +754,58 @@ def _find_module_scope_bindings_for_name(tree: ast.Module, name: str) -> list[tu
             elif isinstance(stmt, (ast.Try, getattr(ast, "TryStar", ast.Try))):
                 _visit_stmts(stmt.body)
                 for handler in stmt.handlers:
+                    if handler.name == name:
+                        record(handler, f"exception-handler target binding '{name}'")
                     _visit_stmts(handler.body)
                 _visit_stmts(stmt.orelse)
                 _visit_stmts(stmt.finalbody)
             elif isinstance(stmt, ast.Match):
                 for case in stmt.cases:
+                    if _pattern_binds_name(case.pattern, name):
+                        record(case.pattern, f"pattern-capture binding '{name}'")
                     _visit_stmts(case.body)
 
+    # Assignment expressions bind in the surrounding scope, including in module
+    # conditions, loop headers, decorators/defaults, and comprehension expressions.
+    for named_expr in _module_scope_named_exprs(tree):
+        if _target_binds_name(named_expr.target, name):
+            record(named_expr, f"assignment-expression binding '{name}'")
+
     _visit_stmts(tree.body)
+    bindings.sort(key=lambda item: getattr(item[0], "lineno", 0))
     return bindings
 
 
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
-) -> tuple[list[Violation], bool]:
-    """Find direct governance calls, allowing only the explicit scoped exception."""
+) -> tuple[list[Violation], tuple[str, str] | None]:
+    """Find direct governance calls, allowing only configured, scoped exceptions."""
     violations: list[Violation] = []
     approved_call_node: ast.Call | None = None
+    applied_exception_key: tuple[str, str] | None = None
 
-    if rel == "core/cognitive/learning.py":
-        bindings = _find_module_scope_bindings_for_name(tree, "validation_gate")
+    # The exception configuration is the single source of truth for both the
+    # required gate name and the rationale reported by check_drift_10().
+    scope_key = next(
+        (key for key in DRIFT_10_EXCEPTION_SCOPES if key[0] == rel),
+        None,
+    )
+    if scope_key is not None:
+        gate_name = scope_key[1]
+        bindings = _find_module_scope_bindings_for_name(tree, gate_name)
         if len(bindings) == 0:
             violations.append(
                 Violation(
                     rel, 0,
-                    "missing required top-level 'validation_gate' function definition in learning.py",
+                    f"missing required top-level '{gate_name}' function definition in {rel}",
                 )
             )
         elif len(bindings) > 1:
             second_node, desc = bindings[1]
             violations.append(
                 Violation(
-                    rel, second_node.lineno,
-                    f"competing or duplicate module-scope binding for 'validation_gate': {desc}",
+                    rel, getattr(second_node, "lineno", 0),
+                    f"competing or duplicate module-scope binding for '{gate_name}': {desc}",
                 )
             )
         else:
@@ -689,22 +813,22 @@ def _governance_boundary_violations(
             if gate_node not in tree.body:
                 violations.append(
                     Violation(
-                        rel, gate_node.lineno,
-                        "'validation_gate' must be a direct top-level definition, not nested in control flow",
+                        rel, getattr(gate_node, "lineno", 0),
+                        f"'{gate_name}' must be a direct top-level definition, not nested in control flow",
                     )
                 )
             elif not isinstance(gate_node, ast.AsyncFunctionDef):
                 violations.append(
                     Violation(
-                        rel, gate_node.lineno,
-                        f"'validation_gate' must be an async function definition, found {desc}",
+                        rel, getattr(gate_node, "lineno", 0),
+                        f"'{gate_name}' must be an async function definition, found {desc}",
                     )
                 )
             elif gate_node.decorator_list:
                 violations.append(
                     Violation(
                         rel, gate_node.lineno,
-                        "'validation_gate' must be undecorated",
+                        f"'{gate_name}' must be undecorated",
                     )
                 )
             else:
@@ -732,27 +856,26 @@ def _governance_boundary_violations(
                     violations.append(
                         Violation(
                             rel, gate_node.lineno,
-                            "missing or invalid required 'result = governance.evaluate_action(action)' call in top-level 'validation_gate()' body",
+                            f"missing or invalid required 'result = governance.evaluate_action(action)' call in top-level '{gate_name}()' body",
                         )
                     )
                 else:
                     early_exit = None
                     for stmt in gate_node.body[:call_stmt_idx]:
-                        if isinstance(stmt, (ast.Return, ast.Raise)):
-                            early_exit = stmt
+                        early_exit = _first_unconditional_return_or_raise(stmt)
+                        if early_exit is not None:
                             break
 
                     if early_exit is not None:
                         violations.append(
                             Violation(
                                 rel, early_exit.lineno,
-                                "required 'evaluate_action()' call in 'validation_gate()' is preceded by an unconditional early return/raise",
+                                f"required 'evaluate_action()' call in '{gate_name}()' can be bypassed by an earlier return/raise path",
                             )
                         )
                     else:
                         approved_call_node = gate_node.body[call_stmt_idx].value
 
-    exception_applied = False
     for node in ast.walk(tree):
         if not (
             isinstance(node, ast.Call)
@@ -762,11 +885,11 @@ def _governance_boundary_violations(
             continue
 
         if approved_call_node is not None and node is approved_call_node:
-            exception_applied = True
+            applied_exception_key = scope_key
         else:
             violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
 
-    return violations, exception_applied
+    return violations, applied_exception_key
 
 
 def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Violation | None]:
@@ -805,23 +928,23 @@ def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Viol
 
 def check_drift_10() -> CheckResult:
     violations: list[Violation] = []
-    exception_applied = False
+    applied_exception_keys: list[tuple[str, str]] = []
     for rel in GOVERNANCE_BOUNDARY_FILES:
         tree, err = _validate_and_parse_governed_file(rel)
         if err is not None:
             violations.append(err)
             continue
         if tree is not None:
-            found, used_exception = _governance_boundary_violations(tree, rel)
+            found, used_exception_key = _governance_boundary_violations(tree, rel)
             violations.extend(found)
-            exception_applied = exception_applied or used_exception
+            if used_exception_key is not None:
+                applied_exception_keys.append(used_exception_key)
     status = "VIOLATION" if violations else "PASS"
+    unique_applied_keys = list(dict.fromkeys(applied_exception_keys))
     notes = (
-        "Applied the documented exception: "
-        + DRIFT_10_EXCEPTION_SCOPES[
-            ("core/cognitive/learning.py", "validation_gate")
-        ]
-        if exception_applied else ""
+        "Applied the documented exception(s): "
+        + "; ".join(DRIFT_10_EXCEPTION_SCOPES[key] for key in unique_applied_keys)
+        if unique_applied_keys else ""
     )
     return CheckResult(
         "DRIFT-10",
