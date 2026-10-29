@@ -941,6 +941,14 @@ def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
             if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
                 self.writes.append(node)
 
+        def visit_Global(self, node: ast.Global) -> None:
+            if name in node.names:
+                self.writes.append(node)
+
+        def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+            if name in node.names:
+                self.writes.append(node)
+
         def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
             self.visit(node.annotation)
             if node.value is not None:
@@ -1079,7 +1087,7 @@ def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
                 reflective_references.append(child)
             elif (
                 isinstance(func, ast.Attribute)
-                and func.attr in {"get", "pop", "__getitem__"}
+                and func.attr in {"get", "pop", "setdefault", "__getitem__"}
                 and child.args
                 and is_literal_write(child.args[0])
                 and (
@@ -1578,6 +1586,10 @@ def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Viol
 
     try:
         tree = ast.parse(content, filename=str(path))
+        # Parsing builds an AST but does not perform every compiler/symbol-table
+        # check (for example, an unbound nonlocal declaration). Compile without
+        # execution so malformed governed sources fail closed.
+        compile(tree, filename=str(path), mode="exec")
         return tree, None
     except SyntaxError as e:
         lineno = e.lineno or 0
