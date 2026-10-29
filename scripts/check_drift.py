@@ -1170,6 +1170,22 @@ def _is_action_type_allowlist_guard(statement: ast.stmt) -> bool:
     )
 
 
+def _is_canonical_action_type_derivation(statement: ast.stmt) -> bool:
+    """Pin the tier/domain-to-action mapping that determines the governor policy."""
+    expected_source = """
+if tier == LearningTier.EVOLUTION and content_domain == ContentDomain.USER_MODEL:
+    action_type = "user_model_propose" if is_new_entry else "user_model_promote"
+elif tier == LearningTier.EVOLUTION:
+    action_type = f"{content_domain}_promote"
+else:
+    action_type = f"{content_domain}_adapt"
+"""
+    expected = ast.parse(expected_source).body[0]
+    return ast.dump(statement, include_attributes=False) == ast.dump(
+        expected, include_attributes=False
+    )
+
+
 def _argument_default_is_false(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
     positional = [*function.args.posonlyargs, *function.args.args]
     positional_start = len(positional) - len(function.args.defaults)
@@ -2168,13 +2184,46 @@ def _governance_boundary_violations(
                                 *gate_node.args.kwonlyargs,
                             )
                         ]
-                        if "action" in action_parameters:
+                        if "action" in action_parameters or "action_type" in action_parameters:
                             violations.append(
                                 Violation(
                                     rel, gate_node.lineno,
-                                    "missing or invalid required internal GovernanceAction construction; accepting a prebuilt 'action' parameter bypasses the approval contract",
+                                    "ValidationGate must derive 'action_type' internally and construct its own GovernanceAction; caller-supplied action/action_type parameters bypass the approval contract",
                                 )
                             )
+
+                        action_type_derivations = [
+                            (index, stmt)
+                            for index, stmt in enumerate(gate_node.body)
+                            if _is_canonical_action_type_derivation(stmt)
+                        ]
+                        if (
+                            len(action_type_derivations) != 1
+                            or action_type_derivations[0][0] >= call_stmt_idx
+                        ):
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "ValidationGate must preserve the canonical tier/content-domain-to-action_type mapping before governance evaluation",
+                                )
+                            )
+                        else:
+                            derivation_stmt = action_type_derivations[0][1]
+                            allowed_action_type_writes = {
+                                id(node)
+                                for node in ast.walk(derivation_stmt)
+                                if isinstance(node, ast.Name)
+                                and node.id == "action_type"
+                                and isinstance(node.ctx, ast.Store)
+                            }
+                            for writer in _scope_name_writes(gate_node, "action_type"):
+                                if id(writer) not in allowed_action_type_writes:
+                                    violations.append(
+                                        Violation(
+                                            rel, getattr(writer, "lineno", gate_node.lineno),
+                                            "ValidationGate action_type is assigned outside the canonical tier/content-domain mapping",
+                                        )
+                                    )
 
                         action_initializers = [
                             (index, stmt) for index, stmt in enumerate(gate_node.body)

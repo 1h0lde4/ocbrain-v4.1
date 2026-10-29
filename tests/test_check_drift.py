@@ -241,10 +241,16 @@ VALID_LEARNING_PY = (
     "    results = await memory.search(candidate_content, limit=5)\n"
     "    return None\n"
     "\n"
-    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n"
+    "async def validation_gate(*, tier, content_domain, is_new_entry, governance, hitl_approved=False, memory=None, event_stream=None):\n"
     "    memory = memory or get_unified_memory()\n"
     "    governance = governance or get_governance_kernel()\n"
     "    event_stream = event_stream or get_event_stream()\n"
+    "    if tier == LearningTier.EVOLUTION and content_domain == ContentDomain.USER_MODEL:\n"
+    "        action_type = 'user_model_propose' if is_new_entry else 'user_model_promote'\n"
+    "    elif tier == LearningTier.EVOLUTION:\n"
+    "        action_type = f'{content_domain}_promote'\n"
+    "    else:\n"
+    "        action_type = f'{content_domain}_adapt'\n"
     "    if action_type not in EvolutionGovernor.SELF_MODIFYING_ACTIONS:\n"
     "        return None\n"
     "    action = GovernanceAction(action_type=action_type, requires_approval=not hitl_approved)\n"
@@ -1316,6 +1322,52 @@ def test_check_drift_10_rejects_false_action_requires_approval(tmp_path, monkeyp
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
     assert any("requires_approval=not hitl_approved" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
+@pytest.mark.parametrize("replacement", [
+    (
+        'action_type = f"{content_domain}_promote"',
+        'action_type = f"{content_domain}_adapt"',
+    ),
+    (
+        "'user_model_propose' if is_new_entry else 'user_model_promote'",
+        "'skill_promote' if is_new_entry else 'skill_promote'",
+    ),
+    (
+        "elif tier == LearningTier.EVOLUTION:",
+        "elif False:",
+    ),
+])
+def test_check_drift_10_rejects_noncanonical_tier_domain_action_mapping(
+    tmp_path, monkeypatch, replacement
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(replacement[0], replacement[1], 1)
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(
+        "canonical tier/content-domain-to-action_type mapping" in v.detail
+        or "action_type is assigned outside the canonical" in v.detail
+        for v in result.violations
+    )
+    assert result.notes == ""
+
+
+def test_check_drift_10_rejects_caller_supplied_action_type_parameter(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "*, tier, content_domain, is_new_entry, governance,",
+        "*, tier, content_domain, is_new_entry, action_type, governance,",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("caller-supplied action/action_type parameters" in v.detail for v in result.violations)
     assert result.notes == ""
 
 
