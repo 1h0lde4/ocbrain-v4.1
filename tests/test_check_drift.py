@@ -227,6 +227,8 @@ VALID_LEARNING_PY = (
     "        return result\n"
     "    if result.verdict == GovernanceVerdict.REJECT:\n"
     "        return result\n"
+    "    if result.verdict != GovernanceVerdict.APPROVE:\n"
+    "        return result\n"
     "    return result\n"
 )
 
@@ -676,6 +678,15 @@ def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypat
     (
         "async def validation_gate(governance, action):\n"
         "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
         "    result = FakeApproval()\n"
         "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
         "        return result\n"
@@ -708,7 +719,7 @@ def test_check_drift_10_rejects_governance_result_bypass_shapes(tmp_path, monkey
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
-    assert any("governance result must immediately drive terminal ESCALATE and REJECT guards" in v.detail for v in result.violations)
+    assert any("governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion" in v.detail for v in result.violations)
 
 
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):

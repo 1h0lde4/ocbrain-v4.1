@@ -929,9 +929,12 @@ def _find_module_scope_bindings_for_name(
 
 
 def _is_terminal_governance_verdict_guard(
-    statement: ast.stmt, expected_verdict: str
+    statement: ast.stmt,
+    expected_verdict: str,
+    *,
+    operator_type: type[ast.cmpop] = ast.Eq,
 ) -> bool:
-    """Recognize the exact terminal guard that prevents non-approved promotion."""
+    """Recognize a terminal verdict guard that cannot promote on its branch."""
     if not isinstance(statement, ast.If) or statement.orelse or not statement.body:
         return False
     test = statement.test
@@ -942,7 +945,7 @@ def _is_terminal_governance_verdict_guard(
         and test.left.value.id == "result"
         and test.left.attr == "verdict"
         and len(test.ops) == 1
-        and isinstance(test.ops[0], ast.Eq)
+        and isinstance(test.ops[0], operator_type)
         and len(test.comparators) == 1
         and isinstance(test.comparators[0], ast.Attribute)
         and isinstance(test.comparators[0].value, ast.Name)
@@ -950,9 +953,6 @@ def _is_terminal_governance_verdict_guard(
         and test.comparators[0].attr == expected_verdict
     ):
         return False
-
-    # ESCALATE and REJECT must leave this gate immediately. In particular, do
-    # not accept a branch whose returned expression performs a memory write.
     first = statement.body[0]
     if not isinstance(first, (ast.Return, ast.Raise)):
         return False
@@ -1084,9 +1084,10 @@ def _governance_boundary_violations(
             violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
 
     # Structural call presence alone is insufficient: pin the governance
-    # result to the two terminal guards that prevent ESCALATE/REJECT from
-    # reaching promotion. This deliberately verifies the current direct
-    # control-flow shape; it is not a general semantic/type analysis.
+    # result to terminal ESCALATE/REJECT guards and an explicit non-APPROVE
+    # rejection. This prevents an unknown/future verdict from falling through
+    # to promotion. It deliberately verifies the current direct control-flow
+    # shape; it is not a general semantic/type analysis.
     all_evaluate_calls = [
         node for node in ast.walk(tree)
         if isinstance(node, ast.Call)
@@ -1099,17 +1100,20 @@ def _governance_boundary_violations(
         and approved_call_stmt_idx is not None
         and len(all_evaluate_calls) == 1
     ):
-        following = approved_gate_node.body[approved_call_stmt_idx + 1:approved_call_stmt_idx + 3]
+        following = approved_gate_node.body[approved_call_stmt_idx + 1:approved_call_stmt_idx + 4]
         if not (
-            len(following) == 2
+            len(following) == 3
             and _is_terminal_governance_verdict_guard(following[0], "ESCALATE")
             and _is_terminal_governance_verdict_guard(following[1], "REJECT")
+            and _is_terminal_governance_verdict_guard(
+                following[2], "APPROVE", operator_type=ast.NotEq
+            )
         ):
             violations.append(
                 Violation(
                     rel,
                     approved_call_node.lineno,
-                    "governance result must immediately drive terminal ESCALATE and REJECT guards before promotion",
+                    "governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion",
                 )
             )
 
@@ -1175,8 +1179,9 @@ def check_drift_10() -> CheckResult:
         "Unauthorized direct GovernanceKernel.evaluate_action() calls in "
         "Intent, Planner, and Learning are forbidden; the one exact "
         "ValidationGate approval call is allowed only when the result "
-        "immediately drives terminal ESCALATE and REJECT guards (DRIFT-05 "
-        "remains unchanged and independently covers SupervisorWorker).",
+        "immediately drives terminal ESCALATE/REJECT guards and rejects "
+        "every non-APPROVE verdict before promotion (DRIFT-05 remains "
+        "unchanged and independently covers SupervisorWorker).",
         status,
         violations,
         notes,
