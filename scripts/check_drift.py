@@ -1036,11 +1036,11 @@ def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
 
 
 def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
-    """Find .write(...) calls and extracted .write references in a candidate statement.
+    """Find direct writes, bound-method extraction, and common literal reflection.
 
     Any receiver's .write method is treated as a persistence write inside
-    ValidationGate. Bound-method extraction is also detected so assigning
-    memory.write to another name cannot bypass the direct-call check.
+    ValidationGate. Bound-method extraction and common literal reflection forms
+    are also detected so an alias cannot bypass the direct-call check.
     """
     descendants = list(ast.walk(node))
     calls = [
@@ -1056,7 +1056,48 @@ def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
         and child.attr == "write"
         and id(child) not in direct_callee_ids
     ]
-    return [*calls, *extracted_references]
+
+    def is_literal_write(value: ast.AST) -> bool:
+        return isinstance(value, ast.Constant) and value.value == "write"
+
+    reflective_references: list[ast.AST] = []
+    for child in descendants:
+        if isinstance(child, ast.Call):
+            func = child.func
+            if (
+                isinstance(func, ast.Name)
+                and func.id == "getattr"
+                and len(child.args) >= 2
+                and is_literal_write(child.args[1])
+            ):
+                reflective_references.append(child)
+            elif (
+                isinstance(func, ast.Attribute)
+                and func.attr in {"__getattribute__", "__getattr__"}
+                and any(is_literal_write(arg) for arg in child.args)
+            ):
+                reflective_references.append(child)
+        elif isinstance(child, ast.Subscript) and is_literal_write(child.slice):
+            value = child.value
+            if (
+                isinstance(value, ast.Attribute)
+                and value.attr == "__dict__"
+            ) or (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "vars"
+            ):
+                reflective_references.append(child)
+
+    # A reflection node can also contain another recognized write node.
+    # Deduplicate by identity while preserving source traversal order.
+    unique: list[ast.AST] = []
+    seen: set[int] = set()
+    for candidate in (*calls, *extracted_references, *reflective_references):
+        if id(candidate) not in seen:
+            seen.add(id(candidate))
+            unique.append(candidate)
+    return unique
 
 
 def _is_direct_entry_memory_write(statement: ast.stmt) -> bool:
