@@ -21,11 +21,11 @@ D10-I (packet ownership) is CI-integration, not a new drift rule — see
 .github/workflows/ci.yml, which calls scripts/check_packet_ownership.py
 directly rather than reimplementing its logic here.
 
-  DRIFT-10  Governance boundary, broadened: Intent Interpretation and
-            Planner must not call GovernanceKernel.evaluate_action()
-            directly (DRIFT-05's existing check, unmodified, still covers
-            SupervisorWorker only — this is a new, separate check, not a
-            rewrite of it).
+  DRIFT-10  Governance boundary: direct evaluate_action() calls in Intent
+            Interpretation and Planner are forbidden; learning.py is also
+            checked, with one structurally pinned ValidationGate exception
+            for the required Evolution-tier approval check. DRIFT-05 remains
+            unchanged and still independently covers SupervisorWorker.
   DRIFT-11  Frozen entrypoints: interpret_request()/plan()/compile() are
             importable as *callables* only from core/orchestrator.py in
             production code (the one confirmed caller — repository-wide
@@ -570,35 +570,125 @@ CHECKS = [
 
 
 # ---------------------------------------------------------------------------
-# DRIFT-10 — Governance boundary broadened: Intent Interpretation and
-# Planner must not call GovernanceKernel.evaluate_action() directly.
-# (K4.2-H2 D10-C. DRIFT-05 above is unmodified and still independently
-# covers SupervisorWorker — this is additive, not a replacement.)
+# DRIFT-10 — Governance boundary: scan Intent, Planner, and Learning.
+# (K4.2-H2 D10-C. DRIFT-05 remains unchanged and independently covers
+# SupervisorWorker. The one legitimate Learning-tier approval call is
+# structurally scoped below; it must not become a file-wide exemption.)
 # ---------------------------------------------------------------------------
 
 
 GOVERNANCE_BOUNDARY_FILES: tuple[str, ...] = (
     "core/cognitive/intent.py",
     "core/cognitive/planner.py",
+    "core/cognitive/learning.py",
 )
+
+# The EVOLUTION-tier ValidationGate call is required by PROJECT_INSTRUCTIONS.md
+# §13 ("no autonomous evolution may bypass approval"). This exception allows
+# exactly one governance.evaluate_action(action) call in the top-level
+# validation_gate() function; any additional call or different call shape is
+# reported. The scope remains name-based so unrelated additions to learning.py
+# are still checked.
+DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
+    (
+        "core/cognitive/learning.py",
+        "validation_gate",
+    ): (
+        "ValidationGate's EVOLUTION-tier promotion must pass through "
+        "GovernanceKernel before writing a promoted entry."
+    ),
+}
+
+
+def _is_validation_gate_exception_call(node: ast.Call) -> bool:
+    """Return whether the node is the exact, documented ValidationGate call."""
+    return (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "evaluate_action"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "governance"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "action"
+        and not node.keywords
+    )
+
+
+def _governance_boundary_violations(
+    tree: ast.Module, rel: str
+) -> tuple[list[Violation], bool]:
+    """Find direct governance calls, allowing only the explicit scoped exception."""
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+
+    call_sites: list[tuple[ast.Call, str | None]] = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "evaluate_action"
+        ):
+            continue
+
+        enclosing_function: str | None = None
+        parent = parents.get(node)
+        while parent is not None:
+            if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                enclosing_function = parent.name
+                break
+            parent = parents.get(parent)
+        call_sites.append((node, enclosing_function))
+
+    by_scope: dict[tuple[str, str | None], list[ast.Call]] = {}
+    for node, function_name in call_sites:
+        by_scope.setdefault((rel, function_name), []).append(node)
+
+    allowed_node_ids: set[int] = set()
+    exception_applied = False
+    for scope, nodes in by_scope.items():
+        if scope not in DRIFT_10_EXCEPTION_SCOPES:
+            continue
+        if len(nodes) == 1 and _is_validation_gate_exception_call(nodes[0]):
+            allowed_node_ids.add(id(nodes[0]))
+            exception_applied = True
+
+    violations = [
+        Violation(rel, node.lineno, "calls .evaluate_action(...) directly")
+        for node, _ in call_sites
+        if id(node) not in allowed_node_ids
+    ]
+    return violations, exception_applied
 
 
 def check_drift_10() -> CheckResult:
     violations: list[Violation] = []
+    exception_applied = False
     for rel in GOVERNANCE_BOUNDARY_FILES:
         path = REPO_ROOT / rel
         tree = _parse(path) if path.exists() else None
         if tree is not None:
-            violations.extend(_evaluate_action_violations(tree, rel))
+            found, used_exception = _governance_boundary_violations(tree, rel)
+            violations.extend(found)
+            exception_applied = exception_applied or used_exception
     status = "VIOLATION" if violations else "PASS"
+    notes = (
+        "Applied the documented exception: "
+        + DRIFT_10_EXCEPTION_SCOPES[
+            ("core/cognitive/learning.py", "validation_gate")
+        ]
+        if exception_applied else ""
+    )
     return CheckResult(
         "DRIFT-10",
-        "Intent Interpretation and Planner must not call "
-        "GovernanceKernel.evaluate_action() directly (Governance sits at the "
-        "compilation boundary only — extends DRIFT-05's same check, which "
-        "independently still covers SupervisorWorker, to these two files)",
+        "Unauthorized direct GovernanceKernel.evaluate_action() calls in "
+        "Intent, Planner, and Learning are forbidden; the one exact "
+        "ValidationGate approval call is explicitly allowed (DRIFT-05 remains "
+        "unchanged and independently covers SupervisorWorker).",
         status,
         violations,
+        notes,
     )
 
 
