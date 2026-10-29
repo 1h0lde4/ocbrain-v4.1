@@ -2006,6 +2006,33 @@ def _governance_boundary_violations(
                         approved_call_stmt_idx = call_stmt_idx
                         result_target = gate_node.body[call_stmt_idx].targets[0]
 
+                        # Caller-supplied values that define what was scored,
+                        # checked for contradiction, and ultimately written
+                        # must remain stable across the gate. Reassignment
+                        # after validation could check benign content and write
+                        # different content or attribute it to another domain.
+                        protected_inputs = (
+                            "content_domain",
+                            "subject_ref",
+                            "candidate_content",
+                            "trigger_signals",
+                            "held_out_score",
+                            "baseline_score",
+                            "importance",
+                            "is_new_entry",
+                            "procedure_name",
+                            "metadata",
+                        )
+                        for input_name in protected_inputs:
+                            for writer in _scope_name_writes(gate_node, input_name):
+                                violations.append(
+                                    Violation(
+                                        rel, getattr(writer, "lineno", gate_node.lineno),
+                                        f"caller-supplied ValidationGate input '{input_name}' is rebound or deleted",
+                                    )
+                                )
+
+
                         if not _argument_default_is_false(gate_node, "hitl_approved"):
                             violations.append(
                                 Violation(
