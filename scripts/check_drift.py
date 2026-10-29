@@ -599,6 +599,16 @@ DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
     ),
 }
 
+GOVERNANCE_TRUSTED_IMPORTS: tuple[tuple[str, str], ...] = (
+    ("EvolutionGovernor", "core.governance.governance_kernel"),
+    ("GovernanceAction", "core.governance.governance_kernel"),
+    ("GovernanceKernel", "core.governance.governance_kernel"),
+    ("GovernanceVerdict", "core.governance.governance_kernel"),
+    ("get_governance_kernel", "core.governance.governance_kernel"),
+    ("get_event_stream", "core.events.event_stream"),
+    ("get_unified_memory", "core.memory.unified_memory"),
+)
+
 
 def _module_scope_named_exprs(node: ast.AST):
     """Yield assignment expressions evaluated in module scope, not nested bodies."""
@@ -1551,11 +1561,121 @@ def _result_object_mutation_sites(
     )
 
 
+def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
+    """Find direct mutations/aliases of imported governance classes and policy state."""
+    protected_names = {
+        "EvolutionGovernor",
+        "GovernanceAction",
+        "GovernanceKernel",
+        "GovernanceVerdict",
+    }
+    mutating_methods = {
+        "add", "append", "clear", "discard", "extend", "insert", "pop",
+        "remove", "setdefault", "update", "__delitem__", "__setitem__",
+    }
+    sites: dict[int, ast.AST] = {}
+
+    def record(node: ast.AST) -> None:
+        sites.setdefault(id(node), node)
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.Attribute, ast.Subscript))
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and any(_rooted_in_name(node, name) for name in protected_names)
+        ):
+            record(node)
+        elif isinstance(node, ast.Assign):
+            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(node.value, name) for name in protected_names
+            ):
+                record(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(node.value, name) for name in protected_names
+            ):
+                record(node)
+        elif isinstance(node, ast.NamedExpr):
+            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(node.value, name) for name in protected_names
+            ):
+                record(node)
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Name)
+                and func.id in {"getattr", "setattr", "delattr"}
+                and node.args
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id in protected_names
+            ):
+                record(node)
+            elif (
+                isinstance(func, ast.Attribute)
+                and func.attr in mutating_methods
+                and _rooted_in_name(func.value, "EvolutionGovernor")
+                and any(
+                    isinstance(part, ast.Attribute)
+                    and part.attr == "SELF_MODIFYING_ACTIONS"
+                    for part in ast.walk(func.value)
+                )
+            ):
+                record(node)
+
+    return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
+
+
+def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Violation]:
+    """Pin trusted imports and reject competing module-scope bindings."""
+    violations: list[Violation] = []
+    for symbol, module_name in GOVERNANCE_TRUSTED_IMPORTS:
+        exact_imports = [
+            statement
+            for statement in tree.body
+            if isinstance(statement, ast.ImportFrom)
+            and statement.module == module_name
+            and any(
+                alias.name == symbol and alias.asname in (None, symbol)
+                for alias in statement.names
+            )
+        ]
+        if len(exact_imports) != 1:
+            violations.append(
+                Violation(
+                    rel, getattr(exact_imports[0], "lineno", 0) if exact_imports else 0,
+                    f"missing or invalid required trusted import '{symbol}' from '{module_name}'",
+                )
+            )
+
+        bindings = _find_module_scope_bindings_for_name(tree, symbol)
+        if len(bindings) != 1:
+            node = bindings[1][0] if len(bindings) > 1 else (
+                bindings[0][0] if bindings else ast.Module(body=[], type_ignores=[])
+            )
+            violations.append(
+                Violation(
+                    rel, getattr(node, "lineno", 0),
+                    f"trusted governance symbol '{symbol}' has a competing or missing module-scope binding",
+                )
+            )
+
+    for node in _trusted_governance_mutation_sites(tree):
+        violations.append(
+            Violation(
+                rel, getattr(node, "lineno", 0),
+                "trusted governance class or EvolutionGovernor allowlist is mutated, aliased, or passed to dynamic access code",
+            )
+        )
+    return violations
+
+
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
 ) -> tuple[list[Violation], tuple[str, str] | None]:
     """Find direct governance calls, allowing only configured, scoped exceptions."""
     violations: list[Violation] = []
+    if rel == "core/cognitive/learning.py":
+        violations.extend(_trusted_governance_import_violations(tree, rel))
     approved_call_node: ast.Call | None = None
     approved_gate_node: ast.AsyncFunctionDef | None = None
     approved_call_stmt_idx: int | None = None

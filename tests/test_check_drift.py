@@ -221,7 +221,11 @@ def test_unauthorized_producer_violations_ignores_unrelated_return_type():
 # ---------------------------------------------------------------------------
 
 VALID_LEARNING_PY = (
-    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n"
+    "from core.events.event_stream import get_event_stream\n"
+    "from core.governance.governance_kernel import EvolutionGovernor, GovernanceAction, GovernanceKernel, GovernanceVerdict, get_governance_kernel\n"
+    "from core.memory.unified_memory import get_unified_memory\n"
+    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):
+"
     "    memory = memory or get_unified_memory()\n"
     "    governance = governance or get_governance_kernel()\n"
     "    event_stream = event_stream or get_event_stream()\n"
@@ -265,6 +269,43 @@ def test_drift_10_exception_scope_pinned():
             "GovernanceKernel before writing a promoted entry."
         )
     }
+
+
+def test_drift_10_trusted_governance_imports_pinned():
+    assert check_drift.GOVERNANCE_TRUSTED_IMPORTS == (
+        ("EvolutionGovernor", "core.governance.governance_kernel"),
+        ("GovernanceAction", "core.governance.governance_kernel"),
+        ("GovernanceKernel", "core.governance.governance_kernel"),
+        ("GovernanceVerdict", "core.governance.governance_kernel"),
+        ("get_governance_kernel", "core.governance.governance_kernel"),
+        ("get_event_stream", "core.events.event_stream"),
+        ("get_unified_memory", "core.memory.unified_memory"),
+    )
+
+
+@pytest.mark.parametrize("unsafe_module_statement", [
+    "GovernanceKernel.evaluate_action = fake_evaluate\n",
+    "EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\n",
+    "get_governance_kernel = lambda: FakeGovernance()\n",
+])
+def test_check_drift_10_rejects_module_level_governance_monkeypatches(
+    tmp_path, monkeypatch, unsafe_module_statement
+):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\n" + unsafe_module_statement,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert result.notes == ""
+    assert any(
+        "trusted governance" in v.detail
+        or "EvolutionGovernor allowlist is mutated" in v.detail
+        or "module-scope binding" in v.detail
+        for v in result.violations
+    )
 
 
 def test_check_drift_10_exception_configuration_drives_enforcement_and_notes(tmp_path, monkeypatch):
