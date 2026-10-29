@@ -1050,6 +1050,19 @@ def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
     visitor = _ScopeVisitor()
     for statement in scope.body:
         visitor.visit(statement)
+
+    # Nested closures/classes can explicitly target this scope's variables with
+    # a nonlocal declaration. The visitor deliberately skips nested bodies for
+    # ordinary local writes, so fail closed on any cross-scope declaration of
+    # the protected name. The current ValidationGate has no legitimate need to
+    # mutate its policy inputs/results from a nested lexical scope.
+    for nested_node in ast.walk(scope):
+        if (
+            nested_node is not scope
+            and isinstance(nested_node, ast.Nonlocal)
+            and name in nested_node.names
+        ):
+            visitor.writes.append(nested_node)
     return visitor.writes
 
 

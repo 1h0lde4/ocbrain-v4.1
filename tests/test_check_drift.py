@@ -1019,6 +1019,53 @@ def test_check_drift_10_allows_nested_read_only_scalar_result_access(tmp_path, m
     "    event_stream = FakeEventStream()\n",
     "    hitl_approved = True\n",
 ])
+@pytest.mark.parametrize("unsafe_statement, expected_detail", [
+    (
+        "    def alter_tier():\n"
+        "        nonlocal tier\n"
+        "        tier = LearningTier.LEARNING\n"
+        "    alter_tier()\n",
+        "tier selector 'tier' is rebound",
+    ),
+    (
+        "    def forge_approval():\n"
+        "        nonlocal hitl_approved\n"
+        "        hitl_approved = True\n"
+        "    forge_approval()\n",
+        "caller-supplied 'hitl_approved' input is rebound",
+    ),
+    (
+        "    def replace_kernel():\n"
+        "        nonlocal governance\n"
+        "        governance = FakeGovernance()\n"
+        "    replace_kernel()\n",
+        "dependency 'governance' is rebound",
+    ),
+    (
+        "    def change_action_type():\n"
+        "        nonlocal action_type\n"
+        "        action_type = 'unregistered'\n"
+        "    change_action_type()\n",
+        "action_type is rebound",
+    ),
+])
+def test_check_drift_10_rejects_nested_nonlocal_control_rebinding(
+    tmp_path, monkeypatch, unsafe_statement, expected_detail
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        unsafe_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(expected_detail in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
 def test_check_drift_10_rejects_dependency_or_approval_input_rebinding(
     tmp_path, monkeypatch, unsafe_statement
 ):
