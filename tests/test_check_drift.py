@@ -1022,6 +1022,31 @@ def test_check_drift_10_rejects_governance_action_mutation_or_escape(
     assert result.notes == ""
 
 
+@pytest.mark.parametrize("unsafe_statement", [
+    "    governance.evaluate_action = fake_evaluate\n",
+    "    alias = governance\n    mutate_governance(alias)\n",
+    "    mutate_governance(governance)\n",
+])
+def test_check_drift_10_rejects_governance_dependency_mutation_or_escape(
+    tmp_path, monkeypatch, unsafe_statement
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        unsafe_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(
+        "GovernanceKernel dependency is mutated, aliased, or passed to unapproved code"
+        in v.detail for v in result.violations
+    )
+    assert result.notes == ""
+
+
 def test_check_drift_10_rejects_false_action_requires_approval(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(

@@ -1148,6 +1148,53 @@ def _argument_default_is_false(function: ast.FunctionDef | ast.AsyncFunctionDef,
     return False
 
 
+def _governance_mutation_escape_sites(
+    scope: ast.AST,
+    allowed_initializer: ast.stmt,
+    approved_statement: ast.stmt,
+    approved_call: ast.Call,
+) -> list[ast.AST]:
+    """Reject mutation, aliasing, or escape of the governance dependency."""
+    sites: dict[int, ast.AST] = {}
+
+    def record(node: ast.AST) -> None:
+        sites.setdefault(id(node), node)
+
+    for node in ast.walk(scope):
+        if (
+            isinstance(node, (ast.Attribute, ast.Subscript))
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and _rooted_in_name(node, "governance")
+        ):
+            record(node)
+        elif (
+            isinstance(node, ast.Assign)
+            and node is not allowed_initializer
+            and node is not approved_statement
+        ):
+            if _contains_name_reference(node.value, "governance"):
+                record(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if _contains_name_reference(node.value, "governance"):
+                record(node)
+        elif isinstance(node, ast.NamedExpr):
+            if _contains_name_reference(node.value, "governance"):
+                record(node)
+        elif isinstance(node, ast.Return) and node.value is not None:
+            if _contains_name_reference(node.value, "governance"):
+                record(node)
+        elif isinstance(node, ast.Call) and node is not approved_call:
+            if _rooted_in_name(node.func, "governance") or any(
+                _contains_name_reference(arg, "governance") for arg in node.args
+            ) or any(
+                _contains_name_reference(keyword.value, "governance")
+                for keyword in node.keywords
+            ):
+                record(node)
+
+    return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
+
+
 def _action_mutation_escape_sites(
     scope: ast.AST, name: str, approved_statement: ast.stmt, approved_call: ast.Call
 ) -> list[ast.AST]:
@@ -1732,6 +1779,29 @@ def _governance_boundary_violations(
                                         )
                                     )
 
+                        governance_initializers = [
+                            stmt for stmt in gate_node.body
+                            if _is_default_dependency_initialization(
+                                stmt, "governance", "get_governance_kernel"
+                            )
+                        ]
+                        if len(governance_initializers) == 1:
+                            governance_escapes = _governance_mutation_escape_sites(
+                                gate_node,
+                                governance_initializers[0],
+                                gate_node.body[call_stmt_idx],
+                                approved_call_node,
+                            )
+                            for escape_node in governance_escapes:
+                                violations.append(
+                                    Violation(
+                                        rel, getattr(escape_node, "lineno", gate_node.lineno),
+                                        "GovernanceKernel dependency is mutated, aliased, or passed to unapproved code",
+                                    )
+                                )
+                        else:
+                            governance_escapes = []
+
                         if len(action_initializers) == 1:
                             action_mutations = _action_mutation_escape_sites(
                                 gate_node,
@@ -1885,7 +1955,7 @@ def _governance_boundary_violations(
                 )
             )
 
-        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not tier_selector_writes and not any(
+        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not tier_selector_writes and not governance_escapes and not any(
             "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
             for violation in violations
             if violation.file == rel
