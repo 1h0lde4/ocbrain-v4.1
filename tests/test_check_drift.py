@@ -1000,14 +1000,13 @@ def test_check_drift_10_rejects_governance_result_mutation_and_escape(
 
 def test_check_drift_10_allows_nested_read_only_scalar_result_access(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
-    valid_prefix = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0]
-    code = (
-        valid_prefix
-        + "    def read_reason():\n"
-        + "        return result.reason\n"
-        + "    entry_id = await memory.write(candidate)\n"
-        + "    return result\n"
-    )
+    code = VALID_LEARNING_PY.replace(
+        "    await event_stream.append('done', {})\n",
+        "    def read_reason():\n"
+        "        return result.reason\n"
+        "    await event_stream.append('done', {})\n",
+        1,
+    ).replace("    return result\n", "    return None\n", 1)
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
@@ -1145,9 +1144,10 @@ def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path,
 
 def test_check_drift_10_rejects_unapproved_memory_write_after_guards(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
-    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
-        "    await memory.write(candidate)\n"
-        "    return result\n"
+    code = VALID_LEARNING_PY.replace(
+        "    entry_id = await memory.write(candidate)\n",
+        "    await memory.write(candidate)\n",
+        1,
     )
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
@@ -1197,7 +1197,8 @@ def test_check_drift_10_rejects_duplicate_call_inside_validation_gate(tmp_path, 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
-    assert len(result.violations) == 1
+    assert any("calls .evaluate_action(...) directly" in v.detail for v in result.violations)
+    assert result.notes == ""
 
 
 # ---------------------------------------------------------------------------
