@@ -1300,14 +1300,14 @@ def test_check_drift_10_rejects_multiple_memory_writes_after_guards(tmp_path, mo
 
 
 @pytest.mark.parametrize("return_code", [
-    "    if bypass:\\n        return LearningRecord(lifecycle_state=LearningLifecycle.PROMOTED)\\n",
-    "    if bypass:\\n        return promote_without_gate()\\n",
+    "    if bypass:\n        return LearningRecord(lifecycle_state=LearningLifecycle.PROMOTED)\n",
+    "    if bypass:\n        return promote_without_gate()\n",
 ])
 def test_check_drift_10_rejects_pre_governance_promotion_return(tmp_path, monkeypatch, return_code):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
-        "    result = governance.evaluate_action(action)\\n",
-        return_code + "    result = governance.evaluate_action(action)\\n",
+        "    result = governance.evaluate_action(action)\n",
+        return_code + "    result = governance.evaluate_action(action)\n",
         1,
     )
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
