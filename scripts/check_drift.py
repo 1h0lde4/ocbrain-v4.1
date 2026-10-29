@@ -683,6 +683,130 @@ def _first_unconditional_return_or_raise(node: ast.AST) -> ast.Return | ast.Rais
     return None
 
 
+def _global_scope_writes_for_name(scope: ast.AST, name: str) -> list[ast.AST]:
+    """Find actual writes to a name declared global in this lexical scope.
+
+    Nested function/class bodies are analyzed independently because each has
+    its own symbol table. Definition headers are still visited in the enclosing
+    scope because decorators, bases, and defaults execute where the definition
+    statement appears. Read-only global declarations do not count as rebinding.
+    """
+    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return []
+
+    class _ScopeVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.global_declared = False
+            self.writes: list[ast.AST] = []
+
+        def visit_Global(self, node: ast.Global) -> None:
+            if name in node.names:
+                self.global_declared = True
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+                self.writes.append(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            # These expressions execute in the current scope. The function body
+            # and its symbol declarations belong to the nested function scope.
+            for expression in (
+                *node.decorator_list,
+                *node.args.defaults,
+                *(x for x in node.args.kw_defaults if x is not None),
+                *(arg.annotation for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs) if arg.annotation is not None),
+            ):
+                self.visit(expression)
+            if node.args.vararg and node.args.vararg.annotation is not None:
+                self.visit(node.args.vararg.annotation)
+            if node.args.kwarg and node.args.kwarg.annotation is not None:
+                self.visit(node.args.kwarg.annotation)
+            if node.returns is not None:
+                self.visit(node.returns)
+            for type_param in getattr(node, "type_params", ()):
+                self.visit(type_param)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_FunctionDef(node)
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            # Evaluate these in the containing scope, but do not enter the
+            # class body; it has its own namespace and is checked independently.
+            for expression in (*node.decorator_list, *node.bases, *node.keywords):
+                self.visit(expression)
+            for type_param in getattr(node, "type_params", ()):
+                self.visit(type_param)
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            # Lambda defaults execute in this scope; the body has lambda-local
+            # assignment-expression semantics and no global declaration syntax.
+            for expression in (
+                *node.args.defaults,
+                *(x for x in node.args.kw_defaults if x is not None),
+            ):
+                self.visit(expression)
+
+        def visit_ListComp(self, node: ast.ListComp) -> None:
+            self.visit_comprehension_for_named_exprs(node)
+
+        def visit_SetComp(self, node: ast.SetComp) -> None:
+            self.visit_comprehension_for_named_exprs(node)
+
+        def visit_DictComp(self, node: ast.DictComp) -> None:
+            self.visit_comprehension_for_named_exprs(node)
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+            self.visit_comprehension_for_named_exprs(node)
+
+        def visit_comprehension_for_named_exprs(self, node: ast.AST) -> None:
+            # Comprehension iteration targets are local to the comprehension.
+            # PEP 572 assignment expressions are the exception: their target is
+            # bound in the containing scope, so inspect those specifically.
+            for named_expr in _module_scope_named_exprs(node):
+                if _target_binds_name(named_expr.target, name):
+                    self.writes.append(named_expr)
+
+        def visit_Import(self, node: ast.Import) -> None:
+            for alias in node.names:
+                bound = alias.asname or alias.name.split(".", 1)[0]
+                if bound == name:
+                    self.writes.append(node)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            for alias in node.names:
+                if alias.name == "*" or (alias.asname or alias.name) == name:
+                    self.writes.append(node)
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            if node.type is not None:
+                self.visit(node.type)
+            for statement in node.body:
+                self.visit(statement)
+
+        def visit_Match(self, node: ast.Match) -> None:
+            self.visit(node.subject)
+            for case in node.cases:
+                if _pattern_binds_name(case.pattern, name):
+                    self.writes.append(case.pattern)
+                if case.guard is not None:
+                    self.visit(case.guard)
+                for statement in case.body:
+                    self.visit(statement)
+
+    visitor = _ScopeVisitor()
+    for statement in scope.body:
+        visitor.visit(statement)
+    if not visitor.global_declared:
+        return []
+    return visitor.writes
+
+
 def _find_module_scope_bindings_for_name(
     tree: ast.Module, name: str
 ) -> list[tuple[ast.AST, str]]:
@@ -772,6 +896,24 @@ def _find_module_scope_bindings_for_name(
             record(named_expr, f"assignment-expression binding '{name}'")
 
     _visit_stmts(tree.body)
+
+    # A nested scope can mutate the module binding only when it explicitly
+    # declares the name global and actually writes/deletes it. Read-only
+    # globals and comprehension-local iteration targets remain permitted.
+    for scope in ast.walk(tree):
+        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        scope_kind = (
+            "class" if isinstance(scope, ast.ClassDef)
+            else "async function" if isinstance(scope, ast.AsyncFunctionDef)
+            else "function"
+        )
+        for writer in _global_scope_writes_for_name(scope, name):
+            bindings.append((
+                writer,
+                f"global rebinding of '{name}' from {scope_kind} scope",
+            ))
+
     bindings.sort(key=lambda item: getattr(item[0], "lineno", 0))
     return bindings
 

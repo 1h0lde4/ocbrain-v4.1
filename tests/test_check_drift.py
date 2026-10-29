@@ -499,6 +499,41 @@ def test_check_drift_10_rejects_module_scope_rebinding(tmp_path, monkeypatch, re
     assert matching_binding.line > 0
 
 
+@pytest.mark.parametrize("rebind_code", [
+    "def mutate():\n    global validation_gate\n    validation_gate = None\n",
+    "def mutate():\n    global validation_gate\n    del validation_gate\n",
+    "class Mutator:\n    global validation_gate\n    validation_gate = None\n",
+    "def mutate():\n    if ready:\n        global validation_gate\n        validation_gate = replacement\n",
+    "def mutate():\n    global validation_gate\n    import validation_gate.child\n",
+    "def mutate():\n    global validation_gate\n    try:\n        pass\n    except Exception as validation_gate:\n        pass\n",
+])
+def test_check_drift_10_rejects_global_rebinding_from_nested_scope(tmp_path, monkeypatch, rebind_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\n" + rebind_code,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("global rebinding of 'validation_gate'" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("nested_code", [
+    "def read_gate():\n    global validation_gate\n    return validation_gate\n",
+    "def use_comprehension():\n    global validation_gate\n    return [validation_gate for validation_gate in values]\n",
+])
+def test_check_drift_10_allows_read_only_global_and_comprehension_local_name(tmp_path, monkeypatch, nested_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\n" + nested_code,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
 def test_check_drift_10_does_not_treat_attribute_or_subscript_targets_as_rebindings(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = (
