@@ -299,16 +299,6 @@ def test_drift_10_trusted_governance_imports_pinned():
     )
 
 
-@pytest.mark.parametrize("unsafe_module_statement", [
-    "GovernanceKernel.evaluate_action = fake_evaluate\n",
-    "EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\n",
-    "LearningTier.EVOLUTION = LearningTier.LEARNING\n",
-    "ContentDomain.USER_MODEL = ContentDomain.SKILL\n",
-    "LearningTier = FakeTier\n",
-    "type.__setattr__(LearningTier, 'EVOLUTION', 'learning')\n",
-    "tier_class = LearningTier\n",
-    "get_governance_kernel = lambda: FakeGovernance()\n",
-])
 def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
@@ -337,6 +327,16 @@ def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):
     assert any("policy class 'LearningTier'" in v.detail for v in result.violations)
     assert result.notes == ""
 
+@pytest.mark.parametrize("unsafe_module_statement", [
+    "GovernanceKernel.evaluate_action = fake_evaluate\n",
+    "EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\n",
+    "LearningTier.EVOLUTION = LearningTier.LEARNING\n",
+    "ContentDomain.USER_MODEL = ContentDomain.SKILL\n",
+    "LearningTier = FakeTier\n",
+    "type.__setattr__(LearningTier, 'EVOLUTION', 'learning')\n",
+    "tier_class = LearningTier\n",
+    "get_governance_kernel = lambda: FakeGovernance()\n",
+])
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(
     tmp_path, monkeypatch, unsafe_module_statement
 ):
