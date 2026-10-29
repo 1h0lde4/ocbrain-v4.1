@@ -264,7 +264,8 @@ def test_check_drift_10_allows_only_exact_validation_gate_call(tmp_path, monkeyp
     (fake_core / "planner.py").write_text("# clean\n")
     (fake_core / "learning.py").write_text(
         "async def validation_gate(governance, action):\n"
-        "    return governance.evaluate_action(action)\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return result\n"
     )
 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
@@ -285,8 +286,9 @@ def test_check_drift_10_rejects_additional_call_inside_exception_scope(tmp_path,
     (fake_core / "planner.py").write_text("# clean\n")
     (fake_core / "learning.py").write_text(
         "async def validation_gate(governance, action):\n"
-        "    governance.evaluate_action(action)\n"
-        "    return governance.evaluate_action(action)\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    other = governance.evaluate_action(action)\n"
+        "    return result, other\n"
     )
 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
@@ -326,6 +328,31 @@ def test_check_drift_10_rejects_nested_validation_gate_exception(tmp_path, monke
     assert len(result.violations) == 1
 
 
+
+
+
+def test_check_drift_10_rejects_wrapped_call_inside_validation_gate(tmp_path, monkeypatch):
+    fake_core = tmp_path / "core" / "cognitive"
+    fake_core.mkdir(parents=True)
+    (fake_core / "intent.py").write_text("# clean\n")
+    (fake_core / "planner.py").write_text("# clean\n")
+    (fake_core / "learning.py").write_text(
+        "async def validation_gate(governance, action):\n"
+        "    deferred = lambda: governance.evaluate_action(action)\n"
+        "    return deferred()\n"
+    )
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(check_drift, "GOVERNANCE_BOUNDARY_FILES", (
+        "core/cognitive/intent.py",
+        "core/cognitive/planner.py",
+        "core/cognitive/learning.py",
+    ))
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert len(result.violations) == 1
+
+
 def test_check_drift_10_rejects_changed_validation_gate_call_shape(tmp_path, monkeypatch):
     fake_core = tmp_path / "core" / "cognitive"
     fake_core.mkdir(parents=True)
@@ -333,7 +360,8 @@ def test_check_drift_10_rejects_changed_validation_gate_call_shape(tmp_path, mon
     (fake_core / "planner.py").write_text("# clean\n")
     (fake_core / "learning.py").write_text(
         "async def validation_gate(governance, action):\n"
-        "    return governance.evaluate_action(action, privileged=True)\n"
+        "    result = governance.evaluate_action(action, privileged=True)\n"
+        "    return result\n"
     )
 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
