@@ -1496,6 +1496,16 @@ def _governance_boundary_violations(
                                 )
                             )
 
+                        tier_selector_writes = _scope_name_writes(gate_node, "tier")
+                        for writer in tier_selector_writes:
+                            violations.append(
+                                Violation(
+                                    rel,
+                                    getattr(writer, "lineno", gate_node.lineno),
+                                    "ValidationGate tier selector 'tier' is rebound or deleted; non-Evolution write exceptions must depend on the original caller-supplied tier",
+                                )
+                            )
+
                         for prior_stmt in gate_node.body[:call_stmt_idx]:
                             writes = _memory_write_calls(prior_stmt)
                             if writes and not (
@@ -1611,7 +1621,7 @@ def _governance_boundary_violations(
                 )
             )
 
-        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not any(
+        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not tier_selector_writes and not any(
             "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
             for violation in violations
             if violation.file == rel

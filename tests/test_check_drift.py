@@ -398,6 +398,25 @@ def test_check_drift_10_fails_on_compile_time_scope_error(tmp_path, monkeypatch)
     assert any("syntax error" in v.detail for v in result.violations)
 
 
+def test_check_drift_10_rejects_tier_rebinding_before_non_evolution_write_exception(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    tier = LearningTier.LEARNING\n"
+        "    if tier == LearningTier.LEARNING:\n"
+        "        entry_id = await memory.write(candidate)\n"
+        "        return result\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("ValidationGate tier selector 'tier' is rebound or deleted" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
 def test_check_drift_10_rejects_global_result_binding(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     gate = VALID_LEARNING_PY.replace(
