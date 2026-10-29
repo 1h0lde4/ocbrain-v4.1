@@ -1840,6 +1840,63 @@ def _contradiction_helper_violations(tree: ast.Module, rel: str) -> list[Violati
             violations.append(Violation(rel, node.lineno, "_find_contradiction may not return memory"))
     return violations
 
+def _returns_in_current_scope(node: ast.AST) -> list[ast.Return]:
+    """Collect returns in a statement while not entering nested scopes."""
+    returns: list[ast.Return] = []
+    class _ReturnVisitor(ast.NodeVisitor):
+        def visit_Return(self, item: ast.Return) -> None:
+            returns.append(item)
+            self.generic_visit(item)
+        def visit_FunctionDef(self, item: ast.FunctionDef) -> None:
+            return
+        def visit_AsyncFunctionDef(self, item: ast.AsyncFunctionDef) -> None:
+            return
+        def visit_ClassDef(self, item: ast.ClassDef) -> None:
+            return
+        def visit_Lambda(self, item: ast.Lambda) -> None:
+            return
+    _ReturnVisitor().visit(node)
+    return returns
+
+def _is_canonical_rejected_helper(node: ast.AST) -> bool:
+    """Recognize the gate-local helper whose only outcome is REJECTED."""
+    if not (
+        isinstance(node, ast.FunctionDef)
+        and node.name == "_rejected"
+        and not node.decorator_list
+        and len(node.body) == 1
+        and isinstance(node.body[0], ast.Return)
+        and isinstance(node.body[0].value, ast.Call)
+        and isinstance(node.body[0].value.func, ast.Name)
+        and node.body[0].value.func.id == "LearningRecord"
+    ):
+        return False
+    lifecycle = next(
+        (kw.value for kw in node.body[0].value.keywords if kw.arg == "lifecycle_state"),
+        None,
+    )
+    return (
+        isinstance(lifecycle, ast.Attribute)
+        and lifecycle.attr == "REJECTED"
+        and isinstance(lifecycle.value, ast.Name)
+        and lifecycle.value.id == "LearningLifecycle"
+    )
+
+def _safe_pre_governance_return(
+    node: ast.Return, canonical_rejected_helper: ast.FunctionDef | None
+) -> bool:
+    """Allow only a no-result exit or the gate's canonical REJECTED helper."""
+    if node.value is None or (
+        isinstance(node.value, ast.Constant) and node.value.value is None
+    ):
+        return True
+    return (
+        canonical_rejected_helper is not None
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "_rejected"
+    )
+
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
 ) -> tuple[list[Violation], tuple[str, str] | None]:
@@ -2133,7 +2190,33 @@ def _governance_boundary_violations(
                                 )
                             )
 
+                        rejected_helpers = [
+                            stmt for stmt in gate_node.body
+                            if _is_canonical_rejected_helper(stmt)
+                        ]
+                        canonical_rejected_helper = rejected_helpers[0] if len(rejected_helpers) == 1 else None
+                        rejected_helper_writes = _scope_name_writes(gate_node, "_rejected")
+                        if rejected_helper_writes and (
+                            len(rejected_helpers) != 1
+                            or any(writer is not canonical_rejected_helper for writer in rejected_helper_writes)
+                        ):
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "ValidationGate rejection helper is missing, duplicated, or rebound",
+                                )
+                            )
+
                         for prior_stmt in gate_node.body[:call_stmt_idx]:
+                            if not _is_terminal_non_evolution_write_branch(prior_stmt):
+                                for return_node in _returns_in_current_scope(prior_stmt):
+                                    if not _safe_pre_governance_return(return_node, canonical_rejected_helper):
+                                        violations.append(
+                                            Violation(
+                                                rel, return_node.lineno,
+                                                "pre-governance return can bypass the gate with an unapproved result; only a no-result exit or canonical REJECTED return is permitted outside terminal non-Evolution write branches",
+                                            )
+                                        )
                             writes = _memory_write_calls(prior_stmt)
                             if writes and not (
                                 _is_terminal_non_evolution_write_branch(prior_stmt)

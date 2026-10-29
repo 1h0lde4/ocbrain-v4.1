@@ -1299,6 +1299,24 @@ def test_check_drift_10_rejects_multiple_memory_writes_after_guards(tmp_path, mo
     assert any("more than one memory.write(...)" in v.detail for v in result.violations)
 
 
+@pytest.mark.parametrize("return_code", [
+    "    if bypass:\\n        return LearningRecord(lifecycle_state=LearningLifecycle.PROMOTED)\\n",
+    "    if bypass:\\n        return promote_without_gate()\\n",
+])
+def test_check_drift_10_rejects_pre_governance_promotion_return(tmp_path, monkeypatch, return_code):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\\n",
+        return_code + "    result = governance.evaluate_action(action)\\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("pre-governance return can bypass the gate" in v.detail for v in result.violations)
+    assert result.notes == ""
+
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = (
