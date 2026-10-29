@@ -777,6 +777,23 @@ def test_check_drift_10_allows_terminal_adaptation_write_before_evolution_govern
     assert result.status == "PASS"
 
 
+def test_check_drift_10_allows_terminal_learning_write_before_evolution_governance(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    if tier == LearningTier.LEARNING:\n"
+        "        entry_id = await memory.write(candidate)\n"
+        "        await event_stream.append('cognitive.pattern_learned', {})\n"
+        "        return result\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
 def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (

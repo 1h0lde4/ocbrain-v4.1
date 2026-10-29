@@ -1063,9 +1063,9 @@ def _is_direct_entry_memory_write(statement: ast.stmt) -> bool:
     )
 
 
-def _is_terminal_adaptation_write_branch(statement: ast.stmt) -> bool:
-    """Allow the pre-governance write only in the distinct ADAPTATION early-return branch."""
-    if not isinstance(statement, ast.If) or statement.orelse or len(statement.body) != 2:
+def _is_terminal_non_evolution_write_branch(statement: ast.stmt) -> bool:
+    """Allow pre-governance writes only in LEARNING/ADAPTATION branches that return."""
+    if not isinstance(statement, ast.If) or statement.orelse or len(statement.body) < 2:
         return False
     test = statement.test
     if not (
@@ -1078,10 +1078,18 @@ def _is_terminal_adaptation_write_branch(statement: ast.stmt) -> bool:
         and isinstance(test.comparators[0], ast.Attribute)
         and isinstance(test.comparators[0].value, ast.Name)
         and test.comparators[0].value.id == "LearningTier"
-        and test.comparators[0].attr == "ADAPTATION"
+        and test.comparators[0].attr in {"LEARNING", "ADAPTATION"}
     ):
         return False
-    return _is_direct_entry_memory_write(statement.body[0]) and isinstance(statement.body[1], ast.Return)
+
+    # Both supported non-Evolution paths write directly to entry_id and
+    # terminate the function; LEARNING also emits its routine event first.
+    write_calls = _memory_write_calls(statement)
+    return (
+        len(write_calls) == 1
+        and _is_direct_entry_memory_write(statement.body[0])
+        and isinstance(statement.body[-1], ast.Return)
+    )
 
 
 def _is_terminal_governance_verdict_guard(
@@ -1243,7 +1251,7 @@ def _governance_boundary_violations(
                         for prior_stmt in gate_node.body[:call_stmt_idx]:
                             writes = _memory_write_calls(prior_stmt)
                             if writes and not (
-                                _is_terminal_adaptation_write_branch(prior_stmt)
+                                _is_terminal_non_evolution_write_branch(prior_stmt)
                                 and len(writes) == 1
                             ):
                                 for write_call in writes:
@@ -1251,7 +1259,7 @@ def _governance_boundary_violations(
                                         Violation(
                                             rel,
                                             write_call.lineno,
-                                            "memory.write(...) occurs before the required GovernanceKernel evaluation outside the terminal ADAPTATION branch",
+                                            "memory.write(...) occurs before the required GovernanceKernel evaluation outside a terminal LEARNING/ADAPTATION branch",
                                         )
                                     )
 
