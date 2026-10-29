@@ -3,7 +3,7 @@
 **Date:** Oct 27, 2026. **Baseline:** `main` `f13bfdefcdd197ed1f966de0b1f93037a4168af4`.
 **Status of this document:** the exposure facts below were established against the live code at that baseline
 (VERIFIED = traced or executed, as marked). The design decisions are IMPLEMENTED on the branch that carries this
-file; none is an owner ruling yet (PENDING). DEBT-025 is **not closed** by this change (see section 6).
+file. **A1 was ACCEPTED by the owner on Oct 28, 2026**; the other decisions are still PENDING an owner ruling. DEBT-025 is **not closed** by this change (see section 6).
 
 ## 1. Exposure, as established
 
@@ -27,11 +27,11 @@ file; none is an owner ruling yet (PENDING). DEBT-025 is **not closed** by this 
 | A cross-origin page, ordinary CSRF | Blocked by the custom header (E4/E5). | Unchanged, and now also needs the token. |
 | A process running as the **same user** as OCBrain | Full access. | **Unchanged in effect:** it can read the token file. This boundary does not defend against it. |
 
-## 2. Decisions (all IMPLEMENTED on this branch; owner ruling PENDING)
+## 2. Decisions (all IMPLEMENTED; A1 owner ruling: ACCEPTED Oct 28, 2026; the rest PENDING)
 
 | ID | Decision | Why | Reopen if |
 |---|---|---|---|
-| A1 | **Default-on bearer token on every route that is not explicitly public.** `Authorization: Bearer <token>`. | E3: the bind is not a boundary. Loopback does not separate local users or defeat DNS rebinding. Default-on keeps the safe case the zero-configuration case. | The owner rules loopback-only is the accepted trust model. Then flip the default and keep the code. |
+| A1 | **Default-on bearer token on every route that is not explicitly public.** `Authorization: Bearer <token>`. | E3: the bind is not a boundary. Loopback does not separate local users or defeat DNS rebinding. Default-on keeps the safe case the zero-configuration case. | **Owner ruling (Oct 28, 2026): ACCEPTED.** Default-on stays; loopback binding alone is not an adequate boundary; `/health` stays protected; the opt-out stays explicit and auditable. Weakening the default to avoid compatibility problems is out of scope. |
 | A2 | **Deny by default, with a pinned allowlist.** Public: `GET`/`HEAD` of `/`, `/static/*`, `/docs`, `/redoc`, `/openapi.json`, `/docs/oauth2-redirect`. `/health` is **not** public. | A new route is protected without anyone remembering to protect it. `tests/test_api_auth_boundary.py` pins the allowlist and walks the real route table. | A liveness probe needs an unauthenticated endpoint. Add a minimal one deliberately. |
 | A3 | **Pure ASGI middleware, outermost**, not a per-route `Depends`. | Explicit (LAW 4), runs before routing so unknown paths give 401 not 404, and does not buffer SSE streams. Rejection happens before CSRF, routing or any handler. | - |
 | A4 | **One per-installation secret.** `OCBRAIN_API_TOKEN`, else `data/api_token` (or `OCBRAIN_API_TOKEN_FILE`), generated with `secrets.token_urlsafe(32)` and created `O_EXCL` mode 0600. A shorter-than-32 token is refused, not regenerated. A group/other-readable file is tightened to 0600 (or refused). Constant-time compare. | LAW 5: local, no external dependency. Never hard-coded, never logged, never in an event (section 14.2). | - |
@@ -88,3 +88,14 @@ Token required (29): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
    skipped where Node is absent), not in a browser. That run found and fixed a double prompt on concurrent 401s.
    The pages' own scripts, rendering, `sessionStorage` behaviour in real browsers and the tray's `webbrowser` call
    were not exercised.
+10. **Frozen builds.** The default token path is `Path(__file__)/../data/api_token`. In a PyInstaller `--onefile`
+    build (what `install/build.py` produces) that is inside the per-run temporary extraction directory: a different
+    token on every start, and not visible to a separate CLI process. Verified with a throwaway Linux build; Windows
+    and macOS were not run. The same pattern already applies to `data/context.sqlite`. Decide the token location for
+    frozen builds before the next release.
+11. **Audit persistence.** `api.auth_denied` and `api.auth_disabled` go to the log and to in-memory bus subscribers
+    only. They are not appended to the persistent `EventStream`.
+12. **Windows.** `_enforce_private_mode` is skipped on `nt` and `os.open(..., 0o600)` sets no ACL, so the file
+    inherits its parent directory's ACL. Not validated on Windows.
+13. **CI.** The Node-gated test is skipped silently where Node is absent; CI does not provision Node, and the gate
+    ignores skips, so whether it ran in CI is not proven by the CI result.
