@@ -1064,6 +1064,130 @@ def _is_approved_contradiction_read(call: ast.Call) -> bool:
     )
 
 
+def _is_default_dependency_initialization(
+    statement: ast.stmt, name: str, provider_name: str
+) -> bool:
+    """Recognize only the exact name = name or provider() initialization."""
+    return (
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.targets[0], ast.Name)
+        and statement.targets[0].id == name
+        and isinstance(statement.value, ast.BoolOp)
+        and isinstance(statement.value.op, ast.Or)
+        and len(statement.value.values) == 2
+        and isinstance(statement.value.values[0], ast.Name)
+        and statement.value.values[0].id == name
+        and isinstance(statement.value.values[1], ast.Call)
+        and isinstance(statement.value.values[1].func, ast.Name)
+        and statement.value.values[1].func.id == provider_name
+        and not statement.value.values[1].args
+        and not statement.value.values[1].keywords
+    )
+
+
+def _is_approved_action_construction(statement: ast.stmt) -> bool:
+    """Require the action approval bit to be derived from the caller's HITL flag."""
+    if not (
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.targets[0], ast.Name)
+        and statement.targets[0].id == "action"
+        and isinstance(statement.value, ast.Call)
+        and isinstance(statement.value.func, ast.Name)
+        and statement.value.func.id == "GovernanceAction"
+        and not statement.value.args
+    ):
+        return False
+    keywords = {kw.arg: kw.value for kw in statement.value.keywords if kw.arg is not None}
+    required = keywords.get("requires_approval")
+    return (
+        isinstance(keywords.get("action_type"), ast.Name)
+        and keywords["action_type"].id == "action_type"
+        and isinstance(required, ast.UnaryOp)
+        and isinstance(required.op, ast.Not)
+        and isinstance(required.operand, ast.Name)
+        and required.operand.id == "hitl_approved"
+    )
+
+
+def _is_action_type_allowlist_guard(statement: ast.stmt) -> bool:
+    test = statement.test if isinstance(statement, ast.If) else None
+    return (
+        isinstance(statement, ast.If)
+        and not statement.orelse
+        and len(statement.body) == 1
+        and isinstance(statement.body[0], ast.Return)
+        and isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "action_type"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.NotIn)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Attribute)
+        and isinstance(test.comparators[0].value, ast.Name)
+        and test.comparators[0].value.id == "EvolutionGovernor"
+        and test.comparators[0].attr == "SELF_MODIFYING_ACTIONS"
+    )
+
+
+def _argument_default_is_false(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    positional = [*function.args.posonlyargs, *function.args.args]
+    positional_start = len(positional) - len(function.args.defaults)
+    for index, argument in enumerate(positional):
+        if argument.arg == name:
+            default_index = index - positional_start
+            return (
+                0 <= default_index < len(function.args.defaults)
+                and isinstance(function.args.defaults[default_index], ast.Constant)
+                and function.args.defaults[default_index].value is False
+            )
+    for argument, default in zip(function.args.kwonlyargs, function.args.kw_defaults):
+        if argument.arg == name:
+            return isinstance(default, ast.Constant) and default.value is False
+    return False
+
+
+def _action_mutation_escape_sites(
+    scope: ast.AST, name: str, approved_statement: ast.stmt, approved_call: ast.Call
+) -> list[ast.AST]:
+    """Reject writes, aliases, and unapproved calls that can alter a GovernanceAction."""
+    sites: dict[int, ast.AST] = {}
+
+    def record(node: ast.AST) -> None:
+        sites.setdefault(id(node), node)
+
+    for node in ast.walk(scope):
+        if (
+            isinstance(node, (ast.Attribute, ast.Subscript))
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and _rooted_in_name(node, name)
+        ):
+            record(node)
+        elif isinstance(node, ast.Assign) and node is not approved_statement:
+            if _contains_name_reference(node.value, name):
+                record(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if _contains_name_reference(node.value, name):
+                record(node)
+        elif isinstance(node, ast.NamedExpr):
+            if _contains_name_reference(node.value, name):
+                record(node)
+        elif isinstance(node, ast.Return) and node.value is not None:
+            if _contains_name_reference(node.value, name):
+                record(node)
+        elif isinstance(node, ast.Call) and node is not approved_call:
+            if _rooted_in_name(node.func, name) or any(
+                _contains_name_reference(arg, name) for arg in node.args
+            ) or any(
+                _contains_name_reference(keyword.value, name)
+                for keyword in node.keywords
+            ):
+                record(node)
+
+    return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
+
+
 def _memory_object_escape_sites(scope: ast.AST) -> list[ast.AST]:
     """Find calls/aliases that hand the memory object to unapproved code."""
     sites: dict[int, ast.AST] = {}
@@ -1082,25 +1206,18 @@ def _memory_object_escape_sites(scope: ast.AST) -> list[ast.AST]:
             if passed_memory and not _is_approved_contradiction_read(node):
                 record(node)
         elif isinstance(node, ast.Assign):
-            # ValidationGate initializes the dependency through its designated
-            # memory-default assignment. Do not allow it to hand the object to an
-            # alias or container elsewhere in the gate.
+            # Only the exact dependency-default expression is exempt. An alias
+            # such as a comprehension containing helper() must still be detected
+            # even though the RHS contains a different call.
             if (
-                not (
-                    len(node.targets) == 1
-                    and isinstance(node.targets[0], ast.Name)
-                    and node.targets[0].id == "memory"
+                not _is_default_dependency_initialization(
+                    node, "memory", "get_unified_memory"
                 )
-                and not any(isinstance(child, ast.Call) for child in ast.walk(node.value))
                 and _contains_name_reference(node.value, "memory")
             ):
                 record(node)
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            if (
-                not (isinstance(node.target, ast.Name) and node.target.id == "memory")
-                and not any(isinstance(child, ast.Call) for child in ast.walk(node.value))
-                and _contains_name_reference(node.value, "memory")
-            ):
+            if _contains_name_reference(node.value, "memory"):
                 record(node)
         elif isinstance(node, ast.Return) and node.value is not None:
             if _contains_name_reference(node.value, "memory"):
@@ -1482,6 +1599,144 @@ def _governance_boundary_violations(
                         approved_gate_node = gate_node
                         approved_call_stmt_idx = call_stmt_idx
                         result_target = gate_node.body[call_stmt_idx].targets[0]
+
+                        if not _argument_default_is_false(gate_node, "hitl_approved"):
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "ValidationGate 'hitl_approved' must default to False",
+                                )
+                            )
+                        for writer in _scope_name_writes(gate_node, "hitl_approved"):
+                            violations.append(
+                                Violation(
+                                    rel, getattr(writer, "lineno", gate_node.lineno),
+                                    "ValidationGate caller-supplied 'hitl_approved' input is rebound or deleted",
+                                )
+                            )
+
+                        dependency_defaults = (
+                            ("memory", "get_unified_memory"),
+                            ("governance", "get_governance_kernel"),
+                            ("event_stream", "get_event_stream"),
+                        )
+                        for dependency_name, provider_name in dependency_defaults:
+                            allowed_initializers = [
+                                stmt for stmt in gate_node.body
+                                if _is_default_dependency_initialization(
+                                    stmt, dependency_name, provider_name
+                                )
+                            ]
+                            if len(allowed_initializers) != 1:
+                                violations.append(
+                                    Violation(
+                                        rel, gate_node.lineno,
+                                        f"ValidationGate must preserve exactly one default initialization for '{dependency_name}'",
+                                    )
+                                )
+                            allowed_targets = {
+                                id(stmt.targets[0]) for stmt in allowed_initializers
+                            }
+                            for writer in _scope_name_writes(gate_node, dependency_name):
+                                if id(writer) not in allowed_targets:
+                                    violations.append(
+                                        Violation(
+                                            rel, getattr(writer, "lineno", gate_node.lineno),
+                                            f"ValidationGate dependency '{dependency_name}' is rebound or deleted",
+                                        )
+                                    )
+
+                        action_parameters = [
+                            arg.arg for arg in (
+                                *gate_node.args.posonlyargs,
+                                *gate_node.args.args,
+                                *gate_node.args.kwonlyargs,
+                            )
+                        ]
+                        if "action" in action_parameters:
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "missing or invalid required internal GovernanceAction construction; accepting a prebuilt 'action' parameter bypasses the approval contract",
+                                )
+                            )
+
+                        action_initializers = [
+                            (index, stmt) for index, stmt in enumerate(gate_node.body)
+                            if _is_approved_action_construction(stmt)
+                        ]
+                        if (
+                            len(action_initializers) != 1
+                            or action_initializers[0][0] >= call_stmt_idx
+                        ):
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "missing or invalid required 'action = GovernanceAction(..., requires_approval=not hitl_approved)' before governance evaluation",
+                                )
+                            )
+                        allowed_action_targets = {
+                            id(stmt.targets[0]) for _, stmt in action_initializers
+                        }
+                        for writer in _scope_name_writes(gate_node, "action"):
+                            if id(writer) not in allowed_action_targets:
+                                violations.append(
+                                    Violation(
+                                        rel, getattr(writer, "lineno", gate_node.lineno),
+                                        "ValidationGate GovernanceAction binding is rebound or deleted",
+                                    )
+                                )
+
+                        allowlist_guards = [
+                            (index, stmt) for index, stmt in enumerate(gate_node.body)
+                            if _is_action_type_allowlist_guard(stmt)
+                        ]
+                        if (
+                            len(allowlist_guards) != 1
+                            or (
+                                len(action_initializers) == 1
+                                and allowlist_guards[0][0] >= action_initializers[0][0]
+                            )
+                        ):
+                            violations.append(
+                                Violation(
+                                    rel, gate_node.lineno,
+                                    "missing or invalid required EvolutionGovernor.SELF_MODIFYING_ACTIONS allowlist guard before GovernanceAction construction",
+                                )
+                            )
+                        elif len(allowlist_guards) == 1:
+                            guard_stmt = allowlist_guards[0][1]
+                            guard_end = (
+                                getattr(guard_stmt, "end_lineno", guard_stmt.lineno),
+                                getattr(guard_stmt, "end_col_offset", guard_stmt.col_offset),
+                            )
+                            for writer in _scope_name_writes(gate_node, "action_type"):
+                                position = (
+                                    getattr(writer, "lineno", 0),
+                                    getattr(writer, "col_offset", 0),
+                                )
+                                if position > guard_end:
+                                    violations.append(
+                                        Violation(
+                                            rel, getattr(writer, "lineno", gate_node.lineno),
+                                            "ValidationGate action_type is rebound after its EvolutionGovernor allowlist check",
+                                        )
+                                    )
+
+                        if len(action_initializers) == 1:
+                            action_mutations = _action_mutation_escape_sites(
+                                gate_node,
+                                "action",
+                                gate_node.body[call_stmt_idx],
+                                approved_call_node,
+                            )
+                            for mutation_node in action_mutations:
+                                violations.append(
+                                    Violation(
+                                        rel, getattr(mutation_node, "lineno", gate_node.lineno),
+                                        "GovernanceAction is mutated, aliased, or passed to unapproved code before/after evaluation",
+                                    )
+                                )
                         unexpected_result_writes = [
                             writer
                             for writer in _scope_name_writes(gate_node, "result")

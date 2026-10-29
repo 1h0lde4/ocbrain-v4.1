@@ -221,7 +221,13 @@ def test_unauthorized_producer_violations_ignores_unrelated_return_type():
 # ---------------------------------------------------------------------------
 
 VALID_LEARNING_PY = (
-    "async def validation_gate(governance, action):\n"
+    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n"
+    "    memory = memory or get_unified_memory()\n"
+    "    governance = governance or get_governance_kernel()\n"
+    "    event_stream = event_stream or get_event_stream()\n"
+    "    if action_type not in EvolutionGovernor.SELF_MODIFYING_ACTIONS:\n"
+    "        return None\n"
+    "    action = GovernanceAction(action_type=action_type, requires_approval=not hitl_approved)\n"
     "    result = governance.evaluate_action(action)\n"
     "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
     "        return result\n"
@@ -229,6 +235,8 @@ VALID_LEARNING_PY = (
     "        return result\n"
     "    if result.verdict != GovernanceVerdict.APPROVE:\n"
     "        return result\n"
+    "    entry_id = await memory.write(candidate)\n"
+    "    await event_stream.append('done', {})\n"
     "    return result\n"
 )
 
@@ -420,8 +428,8 @@ def test_check_drift_10_rejects_tier_rebinding_before_non_evolution_write_except
 def test_check_drift_10_rejects_global_result_binding(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     gate = VALID_LEARNING_PY.replace(
-        "async def validation_gate(governance, action):\n",
-        "async def validation_gate(governance, action):\n    global result\n",
+        "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n",
+        "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n    global result\n",
         1,
     )
     (tmp_path / "core/cognitive/learning.py").write_text(gate, encoding="utf-8")
@@ -949,6 +957,97 @@ def test_check_drift_10_allows_nested_read_only_scalar_result_access(tmp_path, m
     assert result.status == "PASS"
 
 
+@pytest.mark.parametrize("unsafe_statement", [
+    "    memory = FakeMemory()\n",
+    "    governance = FakeGovernance()\n",
+    "    event_stream = FakeEventStream()\n",
+    "    hitl_approved = True\n",
+])
+def test_check_drift_10_rejects_dependency_or_approval_input_rebinding(
+    tmp_path, monkeypatch, unsafe_statement
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        unsafe_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(
+        "is rebound or deleted" in v.detail
+        or "caller-supplied 'hitl_approved' input" in v.detail
+        for v in result.violations
+    )
+    assert result.notes == ""
+
+
+@pytest.mark.parametrize("unsafe_statement", [
+    "    action.requires_approval = False\n",
+    "    alias = action\n    alias.requires_approval = False\n",
+    "    mutate_action(action)\n",
+])
+def test_check_drift_10_rejects_governance_action_mutation_or_escape(
+    tmp_path, monkeypatch, unsafe_statement
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        unsafe_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("GovernanceAction is mutated, aliased, or passed to unapproved code" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
+def test_check_drift_10_rejects_false_action_requires_approval(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "requires_approval=not hitl_approved",
+        "requires_approval=False",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("requires_approval=not hitl_approved" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
+def test_check_drift_10_rejects_action_type_rebinding_after_allowlist(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    action = GovernanceAction(",
+        "    action_type = 'unregistered_action'\n"
+        "    action = GovernanceAction(",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("action_type is rebound after its EvolutionGovernor allowlist check" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
+def test_check_drift_10_requires_hitl_approval_default_false(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace("hitl_approved=False", "hitl_approved=True", 1)
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("hitl_approved' must default to False" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
 def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
@@ -1006,11 +1105,11 @@ def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, 
 
 def test_check_drift_10_rejects_duplicate_call_inside_validation_gate(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
-    code = (
-        "async def validation_gate(governance, action):\n"
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
         "    result = governance.evaluate_action(action)\n"
-        "    dup = governance.evaluate_action(action)\n"
-        "    return result\n"
+        "    dup = governance.evaluate_action(action)\n",
+        1,
     )
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
