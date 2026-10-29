@@ -329,34 +329,34 @@ def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("mutation", [
     (
-        "class LearningTier:\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'learning'\\n"
-        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
+        "class LearningTier:\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'learning'\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
     ),
     (
-        "class LearningTier:\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'evolution'\\n"
-        "    ALL = (LEARNING, ADAPTATION)\\n"
+        "class LearningTier:\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'evolution'\n"
+        "    ALL = (LEARNING, ADAPTATION)\n"
     ),
     (
-        "class LearningTier:\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'evolution'\\n"
-        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
-        "    if True:\\n"
-        "        EVOLUTION = 'learning'\\n"
+        "class LearningTier:\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'evolution'\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
+        "    if True:\n"
+        "        EVOLUTION = 'learning'\n"
     ),
     (
-        "class LearningTier(metaclass=FakeMeta):\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'evolution'\\n"
-        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
+        "class LearningTier(metaclass=FakeMeta):\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'evolution'\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
     ),
 ])
 def test_check_drift_10_rejects_mutated_learning_tier_policy_values(
@@ -364,11 +364,11 @@ def test_check_drift_10_rejects_mutated_learning_tier_policy_values(
 ):
     _setup_clean_governance_files(tmp_path)
     original = (
-        "class LearningTier:\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'evolution'\\n"
-        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
+        "class LearningTier:\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'evolution'\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
     )
     code = VALID_LEARNING_PY.replace(original, mutation, 1)
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
@@ -381,18 +381,18 @@ def test_check_drift_10_rejects_mutated_learning_tier_policy_values(
 
 @pytest.mark.parametrize("mutation", [
     (
-        "class ContentDomain:\\n"
-        "    SKILL = 'skill'\\n"
-        "    INTENT_ONTOLOGY = 'intent_ontology'\\n"
-        "    USER_MODEL = 'skill'\\n"
-        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\\n"
+        "class ContentDomain:\n"
+        "    SKILL = 'skill'\n"
+        "    INTENT_ONTOLOGY = 'intent_ontology'\n"
+        "    USER_MODEL = 'skill'\n"
+        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\n"
     ),
     (
-        "class ContentDomain:\\n"
-        "    SKILL = 'skill'\\n"
-        "    INTENT_ONTOLOGY = 'intent_ontology'\\n"
-        "    USER_MODEL = 'user_model'\\n"
-        "    ALL = (SKILL, USER_MODEL, INTENT_ONTOLOGY)\\n"
+        "class ContentDomain:\n"
+        "    SKILL = 'skill'\n"
+        "    INTENT_ONTOLOGY = 'intent_ontology'\n"
+        "    USER_MODEL = 'user_model'\n"
+        "    ALL = (SKILL, USER_MODEL, INTENT_ONTOLOGY)\n"
     ),
 ])
 def test_check_drift_10_rejects_mutated_content_domain_policy_values(
@@ -400,11 +400,11 @@ def test_check_drift_10_rejects_mutated_content_domain_policy_values(
 ):
     _setup_clean_governance_files(tmp_path)
     original = (
-        "class ContentDomain:\\n"
-        "    SKILL = 'skill'\\n"
-        "    INTENT_ONTOLOGY = 'intent_ontology'\\n"
-        "    USER_MODEL = 'user_model'\\n"
-        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\\n"
+        "class ContentDomain:\n"
+        "    SKILL = 'skill'\n"
+        "    INTENT_ONTOLOGY = 'intent_ontology'\n"
+        "    USER_MODEL = 'user_model'\n"
+        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\n"
     )
     code = VALID_LEARNING_PY.replace(original, mutation, 1)
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
