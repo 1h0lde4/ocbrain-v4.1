@@ -1673,6 +1673,19 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
                 and node.args[0].id in protected_names
             ):
                 record(node)
+            elif any(
+                _contains_name_reference(arg, name)
+                for name in protected_names
+                for arg in node.args
+            ) or any(
+                _contains_name_reference(keyword.value, name)
+                for name in protected_names
+                for keyword in node.keywords
+            ):
+                # Passing a trusted class to another callable can expose it
+                # to type.__setattr__ or a mutating helper; there is no such
+                # legitimate use in the current ValidationGate module.
+                record(node)
             elif (
                 isinstance(func, ast.Attribute)
                 and func.attr in mutating_methods
