@@ -21,11 +21,11 @@ D10-I (packet ownership) is CI-integration, not a new drift rule — see
 .github/workflows/ci.yml, which calls scripts/check_packet_ownership.py
 directly rather than reimplementing its logic here.
 
-  DRIFT-10  Governance boundary, broadened: Intent Interpretation and
-            Planner must not call GovernanceKernel.evaluate_action()
-            directly (DRIFT-05's existing check, unmodified, still covers
-            SupervisorWorker only — this is a new, separate check, not a
-            rewrite of it).
+  DRIFT-10  Governance boundary: direct evaluate_action() calls in Intent
+            Interpretation and Planner are forbidden; learning.py is also
+            checked, with one structurally pinned ValidationGate exception
+            for the required Evolution-tier approval check. DRIFT-05 remains
+            unchanged and still independently covers SupervisorWorker.
   DRIFT-11  Frozen entrypoints: interpret_request()/plan()/compile() are
             importable as *callables* only from core/orchestrator.py in
             production code (the one confirmed caller — repository-wide
@@ -570,35 +570,268 @@ CHECKS = [
 
 
 # ---------------------------------------------------------------------------
-# DRIFT-10 — Governance boundary broadened: Intent Interpretation and
-# Planner must not call GovernanceKernel.evaluate_action() directly.
-# (K4.2-H2 D10-C. DRIFT-05 above is unmodified and still independently
-# covers SupervisorWorker — this is additive, not a replacement.)
+# DRIFT-10 — Governance boundary: scan Intent, Planner, and Learning.
+# (K4.2-H2 D10-C. DRIFT-05 remains unchanged and independently covers
+# SupervisorWorker. The one legitimate Learning-tier approval call is
+# structurally scoped below; it must not become a file-wide exemption.)
 # ---------------------------------------------------------------------------
 
 
 GOVERNANCE_BOUNDARY_FILES: tuple[str, ...] = (
     "core/cognitive/intent.py",
     "core/cognitive/planner.py",
+    "core/cognitive/learning.py",
 )
+
+# The EVOLUTION-tier ValidationGate call is required by PROJECT_INSTRUCTIONS.md
+# §13 ("no autonomous evolution may bypass approval"). This exception allows
+# exactly one governance.evaluate_action(action) call in the top-level
+# validation_gate() function; any additional call or different call shape is
+# reported. The scope remains name-based so unrelated additions to learning.py
+# are still checked.
+DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
+    (
+        "core/cognitive/learning.py",
+        "validation_gate",
+    ): (
+        "ValidationGate's EVOLUTION-tier promotion must pass through "
+        "GovernanceKernel before writing a promoted entry."
+    ),
+}
+
+
+def _find_module_scope_bindings_for_name(tree: ast.Module, name: str) -> list[tuple[ast.AST, str]]:
+    """Return list of (node, description) for all module-scope bindings of `name`."""
+    bindings: list[tuple[ast.AST, str]] = []
+
+    def _visit_stmts(body: list[ast.stmt]):
+        for stmt in body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if stmt.name == name:
+                    kind = (
+                        "async function"
+                        if isinstance(stmt, ast.AsyncFunctionDef)
+                        else ("function" if isinstance(stmt, ast.FunctionDef) else "class")
+                    )
+                    bindings.append((stmt, f"{kind} definition '{name}'"))
+            elif isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    for n in ast.walk(target):
+                        if isinstance(n, ast.Name) and n.id == name:
+                            bindings.append((stmt, f"assignment to '{name}'"))
+            elif isinstance(stmt, ast.AnnAssign):
+                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                    bindings.append((stmt, f"annotated assignment to '{name}'"))
+            elif isinstance(stmt, ast.AugAssign):
+                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                    bindings.append((stmt, f"augmented assignment to '{name}'"))
+            elif isinstance(stmt, ast.Delete):
+                for target in stmt.targets:
+                    for n in ast.walk(target):
+                        if isinstance(n, ast.Name) and n.id == name:
+                            bindings.append((stmt, f"deletion of '{name}'"))
+            elif isinstance(stmt, ast.Import):
+                for alias in stmt.names:
+                    bound = alias.asname or alias.name
+                    if bound == name:
+                        bindings.append((stmt, f"import binding '{name}'"))
+            elif isinstance(stmt, ast.ImportFrom):
+                for alias in stmt.names:
+                    bound = alias.asname or alias.name
+                    if bound == name:
+                        bindings.append((stmt, f"import-from binding '{name}'"))
+
+            if isinstance(stmt, (ast.If, ast.While, ast.For, ast.AsyncFor)):
+                _visit_stmts(stmt.body)
+                _visit_stmts(stmt.orelse)
+            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+                _visit_stmts(stmt.body)
+            elif isinstance(stmt, (ast.Try, getattr(ast, "TryStar", ast.Try))):
+                _visit_stmts(stmt.body)
+                for handler in stmt.handlers:
+                    _visit_stmts(handler.body)
+                _visit_stmts(stmt.orelse)
+                _visit_stmts(stmt.finalbody)
+            elif isinstance(stmt, ast.Match):
+                for case in stmt.cases:
+                    _visit_stmts(case.body)
+
+    _visit_stmts(tree.body)
+    return bindings
+
+
+def _governance_boundary_violations(
+    tree: ast.Module, rel: str
+) -> tuple[list[Violation], bool]:
+    """Find direct governance calls, allowing only the explicit scoped exception."""
+    violations: list[Violation] = []
+    approved_call_node: ast.Call | None = None
+
+    if rel == "core/cognitive/learning.py":
+        bindings = _find_module_scope_bindings_for_name(tree, "validation_gate")
+        if len(bindings) == 0:
+            violations.append(
+                Violation(
+                    rel, 0,
+                    "missing required top-level 'validation_gate' function definition in learning.py",
+                )
+            )
+        elif len(bindings) > 1:
+            second_node, desc = bindings[1]
+            violations.append(
+                Violation(
+                    rel, second_node.lineno,
+                    f"competing or duplicate module-scope binding for 'validation_gate': {desc}",
+                )
+            )
+        else:
+            gate_node, desc = bindings[0]
+            if gate_node not in tree.body:
+                violations.append(
+                    Violation(
+                        rel, gate_node.lineno,
+                        "'validation_gate' must be a direct top-level definition, not nested in control flow",
+                    )
+                )
+            elif not isinstance(gate_node, ast.AsyncFunctionDef):
+                violations.append(
+                    Violation(
+                        rel, gate_node.lineno,
+                        f"'validation_gate' must be an async function definition, found {desc}",
+                    )
+                )
+            elif gate_node.decorator_list:
+                violations.append(
+                    Violation(
+                        rel, gate_node.lineno,
+                        "'validation_gate' must be undecorated",
+                    )
+                )
+            else:
+                call_stmt_idx = None
+                for idx, stmt in enumerate(gate_node.body):
+                    if (
+                        isinstance(stmt, ast.Assign)
+                        and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], ast.Name)
+                        and stmt.targets[0].id == "result"
+                        and isinstance(stmt.value, ast.Call)
+                        and isinstance(stmt.value.func, ast.Attribute)
+                        and isinstance(stmt.value.func.value, ast.Name)
+                        and stmt.value.func.value.id == "governance"
+                        and stmt.value.func.attr == "evaluate_action"
+                        and len(stmt.value.args) == 1
+                        and isinstance(stmt.value.args[0], ast.Name)
+                        and stmt.value.args[0].id == "action"
+                        and not stmt.value.keywords
+                    ):
+                        call_stmt_idx = idx
+                        break
+
+                if call_stmt_idx is None:
+                    violations.append(
+                        Violation(
+                            rel, gate_node.lineno,
+                            "missing or invalid required 'result = governance.evaluate_action(action)' call in top-level 'validation_gate()' body",
+                        )
+                    )
+                else:
+                    early_exit = None
+                    for stmt in gate_node.body[:call_stmt_idx]:
+                        if isinstance(stmt, (ast.Return, ast.Raise)):
+                            early_exit = stmt
+                            break
+
+                    if early_exit is not None:
+                        violations.append(
+                            Violation(
+                                rel, early_exit.lineno,
+                                "required 'evaluate_action()' call in 'validation_gate()' is preceded by an unconditional early return/raise",
+                            )
+                        )
+                    else:
+                        approved_call_node = gate_node.body[call_stmt_idx].value
+
+    exception_applied = False
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "evaluate_action"
+        ):
+            continue
+
+        if approved_call_node is not None and node is approved_call_node:
+            exception_applied = True
+        else:
+            violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
+
+    return violations, exception_applied
+
+
+def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Violation | None]:
+    path = REPO_ROOT / rel
+    cur = REPO_ROOT
+    for part in Path(rel).parts:
+        cur = cur / part
+        if not cur.exists() and not cur.is_symlink():
+            return None, Violation(rel, 0, f"governed file '{rel}' does not exist")
+        if cur.is_symlink():
+            return None, Violation(rel, 0, f"governed path '{rel}' contains symbolic link '{part}'")
+
+    if not path.is_file():
+        return None, Violation(rel, 0, f"governed path '{rel}' is not a regular file")
+
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(REPO_ROOT)
+    except (ValueError, OSError) as e:
+        return None, Violation(rel, 0, f"governed file '{rel}' resolves outside repository root: {e}")
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        return None, Violation(rel, 0, f"governed file '{rel}' failed utf-8 decoding: {e}")
+    except OSError as e:
+        return None, Violation(rel, 0, f"governed file '{rel}' failed to read: {e}")
+
+    try:
+        tree = ast.parse(content, filename=str(path))
+        return tree, None
+    except SyntaxError as e:
+        lineno = e.lineno or 0
+        return None, Violation(rel, lineno, f"governed file '{rel}' syntax error: {e.msg}")
 
 
 def check_drift_10() -> CheckResult:
     violations: list[Violation] = []
+    exception_applied = False
     for rel in GOVERNANCE_BOUNDARY_FILES:
-        path = REPO_ROOT / rel
-        tree = _parse(path) if path.exists() else None
+        tree, err = _validate_and_parse_governed_file(rel)
+        if err is not None:
+            violations.append(err)
+            continue
         if tree is not None:
-            violations.extend(_evaluate_action_violations(tree, rel))
+            found, used_exception = _governance_boundary_violations(tree, rel)
+            violations.extend(found)
+            exception_applied = exception_applied or used_exception
     status = "VIOLATION" if violations else "PASS"
+    notes = (
+        "Applied the documented exception: "
+        + DRIFT_10_EXCEPTION_SCOPES[
+            ("core/cognitive/learning.py", "validation_gate")
+        ]
+        if exception_applied else ""
+    )
     return CheckResult(
         "DRIFT-10",
-        "Intent Interpretation and Planner must not call "
-        "GovernanceKernel.evaluate_action() directly (Governance sits at the "
-        "compilation boundary only — extends DRIFT-05's same check, which "
-        "independently still covers SupervisorWorker, to these two files)",
+        "Unauthorized direct GovernanceKernel.evaluate_action() calls in "
+        "Intent, Planner, and Learning are forbidden; the one exact "
+        "ValidationGate approval call is explicitly allowed (DRIFT-05 remains "
+        "unchanged and independently covers SupervisorWorker).",
         status,
         violations,
+        notes,
     )
 
 
