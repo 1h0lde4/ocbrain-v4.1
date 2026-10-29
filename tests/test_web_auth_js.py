@@ -6,9 +6,14 @@ client code that is not Python.  tests/js/auth_js_live.js runs auth.js unmodifie
 inside a Node vm context with a stub window, against a real uvicorn server running
 the real app with the auth middleware on.  Skipped when Node is not installed.
 This is not a browser test: it does not cover rendering or the page's own scripts.
+
+Where Node is missing the test is skipped on a developer machine but FAILS when the
+`CI` environment variable is set (GitHub Actions sets it), so the live auth.js check
+cannot silently drop out of the CI gate, which ignores skips.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import threading
@@ -22,10 +27,35 @@ from interface import auth
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN = "js-e2e-token-" + "k7m2p9x4" * 5
 
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def node_or_skip_or_fail(which=shutil.which, env=None) -> str:
+    """Path to Node.  Missing Node skips locally but fails in CI (env CI=true/1/yes)."""
+    node = which("node")
+    if node:
+        return node
+    env = os.environ if env is None else env
+    if str(env.get("CI", "")).strip().lower() in {"1", "true", "yes"}:
+        pytest.fail("Node is required in CI: the live auth.js test must not be skipped silently.", pytrace=False)
+    pytest.skip("node not installed")
+
+
+def test_gate_fails_in_ci_when_node_is_missing():
+    for value in ("true", "TRUE", "1", "yes"):
+        with pytest.raises(pytest.fail.Exception):
+            node_or_skip_or_fail(which=lambda _: None, env={"CI": value})
+
+
+def test_gate_skips_outside_ci_when_node_is_missing():
+    for env in ({}, {"CI": ""}, {"CI": "false"}, {"CI": "0"}):
+        with pytest.raises(pytest.skip.Exception):
+            node_or_skip_or_fail(which=lambda _: None, env=env)
+
+
+def test_gate_returns_node_when_present_even_in_ci():
+    assert node_or_skip_or_fail(which=lambda _: "/usr/bin/node", env={"CI": "true"}) == "/usr/bin/node"
 
 
 def test_auth_js_against_a_live_authenticated_server(monkeypatch, tmp_path):
+    node = node_or_skip_or_fail()
     import uvicorn
     from interface.api import app
 
@@ -44,8 +74,8 @@ def test_auth_js_against_a_live_authenticated_server(monkeypatch, tmp_path):
         assert server.started, "server did not start"
         port = server.servers[0].sockets[0].getsockname()[1]
         proc = subprocess.run(
-            ["node", str(ROOT / "tests" / "js" / "auth_js_live.js")],
-            env={"PATH": __import__("os").environ["PATH"], "PORT": str(port), "TOKEN": TOKEN,
+            [node, str(ROOT / "tests" / "js" / "auth_js_live.js")],
+            env={"PATH": os.environ["PATH"], "PORT": str(port), "TOKEN": TOKEN,
                  "AUTH_JS": str(ROOT / "interface" / "web" / "auth.js")},
             capture_output=True, text=True, timeout=90,
         )
