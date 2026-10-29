@@ -6,6 +6,7 @@ Architecture: OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md
 """
 import ast
 import inspect
+from types import SimpleNamespace
 from typing import Any, Dict, List
 from unittest.mock import patch
 
@@ -514,6 +515,41 @@ class TestValidationGateEvolutionTier:
         # asked -- still exactly one real evaluate_action() call, proving
         # hitl_approved cannot be used to skip governance entirely.
         assert governance.evaluate_calls == 1
+
+    async def test_unrecognized_governance_verdict_fails_closed(self):
+        class UnexpectedVerdictGovernance:
+            def __init__(self):
+                self.evaluate_calls = 0
+
+            def evaluate_action(self, action):
+                self.evaluate_calls += 1
+                return SimpleNamespace(
+                    verdict="future_unrecognized_verdict",
+                    reason="unexpected test verdict",
+                )
+
+        memory = MockMemory(search_results=[])
+        events = MockEventStream()
+        governance = UnexpectedVerdictGovernance()
+        record = await validation_gate(
+            tier=LearningTier.EVOLUTION,
+            content_domain=ContentDomain.INTENT_ONTOLOGY,
+            subject_ref="new-category",
+            candidate_content="a new archetype",
+            trigger_signals=["reflection"],
+            held_out_score=0.95,
+            baseline_score=None,
+            hitl_approved=True,
+            memory=memory,
+            governance=governance,
+            event_stream=events,
+        )
+        assert record.lifecycle_state == LearningLifecycle.REJECTED
+        assert record.gate_result.verdict == CognitiveVerdict.REJECT
+        assert "Unexpected GovernanceKernel verdict" in record.gate_result.reason
+        assert governance.evaluate_calls == 1
+        assert memory.writes == []
+        assert events.events == []
 
     async def test_skill_domain_already_registered(self):
         # "skill_promote" pre-dates K4.2.6 -- proves this packet did not
