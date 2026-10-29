@@ -449,6 +449,10 @@ def test_check_drift_10_rejects_executable_policy_class_body_statement(tmp_path,
     "type.__setattr__(LearningTier, 'EVOLUTION', 'learning')\n",
     "tier_class = LearningTier\n",
     "get_governance_kernel = lambda: FakeGovernance()\n",
+    "policy_alias = (EvolutionGovernor,)\n",
+    "policy_alias[0].SELF_MODIFYING_ACTIONS.clear()\n",
+    "globals()['EvolutionGovernor'].SELF_MODIFYING_ACTIONS.clear()\n",
+    "exec(\"EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\")\n",
 ])
 
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(

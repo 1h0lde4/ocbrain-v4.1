@@ -1641,6 +1641,24 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
     def record(node: ast.AST) -> None:
         sites.setdefault(id(node), node)
 
+    def has_protected_reference_except_action_constructor(value: ast.AST) -> bool:
+        # The canonical GovernanceAction(...) construction is expected, but
+        # trusted class objects embedded in containers/expressions can be aliased
+        # and mutated without a direct policy-attribute assignment target.
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == "GovernanceAction"
+        ):
+            value_nodes = [*value.args, *(keyword.value for keyword in value.keywords)]
+        else:
+            value_nodes = [value]
+        return any(
+            _contains_name_reference(value_node, name)
+            for value_node in value_nodes
+            for name in protected_names
+        )
+
     for node in ast.walk(tree):
         if (
             isinstance(node, (ast.Attribute, ast.Subscript))
@@ -1665,6 +1683,8 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
                 and any(_rooted_in_name(value, name) for name in policy_names)
             ):
                 record(node)
+            elif has_protected_reference_except_action_constructor(value):
+                record(node)
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
             value = node.value
             if isinstance(value, ast.Name) and value.id in protected_names:
@@ -1678,6 +1698,8 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
                 and value.attr in {"__dict__", "__bases__", "__mro__"}
                 and any(_rooted_in_name(value, name) for name in policy_names)
             ):
+                record(node)
+            elif has_protected_reference_except_action_constructor(value):
                 record(node)
         elif isinstance(node, ast.NamedExpr):
             value = node.value
@@ -1693,9 +1715,17 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
                 and any(_rooted_in_name(value, name) for name in policy_names)
             ):
                 record(node)
+            elif has_protected_reference_except_action_constructor(value):
+                record(node)
         elif isinstance(node, ast.Call):
             func = node.func
-            if (
+            if isinstance(func, ast.Name) and func.id in {
+                "globals", "locals", "vars", "exec", "eval", "__import__"
+            }:
+                # Dynamic namespace/code built-ins can bypass literal-name scans.
+                # The governed Learning module has no legitimate need for them.
+                record(node)
+            elif (
                 isinstance(func, ast.Name)
                 and func.id in {"getattr", "setattr", "delattr"}
                 and node.args
