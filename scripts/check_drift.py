@@ -1893,7 +1893,11 @@ def _governance_boundary_violations(
                     "governance result must immediately drive terminal ESCALATE/REJECT guards, reject every non-APPROVE verdict, preserve the evaluated result, and constrain memory writes to the authorized paths",
                 )
             )
-        else:
+        elif not any(violation.file == rel for violation in violations):
+            # A structurally valid verdict sequence is not enough if any other
+            # contract check failed (action construction, dependency identity,
+            # approval input, or write path). Never report the exception applied
+            # for a Learning file that has any DRIFT-10 violation.
             applied_exception_key = scope_key
 
     return violations, applied_exception_key
