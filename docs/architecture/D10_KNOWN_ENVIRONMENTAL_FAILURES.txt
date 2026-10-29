@@ -64,9 +64,3 @@ tests/test_system_ctrl.py::test_empty_action_rejected
 tests/test_system_ctrl.py::test_execute_write_file
 tests/test_system_ctrl.py::test_unknown_action_rejected
 
-# Sandboxed container environment seccomp restriction class (seccomp_load
-# fails with EINVAL / errno 22 in sandbox container runtimes without seccomp
-# syscall privileges).
-tests/core/sandbox/test_seccomp.py::test_apply_denylist_blocks_most_syscalls_on_this_arch
-tests/core/sandbox/test_seccomp.py::test_getpid_unaffected_after_apply
-tests/core/sandbox/test_seccomp.py::test_ptrace_is_blocked_after_apply

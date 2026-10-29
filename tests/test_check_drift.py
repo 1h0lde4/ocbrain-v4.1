@@ -14,6 +14,7 @@ run_all() against the actual repository.
 """
 
 import ast
+import errno
 import sys
 from pathlib import Path
 
@@ -26,6 +27,19 @@ import check_drift  # noqa: E402  (import after sys.path manipulation, by necess
 
 def _tree(source: str) -> ast.Module:
     return ast.parse(source)
+
+
+def _skip_if_symlink_creation_is_unsupported(exc: OSError) -> None:
+    unsupported_errnos = {
+        getattr(errno, "ENOSYS", None),
+        getattr(errno, "EOPNOTSUPP", None),
+        getattr(errno, "ENOTSUP", None),
+    }
+    if exc.errno in unsupported_errnos:
+        pytest.skip(f"Filesystem/platform does not support symlinks: {exc}")
+    if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+        pytest.skip(f"Windows symlink privilege is unavailable: {exc}")
+    raise exc
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +249,25 @@ def test_drift_10_exception_scope_pinned():
     }
 
 
+def test_check_drift_10_exception_configuration_drives_enforcement_and_notes(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    custom_name = "configured_gate"
+    custom_reason = "Configured exception reason used by enforcement and notes."
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY.replace("validation_gate", custom_name),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        check_drift,
+        "DRIFT_10_EXCEPTION_SCOPES",
+        {("core/cognitive/learning.py", custom_name): custom_reason},
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+    assert custom_reason in result.notes
+
+
 def test_check_drift_10_passes_clean_repository(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
@@ -289,6 +322,12 @@ def test_check_drift_10_fails_on_non_regular_file(tmp_path, monkeypatch):
     assert any("not a regular file" in v.detail for v in result.violations)
 
 
+def test_symlink_permission_errors_are_not_silently_skipped():
+    error = PermissionError(errno.EACCES, "permission denied")
+    with pytest.raises(PermissionError):
+        _skip_if_symlink_creation_is_unsupported(error)
+
+
 def test_check_drift_10_fails_on_symlink_file(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     real_file = tmp_path / "real_intent.py"
@@ -296,8 +335,10 @@ def test_check_drift_10_fails_on_symlink_file(tmp_path, monkeypatch):
     (tmp_path / "core/cognitive/intent.py").unlink()
     try:
         (tmp_path / "core/cognitive/intent.py").symlink_to(real_file)
-    except (OSError, NotImplementedError):
-        pytest.skip("Platform does not support symlinks")
+    except NotImplementedError:
+        pytest.skip("Platform does not implement symlink creation")
+    except OSError as exc:
+        _skip_if_symlink_creation_is_unsupported(exc)
 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
@@ -317,8 +358,10 @@ def test_check_drift_10_fails_on_symlink_in_path_component(tmp_path, monkeypatch
     (tmp_path / "core/cognitive").rmdir()
     try:
         (tmp_path / "core/cognitive").symlink_to(real_dir)
-    except (OSError, NotImplementedError):
-        pytest.skip("Platform does not support symlinks")
+    except NotImplementedError:
+        pytest.skip("Platform does not implement symlink creation")
+    except OSError as exc:
+        _skip_if_symlink_creation_is_unsupported(exc)
 
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
@@ -424,6 +467,14 @@ def test_check_drift_10_rejects_decorated_validation_gate(tmp_path, monkeypatch)
     ("def validation_gate(): pass\n", "competing or duplicate module-scope binding"),
     ("if True:\n    validation_gate = 123\n", "competing or duplicate module-scope binding"),
     ("try:\n    pass\nexcept Exception:\n    del validation_gate\n", "competing or duplicate module-scope binding"),
+    ("for validation_gate in candidates:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("with provider() as validation_gate:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("try:\n    pass\nexcept Exception as validation_gate:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("if (validation_gate := None):\n    pass\n", "competing or duplicate module-scope binding"),
+    ("match subject:\n    case validation_gate:\n        pass\n", "competing or duplicate module-scope binding"),
+    ("import validation_gate.child\n", "competing or duplicate module-scope binding"),
+    ("from some_module import *\n", "competing or duplicate module-scope binding"),
+    ("validation_gate, other = (None, None)\n", "competing or duplicate module-scope binding"),
 ])
 def test_check_drift_10_rejects_module_scope_rebinding(tmp_path, monkeypatch, rebind_code, expected_snippet):
     _setup_clean_governance_files(tmp_path)
@@ -433,6 +484,35 @@ def test_check_drift_10_rejects_module_scope_rebinding(tmp_path, monkeypatch, re
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
     assert any(expected_snippet in v.detail for v in result.violations)
+
+
+def test_check_drift_10_does_not_treat_attribute_or_subscript_targets_as_rebindings(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY
+        + "\nvalidation_gate.status = state\n"
+        + "container[validation_gate] = item\n"
+        + "del validation_gate.status\n"
+        + "del container[validation_gate]\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_does_not_treat_async_for_inside_async_function_as_module_binding(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY
+        + "\nasync def unrelated():\n"
+        + "    async for validation_gate in stream:\n"
+        + "        pass\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
 
 
 def test_check_drift_10_allows_function_local_assignments_named_validation_gate(tmp_path, monkeypatch):
@@ -507,8 +587,10 @@ def test_check_drift_10_rejects_wrapped_or_lambda_call(tmp_path, monkeypatch):
 @pytest.mark.parametrize("early_exit_stmt", [
     "return None",
     "raise ValueError('early exit')",
+    "if action:\n        return None",
+    "if action:\n        raise ValueError('conditional early exit')",
 ])
-def test_check_drift_10_rejects_unconditional_early_exit_before_call(tmp_path, monkeypatch, early_exit_stmt):
+def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypatch, early_exit_stmt):
     _setup_clean_governance_files(tmp_path)
     code = (
         "async def validation_gate(governance, action):\n"
@@ -520,7 +602,7 @@ def test_check_drift_10_rejects_unconditional_early_exit_before_call(tmp_path, m
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
-    assert any("preceded by an unconditional early return/raise" in v.detail for v in result.violations)
+    assert any("can be bypassed by an earlier return/raise path" in v.detail for v in result.violations)
 
 
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):
