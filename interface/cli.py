@@ -16,19 +16,38 @@ import httpx
 from rich.console import Console
 from rich.table import Table
 
+from interface.auth import read_token, token_path
+
 console = Console()
 BASE    = "http://localhost:7437"
 
 
-def _get(path: str) -> dict:
-    resp = httpx.get(f"{BASE}{path}", timeout=30)
+def _auth_headers() -> dict:
+    """Bearer token for the local API (DEBT-025): env var, else the token file."""
+    token = read_token()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _check(resp: httpx.Response) -> None:
+    if resp.status_code == 401:
+        console.print(
+            "[red]Authentication failed.[/red] The API requires a token: set OCBRAIN_API_TOKEN, "
+            f"or make sure {token_path()} is readable by this user."
+        )
+        raise SystemExit(1)
     resp.raise_for_status()
+
+
+def _get(path: str) -> dict:
+    resp = httpx.get(f"{BASE}{path}", headers=_auth_headers(), timeout=30)
+    _check(resp)
     return resp.json()
 
 
 def _post(path: str, data: dict = None) -> dict:
-    resp = httpx.post(f"{BASE}{path}", json=data or {}, headers={"X-OCBrain-Local": "1"}, timeout=120)
-    resp.raise_for_status()
+    resp = httpx.post(f"{BASE}{path}", json=data or {},
+                      headers={"X-OCBrain-Local": "1", **_auth_headers()}, timeout=120)
+    _check(resp)
     return resp.json()
 
 

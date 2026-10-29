@@ -15,6 +15,7 @@ except ImportError:
     TRAY_AVAILABLE = False
 
 from core.config import config
+from interface.auth import read_token
 
 _icon: Optional[object] = None
 PORT = 7437
@@ -31,12 +32,32 @@ def _make_icon_image() -> "Image.Image":
     return img
 
 
+def _port() -> int:
+    """The port the server binds (main.py: global.web_ui_port), not a hard-coded 7437."""
+    try:
+        return int(config.get("global.web_ui_port") or PORT)
+    except (TypeError, ValueError):
+        return PORT
+
+
+def _ui_url(path: str = "") -> str:
+    """UI URL carrying the API token in the fragment (DEBT-025).
+
+    A URL fragment is never sent to the server, so it stays out of access logs;
+    interface/web/auth.js moves it into sessionStorage and strips it from the
+    address bar.  The browser may keep it in local history.
+    """
+    url = f"http://localhost:{_port()}{path}"
+    token = read_token()
+    return f"{url}#token={token}" if token else url
+
+
 def _open_ui(icon, item):
-    webbrowser.open(f"http://localhost:{PORT}")
+    webbrowser.open(_ui_url())
 
 
 def _open_settings(icon, item):
-    webbrowser.open(f"http://localhost:{PORT}/static/settings.html")
+    webbrowser.open(_ui_url("/static/settings.html"))
 
 
 def _toggle_learning(icon, item):

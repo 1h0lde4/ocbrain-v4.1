@@ -45,6 +45,9 @@ EVENTS = {
     # Query lifecycle
     "query.received",           # user sent a query
     "query.answered",           # answer returned to caller
+    # API boundary (DEBT-025)
+    "api.auth_denied",          # request rejected by the auth boundary (payload: reason, method, path, client; never the credential)
+    "api.auth_disabled",        # the auth boundary resolved to 'disabled' (explicit opt-out)
 }
 
 
