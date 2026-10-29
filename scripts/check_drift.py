@@ -1698,6 +1698,70 @@ def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Vi
     return violations
 
 
+def _contradiction_helper_violations(tree: ast.Module, rel: str) -> list[Violation]:
+    """Require _find_contradiction to use only its canonical read-only search."""
+    violations: list[Violation] = []
+    bindings = _find_module_scope_bindings_for_name(tree, "_find_contradiction")
+    if len(bindings) != 1:
+        node = bindings[1][0] if len(bindings) > 1 else (bindings[0][0] if bindings else ast.Module(body=[], type_ignores=[]))
+        violations.append(Violation(rel, getattr(node, "lineno", 0), "missing or competing module-scope binding for _find_contradiction"))
+        return violations
+    helper = bindings[0][0]
+    if helper not in tree.body or not isinstance(helper, ast.AsyncFunctionDef) or helper.decorator_list:
+        violations.append(Violation(rel, getattr(helper, "lineno", 0), "_find_contradiction must be one undecorated top-level async helper"))
+        return violations
+
+    def expected_search(call: ast.Call) -> bool:
+        return (
+            isinstance(call.func, ast.Attribute)
+            and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "memory"
+            and call.func.attr == "search"
+            and len(call.args) == 1
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "candidate_content"
+            and len(call.keywords) == 1
+            and call.keywords[0].arg == "limit"
+            and isinstance(call.keywords[0].value, ast.Constant)
+            and call.keywords[0].value.value == 5
+        )
+
+    search_statements = [
+        node for node in ast.walk(helper)
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "results"
+        and isinstance(node.value, ast.Await)
+        and isinstance(node.value.value, ast.Call)
+        and expected_search(node.value.value)
+    ]
+    allowed_statement = search_statements[0] if len(search_statements) == 1 else None
+    allowed_call = allowed_statement.value.value if allowed_statement is not None else None
+    if len(search_statements) != 1:
+        violations.append(Violation(rel, helper.lineno, "_find_contradiction must assign exactly one awaited memory.search(candidate_content, limit=5) call to results"))
+
+    for node in ast.walk(helper):
+        if isinstance(node, ast.Call):
+            if _rooted_in_name(node.func, "memory") and node is not allowed_call:
+                violations.append(Violation(rel, node.lineno, "_find_contradiction may only call memory.search through its canonical read path"))
+            if node is not allowed_call and (
+                any(_contains_name_reference(arg, "memory") for arg in node.args)
+                or any(_contains_name_reference(keyword.value, "memory") for keyword in node.keywords)
+            ):
+                violations.append(Violation(rel, node.lineno, "_find_contradiction may not pass memory to another helper"))
+        elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, (ast.Store, ast.Del)) and _rooted_in_name(node, "memory"):
+            violations.append(Violation(rel, getattr(node, "lineno", helper.lineno), "_find_contradiction may not mutate memory"))
+        elif isinstance(node, ast.Assign) and node is not allowed_statement and _contains_name_reference(node.value, "memory"):
+            violations.append(Violation(rel, node.lineno, "_find_contradiction may not alias memory"))
+        elif isinstance(node, ast.AnnAssign) and node.value is not None and _contains_name_reference(node.value, "memory"):
+            violations.append(Violation(rel, node.lineno, "_find_contradiction may not alias memory"))
+        elif isinstance(node, ast.NamedExpr) and _contains_name_reference(node.value, "memory"):
+            violations.append(Violation(rel, node.lineno, "_find_contradiction may not alias memory"))
+        elif isinstance(node, ast.Return) and node.value is not None and _contains_name_reference(node.value, "memory"):
+            violations.append(Violation(rel, node.lineno, "_find_contradiction may not return memory"))
+    return violations
+
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
 ) -> tuple[list[Violation], tuple[str, str] | None]:
@@ -1705,6 +1769,7 @@ def _governance_boundary_violations(
     violations: list[Violation] = []
     if rel == "core/cognitive/learning.py":
         violations.extend(_trusted_governance_import_violations(tree, rel))
+        violations.extend(_contradiction_helper_violations(tree, rel))
     approved_call_node: ast.Call | None = None
     approved_gate_node: ast.AsyncFunctionDef | None = None
     approved_call_stmt_idx: int | None = None

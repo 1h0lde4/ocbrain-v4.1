@@ -224,6 +224,11 @@ VALID_LEARNING_PY = (
     "from core.events.event_stream import get_event_stream\n"
     "from core.governance.governance_kernel import EvolutionGovernor, GovernanceAction, GovernanceKernel, GovernanceVerdict, get_governance_kernel\n"
     "from core.memory.unified_memory import get_unified_memory\n"
+    "\n"
+    "async def _find_contradiction(content_domain, candidate_content, memory):\n"
+    "    results = await memory.search(candidate_content, limit=5)\n"
+    "    return None\n"
+    "\n"
     "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n"
     "    memory = memory or get_unified_memory()\n"
     "    governance = governance or get_governance_kernel()\n"
@@ -953,6 +958,23 @@ def test_check_drift_10_allows_exact_contradiction_reader_memory_argument(tmp_pa
     "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
 ])
 @pytest.mark.parametrize("method_name", ["delete", "update", "search", "__getattribute__"])
+def test_check_drift_10_rejects_mutation_inside_contradiction_helper(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    results = await memory.search(candidate_content, limit=5)\n"
+        "    return None\n",
+        "    results = await memory.search(candidate_content, limit=5)\n"
+        "    await memory.update('entry', {})\n"
+        "    return None\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("_find_contradiction may only call memory.search" in v.detail for v in result.violations)
+    assert result.notes == ""
+
 def test_check_drift_10_rejects_unapproved_direct_memory_methods(tmp_path, monkeypatch, method_name):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
