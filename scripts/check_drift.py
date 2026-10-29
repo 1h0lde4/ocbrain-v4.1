@@ -1077,6 +1077,21 @@ def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
                 and any(is_literal_write(arg) for arg in child.args)
             ):
                 reflective_references.append(child)
+            elif (
+                isinstance(func, ast.Attribute)
+                and func.attr in {"get", "pop", "__getitem__"}
+                and child.args
+                and is_literal_write(child.args[0])
+                and (
+                    (isinstance(func.value, ast.Attribute) and func.value.attr == "__dict__")
+                    or (
+                        isinstance(func.value, ast.Call)
+                        and isinstance(func.value.func, ast.Name)
+                        and func.value.func.id == "vars"
+                    )
+                )
+            ):
+                reflective_references.append(child)
         elif isinstance(child, ast.Subscript) and is_literal_write(child.slice):
             value = child.value
             if (

@@ -801,6 +801,8 @@ def test_check_drift_10_allows_terminal_learning_write_before_evolution_governan
     "    writer = memory.__getattribute__('write')\n    await writer(candidate)\n",
     "    writer = memory.__dict__['write']\n    await writer(candidate)\n",
     "    writer = vars(memory)['write']\n    await writer(candidate)\n",
+    "    writer = memory.__dict__.get('write')\n    await writer(candidate)\n",
+    "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
 ])
 def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
     _setup_clean_governance_files(tmp_path)
