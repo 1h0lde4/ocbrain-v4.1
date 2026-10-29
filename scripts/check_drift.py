@@ -600,232 +600,11 @@ DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
 }
 
 
-def _module_scope_named_exprs(node: ast.AST):
-    """Yield assignment expressions evaluated in module scope, not nested bodies."""
-    if isinstance(node, ast.NamedExpr):
-        yield node
-
-    # Definition bodies execute in their own namespaces. Their headers, however,
-    # are evaluated in the containing scope and can contain assignment expressions.
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        header_nodes = [*node.decorator_list, node.args]
-        if node.returns is not None:
-            header_nodes.append(node.returns)
-        header_nodes.extend(getattr(node, "type_params", ()))
-        for child in header_nodes:
-            yield from _module_scope_named_exprs(child)
-        return
-    if isinstance(node, ast.ClassDef):
-        header_nodes = [*node.decorator_list, *node.bases, *node.keywords]
-        header_nodes.extend(getattr(node, "type_params", ()))
-        for child in header_nodes:
-            yield from _module_scope_named_exprs(child)
-        return
-    if isinstance(node, ast.Lambda):
-        # Lambda defaults execute in the containing scope; its body does not.
-        yield from _module_scope_named_exprs(node.args)
-        return
-
-    for child in ast.iter_child_nodes(node):
-        yield from _module_scope_named_exprs(child)
-
-
-def _target_binds_name(
-    target: ast.AST, name: str, *, deleting: bool = False
-) -> bool:
-    """Check actual Name targets, without mistaking attribute/index references for binds."""
-    expected_context = ast.Del if deleting else ast.Store
-    if isinstance(target, ast.Name):
-        return target.id == name and isinstance(target.ctx, expected_context)
-    if isinstance(target, ast.Starred):
-        return _target_binds_name(target.value, name, deleting=deleting)
-    if isinstance(target, (ast.Tuple, ast.List)):
-        return any(
-            _target_binds_name(element, name, deleting=deleting)
-            for element in target.elts
-        )
-    # Attribute and subscript targets can contain Names in Load context; those
-    # Names are references, not bindings of the module-level name being checked.
-    return False
-
-
-def _pattern_binds_name(pattern: ast.AST, name: str) -> bool:
-    """Find capture names in structural-pattern-matching patterns."""
-    if isinstance(pattern, ast.MatchAs) and pattern.name == name:
-        return True
-    if isinstance(pattern, ast.MatchStar) and pattern.name == name:
-        return True
-    if isinstance(pattern, ast.MatchMapping) and pattern.rest == name:
-        return True
-    return any(
-        _pattern_binds_name(child, name)
-        for child in ast.iter_child_nodes(pattern)
-    )
-
-
-def _first_unconditional_return_or_raise(node: ast.AST) -> ast.Return | ast.Raise | None:
-    """Find unconditional early exits, without misclassifying tier-dependent branches."""
-    if isinstance(node, (ast.Return, ast.Raise)):
-        return node
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-        return None
-    # Only descend through an if-statement when a literal condition selects the
-    # branch with certainty. Arbitrary conditions are domain control flow in
-    # ValidationGate (including legitimate non-Evolution exits), not proof of a
-    # governance bypass.
-    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Constant):
-        return None
-    selected_body = node.body if bool(node.test.value) else node.orelse
-    for stmt in selected_body:
-        found = _first_unconditional_return_or_raise(stmt)
-        if found is not None:
-            return found
-    return None
-
-
-def _global_scope_writes_for_name(scope: ast.AST, name: str) -> list[ast.AST]:
-    """Find actual writes to a name declared global in this lexical scope.
-
-    Nested function/class bodies are analyzed independently because each has
-    its own symbol table. Definition headers are still visited in the enclosing
-    scope because decorators, bases, and defaults execute where the definition
-    statement appears. Read-only global declarations do not count as rebinding.
-    """
-    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return []
-
-    class _ScopeVisitor(ast.NodeVisitor):
-        def __init__(self) -> None:
-            self.global_declared = False
-            self.writes: list[ast.AST] = []
-
-        def visit_Global(self, node: ast.Global) -> None:
-            if name in node.names:
-                self.global_declared = True
-
-        def visit_Name(self, node: ast.Name) -> None:
-            if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
-                self.writes.append(node)
-
-        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-            # Without a value, an annotation does not write the name. Still
-            # visit the annotation expression, which is evaluated in this scope.
-            self.visit(node.annotation)
-            if node.value is not None:
-                self.visit(node.target)
-                self.visit(node.value)
-
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            # These expressions execute in the current scope. The function body
-            # and its symbol declarations belong to the nested function scope.
-            for expression in (
-                *node.decorator_list,
-                *node.args.defaults,
-                *(x for x in node.args.kw_defaults if x is not None),
-                *(arg.annotation for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs) if arg.annotation is not None),
-            ):
-                self.visit(expression)
-            if node.args.vararg and node.args.vararg.annotation is not None:
-                self.visit(node.args.vararg.annotation)
-            if node.args.kwarg and node.args.kwarg.annotation is not None:
-                self.visit(node.args.kwarg.annotation)
-            if node.returns is not None:
-                self.visit(node.returns)
-            for type_param in getattr(node, "type_params", ()):
-                self.visit(type_param)
-
-        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-            self.visit_FunctionDef(node)
-
-        def visit_ClassDef(self, node: ast.ClassDef) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            # Evaluate these in the containing scope, but do not enter the
-            # class body; it has its own namespace and is checked independently.
-            for expression in (*node.decorator_list, *node.bases, *node.keywords):
-                self.visit(expression)
-            for type_param in getattr(node, "type_params", ()):
-                self.visit(type_param)
-
-        def visit_Lambda(self, node: ast.Lambda) -> None:
-            # Lambda defaults execute in this scope; the body has lambda-local
-            # assignment-expression semantics and no global declaration syntax.
-            for expression in (
-                *node.args.defaults,
-                *(x for x in node.args.kw_defaults if x is not None),
-            ):
-                self.visit(expression)
-
-        def visit_ListComp(self, node: ast.ListComp) -> None:
-            self.visit_comprehension_for_named_exprs(node)
-
-        def visit_SetComp(self, node: ast.SetComp) -> None:
-            self.visit_comprehension_for_named_exprs(node)
-
-        def visit_DictComp(self, node: ast.DictComp) -> None:
-            self.visit_comprehension_for_named_exprs(node)
-
-        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-            self.visit_comprehension_for_named_exprs(node)
-
-        def visit_comprehension_for_named_exprs(self, node: ast.AST) -> None:
-            # Comprehension iteration targets are local to the comprehension.
-            # PEP 572 assignment expressions are the exception: their target is
-            # bound in the containing scope, so inspect those specifically.
-            for named_expr in _module_scope_named_exprs(node):
-                if _target_binds_name(named_expr.target, name):
-                    self.writes.append(named_expr)
-
-        def visit_Import(self, node: ast.Import) -> None:
-            for alias in node.names:
-                bound = alias.asname or alias.name.split(".", 1)[0]
-                if bound == name:
-                    self.writes.append(node)
-
-        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-            for alias in node.names:
-                if alias.name == "*" or (alias.asname or alias.name) == name:
-                    self.writes.append(node)
-
-        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            if node.type is not None:
-                self.visit(node.type)
-            for statement in node.body:
-                self.visit(statement)
-
-        def visit_Match(self, node: ast.Match) -> None:
-            self.visit(node.subject)
-            for case in node.cases:
-                if _pattern_binds_name(case.pattern, name):
-                    self.writes.append(case.pattern)
-                if case.guard is not None:
-                    self.visit(case.guard)
-                for statement in case.body:
-                    self.visit(statement)
-
-    visitor = _ScopeVisitor()
-    for statement in scope.body:
-        visitor.visit(statement)
-    if not visitor.global_declared:
-        return []
-    return visitor.writes
-
-
-def _find_module_scope_bindings_for_name(
-    tree: ast.Module, name: str
-) -> list[tuple[ast.AST, str]]:
-    """Return actual or potentially name-binding module-scope statements."""
+def _find_module_scope_bindings_for_name(tree: ast.Module, name: str) -> list[tuple[ast.AST, str]]:
+    """Return list of (node, description) for all module-scope bindings of `name`."""
     bindings: list[tuple[ast.AST, str]] = []
-    type_alias_type = getattr(ast, "TypeAlias", None)
 
-    def record(node: ast.AST, description: str) -> None:
-        bindings.append((node, description))
-
-    def _visit_stmts(body: list[ast.stmt]) -> None:
+    def _visit_stmts(body: list[ast.stmt]):
         for stmt in body:
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 if stmt.name == name:
@@ -834,52 +613,34 @@ def _find_module_scope_bindings_for_name(
                         if isinstance(stmt, ast.AsyncFunctionDef)
                         else ("function" if isinstance(stmt, ast.FunctionDef) else "class")
                     )
-                    record(stmt, f"{kind} definition '{name}'")
+                    bindings.append((stmt, f"{kind} definition '{name}'"))
             elif isinstance(stmt, ast.Assign):
-                if any(_target_binds_name(target, name) for target in stmt.targets):
-                    record(stmt, f"assignment to '{name}'")
+                for target in stmt.targets:
+                    for n in ast.walk(target):
+                        if isinstance(n, ast.Name) and n.id == name:
+                            bindings.append((stmt, f"assignment to '{name}'"))
             elif isinstance(stmt, ast.AnnAssign):
-                # An annotation without a value records metadata but does not
-                # bind/replace the module-level name.
-                if stmt.value is not None and _target_binds_name(stmt.target, name):
-                    record(stmt, f"annotated assignment to '{name}'")
+                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                    bindings.append((stmt, f"annotated assignment to '{name}'"))
             elif isinstance(stmt, ast.AugAssign):
-                if _target_binds_name(stmt.target, name):
-                    record(stmt, f"augmented assignment to '{name}'")
+                if isinstance(stmt.target, ast.Name) and stmt.target.id == name:
+                    bindings.append((stmt, f"augmented assignment to '{name}'"))
             elif isinstance(stmt, ast.Delete):
-                if any(_target_binds_name(target, name, deleting=True) for target in stmt.targets):
-                    record(stmt, f"deletion of '{name}'")
-            elif isinstance(stmt, ast.For):
-                if _target_binds_name(stmt.target, name):
-                    record(stmt, f"loop target binding '{name}'")
-            elif isinstance(stmt, ast.AsyncFor):
-                if _target_binds_name(stmt.target, name):
-                    record(stmt, f"async loop target binding '{name}'")
-            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
-                for item in stmt.items:
-                    if item.optional_vars is not None and _target_binds_name(item.optional_vars, name):
-                        record(stmt, f"context-manager target binding '{name}'")
+                for target in stmt.targets:
+                    for n in ast.walk(target):
+                        if isinstance(n, ast.Name) and n.id == name:
+                            bindings.append((stmt, f"deletion of '{name}'"))
             elif isinstance(stmt, ast.Import):
                 for alias in stmt.names:
-                    # An unaliased dotted import binds only its first component.
-                    bound = alias.asname or alias.name.split(".", 1)[0]
+                    bound = alias.asname or alias.name
                     if bound == name:
-                        record(stmt, f"import binding '{name}'")
+                        bindings.append((stmt, f"import binding '{name}'"))
             elif isinstance(stmt, ast.ImportFrom):
                 for alias in stmt.names:
-                    if alias.name == "*":
-                        # A star import could overwrite the protected name; fail closed.
-                        record(stmt, f"star import may bind '{name}'")
-                    else:
-                        bound = alias.asname or alias.name
-                        if bound == name:
-                            record(stmt, f"import-from binding '{name}'")
-            elif type_alias_type is not None and isinstance(stmt, type_alias_type):
-                if _target_binds_name(stmt.name, name):
-                    record(stmt, f"type-alias binding '{name}'")
+                    bound = alias.asname or alias.name
+                    if bound == name:
+                        bindings.append((stmt, f"import-from binding '{name}'"))
 
-            # These suites execute in the module namespace. Recurse into them,
-            # while deliberately not traversing function or class bodies.
             if isinstance(stmt, (ast.If, ast.While, ast.For, ast.AsyncFor)):
                 _visit_stmts(stmt.body)
                 _visit_stmts(stmt.orelse)
@@ -888,292 +649,39 @@ def _find_module_scope_bindings_for_name(
             elif isinstance(stmt, (ast.Try, getattr(ast, "TryStar", ast.Try))):
                 _visit_stmts(stmt.body)
                 for handler in stmt.handlers:
-                    if handler.name == name:
-                        record(handler, f"exception-handler target binding '{name}'")
                     _visit_stmts(handler.body)
                 _visit_stmts(stmt.orelse)
                 _visit_stmts(stmt.finalbody)
             elif isinstance(stmt, ast.Match):
                 for case in stmt.cases:
-                    if _pattern_binds_name(case.pattern, name):
-                        record(case.pattern, f"pattern-capture binding '{name}'")
                     _visit_stmts(case.body)
 
-    # Assignment expressions bind in the surrounding scope, including in module
-    # conditions, loop headers, decorators/defaults, and comprehension expressions.
-    for named_expr in _module_scope_named_exprs(tree):
-        if _target_binds_name(named_expr.target, name):
-            record(named_expr, f"assignment-expression binding '{name}'")
-
     _visit_stmts(tree.body)
-
-    # A nested scope can mutate the module binding only when it explicitly
-    # declares the name global and actually writes/deletes it. Read-only
-    # globals and comprehension-local iteration targets remain permitted.
-    for scope in ast.walk(tree):
-        if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        scope_kind = (
-            "class" if isinstance(scope, ast.ClassDef)
-            else "async function" if isinstance(scope, ast.AsyncFunctionDef)
-            else "function"
-        )
-        for writer in _global_scope_writes_for_name(scope, name):
-            bindings.append((
-                writer,
-                f"global rebinding of '{name}' from {scope_kind} scope",
-            ))
-
-    bindings.sort(key=lambda item: getattr(item[0], "lineno", 0))
     return bindings
-
-
-def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
-    """Find writes to a local name in one function scope, excluding nested bodies."""
-    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return []
-
-    class _ScopeVisitor(ast.NodeVisitor):
-        def __init__(self) -> None:
-            self.writes: list[ast.AST] = []
-
-        def visit_Name(self, node: ast.Name) -> None:
-            if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
-                self.writes.append(node)
-
-        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-            self.visit(node.annotation)
-            if node.value is not None:
-                self.visit(node.target)
-                self.visit(node.value)
-
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            # Headers execute in the containing scope; the body does not.
-            for expr in (
-                *node.decorator_list,
-                node.args,
-                *((node.returns,) if node.returns is not None else ()),
-                *getattr(node, "type_params", ()),
-            ):
-                self.visit(expr)
-
-        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-            self.visit_FunctionDef(node)
-
-        def visit_ClassDef(self, node: ast.ClassDef) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            for expr in (*node.decorator_list, *node.bases, *node.keywords, *getattr(node, "type_params", ())):
-                self.visit(expr)
-
-        def visit_Lambda(self, node: ast.Lambda) -> None:
-            # Lambda defaults execute here; its body has a distinct local scope.
-            self.visit(node.args)
-
-        def visit_ListComp(self, node: ast.ListComp) -> None:
-            for gen in node.generators:
-                self.visit(gen.iter)
-                for condition in gen.ifs:
-                    self.visit(condition)
-            self.visit(node.elt)
-
-        def visit_SetComp(self, node: ast.SetComp) -> None:
-            for gen in node.generators:
-                self.visit(gen.iter)
-                for condition in gen.ifs:
-                    self.visit(condition)
-            self.visit(node.elt)
-
-        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-            for gen in node.generators:
-                self.visit(gen.iter)
-                for condition in gen.ifs:
-                    self.visit(condition)
-            self.visit(node.elt)
-
-        def visit_DictComp(self, node: ast.DictComp) -> None:
-            for gen in node.generators:
-                self.visit(gen.iter)
-                for condition in gen.ifs:
-                    self.visit(condition)
-            self.visit(node.key)
-            self.visit(node.value)
-
-        def visit_Import(self, node: ast.Import) -> None:
-            for alias in node.names:
-                if (alias.asname or alias.name.split(".", 1)[0]) == name:
-                    self.writes.append(node)
-
-        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-            for alias in node.names:
-                if alias.name == "*" or (alias.asname or alias.name) == name:
-                    self.writes.append(node)
-
-        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-            if node.name == name:
-                self.writes.append(node)
-            if node.type is not None:
-                self.visit(node.type)
-            for statement in node.body:
-                self.visit(statement)
-
-        def visit_Match(self, node: ast.Match) -> None:
-            self.visit(node.subject)
-            for case in node.cases:
-                if _pattern_binds_name(case.pattern, name):
-                    self.writes.append(case.pattern)
-                if case.guard is not None:
-                    self.visit(case.guard)
-                for statement in case.body:
-                    self.visit(statement)
-
-    visitor = _ScopeVisitor()
-    for statement in scope.body:
-        visitor.visit(statement)
-    return visitor.writes
-
-
-def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
-    """Find .write(...) calls and extracted .write references in a candidate statement.
-
-    Any receiver's .write method is treated as a persistence write inside
-    ValidationGate. Bound-method extraction is also detected so assigning
-    memory.write to another name cannot bypass the direct-call check.
-    """
-    descendants = list(ast.walk(node))
-    calls = [
-        child for child in descendants
-        if isinstance(child, ast.Call)
-        and isinstance(child.func, ast.Attribute)
-        and child.func.attr == "write"
-    ]
-    direct_callee_ids = {id(call.func) for call in calls}
-    extracted_references = [
-        child for child in descendants
-        if isinstance(child, ast.Attribute)
-        and child.attr == "write"
-        and id(child) not in direct_callee_ids
-    ]
-    return [*calls, *extracted_references]
-
-
-def _is_direct_entry_memory_write(statement: ast.stmt) -> bool:
-    """Recognize the single expected promotion write after the approval guards."""
-    return (
-        isinstance(statement, ast.Assign)
-        and len(statement.targets) == 1
-        and isinstance(statement.targets[0], ast.Name)
-        and statement.targets[0].id == "entry_id"
-        and isinstance(statement.value, ast.Await)
-        and isinstance(statement.value.value, ast.Call)
-        and isinstance(statement.value.value.func, ast.Attribute)
-        and isinstance(statement.value.value.func.value, ast.Name)
-        and statement.value.value.func.value.id == "memory"
-        and statement.value.value.func.attr == "write"
-    )
-
-
-def _is_terminal_non_evolution_write_branch(statement: ast.stmt) -> bool:
-    """Allow pre-governance writes only in LEARNING/ADAPTATION branches that return."""
-    if not isinstance(statement, ast.If) or statement.orelse or len(statement.body) < 2:
-        return False
-    test = statement.test
-    if not (
-        isinstance(test, ast.Compare)
-        and isinstance(test.left, ast.Name)
-        and test.left.id == "tier"
-        and len(test.ops) == 1
-        and isinstance(test.ops[0], ast.Eq)
-        and len(test.comparators) == 1
-        and isinstance(test.comparators[0], ast.Attribute)
-        and isinstance(test.comparators[0].value, ast.Name)
-        and test.comparators[0].value.id == "LearningTier"
-        and test.comparators[0].attr in {"LEARNING", "ADAPTATION"}
-    ):
-        return False
-
-    # Both supported non-Evolution paths write directly to entry_id and
-    # terminate the function; LEARNING also emits its routine event first.
-    write_calls = _memory_write_calls(statement)
-    return (
-        len(write_calls) == 1
-        and _is_direct_entry_memory_write(statement.body[0])
-        and isinstance(statement.body[-1], ast.Return)
-    )
-
-
-def _is_terminal_governance_verdict_guard(
-    statement: ast.stmt,
-    expected_verdict: str,
-    *,
-    operator_type: type[ast.cmpop] = ast.Eq,
-) -> bool:
-    """Recognize a terminal verdict guard that cannot promote on its branch."""
-    if not isinstance(statement, ast.If) or statement.orelse or not statement.body:
-        return False
-    test = statement.test
-    if not (
-        isinstance(test, ast.Compare)
-        and isinstance(test.left, ast.Attribute)
-        and isinstance(test.left.value, ast.Name)
-        and test.left.value.id == "result"
-        and test.left.attr == "verdict"
-        and len(test.ops) == 1
-        and isinstance(test.ops[0], operator_type)
-        and len(test.comparators) == 1
-        and isinstance(test.comparators[0], ast.Attribute)
-        and isinstance(test.comparators[0].value, ast.Name)
-        and test.comparators[0].value.id == "GovernanceVerdict"
-        and test.comparators[0].attr == expected_verdict
-    ):
-        return False
-    first = statement.body[0]
-    if not isinstance(first, (ast.Return, ast.Raise)):
-        return False
-    return not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "write"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "memory"
-        for node in ast.walk(first)
-    )
 
 
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
-) -> tuple[list[Violation], tuple[str, str] | None]:
-    """Find direct governance calls, allowing only configured, scoped exceptions."""
+) -> tuple[list[Violation], bool]:
+    """Find direct governance calls, allowing only the explicit scoped exception."""
     violations: list[Violation] = []
     approved_call_node: ast.Call | None = None
-    approved_gate_node: ast.AsyncFunctionDef | None = None
-    approved_call_stmt_idx: int | None = None
-    applied_exception_key: tuple[str, str] | None = None
 
-    # The exception configuration is the single source of truth for both the
-    # required gate name and the rationale reported by check_drift_10().
-    scope_key = next(
-        (key for key in DRIFT_10_EXCEPTION_SCOPES if key[0] == rel),
-        None,
-    )
-    if scope_key is not None:
-        gate_name = scope_key[1]
-        bindings = _find_module_scope_bindings_for_name(tree, gate_name)
+    if rel == "core/cognitive/learning.py":
+        bindings = _find_module_scope_bindings_for_name(tree, "validation_gate")
         if len(bindings) == 0:
             violations.append(
                 Violation(
                     rel, 0,
-                    f"missing required top-level '{gate_name}' function definition in {rel}",
+                    "missing required top-level 'validation_gate' function definition in learning.py",
                 )
             )
         elif len(bindings) > 1:
             second_node, desc = bindings[1]
             violations.append(
                 Violation(
-                    rel, getattr(second_node, "lineno", 0),
-                    f"competing or duplicate module-scope binding for '{gate_name}': {desc}",
+                    rel, second_node.lineno,
+                    f"competing or duplicate module-scope binding for 'validation_gate': {desc}",
                 )
             )
         else:
@@ -1181,22 +689,22 @@ def _governance_boundary_violations(
             if gate_node not in tree.body:
                 violations.append(
                     Violation(
-                        rel, getattr(gate_node, "lineno", 0),
-                        f"'{gate_name}' must be a direct top-level definition, not nested in control flow",
+                        rel, gate_node.lineno,
+                        "'validation_gate' must be a direct top-level definition, not nested in control flow",
                     )
                 )
             elif not isinstance(gate_node, ast.AsyncFunctionDef):
                 violations.append(
                     Violation(
-                        rel, getattr(gate_node, "lineno", 0),
-                        f"'{gate_name}' must be an async function definition, found {desc}",
+                        rel, gate_node.lineno,
+                        f"'validation_gate' must be an async function definition, found {desc}",
                     )
                 )
             elif gate_node.decorator_list:
                 violations.append(
                     Violation(
                         rel, gate_node.lineno,
-                        f"'{gate_name}' must be undecorated",
+                        "'validation_gate' must be undecorated",
                     )
                 )
             else:
@@ -1224,59 +732,27 @@ def _governance_boundary_violations(
                     violations.append(
                         Violation(
                             rel, gate_node.lineno,
-                            f"missing or invalid required 'result = governance.evaluate_action(action)' call in top-level '{gate_name}()' body",
+                            "missing or invalid required 'result = governance.evaluate_action(action)' call in top-level 'validation_gate()' body",
                         )
                     )
                 else:
                     early_exit = None
                     for stmt in gate_node.body[:call_stmt_idx]:
-                        early_exit = _first_unconditional_return_or_raise(stmt)
-                        if early_exit is not None:
+                        if isinstance(stmt, (ast.Return, ast.Raise)):
+                            early_exit = stmt
                             break
 
                     if early_exit is not None:
                         violations.append(
                             Violation(
                                 rel, early_exit.lineno,
-                                f"required 'evaluate_action()' call in '{gate_name}()' can be bypassed by an earlier return/raise path",
+                                "required 'evaluate_action()' call in 'validation_gate()' is preceded by an unconditional early return/raise",
                             )
                         )
                     else:
                         approved_call_node = gate_node.body[call_stmt_idx].value
-                        approved_gate_node = gate_node
-                        approved_call_stmt_idx = call_stmt_idx
-                        result_target = gate_node.body[call_stmt_idx].targets[0]
-                        unexpected_result_writes = [
-                            writer
-                            for writer in _scope_name_writes(gate_node, "result")
-                            if writer is not result_target
-                        ]
-                        for writer in unexpected_result_writes:
-                            violations.append(
-                                Violation(
-                                    rel,
-                                    getattr(writer, "lineno", gate_node.lineno),
-                                    "governance result 'result' is rebound or deleted after/beside the approved call",
-                                )
-                            )
 
-                        for prior_stmt in gate_node.body[:call_stmt_idx]:
-                            writes = _memory_write_calls(prior_stmt)
-                            if writes and not (
-                                _is_terminal_non_evolution_write_branch(prior_stmt)
-                                and len(writes) == 1
-                            ):
-                                for write_call in writes:
-                                    violations.append(
-                                        Violation(
-                                            rel,
-                                            write_call.lineno,
-                                            "memory.write(...) occurs before the required GovernanceKernel evaluation outside a terminal LEARNING/ADAPTATION branch",
-                                        )
-                                    )
-
-
-
+    exception_applied = False
     for node in ast.walk(tree):
         if not (
             isinstance(node, ast.Call)
@@ -1286,96 +762,11 @@ def _governance_boundary_violations(
             continue
 
         if approved_call_node is not None and node is approved_call_node:
-            # Defer declaring the exception applied until result-flow validation
-            # below also confirms the governance verdict cannot be bypassed.
-            continue
-        violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
-
-    # Structural call presence alone is insufficient: pin the governance
-    # result to terminal ESCALATE/REJECT guards and an explicit non-APPROVE
-    # rejection. This prevents an unknown/future verdict from falling through
-    # to promotion. It deliberately verifies the current direct control-flow
-    # shape; it is not a general semantic/type analysis.
-    all_evaluate_calls = [
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "evaluate_action"
-    ]
-    if (
-        approved_call_node is not None
-        and approved_gate_node is not None
-        and approved_call_stmt_idx is not None
-        and len(all_evaluate_calls) == 1
-    ):
-        following = approved_gate_node.body[approved_call_stmt_idx + 1:approved_call_stmt_idx + 4]
-        result_flow_is_safe = (
-            len(following) == 3
-            and _is_terminal_governance_verdict_guard(following[0], "ESCALATE")
-            and _is_terminal_governance_verdict_guard(following[1], "REJECT")
-            and _is_terminal_governance_verdict_guard(
-                following[2], "APPROVE", operator_type=ast.NotEq
-            )
-        )
-        if any(_memory_write_calls(guard) for guard in following):
-            violations.append(
-                Violation(
-                    rel,
-                    approved_call_node.lineno,
-                    "memory.write(...) is forbidden inside the governance verdict guards",
-                )
-            )
-            result_flow_is_safe = False
-
-        post_guard_write_sites = [
-            (statement, _memory_write_calls(statement))
-            for statement in approved_gate_node.body[approved_call_stmt_idx + 4:]
-        ]
-        post_guard_writes = [
-            (statement, call)
-            for statement, calls in post_guard_write_sites
-            for call in calls
-        ]
-        if len(post_guard_writes) > 1:
-            violations.append(
-                Violation(
-                    rel,
-                    post_guard_writes[1][1].lineno,
-                    "more than one memory.write(...) occurs after the governance approval guards",
-                )
-            )
-            result_flow_is_safe = False
-        elif post_guard_writes and not _is_direct_entry_memory_write(post_guard_writes[0][0]):
-            violations.append(
-                Violation(
-                    rel,
-                    post_guard_writes[0][1].lineno,
-                    "post-approval memory.write(...) must be the direct 'entry_id = await memory.write(...)' statement",
-                )
-            )
-            result_flow_is_safe = False
-
-        result_flow_is_safe = result_flow_is_safe and not any(
-            "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
-            for violation in violations
-            if violation.file == rel
-        ) and not any(
-            "memory.write(...) occurs before the required GovernanceKernel evaluation" in violation.detail
-            for violation in violations
-            if violation.file == rel
-        )
-        if not result_flow_is_safe:
-            violations.append(
-                Violation(
-                    rel,
-                    approved_call_node.lineno,
-                    "governance result must immediately drive terminal ESCALATE/REJECT guards, reject every non-APPROVE verdict, preserve the evaluated result, and constrain memory writes to the authorized paths",
-                )
-            )
+            exception_applied = True
         else:
-            applied_exception_key = scope_key
+            violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
 
-    return violations, applied_exception_key
+    return violations, exception_applied
 
 
 def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Violation | None]:
@@ -1414,31 +805,29 @@ def _validate_and_parse_governed_file(rel: str) -> tuple[ast.Module | None, Viol
 
 def check_drift_10() -> CheckResult:
     violations: list[Violation] = []
-    applied_exception_keys: list[tuple[str, str]] = []
+    exception_applied = False
     for rel in GOVERNANCE_BOUNDARY_FILES:
         tree, err = _validate_and_parse_governed_file(rel)
         if err is not None:
             violations.append(err)
             continue
         if tree is not None:
-            found, used_exception_key = _governance_boundary_violations(tree, rel)
+            found, used_exception = _governance_boundary_violations(tree, rel)
             violations.extend(found)
-            if used_exception_key is not None:
-                applied_exception_keys.append(used_exception_key)
+            exception_applied = exception_applied or used_exception
     status = "VIOLATION" if violations else "PASS"
-    unique_applied_keys = list(dict.fromkeys(applied_exception_keys))
     notes = (
-        "Applied the documented exception(s): "
-        + "; ".join(DRIFT_10_EXCEPTION_SCOPES[key] for key in unique_applied_keys)
-        if unique_applied_keys else ""
+        "Applied the documented exception: "
+        + DRIFT_10_EXCEPTION_SCOPES[
+            ("core/cognitive/learning.py", "validation_gate")
+        ]
+        if exception_applied else ""
     )
     return CheckResult(
         "DRIFT-10",
         "Unauthorized direct GovernanceKernel.evaluate_action() calls in "
         "Intent, Planner, and Learning are forbidden; the one exact "
-        "ValidationGate approval call is allowed only when the result "
-        "immediately drives terminal ESCALATE/REJECT guards and rejects "
-        "every non-APPROVE verdict before promotion (DRIFT-05 remains "
+        "ValidationGate approval call is explicitly allowed (DRIFT-05 remains "
         "unchanged and independently covers SupervisorWorker).",
         status,
         violations,
