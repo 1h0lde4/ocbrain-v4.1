@@ -14,6 +14,7 @@ run_all() against the actual repository.
 """
 
 import ast
+import errno
 import sys
 from pathlib import Path
 
@@ -26,6 +27,23 @@ import check_drift  # noqa: E402  (import after sys.path manipulation, by necess
 
 def _tree(source: str) -> ast.Module:
     return ast.parse(source)
+
+
+def _skip_if_symlink_creation_is_unsupported(exc: OSError) -> None:
+    unsupported_errnos = {
+        value
+        for value in (
+            getattr(errno, "ENOSYS", None),
+            getattr(errno, "EOPNOTSUPP", None),
+            getattr(errno, "ENOTSUP", None),
+        )
+        if value is not None
+    }
+    if exc.errno in unsupported_errnos:
+        pytest.skip(f"Filesystem/platform does not support symlinks: {exc}")
+    if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+        pytest.skip(f"Windows symlink privilege is unavailable: {exc}")
+    raise exc
 
 
 # ---------------------------------------------------------------------------
@@ -199,40 +217,699 @@ def test_unauthorized_producer_violations_ignores_unrelated_return_type():
 
 
 # ---------------------------------------------------------------------------
-# DRIFT-10 — Governance boundary broadened (Intent + Planner)
+# DRIFT-10 — Governance boundary (Intent, Planner, and Learning)
 # ---------------------------------------------------------------------------
 
+VALID_LEARNING_PY = (
+    "async def validation_gate(governance, action):\n"
+    "    result = governance.evaluate_action(action)\n"
+    "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+    "        return result\n"
+    "    if result.verdict == GovernanceVerdict.REJECT:\n"
+    "        return result\n"
+    "    if result.verdict != GovernanceVerdict.APPROVE:\n"
+    "        return result\n"
+    "    return result\n"
+)
 
-def test_check_drift_10_catches_violation_in_either_governed_file(tmp_path, monkeypatch):
+
+def _setup_clean_governance_files(tmp_path):
     fake_core = tmp_path / "core" / "cognitive"
-    fake_core.mkdir(parents=True)
-    (fake_core / "intent.py").write_text("gov.evaluate_action(action)\n")
-    (fake_core / "planner.py").write_text("# clean\n")
+    fake_core.mkdir(parents=True, exist_ok=True)
+    (fake_core / "intent.py").write_text("# clean\n", encoding="utf-8")
+    (fake_core / "planner.py").write_text("# clean\n", encoding="utf-8")
+    (fake_core / "learning.py").write_text(VALID_LEARNING_PY, encoding="utf-8")
+    return fake_core
 
-    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        check_drift, "GOVERNANCE_BOUNDARY_FILES",
-        ("core/cognitive/intent.py", "core/cognitive/planner.py"),
+
+def test_drift_10_canonical_scope_pinned():
+    assert check_drift.GOVERNANCE_BOUNDARY_FILES == (
+        "core/cognitive/intent.py",
+        "core/cognitive/planner.py",
+        "core/cognitive/learning.py",
     )
+
+
+def test_drift_10_exception_scope_pinned():
+    assert check_drift.DRIFT_10_EXCEPTION_SCOPES == {
+        ("core/cognitive/learning.py", "validation_gate"): (
+            "ValidationGate's EVOLUTION-tier promotion must pass through "
+            "GovernanceKernel before writing a promoted entry."
+        )
+    }
+
+
+def test_check_drift_10_exception_configuration_drives_enforcement_and_notes(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    custom_name = "configured_gate"
+    custom_reason = "Configured exception reason used by enforcement and notes."
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY.replace("validation_gate", custom_name),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        check_drift,
+        "DRIFT_10_EXCEPTION_SCOPES",
+        {("core/cognitive/learning.py", custom_name): custom_reason},
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+    assert custom_reason in result.notes
+
+
+def test_check_drift_10_passes_clean_repository(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+    assert "ValidationGate" in result.notes
+
+
+@pytest.mark.parametrize("target_file", [
+    "core/cognitive/intent.py",
+    "core/cognitive/planner.py",
+])
+def test_check_drift_10_detects_unauthorized_call_in_intent_or_planner(tmp_path, monkeypatch, target_file):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / target_file).write_text("gov.evaluate_action(action)\n", encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
     assert len(result.violations) == 1
-    assert result.violations[0].file == "core/cognitive/intent.py"
+    assert result.violations[0].file == target_file
 
 
-def test_check_drift_10_passes_when_neither_file_calls_evaluate_action(tmp_path, monkeypatch):
-    fake_core = tmp_path / "core" / "cognitive"
-    fake_core.mkdir(parents=True)
-    (fake_core / "intent.py").write_text("# no governance calls here\n")
-    (fake_core / "planner.py").write_text('"""mentions evaluate_action() only in a docstring."""\n')
-
-    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        check_drift, "GOVERNANCE_BOUNDARY_FILES",
-        ("core/cognitive/intent.py", "core/cognitive/planner.py"),
+def test_check_drift_10_ignores_comments_and_docstrings(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/intent.py").write_text(
+        '"""Docstring mentioning evaluate_action() directly."""\n# Comment calling evaluate_action()\n',
+        encoding="utf-8",
     )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "PASS"
+
+
+# --- File Validation & Robustness Tests ---
+
+def test_check_drift_10_fails_on_missing_file(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/intent.py").unlink()
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("does not exist" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_on_non_regular_file(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/intent.py").unlink()
+    (tmp_path / "core/cognitive/intent.py").mkdir()
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("not a regular file" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError(errno.EACCES, "permission denied"),
+        OSError("unexpected error without errno"),
+    ],
+)
+def test_symlink_creation_errors_are_not_silently_skipped(error):
+    with pytest.raises(type(error)):
+        _skip_if_symlink_creation_is_unsupported(error)
+
+
+def test_check_drift_10_fails_on_symlink_file(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    real_file = tmp_path / "real_intent.py"
+    real_file.write_text("# clean\n", encoding="utf-8")
+    (tmp_path / "core/cognitive/intent.py").unlink()
+    try:
+        (tmp_path / "core/cognitive/intent.py").symlink_to(real_file)
+    except NotImplementedError:
+        pytest.skip("Platform does not implement symlink creation")
+    except OSError as exc:
+        _skip_if_symlink_creation_is_unsupported(exc)
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("contains symbolic link" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_on_symlink_in_path_component(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    real_dir = tmp_path / "real_cognitive"
+    real_dir.mkdir(parents=True)
+    (real_dir / "intent.py").write_text("# clean\n", encoding="utf-8")
+
+    # Replace core/cognitive directory with a symlink to real_dir
+    for f in (tmp_path / "core/cognitive").iterdir():
+        f.unlink()
+    (tmp_path / "core/cognitive").rmdir()
+    try:
+        (tmp_path / "core/cognitive").symlink_to(real_dir)
+    except NotImplementedError:
+        pytest.skip("Platform does not implement symlink creation")
+    except OSError as exc:
+        _skip_if_symlink_creation_is_unsupported(exc)
+
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("contains symbolic link" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_on_syntax_error(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/planner.py").write_text("def invalid_syntax(\n", encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("syntax error" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_on_decoding_error(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/planner.py").write_bytes(b"\x80\x81\x82\xff")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("decoding" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_on_read_os_error(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+
+    def fake_read_text(*args, **kwargs):
+        raise OSError("Permission denied / disk I/O error")
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("failed to read" in v.detail for v in result.violations)
+
+
+# --- ValidationGate & Exception Hardening Tests ---
+
+def test_check_drift_10_fails_if_governance_call_removed_completely(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        "async def validation_gate(governance, action):\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("missing or invalid required" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_fails_if_validation_gate_renamed_or_missing(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        "async def other_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return result\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("missing required top-level 'validation_gate'" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_synchronous_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        "def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return result\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("async function definition" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_decorated_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        "@some_decorator\n"
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return result\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("must be undecorated" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("rebind_code, expected_snippet", [
+    ("validation_gate = None\n", "competing or duplicate module-scope binding"),
+    ("validation_gate: int = 1\n", "competing or duplicate module-scope binding"),
+    ("del validation_gate\n", "competing or duplicate module-scope binding"),
+    ("from math import sin as validation_gate\n", "competing or duplicate module-scope binding"),
+    ("class validation_gate: pass\n", "competing or duplicate module-scope binding"),
+    ("def validation_gate(): pass\n", "competing or duplicate module-scope binding"),
+    ("if True:\n    validation_gate = 123\n", "competing or duplicate module-scope binding"),
+    ("try:\n    pass\nexcept Exception:\n    del validation_gate\n", "competing or duplicate module-scope binding"),
+    ("for validation_gate in candidates:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("with provider() as validation_gate:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("try:\n    pass\nexcept Exception as validation_gate:\n    pass\n", "competing or duplicate module-scope binding"),
+    ("if (validation_gate := None):\n    pass\n", "competing or duplicate module-scope binding"),
+    ("match subject:\n    case validation_gate:\n        pass\n", "competing or duplicate module-scope binding"),
+    ("import validation_gate.child\n", "competing or duplicate module-scope binding"),
+    ("from some_module import *\n", "competing or duplicate module-scope binding"),
+    ("validation_gate, other = (None, None)\n", "competing or duplicate module-scope binding"),
+])
+def test_check_drift_10_rejects_module_scope_rebinding(tmp_path, monkeypatch, rebind_code, expected_snippet):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY + "\n" + rebind_code
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    matching_binding = next(
+        v for v in result.violations if expected_snippet in v.detail
+    )
+    assert matching_binding.line > 0
+
+
+@pytest.mark.parametrize("rebind_code", [
+    "def mutate():\n    global validation_gate\n    validation_gate = None\n",
+    "def mutate():\n    global validation_gate\n    del validation_gate\n",
+    "class Mutator:\n    global validation_gate\n    validation_gate = None\n",
+    "def mutate():\n    if ready:\n        global validation_gate\n        validation_gate = replacement\n",
+    "def mutate():\n    global validation_gate\n    import validation_gate.child\n",
+    "def mutate():\n    global validation_gate\n    try:\n        pass\n    except Exception as validation_gate:\n        pass\n",
+])
+def test_check_drift_10_rejects_global_rebinding_from_nested_scope(tmp_path, monkeypatch, rebind_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\n" + rebind_code,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("global rebinding of 'validation_gate'" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("nested_code", [
+    "def read_gate():\n    global validation_gate\n    return validation_gate\n",
+    "def use_comprehension():\n    global validation_gate\n    return [validation_gate for validation_gate in values]\n",
+])
+def test_check_drift_10_allows_read_only_global_and_comprehension_local_name(tmp_path, monkeypatch, nested_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\n" + nested_code,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_allows_annotation_only_without_rebinding_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\nvalidation_gate: object\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_does_not_treat_attribute_or_subscript_targets_as_rebindings(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY
+        + "\nvalidation_gate.status = state\n"
+        + "container[validation_gate] = item\n"
+        + "del validation_gate.status\n"
+        + "del container[validation_gate]\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_does_not_treat_async_for_inside_async_function_as_module_binding(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY
+        + "\nasync def unrelated():\n"
+        + "    async for validation_gate in stream:\n"
+        + "        pass\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_allows_function_local_assignments_named_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY
+        + "\ndef other_func():\n"
+        + "    validation_gate = 42\n"
+        + "    return validation_gate\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+# --- Call Shape & Placement Tests ---
+
+@pytest.mark.parametrize("call_code, expected_snippet", [
+    ("result = other_gov.evaluate_action(action)", "missing or invalid required"),
+    ("result = governance.other_method(action)", "missing or invalid required"),
+    ("result = governance.evaluate_action(action, extra)", "missing or invalid required"),
+    ("result = governance.evaluate_action(action, kw=1)", "missing or invalid required"),
+    ("other_target = governance.evaluate_action(action)", "missing or invalid required"),
+    ("governance.evaluate_action(action)", "missing or invalid required"),
+])
+def test_check_drift_10_rejects_altered_call_shape(tmp_path, monkeypatch, call_code, expected_snippet):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        "async def validation_gate(governance, action):\n"
+        f"    {call_code}\n"
+        "    return None\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(expected_snippet in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_nested_statement_placement(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        "async def validation_gate(governance, action):\n"
+        "    if True:\n"
+        "        result = governance.evaluate_action(action)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("missing or invalid required" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_wrapped_or_lambda_call(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        "async def validation_gate(governance, action):\n"
+        "    fn = lambda: governance.evaluate_action(action)\n"
+        "    return fn()\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("missing or invalid required" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("early_exit_stmt", [
+    "return None",
+    "raise ValueError('early exit')",
+    "if True:\n        return None",
+    "if True:\n        raise ValueError('constant-condition early exit')",
+    "if False:\n        pass\n    else:\n        return None",
+])
+def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypatch, early_exit_stmt):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        "async def validation_gate(governance, action):\n"
+        f"    {early_exit_stmt}\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("can be bypassed by an earlier return/raise path" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("unsafe_code", [
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return True\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    if result.verdict != GovernanceVerdict.APPROVE:\n"
+        "        return result\n"
+        "    result = FakeApproval()\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    result = FakeApproval()\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        pass\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return memory.write(candidate)\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+])
+def test_check_drift_10_rejects_governance_result_bypass_shapes(tmp_path, monkeypatch, unsafe_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(unsafe_code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("governance result must immediately drive terminal ESCALATE/REJECT guards, reject every non-APPROVE verdict, preserve the evaluated result, and constrain memory writes to the authorized paths" in v.detail for v in result.violations)
+    assert result.notes == ""  # A failed result-flow contract must not claim the exception applied.
+
+
+@pytest.mark.parametrize("inserted_statement, expected_detail", [
+    (
+        "    await memory.write(candidate)\n",
+        "memory.write(...) occurs before the required GovernanceKernel evaluation",
+    ),
+    (
+        "    if enabled:\n        await memory.write(candidate)\n",
+        "memory.write(...) occurs before the required GovernanceKernel evaluation",
+    ),
+])
+def test_check_drift_10_rejects_pre_governance_memory_writes(
+    tmp_path, monkeypatch, inserted_statement, expected_detail
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        inserted_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(expected_detail in v.detail for v in result.violations)
+
+
+def test_check_drift_10_allows_terminal_adaptation_write_before_evolution_governance(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    if tier == LearningTier.ADAPTATION:\n"
+        "        entry_id = await memory.write(candidate)\n"
+        "        return result\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_allows_terminal_learning_write_before_evolution_governance(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    if tier == LearningTier.LEARNING:\n"
+        "        entry_id = await memory.write(candidate)\n"
+        "        await event_stream.append('cognitive.pattern_learned', {})\n"
+        "        return result\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+@pytest.mark.parametrize("inserted_statement", [
+    "    writer = memory.write\n    await writer(candidate)\n",
+    "    store = memory\n    await store.write(candidate)\n",
+])
+def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        inserted_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("memory.write(...) occurs before the required GovernanceKernel evaluation" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("unsafe_tail", [
+    "    result.verdict = GovernanceVerdict.APPROVE\n",
+    "    result.__dict__[\"verdict\"] = GovernanceVerdict.APPROVE\n",
+    "    setattr(result, \"verdict\", GovernanceVerdict.APPROVE)\n",
+    "    alias = result\n    alias.verdict = GovernanceVerdict.APPROVE\n",
+    "    alias = (result,)\n    alias[0].verdict = GovernanceVerdict.APPROVE\n",
+    "    mutate_result(result)\n",
+])
+def test_check_drift_10_rejects_governance_result_mutation_and_escape(
+    tmp_path, monkeypatch, unsafe_tail
+):
+    _setup_clean_governance_files(tmp_path)
+    valid_prefix = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0]
+    code = (
+        valid_prefix
+        + unsafe_tail
+        + "    entry_id = await memory.write(candidate)\n"
+        + "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(
+        "governance result object is mutated or escapes its verified scope" in v.detail
+        for v in result.violations
+    )
+    assert result.notes == ""
+
+
+def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    result = FakeApproval()\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("governance result 'result' is rebound" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_unapproved_memory_write_after_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    await memory.write(candidate)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("post-approval memory.write(...) must be the direct" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_multiple_memory_writes_after_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    entry_id = await memory.write(candidate)\n"
+        "    second_entry = await memory.write(unsafe_candidate)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("more than one memory.write(...)" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        VALID_LEARNING_PY +
+        "\ndef unauthorized_helper(governance, action):\n"
+        "    return governance.evaluate_action(action)\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert len(result.violations) == 1
+    assert result.violations[0].file == "core/cognitive/learning.py"
+
+
+def test_check_drift_10_rejects_duplicate_call_inside_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    dup = governance.evaluate_action(action)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert len(result.violations) == 1
 
 
 # ---------------------------------------------------------------------------
