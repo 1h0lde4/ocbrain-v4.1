@@ -9,7 +9,7 @@
 - Workstream: OCBrain **FZ-02, batch B2c** (cancellation is not a failure). Follows B2a and B2b (both merged). B3a is on hold behind B2c's review.
 - Source session purpose: implement B2c under the owner's tightened approval contract, then checkpoint it and write this handoff so the work can resume in a fresh discussion.
 - Repository: https://github.com/1h0lde4/ocbrain-v4.1 (owner/architect: Moncif, `1h0lde4`, also commits as `N4Z`)
-- Transfer status: **TRANSFER INCOMPLETE: HANDOFF NOT PUSHED** (see section 19). The implementation checkpoint **is** pushed and verified.
+- Transfer status: **TRANSFER READY** (see section 19). The implementation checkpoint and the handoff commit are both pushed and verified on the remote.
 
 ## 2. Original Starting Prompt (faithful extraction, not verbatim)
 
@@ -40,6 +40,7 @@ Operative rules of that contract that this workstream has been following:
 13. B3 design (read-only), then the owner's revision: B3a is still next in principle but "I would not start implementation under the existing design unchanged". Findings: production registers **three** `LLM_COMPLETION` adapters (so fallback is live), and `PlannerWorker._dispatch_module()` raises a plain `RuntimeError`, discarding metadata.
 14. **B2c ruling (the current contract):** "B2c approved as the next batch. Approval is limited to the cancellation correction and the evidence needed to establish it. The implementation must prove that cancellation propagates without triggering fallback or creating a new health penalty; that genuine failures retain their existing behavior; and that cancellation does not create false success-side effects. Physical provider-side termination must be independently verified or explicitly left unverified. B3a remains on hold until B2c has passed review." Also: recheck branch and working tree immediately before implementing; keep the batch narrow (no cooldown redesign, no fallback-on-stall policy change, no router redesign, no B3a metadata); required extra tests: concurrent invocations, cancellation during fallback, the completion boundary. Rule table: caller cancels during the router attempt: no fallback, no penalty; caller cancels while fallback runs: no further fallback, no penalty for the cancellation; adapter hits its own stall timeout: existing behaviour; provider raises a genuine error: existing behaviour; genuine failure then caller cancels fallback: stop, keep the genuine penalty; cancellation during cleanup: never resume the cancelled invocation, no cancellation-induced penalty. Do not detect cancellation by sniffing exception text; do not broadly convert `CancelledError` to a failed attempt.
 15. **Current instruction:** "push the finished work to a momentary branch, then create a handoff file to resume the work in a new fresh discussion."
+16. After the handoff push was rejected, the owner pasted a replacement credential into the chat with no other words. It was read as authorization to push the one pending handoff commit and nothing else, and it was used only for that (and for the follow-up status correction to this same file). The value is not recorded anywhere.
 
 Standing preferences [reported]: always LF line endings; terse approvals authorize only the step just proposed, not adjacent scope; when sources conflict present both with evidence and ask; narrow scope is a feature; never reproduce or retain credentials.
 
@@ -68,7 +69,7 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 | R9 | Recheck branch/working tree before implementing | ruling 14 | MET | rechecked; one-owner confirmed | |
 | R10 | LF line endings | preference | MET | all four files have 0 CR bytes | |
 | R11 | B2c review, then B3a | ruling 14 | OPEN | no PR yet | next steps |
-| R12 | Handoff pushed and verified | current instruction | **BLOCKED** | credential rejected | section 19 |
+| R12 | Handoff pushed and verified | current instruction | MET | remote branch verified from a fresh clone | section 19 |
 
 ## 6. Current Verified State
 
@@ -76,6 +77,7 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 - Checkpoint commit `5dade77f25b48bf41d681f08e9ce9471a63466e0` is on the remote branch `wip/fz02-b2c-cancellation-checkpoint-oct2026` (remote tip equals the local commit); parent `488129b8768a88a3d21dfd80b1f5407d50aba908` (then-`main`).
 - Tests (sandbox, re-measured after a sandbox reset): `tests/test_b2c_cancellation.py` **19 passed, 2 xfailed** (strict). Red on unchanged code: 12 failed, 7 passed, 2 xfailed. Related files (19): 6 failed / 479 passed before and after (same environmental ids). Entire suite: **8 failed / 2048 passed / 4 skipped / 1 xfailed / 4 errors** before; **8 failed / 2067 passed / 4 skipped / 3 xfailed / 4 errors** after; failing set identical (12 environmental ids). `scripts/check_drift.py` 15/15. `git diff --check` clean; all touched files LF.
 - At write time live `main` is `f13bfdefcdd197ed1f966de0b1f93037a4168af4`; the two commits since `488129b` (PRs #85, #82) are docs-only, overlap none of the B2c files, and a dry-run merge of the checkpoint into that `main` is clean.
+- The handoff commit `ba24f85ca6326f13adeb141f79d0c5e1e77ea157` (adds this file and the attachments; parent = the checkpoint) was pushed and verified from a fresh clone of the remote branch: handoff and attachments present, checkpoint an ancestor, all four B2c files present, no credential in the tree. A later status-correction commit (the branch tip, which only edits this file's status lines) follows it.
 
 **IMPLEMENTED BUT NOT VERIFIED**
 - No PR exists for B2c; no CI/CodeQL has run on it; no review or sign-off.
@@ -93,9 +95,9 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 - Base branch: `main`; B2c review base `488129b8768a88a3d21dfd80b1f5407d50aba908`; live `main` at write time `f13bfdefcdd197ed1f966de0b1f93037a4168af4`
 - HEAD before checkpoint: `488129b` (local branch `fix/fz02-b2c-cancellation-terminal-oct2026`, now only in the sandbox, never pushed)
 - **Transfer commit:** `5dade77f25b48bf41d681f08e9ce9471a63466e0` (4 files, +629/-14). Pushed and verified.
-- **Handoff commit:** the local commit that adds this file (parent = the transfer commit). It is **not pushed**: a dry-run push was rejected (`fatal: could not read Password ... terminal prompts disabled`) and the API answers `Bad credentials`. The file and attachments are also saved outside the sandbox (see section 8).
+- **Handoff commit:** `ba24f85ca6326f13adeb141f79d0c5e1e77ea157` (parent = the transfer commit). Pushed and verified. An earlier push was rejected (`fatal: could not read Password ... terminal prompts disabled`; the API answered `Bad credentials`) until the owner supplied a replacement credential. A status-correction commit on top of it (the branch tip) edits only this file's status lines; find it with `git log -1 -- handoff.md`.
 - Working tree: clean after the checkpoint; `.data/` is gitignored test output.
-- Remote verification: checkpoint verified; handoff commit **not verified on the remote**.
+- Remote verification: checkpoint verified; handoff commit verified from a fresh clone of the remote branch. The status-correction tip was verified by comparing the remote tip with the local commit after pushing (see the writer's final report); re-check with `git ls-remote origin refs/heads/wip/fz02-b2c-cancellation-checkpoint-oct2026`.
 - Remote branches from earlier batches still present: `fix/fz02-provider-failure-oct2026` (B2a, merged), `fix/fz02-b2b-stalled-deadline-oct2026` (B2b, merged), plus the archive refs listed in section 16. Nothing was deleted.
 
 ## 8. Active Files / Modified Files / Artifacts
@@ -154,6 +156,7 @@ Not investigated: real provider/server cancellation behaviour; `OpenAICompatAdap
 
 - **Shared `ExecutionBudget` in probes.** `ExecutionBudget` is a non-frozen dataclass; a probe that returned one shared instance from `ExecutionPolicy.for_generation` leaked state across scenarios and produced a bogus "healthy stream classified hard_deadline". Production builds a fresh budget per request. Always return a fresh budget in probes and tests.
 - A first patch script aborted on my assumption that the router imports `CancelReason` on one absolute line (it uses relative imports). Fixed by reading the import style first.
+- **The git-bundle restore test was never completed.** The command that was meant to prove the bundle restores the handoff in a fresh clone died on a shell syntax error before reaching that step; only `git bundle verify` ran (it listed the one prerequisite commit). The bundle is therefore a secondary, unproven copy; the remote branch is the primary one and was verified from a fresh clone.
 - Shell pitfalls in `/bin/sh` (dash): no `${var:0:7}`, no `<(...)`, `cut -c` splits multi-byte UTF-8 and breaks tool output, `pkill -f` patterns can match your own shell.
 - Actions job logs and artifacts returned 403 for the available credential; the public job page only loads logs after sign-in; `.diff` endpoints redirect to a host the sandbox cannot reach (read PR diffs by fetching `refs/pull/N/head` over git instead).
 - Running two full test suites concurrently makes `tests/core/sandbox/test_namespace_backend.py::test_cancel_kills_all_descendant_processes` fail (system-wide `pgrep`). Run suites sequentially.
@@ -180,12 +183,12 @@ The red-state failures are genuine assertions, not timeouts: stream `finally` ne
 - Sandbox shell is `/bin/sh` (dash). Python deps must be reinstalled after a reset: `pip install pytest pytest-asyncio datasketch tomli-w fastapi httpx pydantic aiofiles aiohttp beautifulsoup4 click feedparser PyYAML requests rich scipy trafilatura "uvicorn[standard]" --break-system-packages` (chromadb and sentence-transformers are not installed; that is why some suite results differ from CI).
 - Running tests rewrites `config/*.toml` and `data/context.sqlite` and can create `modules/test_*`; clean up with `git checkout -- config/ data/context.sqlite && git clean -fdq modules/` (do **not** commit those).
 - Network allowed from the sandbox: github.com, api.github.com, codeload/raw/release-assets GitHub hosts, PyPI, npm, crates, ubuntu mirrors. The unauthenticated GitHub API shares a 60/hour per-IP limit and is usually exhausted; public PR HTML pages and `git fetch origin refs/pull/N/head` work without it.
-- **Credential.** A GitHub token was supplied in the account's user preferences (location only; the value is intentionally not recorded here). It worked for pushes and API calls until shortly before this handoff and is **now rejected** (`Bad credentials`; write endpoint asks for a password). Use a one-off URL for pushes, redact output, and confirm `grep ghp_ .git/config` is empty afterwards. A fresh token must be supplied before anything can be pushed.
+- **Credential.** The token supplied in the account's user preferences (location only; no value is recorded here) stopped working shortly before this handoff (`Bad credentials`; the write endpoint asked for a password). The owner then pasted a replacement into the chat; it was used only to push this branch. Treat it as exposed (it sits in the chat transcript): rotate it, and prefer a fine-grained token limited to this one repository. Whether it still works is unknown; test with a `git push --dry-run` before relying on it. Use a one-off URL for pushes, redact output, and confirm `grep ghp_ .git/config` is empty afterwards. Never write a credential into a file, commit, memory note or this handoff.
 - Set `git config user.name "Claude (FZ02-B2c)"` and `user.email claude@anthropic.com` per fresh clone.
 
 ## 15. Unresolved Questions / Risks / Blockers
 
-1. **BLOCKER for pushing:** the credential is invalid; a new one is needed (section 19).
+1. **Credential hygiene (not a blocker for reading this):** pushing from a fresh session needs a valid credential (see section 14); the one used for the handoff push was exposed in chat and should be rotated.
 2. Physical provider termination on cancel is unverified (R4).
 3. A token cancel arriving while a non-token-aware fallback adapter is already mid-call is not delivered to it (strict xfail). Task cancellation is.
 4. One module's stall cancels the shared workflow token and cuts healthy sibling modules mid-stream (strict xfail; pre-dates B2a/B2b; B2b made its consequence a failure plus fallback). Proper fix needs a per-attempt token.
@@ -210,7 +213,7 @@ May work safely continue without resolving these? Yes for B2c review (items 2-7 
 ## 17. Next Steps (in execution order)
 
 1. **Restore access and state.** Re-clone, reinstall dependencies (section 14), obtain a fresh push credential from the owner, and verify `main`, the checkpoint branch and the branch list before touching anything (R9 applies again: confirm one owner, no rival branch or PR for B2c).
-2. **Complete the transfer.** Check out `wip/fz02-b2c-cancellation-checkpoint-oct2026`, add this `handoff.md` and `docs/handoffs/fz02_b2c/` (they are in the saved outputs if the handoff commit was lost), commit and push, verify the remote.
+2. **Confirm the transfer.** `handoff.md` and `docs/handoffs/fz02_b2c/` are already on `wip/fz02-b2c-cancellation-checkpoint-oct2026`; just verify (a copy of `handoff.md`, the three attachments and a git bundle of the first handoff commit were also saved in the session outputs).
 3. **Cut the official branch.** `git checkout -b fix/fz02-b2c-cancellation-terminal-oct2026 origin/main && git cherry-pick 5dade77` (never merge the wip branch; never put `handoff.md` in the PR). If `main` moved onto the B2c files, re-verify first. Name the immutable review target (the `main` SHA at that point).
 4. **Re-establish evidence on the official branch.** Baseline (related files and entire suite on `main`), red (copy `tests/test_b2c_cancellation.py` into a detached worktree of `main`: expect 12 failed / 7 passed / 2 xfailed), green, drift gate, LF check. Do not trust this file's numbers without re-running.
 5. **Open the PR** (one PR, single owner): scope, change, evidence, the limitations in section 15 items 2-7 stated plainly, and the interim effects. Wait for `tests`, `drift-and-ownership` and CodeQL on the exact head; if `tests` fails check for the ChromaDB native crash and rerun only the failed job.
@@ -230,9 +233,10 @@ Do these first, in order, and stop on any mismatch:
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE: HANDOFF NOT COMMITTED TO THE REMOTE (REMOTE CHECKPOINT VERIFIED).**
+**TRANSFER READY.**
 
-- Implementation checkpoint `5dade77...`: committed, pushed, remote tip verified. Nothing of the B2c implementation exists only locally.
-- Handoff commit: created locally on the wip branch; **push failed**: the available credential was rejected (`fatal: could not read Password ... terminal prompts disabled` on a dry-run push; GitHub API: `Bad credentials`). The local commit was preserved; no reset or deletion was done.
-- Because the sandbox can be reset (it already was once), this file and its attachments were also saved to the session's outputs (`handoff.md`, the three attachment documents, and a git bundle of the handoff commit). The owner should keep those copies or supply a credential so the handoff can be pushed.
-- The transfer may be marked TRANSFER READY only after: the handoff commit is on the remote, the remote branch contains `handoff.md`, and the checkpoint tip is re-verified.
+- Implementation checkpoint `5dade77f25b48bf41d681f08e9ce9471a63466e0`: committed, pushed, remote tip verified. Nothing of the B2c implementation exists only locally.
+- Handoff commit `ba24f85ca6326f13adeb141f79d0c5e1e77ea157`: pushed and verified from a fresh clone of the remote branch (handoff and attachments present, checkpoint an ancestor, all four B2c files present, zero credentials in the tree).
+- The branch tip is a small follow-up commit that corrected this file's status lines after the push succeeded; it changes nothing else.
+- No PR exists for B2c, nothing was merged, and this branch must never be merged into `main` (it carries a session artefact). The official B2c branch is cut from commit `5dade77` (section 17, step 3).
+- A first push attempt failed because the credential had been rejected; the owner supplied a replacement in the chat. The original failure is recorded in sections 7 and 14.
