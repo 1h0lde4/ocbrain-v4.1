@@ -63,4 +63,3 @@ tests/test_session4c_architecture.py::TestIssue1SummaryFieldSemantics::test_quer
 tests/test_system_ctrl.py::test_empty_action_rejected
 tests/test_system_ctrl.py::test_execute_write_file
 tests/test_system_ctrl.py::test_unknown_action_rejected
-
