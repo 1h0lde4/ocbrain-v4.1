@@ -724,7 +724,7 @@ def _find_module_scope_bindings_for_name(
             elif isinstance(stmt, (ast.With, ast.AsyncWith)):
                 for item in stmt.items:
                     if item.optional_vars is not None and _target_binds_name(item.optional_vars, name):
-                        record(item, f"context-manager target binding '{name}'")
+                        record(stmt, f"context-manager target binding '{name}'")
             elif isinstance(stmt, ast.Import):
                 for alias in stmt.names:
                     # An unaliased dotted import binds only its first component.

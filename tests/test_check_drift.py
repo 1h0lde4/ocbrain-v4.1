@@ -31,9 +31,13 @@ def _tree(source: str) -> ast.Module:
 
 def _skip_if_symlink_creation_is_unsupported(exc: OSError) -> None:
     unsupported_errnos = {
-        getattr(errno, "ENOSYS", None),
-        getattr(errno, "EOPNOTSUPP", None),
-        getattr(errno, "ENOTSUP", None),
+        value
+        for value in (
+            getattr(errno, "ENOSYS", None),
+            getattr(errno, "EOPNOTSUPP", None),
+            getattr(errno, "ENOTSUP", None),
+        )
+        if value is not None
     }
     if exc.errno in unsupported_errnos:
         pytest.skip(f"Filesystem/platform does not support symlinks: {exc}")
@@ -322,9 +326,15 @@ def test_check_drift_10_fails_on_non_regular_file(tmp_path, monkeypatch):
     assert any("not a regular file" in v.detail for v in result.violations)
 
 
-def test_symlink_permission_errors_are_not_silently_skipped():
-    error = PermissionError(errno.EACCES, "permission denied")
-    with pytest.raises(PermissionError):
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError(errno.EACCES, "permission denied"),
+        OSError("unexpected error without errno"),
+    ],
+)
+def test_symlink_creation_errors_are_not_silently_skipped(error):
+    with pytest.raises(type(error)):
         _skip_if_symlink_creation_is_unsupported(error)
 
 
@@ -483,7 +493,10 @@ def test_check_drift_10_rejects_module_scope_rebinding(tmp_path, monkeypatch, re
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
-    assert any(expected_snippet in v.detail for v in result.violations)
+    matching_binding = next(
+        v for v in result.violations if expected_snippet in v.detail
+    )
+    assert matching_binding.line > 0
 
 
 def test_check_drift_10_does_not_treat_attribute_or_subscript_targets_as_rebindings(tmp_path, monkeypatch):
