@@ -991,18 +991,6 @@ def test_check_drift_10_allows_exact_contradiction_reader_memory_argument(tmp_pa
     assert result.status == "PASS"
 
 
-@pytest.mark.parametrize("inserted_statement", [
-    "    writer = memory.write\n    await writer(candidate)\n",
-    "    store = memory\n    await store.write(candidate)\n",
-    "    writer = getattr(memory, 'write')\n    await writer(candidate)\n",
-    "    writer = memory.__getattribute__('write')\n    await writer(candidate)\n",
-    "    writer = memory.__dict__['write']\n    await writer(candidate)\n",
-    "    writer = vars(memory)['write']\n    await writer(candidate)\n",
-    "    writer = memory.__dict__.get('write')\n    await writer(candidate)\n",
-    "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
-    "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
-])
-@pytest.mark.parametrize("method_name", ["delete", "update", "search", "__getattribute__"])
 def test_check_drift_10_rejects_mutation_inside_contradiction_helper(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
@@ -1020,6 +1008,7 @@ def test_check_drift_10_rejects_mutation_inside_contradiction_helper(tmp_path, m
     assert any("_find_contradiction may only call memory.search" in v.detail for v in result.violations)
     assert result.notes == ""
 
+@pytest.mark.parametrize("method_name", ["delete", "update", "search", "__getattribute__"])
 def test_check_drift_10_rejects_unapproved_direct_memory_methods(tmp_path, monkeypatch, method_name):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
@@ -1035,6 +1024,17 @@ def test_check_drift_10_rejects_unapproved_direct_memory_methods(tmp_path, monke
     assert any("unapproved direct memory method call" in v.detail for v in result.violations)
     assert result.notes == ""
 
+@pytest.mark.parametrize("inserted_statement", [
+    "    writer = memory.write\n    await writer(candidate)\n",
+    "    store = memory\n    await store.write(candidate)\n",
+    "    writer = getattr(memory, 'write')\n    await writer(candidate)\n",
+    "    writer = memory.__getattribute__('write')\n    await writer(candidate)\n",
+    "    writer = memory.__dict__['write']\n    await writer(candidate)\n",
+    "    writer = vars(memory)['write']\n    await writer(candidate)\n",
+    "    writer = memory.__dict__.get('write')\n    await writer(candidate)\n",
+    "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
+    "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
+])
 def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
@@ -1299,10 +1299,6 @@ def test_check_drift_10_rejects_multiple_memory_writes_after_guards(tmp_path, mo
     assert any("more than one memory.write(...)" in v.detail for v in result.violations)
 
 
-@pytest.mark.parametrize("return_code", [
-    "    if bypass:\n        return LearningRecord(lifecycle_state=LearningLifecycle.PROMOTED)\n",
-    "    if bypass:\n        return promote_without_gate()\n",
-])
 @pytest.mark.parametrize("input_name, unsafe_statement", [
     ("candidate_content", "    candidate_content = 'benign checked text'\n"),
     ("content_domain", "    content_domain = ContentDomain.SKILL\n"),
@@ -1330,6 +1326,10 @@ def test_check_drift_10_rejects_validation_input_rebinding(tmp_path, monkeypatch
     )
     assert result.notes == ""
 
+@pytest.mark.parametrize("return_code", [
+    "    if bypass:\n        return LearningRecord(lifecycle_state=LearningLifecycle.PROMOTED)\n",
+    "    if bypass:\n        return promote_without_gate()\n",
+])
 def test_check_drift_10_rejects_pre_governance_promotion_return(tmp_path, monkeypatch, return_code):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
