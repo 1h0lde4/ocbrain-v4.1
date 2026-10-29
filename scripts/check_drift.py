@@ -1258,6 +1258,22 @@ def _action_mutation_escape_sites(
     return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
 
 
+def _memory_method_call_sites(scope: ast.AST) -> list[ast.Call]:
+    """Reject direct memory methods other than the separately governed write."""
+    calls: dict[int, ast.Call] = {}
+    for node in ast.walk(scope):
+        if not isinstance(node, ast.Call) or not _rooted_in_name(node.func, "memory"):
+            continue
+        if (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "memory"
+            and node.func.attr == "write"
+        ):
+            continue
+        calls.setdefault(id(node), node)
+    return sorted(calls.values(), key=lambda node: getattr(node, "lineno", 0))
+
 def _memory_object_escape_sites(scope: ast.AST) -> list[ast.AST]:
     """Find calls/aliases that hand the memory object to unapproved code."""
     sites: dict[int, ast.AST] = {}
@@ -2087,8 +2103,17 @@ def _governance_boundary_violations(
                     "memory object is passed to an unapproved helper, aliased, or returned",
                 )
             )
+        memory_method_sites = _memory_method_call_sites(approved_gate_node)
+        for method_call in memory_method_sites:
+            violations.append(
+                Violation(
+                    rel,
+                    getattr(method_call, "lineno", approved_call_node.lineno),
+                    "unapproved direct memory method call; only the canonical post-approval memory.write(...) is permitted",
+                )
+            )
 
-        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not tier_selector_writes and not governance_escapes and not any(
+        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not memory_method_sites and not tier_selector_writes and not governance_escapes and not any(
             "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
             for violation in violations
             if violation.file == rel
