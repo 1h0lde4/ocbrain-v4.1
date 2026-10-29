@@ -610,6 +610,20 @@ GOVERNANCE_TRUSTED_IMPORTS: tuple[tuple[str, str], ...] = (
 )
 
 TRUSTED_POLICY_CLASSES: tuple[str, ...] = ("LearningTier", "ContentDomain")
+TRUSTED_POLICY_VALUES: dict[str, dict[str, object]] = {
+    "LearningTier": {
+        "LEARNING": "learning",
+        "ADAPTATION": "adaptation",
+        "EVOLUTION": "evolution",
+        "ALL": ("LEARNING", "ADAPTATION", "EVOLUTION"),
+    },
+    "ContentDomain": {
+        "SKILL": "skill",
+        "INTENT_ONTOLOGY": "intent_ontology",
+        "USER_MODEL": "user_model",
+        "ALL": ("SKILL", "INTENT_ONTOLOGY", "USER_MODEL"),
+    },
+}
 
 
 def _module_scope_named_exprs(node: ast.AST):
@@ -1730,6 +1744,74 @@ def _trusted_policy_class_violations(tree: ast.Module, rel: str) -> list[Violati
                     f"policy symbol '{symbol}' must be one direct top-level class definition, found {description}",
                 )
             )
+            continue
+
+        # These classes are intentionally plain policy namespaces. A custom
+        # base, metaclass, or decorator could alter class-attribute resolution
+        # without changing the visible assignments below.
+        if node.bases or node.keywords or node.decorator_list:
+            violations.append(
+                Violation(
+                    rel, node.lineno,
+                    f"policy class '{symbol}' must remain an undecorated plain class without custom bases/metaclass",
+                )
+            )
+
+        expected_values = TRUSTED_POLICY_VALUES[symbol]
+        class_scope = ast.Module(body=node.body, type_ignores=[])
+        for field_name, expected_value in expected_values.items():
+            field_bindings = _find_module_scope_bindings_for_name(
+                class_scope, field_name
+            )
+            if len(field_bindings) != 1:
+                at = getattr(field_bindings[1][0], "lineno", node.lineno) if len(field_bindings) > 1 else node.lineno
+                violations.append(
+                    Violation(
+                        rel, at,
+                        f"policy constant '{symbol}.{field_name}' has a missing or competing class-body binding",
+                    )
+                )
+                continue
+            field_node, field_description = field_bindings[0]
+            if (
+                field_node not in node.body
+                or not isinstance(field_node, ast.Assign)
+                or len(field_node.targets) != 1
+                or not isinstance(field_node.targets[0], ast.Name)
+                or field_node.targets[0].id != field_name
+            ):
+                violations.append(
+                    Violation(
+                        rel, getattr(field_node, "lineno", node.lineno),
+                        f"policy constant '{symbol}.{field_name}' must be one direct class-body assignment, found {field_description}",
+                    )
+                )
+                continue
+
+            value = field_node.value
+            if isinstance(expected_value, str):
+                value_is_exact = (
+                    isinstance(value, ast.Constant)
+                    and type(value.value) is str
+                    and value.value == expected_value
+                )
+            else:
+                expected_names = tuple(expected_value)
+                value_is_exact = (
+                    isinstance(value, ast.Tuple)
+                    and len(value.elts) == len(expected_names)
+                    and all(
+                        isinstance(element, ast.Name) and element.id == expected_name
+                        for element, expected_name in zip(value.elts, expected_names)
+                    )
+                )
+            if not value_is_exact:
+                violations.append(
+                    Violation(
+                        rel, field_node.lineno,
+                        f"policy constant '{symbol}.{field_name}' must retain its frozen value {expected_value!r}",
+                    )
+                )
     return violations
 
 def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Violation]:
