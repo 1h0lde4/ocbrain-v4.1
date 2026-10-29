@@ -720,6 +720,7 @@ def test_check_drift_10_rejects_governance_result_bypass_shapes(tmp_path, monkey
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
     assert any("governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion" in v.detail for v in result.violations)
+    assert result.notes == ""  # A failed result-flow contract must not claim the exception applied.
 
 
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):

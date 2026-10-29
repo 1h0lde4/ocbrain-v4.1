@@ -1079,9 +1079,10 @@ def _governance_boundary_violations(
             continue
 
         if approved_call_node is not None and node is approved_call_node:
-            applied_exception_key = scope_key
-        else:
-            violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
+            # Defer declaring the exception applied until result-flow validation
+            # below also confirms the governance verdict cannot be bypassed.
+            continue
+        violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
 
     # Structural call presence alone is insufficient: pin the governance
     # result to terminal ESCALATE/REJECT guards and an explicit non-APPROVE
@@ -1101,14 +1102,15 @@ def _governance_boundary_violations(
         and len(all_evaluate_calls) == 1
     ):
         following = approved_gate_node.body[approved_call_stmt_idx + 1:approved_call_stmt_idx + 4]
-        if not (
+        result_flow_is_safe = (
             len(following) == 3
             and _is_terminal_governance_verdict_guard(following[0], "ESCALATE")
             and _is_terminal_governance_verdict_guard(following[1], "REJECT")
             and _is_terminal_governance_verdict_guard(
                 following[2], "APPROVE", operator_type=ast.NotEq
             )
-        ):
+        )
+        if not result_flow_is_safe:
             violations.append(
                 Violation(
                     rel,
@@ -1116,6 +1118,8 @@ def _governance_boundary_violations(
                     "governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion",
                 )
             )
+        else:
+            applied_exception_key = scope_key
 
     return violations, applied_exception_key
 
