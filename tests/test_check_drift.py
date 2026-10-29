@@ -534,6 +534,17 @@ def test_check_drift_10_allows_read_only_global_and_comprehension_local_name(tmp
     assert result.status == "PASS"
 
 
+def test_check_drift_10_allows_annotation_only_without_rebinding_validation_gate(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(
+        VALID_LEARNING_PY + "\nvalidation_gate: object\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
 def test_check_drift_10_does_not_treat_attribute_or_subscript_targets_as_rebindings(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = (

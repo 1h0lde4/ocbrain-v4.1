@@ -707,6 +707,14 @@ def _global_scope_writes_for_name(scope: ast.AST, name: str) -> list[ast.AST]:
             if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
                 self.writes.append(node)
 
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            # Without a value, an annotation does not write the name. Still
+            # visit the annotation expression, which is evaluated in this scope.
+            self.visit(node.annotation)
+            if node.value is not None:
+                self.visit(node.target)
+                self.visit(node.value)
+
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
             if node.name == name:
                 self.writes.append(node)
@@ -831,7 +839,9 @@ def _find_module_scope_bindings_for_name(
                 if any(_target_binds_name(target, name) for target in stmt.targets):
                     record(stmt, f"assignment to '{name}'")
             elif isinstance(stmt, ast.AnnAssign):
-                if _target_binds_name(stmt.target, name):
+                # An annotation without a value records metadata but does not
+                # bind/replace the module-level name.
+                if stmt.value is not None and _target_binds_name(stmt.target, name):
                     record(stmt, f"annotated assignment to '{name}'")
             elif isinstance(stmt, ast.AugAssign):
                 if _target_binds_name(stmt.target, name):
