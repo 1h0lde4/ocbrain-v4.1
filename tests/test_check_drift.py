@@ -682,6 +682,18 @@ def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypat
         "        return result\n"
         "    if result.verdict == GovernanceVerdict.REJECT:\n"
         "        return result\n"
+        "    if result.verdict != GovernanceVerdict.APPROVE:\n"
+        "        return result\n"
+        "    result = FakeApproval()\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
         "    return result\n"
     ),
     (
@@ -721,6 +733,88 @@ def test_check_drift_10_rejects_governance_result_bypass_shapes(tmp_path, monkey
     assert result.status == "VIOLATION"
     assert any("governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion" in v.detail for v in result.violations)
     assert result.notes == ""  # A failed result-flow contract must not claim the exception applied.
+
+
+@pytest.mark.parametrize("inserted_statement, expected_detail", [
+    (
+        "    await memory.write(candidate)\n",
+        "memory.write(...) occurs before the required GovernanceKernel evaluation",
+    ),
+    (
+        "    if enabled:\n        await memory.write(candidate)\n",
+        "memory.write(...) occurs before the required GovernanceKernel evaluation",
+    ),
+])
+def test_check_drift_10_rejects_pre_governance_memory_writes(
+    tmp_path, monkeypatch, inserted_statement, expected_detail
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        inserted_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(expected_detail in v.detail for v in result.violations)
+
+
+def test_check_drift_10_allows_terminal_adaptation_write_before_evolution_governance(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    if tier == LearningTier.ADAPTATION:\n"
+        "        entry_id = await memory.write(candidate)\n"
+        "        return result\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
+def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    result = FakeApproval()\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("governance result 'result' is rebound" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_unapproved_memory_write_after_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    await memory.write(candidate)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("post-approval memory.write(...) must be the direct" in v.detail for v in result.violations)
+
+
+def test_check_drift_10_rejects_multiple_memory_writes_after_guards(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
+        "    entry_id = await memory.write(candidate)\n"
+        "    second_entry = await memory.write(unsafe_candidate)\n"
+        "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("more than one memory.write(...)" in v.detail for v in result.violations)
 
 
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):

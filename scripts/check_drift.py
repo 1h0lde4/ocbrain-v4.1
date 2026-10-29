@@ -928,6 +928,162 @@ def _find_module_scope_bindings_for_name(
     return bindings
 
 
+def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
+    """Find writes to a local name in one function scope, excluding nested bodies."""
+    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return []
+
+    class _ScopeVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.writes: list[ast.AST] = []
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id == name and isinstance(node.ctx, (ast.Store, ast.Del)):
+                self.writes.append(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            self.visit(node.annotation)
+            if node.value is not None:
+                self.visit(node.target)
+                self.visit(node.value)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            # Headers execute in the containing scope; the body does not.
+            for expr in (
+                *node.decorator_list,
+                node.args,
+                *((node.returns,) if node.returns is not None else ()),
+                *getattr(node, "type_params", ()),
+            ):
+                self.visit(expr)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_FunctionDef(node)
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            for expr in (*node.decorator_list, *node.bases, *node.keywords, *getattr(node, "type_params", ())):
+                self.visit(expr)
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            # Lambda defaults execute here; its body has a distinct local scope.
+            self.visit(node.args)
+
+        def visit_ListComp(self, node: ast.ListComp) -> None:
+            for gen in node.generators:
+                self.visit(gen.iter)
+                for condition in gen.ifs:
+                    self.visit(condition)
+            self.visit(node.elt)
+
+        def visit_SetComp(self, node: ast.SetComp) -> None:
+            for gen in node.generators:
+                self.visit(gen.iter)
+                for condition in gen.ifs:
+                    self.visit(condition)
+            self.visit(node.elt)
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+            for gen in node.generators:
+                self.visit(gen.iter)
+                for condition in gen.ifs:
+                    self.visit(condition)
+            self.visit(node.elt)
+
+        def visit_DictComp(self, node: ast.DictComp) -> None:
+            for gen in node.generators:
+                self.visit(gen.iter)
+                for condition in gen.ifs:
+                    self.visit(condition)
+            self.visit(node.key)
+            self.visit(node.value)
+
+        def visit_Import(self, node: ast.Import) -> None:
+            for alias in node.names:
+                if (alias.asname or alias.name.split(".", 1)[0]) == name:
+                    self.writes.append(node)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            for alias in node.names:
+                if alias.name == "*" or (alias.asname or alias.name) == name:
+                    self.writes.append(node)
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+            if node.name == name:
+                self.writes.append(node)
+            if node.type is not None:
+                self.visit(node.type)
+            for statement in node.body:
+                self.visit(statement)
+
+        def visit_Match(self, node: ast.Match) -> None:
+            self.visit(node.subject)
+            for case in node.cases:
+                if _pattern_binds_name(case.pattern, name):
+                    self.writes.append(case.pattern)
+                if case.guard is not None:
+                    self.visit(case.guard)
+                for statement in case.body:
+                    self.visit(statement)
+
+    visitor = _ScopeVisitor()
+    for statement in scope.body:
+        visitor.visit(statement)
+    return visitor.writes
+
+
+def _memory_write_calls(node: ast.AST) -> list[ast.Call]:
+    """Find direct memory.write(...) AST calls within a candidate statement."""
+    return [
+        child for child in ast.walk(node)
+        if isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Attribute)
+        and child.func.attr == "write"
+        and isinstance(child.func.value, ast.Name)
+        and child.func.value.id == "memory"
+    ]
+
+
+def _is_direct_entry_memory_write(statement: ast.stmt) -> bool:
+    """Recognize the single expected promotion write after the approval guards."""
+    return (
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.targets[0], ast.Name)
+        and statement.targets[0].id == "entry_id"
+        and isinstance(statement.value, ast.Await)
+        and isinstance(statement.value.value, ast.Call)
+        and isinstance(statement.value.value.func, ast.Attribute)
+        and isinstance(statement.value.value.func.value, ast.Name)
+        and statement.value.value.func.value.id == "memory"
+        and statement.value.value.func.attr == "write"
+    )
+
+
+def _is_terminal_adaptation_write_branch(statement: ast.stmt) -> bool:
+    """Allow the pre-governance write only in the distinct ADAPTATION early-return branch."""
+    if not isinstance(statement, ast.If) or statement.orelse or len(statement.body) != 2:
+        return False
+    test = statement.test
+    if not (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "tier"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Attribute)
+        and isinstance(test.comparators[0].value, ast.Name)
+        and test.comparators[0].value.id == "LearningTier"
+        and test.comparators[0].attr == "ADAPTATION"
+    ):
+        return False
+    return _is_direct_entry_memory_write(statement.body[0]) and isinstance(statement.body[1], ast.Return)
+
+
 def _is_terminal_governance_verdict_guard(
     statement: ast.stmt,
     expected_verdict: str,
@@ -1069,6 +1225,37 @@ def _governance_boundary_violations(
                         approved_call_node = gate_node.body[call_stmt_idx].value
                         approved_gate_node = gate_node
                         approved_call_stmt_idx = call_stmt_idx
+                        result_target = gate_node.body[call_stmt_idx].targets[0]
+                        unexpected_result_writes = [
+                            writer
+                            for writer in _scope_name_writes(gate_node, "result")
+                            if writer is not result_target
+                        ]
+                        for writer in unexpected_result_writes:
+                            violations.append(
+                                Violation(
+                                    rel,
+                                    getattr(writer, "lineno", gate_node.lineno),
+                                    "governance result 'result' is rebound or deleted after/beside the approved call",
+                                )
+                            )
+
+                        for prior_stmt in gate_node.body[:call_stmt_idx]:
+                            writes = _memory_write_calls(prior_stmt)
+                            if writes and not (
+                                _is_terminal_adaptation_write_branch(prior_stmt)
+                                and len(writes) == 1
+                            ):
+                                for write_call in writes:
+                                    violations.append(
+                                        Violation(
+                                            rel,
+                                            write_call.lineno,
+                                            "memory.write(...) occurs before the required GovernanceKernel evaluation outside the terminal ADAPTATION branch",
+                                        )
+                                    )
+
+
 
     for node in ast.walk(tree):
         if not (
@@ -1110,12 +1297,59 @@ def _governance_boundary_violations(
                 following[2], "APPROVE", operator_type=ast.NotEq
             )
         )
+        if any(_memory_write_calls(guard) for guard in following):
+            violations.append(
+                Violation(
+                    rel,
+                    approved_call_node.lineno,
+                    "memory.write(...) is forbidden inside the governance verdict guards",
+                )
+            )
+            result_flow_is_safe = False
+
+        post_guard_write_sites = [
+            (statement, _memory_write_calls(statement))
+            for statement in approved_gate_node.body[approved_call_stmt_idx + 4:]
+        ]
+        post_guard_writes = [
+            (statement, call)
+            for statement, calls in post_guard_write_sites
+            for call in calls
+        ]
+        if len(post_guard_writes) > 1:
+            violations.append(
+                Violation(
+                    rel,
+                    post_guard_writes[1][1].lineno,
+                    "more than one memory.write(...) occurs after the governance approval guards",
+                )
+            )
+            result_flow_is_safe = False
+        elif post_guard_writes and not _is_direct_entry_memory_write(post_guard_writes[0][0]):
+            violations.append(
+                Violation(
+                    rel,
+                    post_guard_writes[0][1].lineno,
+                    "post-approval memory.write(...) must be the direct 'entry_id = await memory.write(...)' statement",
+                )
+            )
+            result_flow_is_safe = False
+
+        result_flow_is_safe = result_flow_is_safe and not any(
+            "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
+            for violation in violations
+            if violation.file == rel
+        ) and not any(
+            "memory.write(...) occurs before the required GovernanceKernel evaluation" in violation.detail
+            for violation in violations
+            if violation.file == rel
+        )
         if not result_flow_is_safe:
             violations.append(
                 Violation(
                     rel,
                     approved_call_node.lineno,
-                    "governance result must immediately drive terminal ESCALATE/REJECT guards and reject every non-APPROVE verdict before promotion",
+                    "governance result must immediately drive terminal ESCALATE/REJECT guards, reject every non-APPROVE verdict, preserve the evaluated result, and constrain memory writes to the authorized paths",
                 )
             )
         else:
