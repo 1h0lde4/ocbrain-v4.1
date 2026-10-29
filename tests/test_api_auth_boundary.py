@@ -402,6 +402,22 @@ class TestTokenProvisioning:
         auth.reset_cache_for_tests()
         assert call(app, "GET", "/config")[0] == 503
 
+    def test_unreadable_token_file_fails_closed(self, tmp_path, monkeypatch):
+        path = tmp_path / "data" / "api_token"
+        path.parent.mkdir()
+        path.write_text(TOKEN + "\n")
+        os.chmod(path, 0o600)
+        real = Path.read_text
+
+        def deny(self, *args, **kwargs):
+            if self == path:
+                raise PermissionError("denied")
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", deny)   # root bypasses chmod, so simulate the denial
+        with pytest.raises(auth.AuthConfigError):
+            auth.load_or_create_token()
+
     def test_token_file_is_git_ignored(self):
         proc = subprocess.run(["git", "check-ignore", "-q", "data/api_token"], cwd=REPO_ROOT)
         assert proc.returncode == 0

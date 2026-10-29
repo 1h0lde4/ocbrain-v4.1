@@ -40,8 +40,15 @@ def node_or_skip_or_fail(which=shutil.which, env=None) -> str:
 
 def test_gate_fails_in_ci_when_node_is_missing():
     for value in ("true", "TRUE", "1", "yes"):
-        with pytest.raises(pytest.fail.Exception):
+        # Not pytest.raises(Failed): a Skipped raised inside it would mark THIS test skipped,
+        # and a broken gate (skip instead of fail) would go unnoticed.
+        try:
             node_or_skip_or_fail(which=lambda _: None, env={"CI": value})
+        except pytest.fail.Exception:
+            continue
+        except BaseException as exc:  # noqa: BLE001 - Skipped derives from BaseException
+            pytest.fail(f"CI={value}: expected Failed, got {type(exc).__name__}")
+        pytest.fail(f"CI={value}: expected Failed, got no exception")
 
 
 def test_gate_skips_outside_ci_when_node_is_missing():
