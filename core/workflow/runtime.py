@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -229,6 +230,15 @@ class WorkflowResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+# ── Concurrency Locking Helper (DEBT-028) ───────────────────────────────────
+
+class _RefCountedLock:
+    """Helper for per-instance execution locking in WorkflowRuntime."""
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.ref_count = 0
+
+
 # ── Workflow Runtime ──────────────────────────────────────────────────────────
 
 class WorkflowRuntime:
@@ -263,7 +273,27 @@ class WorkflowRuntime:
         self._event_stream = event_stream or get_event_stream()
         self._total_executions: int = 0
         self._total_failures: int = 0
+        self._instance_locks: Dict[str, _RefCountedLock] = {}
+        self._instance_locks_guard: asyncio.Lock = asyncio.Lock()
         logger.info("WorkflowRuntime initialized")
+
+    @asynccontextmanager
+    async def _lock_instance(self, instance_id: str):
+        """Serialize concurrent resume() calls on the same instance_id (DEBT-028)."""
+        async with self._instance_locks_guard:
+            if instance_id not in self._instance_locks:
+                self._instance_locks[instance_id] = _RefCountedLock()
+            entry = self._instance_locks[instance_id]
+            entry.ref_count += 1
+
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            async with self._instance_locks_guard:
+                entry.ref_count -= 1
+                if entry.ref_count == 0 and instance_id in self._instance_locks:
+                    del self._instance_locks[instance_id]
 
     @staticmethod
     def default_budget_for(query: str) -> ExecutionBudget:
@@ -378,48 +408,49 @@ class WorkflowRuntime:
             an exception) if no checkpoint exists for `instance_id`, or if
             the checkpoint's workflow_id doesn't match `definition`.
         """
-        checkpoint_name = self._checkpoint_name(instance_id)
-        checkpoint = await self._event_stream.get_checkpoint(checkpoint_name)
-        if checkpoint is None:
-            return WorkflowResult(
-                success=False, workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=f"No checkpoint found for instance '{instance_id}' -- cannot resume",
+        async with self._lock_instance(instance_id):
+            checkpoint_name = self._checkpoint_name(instance_id)
+            checkpoint = await self._event_stream.get_checkpoint(checkpoint_name)
+            if checkpoint is None:
+                return WorkflowResult(
+                    success=False, workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=f"No checkpoint found for instance '{instance_id}' -- cannot resume",
+                )
+
+            payload = checkpoint.payload or {}
+            checkpointed_workflow_id = payload.get("workflow_id")
+            if checkpointed_workflow_id != definition.workflow_id:
+                return WorkflowResult(
+                    success=False, workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=(f"Checkpoint workflow_id mismatch: checkpoint is for "
+                           f"'{checkpointed_workflow_id}', definition given is "
+                           f"'{definition.workflow_id}'"),
+                )
+
+            node_states: Dict[str, WorkflowNodeState] = {}
+            node_results: Dict[str, WorkerResult] = {}
+            for node_id, state_data in payload.get("node_states", {}).items():
+                state = WorkflowNodeState.from_dict(state_data)
+                if state.status in (NodeStatus.RUNNING, NodeStatus.CANCELLED):
+                    state.status = NodeStatus.PENDING
+                    state.result = None
+                node_states[node_id] = state
+                if state.result is not None:
+                    node_results[node_id] = state.result
+            # A node present in `definition` but absent from the checkpoint
+            # (e.g. the definition was extended since the crash) starts fresh.
+            for node in definition.nodes:
+                if node.node_id not in node_states:
+                    node_states[node.node_id] = WorkflowNodeState(node_id=node.node_id)
+
+            return await self._run(
+                definition, instance_id, node_states, node_results,
+                query=query, session_id=session_id, metadata=metadata,
+                cancellation_token=cancellation_token,
+                resumed_from=checkpoint_name,
             )
-
-        payload = checkpoint.payload or {}
-        checkpointed_workflow_id = payload.get("workflow_id")
-        if checkpointed_workflow_id != definition.workflow_id:
-            return WorkflowResult(
-                success=False, workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=(f"Checkpoint workflow_id mismatch: checkpoint is for "
-                       f"'{checkpointed_workflow_id}', definition given is "
-                       f"'{definition.workflow_id}'"),
-            )
-
-        node_states: Dict[str, WorkflowNodeState] = {}
-        node_results: Dict[str, WorkerResult] = {}
-        for node_id, state_data in payload.get("node_states", {}).items():
-            state = WorkflowNodeState.from_dict(state_data)
-            if state.status in (NodeStatus.RUNNING, NodeStatus.CANCELLED):
-                state.status = NodeStatus.PENDING
-                state.result = None
-            node_states[node_id] = state
-            if state.result is not None:
-                node_results[node_id] = state.result
-        # A node present in `definition` but absent from the checkpoint
-        # (e.g. the definition was extended since the crash) starts fresh.
-        for node in definition.nodes:
-            if node.node_id not in node_states:
-                node_states[node.node_id] = WorkflowNodeState(node_id=node.node_id)
-
-        return await self._run(
-            definition, instance_id, node_states, node_results,
-            query=query, session_id=session_id, metadata=metadata,
-            cancellation_token=cancellation_token,
-            resumed_from=checkpoint_name,
-        )
 
     def _checkpoint_name(self, instance_id: str) -> str:
         return f"workflow:{instance_id}"
@@ -515,170 +546,168 @@ class WorkflowRuntime:
                 elif state.status == NodeStatus.FAILED:
                     await monitor.record_failure(node_id, (state.result.error if state.result else "") or "Restored from checkpoint (failed)")
         watchdog.start()
-
-        # ── Step 1: Validate ─────────────────────────────────────────────
-        errors = definition.validate()
-        if errors:
-            self._total_failures += 1
-            await watchdog.stop()
-            return WorkflowResult(
-                success=False,
-                workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                error=f"Invalid workflow: {'; '.join(errors)}",
-                duration_ms=(time.time() - start_time) * 1000,
-            )
-
-        # ── Step 2: Emit workflow.started / workflow.resumed ─────────────
-        await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
-            "workflow_id": definition.workflow_id,
-            "instance_id": instance_id,
-            "name": definition.name,
-            "entry_node": definition.entry_node,
-            "node_count": len(definition.nodes),
-            **({"checkpoint": resumed_from,
-                "nodes_already_done": sum(
-                    1 for s in node_states.values()
-                    if s.status in (NodeStatus.COMPLETED, NodeStatus.FAILED))}
-               if resumed_from else {}),
-        })
-
-        # ── Step 3: Execute DAG from entry_node ──────────────────────────
-        run_metadata = {
-            **(metadata or {}), "instance_id": instance_id,
-            "execution_id": execution_id,
-        }
         try:
-            last_result = await self._execute_from(
-                definition=definition,
-                node_id=definition.entry_node,
-                node_states=node_states,
-                node_results=node_results,
-                query=query,
-                session_id=session_id,
-                instance_id=instance_id,
-                metadata=run_metadata,
-                cancel_token=cancel_token,
-            )
-        except Exception as e:
-            # Should never happen — _execute_from contains failures.
-            # But if it does, we contain it here.
-            logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
-            self._total_failures += 1
-            await watchdog.stop()
-            return WorkflowResult(
-                success=False,
-                workflow_id=definition.workflow_id,
-                instance_id=instance_id,
-                node_results=node_results,
-                error=f"Unexpected workflow error: {e}",
-                duration_ms=(time.time() - start_time) * 1000,
-            )
+            # ── Step 1: Validate ─────────────────────────────────────────────
+            errors = definition.validate()
+            if errors:
+                self._total_failures += 1
+                return WorkflowResult(
+                    success=False,
+                    workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    error=f"Invalid workflow: {'; '.join(errors)}",
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
 
-        # ── Step 4: Aggregate result ─────────────────────────────────────
-        # Workflow success is defined by whether execution terminated along
-        # a successful path -- i.e. the outcome of `last_result`, which is
-        # whatever _execute_from actually returned last (it follows
-        # error_branch redirection on failure, so a node that failed but
-        # was recovered via its error_branch surfaces here as a success --
-        # that redirection is the entire point of error_branch, and a
-        # workflow that recovered must not be reported as failed).
-        #
-        # This also correctly handles the cancellation case: a pre-
-        # cancelled token makes _execute_from return
-        # WorkerResult(success=False, error="Workflow cancelled") before
-        # touching node_states/node_results at all, so those two
-        # collections stay empty/PENDING -- checking them (as an earlier
-        # version of this method did) reports success=True for a workflow
-        # that never ran. Checking last_result.success avoids that: an
-        # empty node_results with a failed last_result correctly reports
-        # failure.
-        #
-        # last_result is None -> False, not True (changed 2026-09-13,
-        # adopted from an independent parallel DEBT-020 implementation
-        # after comparing both against current main -- see ADR-KERNEL-04's
-        # addendum). Not proven reachable via the current call graph, but
-        # not provably unreachable either: a node whose state.status is
-        # already COMPLETED/FAILED (e.g. a hand-constructed
-        # WorkflowNodeState, or a future caller of resume()'s checkpoint
-        # path with an inconsistent node_results entry) with no
-        # corresponding node_results[node_id] falls through exactly this
-        # branch. A workflow the Kernel cannot account for is not
-        # evidence of success -- assume systems fail under scale, per this
-        # project's own engineering standards, and fail closed instead of
-        # open on a case that was never meant to be reachable.
-        success = last_result.success if last_result is not None else False
-        duration_ms = (time.time() - start_time) * 1000
+            # ── Step 2: Emit workflow.started / workflow.resumed ─────────────
+            await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
+                "workflow_id": definition.workflow_id,
+                "instance_id": instance_id,
+                "name": definition.name,
+                "entry_node": definition.entry_node,
+                "node_count": len(definition.nodes),
+                **({"checkpoint": resumed_from,
+                    "nodes_already_done": sum(
+                        1 for s in node_states.values()
+                        if s.status in (NodeStatus.COMPLETED, NodeStatus.FAILED))}
+                   if resumed_from else {}),
+            })
 
-        # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
-        # completing without error is not the same thing as the request
-        # actually being satisfied. Only checked when node-level success
-        # already holds -- a workflow that genuinely errored is already
-        # correctly reported as failed above, and constraint-checking an
-        # error's output would be checking data that was never meant to
-        # be the final answer. Only HARD constraints can fail a workflow;
-        # SOFT constraints are advisory, matching how _detect_contradictions
-        # (core/cognitive/planner.py) already treats the same distinction.
-        constraint_violations: List[str] = []
-        if success and definition.constraints:
-            constraint_violations = _check_constraints(
-                definition.constraints, last_result.output if last_result else None,
+            # ── Step 3: Execute DAG from entry_node ──────────────────────────
+            run_metadata = {
+                **(metadata or {}), "instance_id": instance_id,
+                "execution_id": execution_id,
+            }
+            try:
+                last_result = await self._execute_from(
+                    definition=definition,
+                    node_id=definition.entry_node,
+                    node_states=node_states,
+                    node_results=node_results,
+                    query=query,
+                    session_id=session_id,
+                    instance_id=instance_id,
+                    metadata=run_metadata,
+                    cancel_token=cancel_token,
+                )
+            except Exception as e:
+                # Should never happen — _execute_from contains failures.
+                # But if it does, we contain it here.
+                logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
+                self._total_failures += 1
+                return WorkflowResult(
+                    success=False,
+                    workflow_id=definition.workflow_id,
+                    instance_id=instance_id,
+                    node_results=node_results,
+                    error=f"Unexpected workflow error: {e}",
+                    duration_ms=(time.time() - start_time) * 1000,
+                )
+            # ── Step 4: Aggregate result ─────────────────────────────────────
+            # Workflow success is defined by whether execution terminated along
+            # a successful path -- i.e. the outcome of `last_result`, which is
+            # whatever _execute_from actually returned last (it follows
+            # error_branch redirection on failure, so a node that failed but
+            # was recovered via its error_branch surfaces here as a success --
+            # that redirection is the entire point of error_branch, and a
+            # workflow that recovered must not be reported as failed).
+            #
+            # This also correctly handles the cancellation case: a pre-
+            # cancelled token makes _execute_from return
+            # WorkerResult(success=False, error="Workflow cancelled") before
+            # touching node_states/node_results at all, so those two
+            # collections stay empty/PENDING -- checking them (as an earlier
+            # version of this method did) reports success=True for a workflow
+            # that never ran. Checking last_result.success avoids that: an
+            # empty node_results with a failed last_result correctly reports
+            # failure.
+            #
+            # last_result is None -> False, not True (changed 2026-09-13,
+            # adopted from an independent parallel DEBT-020 implementation
+            # after comparing both against current main -- see ADR-KERNEL-04's
+            # addendum). Not proven reachable via the current call graph, but
+            # not provably unreachable either: a node whose state.status is
+            # already COMPLETED/FAILED (e.g. a hand-constructed
+            # WorkflowNodeState, or a future caller of resume()'s checkpoint
+            # path with an inconsistent node_results entry) with no
+            # corresponding node_results[node_id] falls through exactly this
+            # branch. A workflow the Kernel cannot account for is not
+            # evidence of success -- assume systems fail under scale, per this
+            # project's own engineering standards, and fail closed instead of
+            # open on a case that was never meant to be reachable.
+            success = last_result.success if last_result is not None else False
+            duration_ms = (time.time() - start_time) * 1000
+
+            # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
+            # completing without error is not the same thing as the request
+            # actually being satisfied. Only checked when node-level success
+            # already holds -- a workflow that genuinely errored is already
+            # correctly reported as failed above, and constraint-checking an
+            # error's output would be checking data that was never meant to
+            # be the final answer. Only HARD constraints can fail a workflow;
+            # SOFT constraints are advisory, matching how _detect_contradictions
+            # (core/cognitive/planner.py) already treats the same distinction.
+            constraint_violations: List[str] = []
+            if success and definition.constraints:
+                constraint_violations = _check_constraints(
+                    definition.constraints, last_result.output if last_result else None,
+                )
+                if constraint_violations:
+                    success = False
+
+            if not success:
+                self._total_failures += 1
+
+            await monitor.record_status(
+                graph.root.node_id,
+                ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
+                summary="Execution completed" if success else "Execution failed",
+                current_action="",
+            )
+            await self._emit_event(
+                "execution.completed" if success else "execution.failed",
+                {
+                    "execution_id": execution_id,
+                    "node_id": graph.root.node_id,
+                    "status": "completed" if success else "failed",
+                    "summary": "Execution completed" if success else "Execution failed",
+                    **({"constraint_violations": constraint_violations} if constraint_violations else {}),
+                },
             )
             if constraint_violations:
-                success = False
+                error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
+            elif last_result and not last_result.success:
+                error_text = last_result.error
+            else:
+                error_text = ""
 
-        if not success:
-            self._total_failures += 1
+            result = WorkflowResult(
+                success=success,
+                workflow_id=definition.workflow_id,
+                instance_id=instance_id,
+                node_results=node_results,
+                output=last_result.output if last_result else None,
+                error=error_text,
+                constraint_violations=constraint_violations,
+                duration_ms=duration_ms,
+                metadata={"query": query, "session_id": session_id,
+                          "execution_id": execution_id,
+                          "budget": budget},
+            )
 
-        await monitor.record_status(
-            graph.root.node_id,
-            ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
-            summary="Execution completed" if success else "Execution failed",
-            current_action="",
-        )
-        await self._emit_event(
-            "execution.completed" if success else "execution.failed",
-            {
-                "execution_id": execution_id,
-                "node_id": graph.root.node_id,
-                "status": "completed" if success else "failed",
-                "summary": "Execution completed" if success else "Execution failed",
-                **({"constraint_violations": constraint_violations} if constraint_violations else {}),
-            },
-        )
-        await watchdog.stop()
+            # ── Step 5: Emit workflow.completed ──────────────────────────────
+            await self._emit_event("workflow.completed", {
+                "workflow_id": definition.workflow_id,
+                "instance_id": instance_id,
+                "success": success,
+                "duration_ms": duration_ms,
+                "nodes_executed": len(node_results),
+            })
 
-        if constraint_violations:
-            error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
-        elif last_result and not last_result.success:
-            error_text = last_result.error
-        else:
-            error_text = ""
+            return result
 
-        result = WorkflowResult(
-            success=success,
-            workflow_id=definition.workflow_id,
-            instance_id=instance_id,
-            node_results=node_results,
-            output=last_result.output if last_result else None,
-            error=error_text,
-            constraint_violations=constraint_violations,
-            duration_ms=duration_ms,
-            metadata={"query": query, "session_id": session_id,
-                      "execution_id": execution_id,
-                      "budget": budget},
-        )
-
-        # ── Step 5: Emit workflow.completed ──────────────────────────────
-        await self._emit_event("workflow.completed", {
-            "workflow_id": definition.workflow_id,
-            "instance_id": instance_id,
-            "success": success,
-            "duration_ms": duration_ms,
-            "nodes_executed": len(node_results),
-        })
-
-        return result
+        finally:
+            await watchdog.stop()
 
     async def _execute_from(
         self,
