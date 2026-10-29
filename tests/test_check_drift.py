@@ -302,21 +302,21 @@ def test_drift_10_trusted_governance_imports_pinned():
 def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(
-        "class LearningTier:\\n"
-        "    LEARNING = 'learning'\\n"
-        "    ADAPTATION = 'adaptation'\\n"
-        "    EVOLUTION = 'evolution'\\n"
-        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
-        "\\n"
-        "class ContentDomain:\\n"
-        "    SKILL = 'skill'\\n"
-        "    INTENT_ONTOLOGY = 'intent_ontology'\\n"
-        "    USER_MODEL = 'user_model'\\n"
-        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\\n"
-        "\\n"
-        "async def _find_contradiction(content_domain, candidate_content, memory):\\n"
+        "class LearningTier:\n"
+        "    LEARNING = 'learning'\n"
+        "    ADAPTATION = 'adaptation'\n"
+        "    EVOLUTION = 'evolution'\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
+        "\n"
+        "class ContentDomain:\n"
+        "    SKILL = 'skill'\n"
+        "    INTENT_ONTOLOGY = 'intent_ontology'\n"
+        "    USER_MODEL = 'user_model'\n"
+        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\n"
+        "\n"
+        "async def _find_contradiction(content_domain, candidate_content, memory):\n"
         ,
-        "async def _find_contradiction(content_domain, candidate_content, memory):\\n"
+        "async def _find_contradiction(content_domain, candidate_content, memory):\n"
         ,
         1,
     )
