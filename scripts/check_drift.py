@@ -600,8 +600,19 @@ DRIFT_10_EXCEPTION_SCOPES: dict[tuple[str, str], str] = {
 }
 
 
-def _is_validation_gate_exception_call(node: ast.Call) -> bool:
-    """Return whether the node is the exact, documented ValidationGate call."""
+def _is_validation_gate_exception_call(
+    node: ast.Call, parents: dict[ast.AST, ast.AST]
+) -> bool:
+    """Match the one exact assignment form used by ValidationGate in production."""
+    assignment = parents.get(node)
+    if not (
+        isinstance(assignment, ast.Assign)
+        and assignment.value is node
+        and len(assignment.targets) == 1
+        and isinstance(assignment.targets[0], ast.Name)
+        and assignment.targets[0].id == "result"
+    ):
+        return False
     return (
         isinstance(node.func, ast.Attribute)
         and node.func.attr == "evaluate_action"
@@ -655,7 +666,7 @@ def _governance_boundary_violations(
     for scope, nodes in by_scope.items():
         if scope not in DRIFT_10_EXCEPTION_SCOPES:
             continue
-        if len(nodes) == 1 and _is_validation_gate_exception_call(nodes[0]):
+        if len(nodes) == 1 and _is_validation_gate_exception_call(nodes[0], parents):
             allowed_node_ids.add(id(nodes[0]))
             exception_applied = True
 
