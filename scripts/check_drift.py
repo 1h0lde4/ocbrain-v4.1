@@ -928,12 +928,52 @@ def _find_module_scope_bindings_for_name(
     return bindings
 
 
+def _is_terminal_governance_verdict_guard(
+    statement: ast.stmt, expected_verdict: str
+) -> bool:
+    """Recognize the exact terminal guard that prevents non-approved promotion."""
+    if not isinstance(statement, ast.If) or statement.orelse or not statement.body:
+        return False
+    test = statement.test
+    if not (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Attribute)
+        and isinstance(test.left.value, ast.Name)
+        and test.left.value.id == "result"
+        and test.left.attr == "verdict"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Attribute)
+        and isinstance(test.comparators[0].value, ast.Name)
+        and test.comparators[0].value.id == "GovernanceVerdict"
+        and test.comparators[0].attr == expected_verdict
+    ):
+        return False
+
+    # ESCALATE and REJECT must leave this gate immediately. In particular, do
+    # not accept a branch whose returned expression performs a memory write.
+    first = statement.body[0]
+    if not isinstance(first, (ast.Return, ast.Raise)):
+        return False
+    return not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "write"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "memory"
+        for node in ast.walk(first)
+    )
+
+
 def _governance_boundary_violations(
     tree: ast.Module, rel: str
 ) -> tuple[list[Violation], tuple[str, str] | None]:
     """Find direct governance calls, allowing only configured, scoped exceptions."""
     violations: list[Violation] = []
     approved_call_node: ast.Call | None = None
+    approved_gate_node: ast.AsyncFunctionDef | None = None
+    approved_call_stmt_idx: int | None = None
     applied_exception_key: tuple[str, str] | None = None
 
     # The exception configuration is the single source of truth for both the
@@ -1027,6 +1067,8 @@ def _governance_boundary_violations(
                         )
                     else:
                         approved_call_node = gate_node.body[call_stmt_idx].value
+                        approved_gate_node = gate_node
+                        approved_call_stmt_idx = call_stmt_idx
 
     for node in ast.walk(tree):
         if not (
@@ -1040,6 +1082,36 @@ def _governance_boundary_violations(
             applied_exception_key = scope_key
         else:
             violations.append(Violation(rel, node.lineno, "calls .evaluate_action(...) directly"))
+
+    # Structural call presence alone is insufficient: pin the governance
+    # result to the two terminal guards that prevent ESCALATE/REJECT from
+    # reaching promotion. This deliberately verifies the current direct
+    # control-flow shape; it is not a general semantic/type analysis.
+    all_evaluate_calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "evaluate_action"
+    ]
+    if (
+        approved_call_node is not None
+        and approved_gate_node is not None
+        and approved_call_stmt_idx is not None
+        and len(all_evaluate_calls) == 1
+    ):
+        following = approved_gate_node.body[approved_call_stmt_idx + 1:approved_call_stmt_idx + 3]
+        if not (
+            len(following) == 2
+            and _is_terminal_governance_verdict_guard(following[0], "ESCALATE")
+            and _is_terminal_governance_verdict_guard(following[1], "REJECT")
+        ):
+            violations.append(
+                Violation(
+                    rel,
+                    approved_call_node.lineno,
+                    "governance result must immediately drive terminal ESCALATE and REJECT guards before promotion",
+                )
+            )
 
     return violations, applied_exception_key
 
@@ -1102,8 +1174,9 @@ def check_drift_10() -> CheckResult:
         "DRIFT-10",
         "Unauthorized direct GovernanceKernel.evaluate_action() calls in "
         "Intent, Planner, and Learning are forbidden; the one exact "
-        "ValidationGate approval call is explicitly allowed (DRIFT-05 remains "
-        "unchanged and independently covers SupervisorWorker).",
+        "ValidationGate approval call is allowed only when the result "
+        "immediately drives terminal ESCALATE and REJECT guards (DRIFT-05 "
+        "remains unchanged and independently covers SupervisorWorker).",
         status,
         violations,
         notes,

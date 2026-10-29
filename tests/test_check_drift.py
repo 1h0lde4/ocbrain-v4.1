@@ -223,6 +223,10 @@ def test_unauthorized_producer_violations_ignores_unrelated_return_type():
 VALID_LEARNING_PY = (
     "async def validation_gate(governance, action):\n"
     "    result = governance.evaluate_action(action)\n"
+    "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+    "        return result\n"
+    "    if result.verdict == GovernanceVerdict.REJECT:\n"
+    "        return result\n"
     "    return result\n"
 )
 
@@ -577,12 +581,10 @@ def test_check_drift_10_does_not_treat_async_for_inside_async_function_as_module
 def test_check_drift_10_allows_function_local_assignments_named_validation_gate(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = (
-        "async def validation_gate(governance, action):\n"
-        "    result = governance.evaluate_action(action)\n"
-        "    return result\n\n"
-        "def other_func():\n"
-        "    validation_gate = 42\n"
-        "    return validation_gate\n"
+        VALID_LEARNING_PY
+        + "\ndef other_func():\n"
+        + "    validation_gate = 42\n"
+        + "    return validation_gate\n"
     )
     (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
     monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
@@ -663,6 +665,50 @@ def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypat
     result = check_drift.check_drift_10()
     assert result.status == "VIOLATION"
     assert any("can be bypassed by an earlier return/raise path" in v.detail for v in result.violations)
+
+
+@pytest.mark.parametrize("unsafe_code", [
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    return True\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    result = FakeApproval()\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return result\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        pass\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+    (
+        "async def validation_gate(governance, action):\n"
+        "    result = governance.evaluate_action(action)\n"
+        "    if result.verdict == GovernanceVerdict.ESCALATE:\n"
+        "        return memory.write(candidate)\n"
+        "    if result.verdict == GovernanceVerdict.REJECT:\n"
+        "        return result\n"
+        "    return result\n"
+    ),
+])
+def test_check_drift_10_rejects_governance_result_bypass_shapes(tmp_path, monkeypatch, unsafe_code):
+    _setup_clean_governance_files(tmp_path)
+    (tmp_path / "core/cognitive/learning.py").write_text(unsafe_code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("governance result must immediately drive terminal ESCALATE and REJECT guards" in v.detail for v in result.violations)
 
 
 def test_check_drift_10_rejects_additional_call_elsewhere_in_learning(tmp_path, monkeypatch):
