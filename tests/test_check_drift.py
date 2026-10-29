@@ -224,8 +224,7 @@ VALID_LEARNING_PY = (
     "from core.events.event_stream import get_event_stream\n"
     "from core.governance.governance_kernel import EvolutionGovernor, GovernanceAction, GovernanceKernel, GovernanceVerdict, get_governance_kernel\n"
     "from core.memory.unified_memory import get_unified_memory\n"
-    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):
-"
+    "async def validation_gate(*, tier, governance, action_type, hitl_approved=False, memory=None, event_stream=None):\n"
     "    memory = memory or get_unified_memory()\n"
     "    governance = governance or get_governance_kernel()\n"
     "    event_stream = event_stream or get_event_stream()\n"
