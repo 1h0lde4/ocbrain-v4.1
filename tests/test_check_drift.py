@@ -1095,12 +1095,6 @@ def test_check_drift_10_allows_nested_read_only_scalar_result_access(tmp_path, m
     assert result.status == "PASS"
 
 
-@pytest.mark.parametrize("unsafe_statement", [
-    "    memory = FakeMemory()\n",
-    "    governance = FakeGovernance()\n",
-    "    event_stream = FakeEventStream()\n",
-    "    hitl_approved = True\n",
-])
 @pytest.mark.parametrize("unsafe_statement, expected_detail", [
     (
         "    def alter_tier():\n"
@@ -1148,6 +1142,12 @@ def test_check_drift_10_rejects_nested_nonlocal_control_rebinding(
     assert result.notes == ""
 
 
+@pytest.mark.parametrize("unsafe_statement", [
+    "    memory = FakeMemory()\n",
+    "    governance = FakeGovernance()\n",
+    "    event_stream = FakeEventStream()\n",
+    "    hitl_approved = True\n",
+])
 def test_check_drift_10_rejects_dependency_or_approval_input_rebinding(
     tmp_path, monkeypatch, unsafe_statement
 ):
