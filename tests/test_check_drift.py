@@ -305,6 +305,7 @@ def test_drift_10_trusted_governance_imports_pinned():
     "LearningTier.EVOLUTION = LearningTier.LEARNING\n",
     "ContentDomain.USER_MODEL = ContentDomain.SKILL\n",
     "LearningTier = FakeTier\n",
+    "tier_class = LearningTier\n",
     "get_governance_kernel = lambda: FakeGovernance()\n",
 ])
 def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):

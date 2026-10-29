@@ -1594,13 +1594,14 @@ def _result_object_mutation_sites(
 
 def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
     """Find direct mutations/aliases of imported governance classes and policy state."""
-    protected_names = {
+    governance_names = {
         "EvolutionGovernor",
         "GovernanceAction",
         "GovernanceKernel",
         "GovernanceVerdict",
-        *TRUSTED_POLICY_CLASSES,
     }
+    policy_names = set(TRUSTED_POLICY_CLASSES)
+    protected_names = governance_names | policy_names
     mutating_methods = {
         "add", "append", "clear", "discard", "extend", "insert", "pop",
         "remove", "setdefault", "update", "__delitem__", "__setitem__",
@@ -1618,18 +1619,48 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
         ):
             record(node)
         elif isinstance(node, ast.Assign):
-            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
-                _contains_name_reference(node.value, name) for name in protected_names
+            value = node.value
+            if isinstance(value, ast.Name) and value.id in protected_names:
+                # A bare class-name alias can later be used to mutate or replace
+                # the original policy authority, regardless of the local alias.
+                record(node)
+            elif isinstance(value, (ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(value, name) for name in governance_names
+            ):
+                # Governance method extraction (e.g. evaluate_action) is unsafe.
+                record(node)
+            elif (
+                isinstance(value, ast.Attribute)
+                and value.attr in {"__dict__", "__bases__", "__mro__"}
+                and any(_rooted_in_name(value, name) for name in policy_names)
             ):
                 record(node)
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
-                _contains_name_reference(node.value, name) for name in protected_names
+            value = node.value
+            if isinstance(value, ast.Name) and value.id in protected_names:
+                record(node)
+            elif isinstance(value, (ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(value, name) for name in governance_names
+            ):
+                record(node)
+            elif (
+                isinstance(value, ast.Attribute)
+                and value.attr in {"__dict__", "__bases__", "__mro__"}
+                and any(_rooted_in_name(value, name) for name in policy_names)
             ):
                 record(node)
         elif isinstance(node, ast.NamedExpr):
-            if isinstance(node.value, (ast.Name, ast.Attribute, ast.Subscript)) and any(
-                _contains_name_reference(node.value, name) for name in protected_names
+            value = node.value
+            if isinstance(value, ast.Name) and value.id in protected_names:
+                record(node)
+            elif isinstance(value, (ast.Attribute, ast.Subscript)) and any(
+                _contains_name_reference(value, name) for name in governance_names
+            ):
+                record(node)
+            elif (
+                isinstance(value, ast.Attribute)
+                and value.attr in {"__dict__", "__bases__", "__mro__"}
+                and any(_rooted_in_name(value, name) for name in policy_names)
             ):
                 record(node)
         elif isinstance(node, ast.Call):
@@ -1645,11 +1676,16 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
             elif (
                 isinstance(func, ast.Attribute)
                 and func.attr in mutating_methods
-                and _rooted_in_name(func.value, "EvolutionGovernor")
-                and any(
-                    isinstance(part, ast.Attribute)
-                    and part.attr == "SELF_MODIFYING_ACTIONS"
-                    for part in ast.walk(func.value)
+                and (
+                    (
+                        _rooted_in_name(func.value, "EvolutionGovernor")
+                        and any(
+                            isinstance(part, ast.Attribute)
+                            and part.attr == "SELF_MODIFYING_ACTIONS"
+                            for part in ast.walk(func.value)
+                        )
+                    )
+                    or any(_rooted_in_name(func.value, name) for name in policy_names)
                 )
             ):
                 record(node)
@@ -1721,7 +1757,7 @@ def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Vi
         violations.append(
             Violation(
                 rel, getattr(node, "lineno", 0),
-                "trusted governance class or EvolutionGovernor allowlist is mutated, aliased, or passed to dynamic access code",
+                "trusted governance/policy class or EvolutionGovernor allowlist is mutated, aliased, or passed to dynamic access code",
             )
         )
     return violations
