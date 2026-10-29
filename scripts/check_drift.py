@@ -1262,6 +1262,15 @@ def _result_object_mutation_sites(
 
     for node in ast.walk(scope):
         if (
+            node is not scope
+            and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+            and _contains_unsafe_result_reference(node, name)
+        ):
+            # A nested scope can close over and return/pass the evaluated result,
+            # allowing an alias to mutate it later without a direct result target.
+            record(node, "governance result object is mutated or escapes its verified scope")
+
+        if (
             isinstance(node, (ast.Attribute, ast.Subscript))
             and isinstance(node.ctx, (ast.Store, ast.Del))
             and _rooted_in_name(node, name)

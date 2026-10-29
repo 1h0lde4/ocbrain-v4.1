@@ -825,6 +825,7 @@ def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkey
     "    alias = result\n    alias.verdict = GovernanceVerdict.APPROVE\n",
     "    alias = (result,)\n    alias[0].verdict = GovernanceVerdict.APPROVE\n",
     "    mutate_result(result)\n",
+    "    def get_result():\n        return result\n    alias = get_result()\n    alias.verdict = GovernanceVerdict.APPROVE\n",
 ])
 def test_check_drift_10_rejects_governance_result_mutation_and_escape(
     tmp_path, monkeypatch, unsafe_tail
@@ -846,6 +847,22 @@ def test_check_drift_10_rejects_governance_result_mutation_and_escape(
         for v in result.violations
     )
     assert result.notes == ""
+
+
+def test_check_drift_10_allows_nested_read_only_scalar_result_access(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    valid_prefix = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0]
+    code = (
+        valid_prefix
+        + "    def read_reason():\n"
+        + "        return result.reason\n"
+        + "    entry_id = await memory.write(candidate)\n"
+        + "    return result\n"
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
 
 
 def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
