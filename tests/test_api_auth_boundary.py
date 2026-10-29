@@ -63,16 +63,34 @@ def _scope(method: str, path: str, headers=(), type_: str = "http") -> dict:
 
 
 def call(target, method: str, path: str, headers=()) -> tuple[int, bytes, dict]:
-    """Drive an ASGI app directly (no URL normalisation, exact path preserved)."""
+    """Drive an ASGI app directly (no URL normalisation, exact path preserved).
+
+    Behaves like a real server: the request is delivered once, and the client
+    "disconnects" only after the response is complete.  (Replaying `http.request`
+    forever, or disconnecting early, breaks Starlette's BaseHTTPMiddleware on
+    older versions: it either raises or cancels the response body.)
+    """
     sent: list[dict] = []
 
-    async def receive():
-        return {"type": "http.request", "body": b"", "more_body": False}
+    async def run() -> None:
+        finished = asyncio.Event()
+        delivered: list[int] = []
 
-    async def send(message):
-        sent.append(message)
+        async def receive():
+            if not delivered:
+                delivered.append(1)
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await finished.wait()
+            return {"type": "http.disconnect"}
 
-    asyncio.run(target(_scope(method, path, headers), receive, send))
+        async def send(message):
+            sent.append(message)
+            if message["type"] == "http.response.body" and not message.get("more_body"):
+                finished.set()
+
+        await target(_scope(method, path, headers), receive, send)
+
+    asyncio.run(run())
     start = next(m for m in sent if m["type"] == "http.response.start")
     body = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
     hdrs = {k.decode().lower(): v.decode() for k, v in start["headers"]}
@@ -352,6 +370,38 @@ class TestTokenProvisioning:
         monkeypatch.setenv(auth.ENV_TOKEN, TOKEN)
         assert auth.read_token() == TOKEN
 
+    def test_token_path_that_is_a_directory_fails_closed_and_is_not_chmodded(self, tmp_path, monkeypatch):
+        d = tmp_path / "isdir"
+        d.mkdir()
+        os.chmod(d, 0o755)
+        monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(d))
+        with pytest.raises(auth.AuthConfigError):
+            auth.load_or_create_token()
+        if os.name != "nt":
+            assert stat.S_IMODE(d.stat().st_mode) == 0o755
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_dangling_symlink_fails_closed(self, tmp_path, monkeypatch):
+        link = tmp_path / "dangling"
+        link.symlink_to(tmp_path / "nowhere")
+        monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(link))
+        with pytest.raises(auth.AuthConfigError):
+            auth.load_or_create_token()
+
+    @pytest.mark.parametrize("kind", ["dir", "dangling"])
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_unusable_token_file_gives_503_not_500(self, tmp_path, monkeypatch, kind):
+        p = tmp_path / "t"
+        if kind == "dir":
+            p.mkdir()
+        else:
+            p.symlink_to(tmp_path / "nowhere")
+        monkeypatch.delenv(auth.ENV_MODE, raising=False)
+        monkeypatch.delenv(auth.ENV_TOKEN, raising=False)
+        monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(p))
+        auth.reset_cache_for_tests()
+        assert call(app, "GET", "/config")[0] == 503
+
     def test_token_file_is_git_ignored(self):
         proc = subprocess.run(["git", "check-ignore", "-q", "data/api_token"], cwd=REPO_ROOT)
         assert proc.returncode == 0
@@ -471,6 +521,14 @@ class TestClients:
         monkeypatch.delenv(auth.ENV_TOKEN)
         monkeypatch.setenv(auth.ENV_TOKEN_FILE, "/nonexistent/api_token")
         assert "#" not in tray._ui_url()
+
+    def test_tray_url_uses_the_configured_port_not_a_hardcoded_one(self, monkeypatch):
+        from interface import tray
+        monkeypatch.setenv(auth.ENV_TOKEN, TOKEN)
+        monkeypatch.setattr(tray.config, "get", lambda key, default=None: 8123 if key == "global.web_ui_port" else default)
+        assert tray._ui_url().startswith("http://localhost:8123#token=")   # browsers normalise to "/"
+        monkeypatch.setattr(tray.config, "get", lambda key, default=None: "not-a-port")
+        assert tray._ui_url().startswith(f"http://localhost:{tray.PORT}#token=")
 
     @pytest.mark.parametrize("page", ["index.html", "settings.html"])
     def test_web_pages_use_the_authenticating_helpers(self, page):

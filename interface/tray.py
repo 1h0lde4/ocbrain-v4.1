@@ -32,6 +32,14 @@ def _make_icon_image() -> "Image.Image":
     return img
 
 
+def _port() -> int:
+    """The port the server binds (main.py: global.web_ui_port), not a hard-coded 7437."""
+    try:
+        return int(config.get("global.web_ui_port") or PORT)
+    except (TypeError, ValueError):
+        return PORT
+
+
 def _ui_url(path: str = "") -> str:
     """UI URL carrying the API token in the fragment (DEBT-025).
 
@@ -39,7 +47,7 @@ def _ui_url(path: str = "") -> str:
     interface/web/auth.js moves it into sessionStorage and strips it from the
     address bar.  The browser may keep it in local history.
     """
-    url = f"http://localhost:{PORT}{path}"
+    url = f"http://localhost:{_port()}{path}"
     token = read_token()
     return f"{url}#token={token}" if token else url
 

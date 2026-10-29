@@ -151,7 +151,22 @@ def load_or_create_token() -> str:
         return _validate_token(env, f"the {ENV_TOKEN} environment variable")
 
     path = token_path()
+    try:
+        return _token_from_file(path)
+    except AuthConfigError:
+        raise
+    except OSError as exc:  # directory, dangling symlink, unreadable, ...: fail closed, not 500
+        raise AuthConfigError(
+            f"API token file {path} is unusable ({type(exc).__name__}); refusing to run unauthenticated."
+        ) from exc
+
+
+def _token_from_file(path: Path) -> str:
+    if path.is_symlink() and not path.exists():
+        raise AuthConfigError(f"API token file {path} is a dangling symlink.")
     if path.exists():
+        if not path.is_file():
+            raise AuthConfigError(f"API token path {path} exists but is not a regular file.")
         _enforce_private_mode(path)
         return _validate_token(path.read_text(encoding="utf-8"), f"the token file {path}")
 
