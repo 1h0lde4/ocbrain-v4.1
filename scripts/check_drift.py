@@ -609,6 +609,8 @@ GOVERNANCE_TRUSTED_IMPORTS: tuple[tuple[str, str], ...] = (
     ("get_unified_memory", "core.memory.unified_memory"),
 )
 
+TRUSTED_POLICY_CLASSES: tuple[str, ...] = ("LearningTier", "ContentDomain")
+
 
 def _module_scope_named_exprs(node: ast.AST):
     """Yield assignment expressions evaluated in module scope, not nested bodies."""
@@ -1597,6 +1599,7 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
         "GovernanceAction",
         "GovernanceKernel",
         "GovernanceVerdict",
+        *TRUSTED_POLICY_CLASSES,
     }
     mutating_methods = {
         "add", "append", "clear", "discard", "extend", "insert", "pop",
@@ -1653,6 +1656,32 @@ def _trusted_governance_mutation_sites(tree: ast.Module) -> list[ast.AST]:
 
     return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
 
+
+def _trusted_policy_class_violations(tree: ast.Module, rel: str) -> list[Violation]:
+    """Require tier/domain policy classes to be unique top-level class definitions."""
+    violations: list[Violation] = []
+    for symbol in TRUSTED_POLICY_CLASSES:
+        bindings = _find_module_scope_bindings_for_name(tree, symbol)
+        if len(bindings) != 1:
+            node = bindings[1][0] if len(bindings) > 1 else (
+                bindings[0][0] if bindings else ast.Module(body=[], type_ignores=[])
+            )
+            violations.append(
+                Violation(
+                    rel, getattr(node, "lineno", 0),
+                    f"policy class '{symbol}' has a competing or missing module-scope binding",
+                )
+            )
+            continue
+        node, description = bindings[0]
+        if node not in tree.body or not isinstance(node, ast.ClassDef):
+            violations.append(
+                Violation(
+                    rel, getattr(node, "lineno", 0),
+                    f"policy symbol '{symbol}' must be one direct top-level class definition, found {description}",
+                )
+            )
+    return violations
 
 def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Violation]:
     """Pin trusted imports and reject competing module-scope bindings."""
@@ -1769,6 +1798,7 @@ def _governance_boundary_violations(
     violations: list[Violation] = []
     if rel == "core/cognitive/learning.py":
         violations.extend(_trusted_governance_import_violations(tree, rel))
+        violations.extend(_trusted_policy_class_violations(tree, rel))
         violations.extend(_contradiction_helper_violations(tree, rel))
     approved_call_node: ast.Call | None = None
     approved_gate_node: ast.AsyncFunctionDef | None = None

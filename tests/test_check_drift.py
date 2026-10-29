@@ -225,6 +225,18 @@ VALID_LEARNING_PY = (
     "from core.governance.governance_kernel import EvolutionGovernor, GovernanceAction, GovernanceKernel, GovernanceVerdict, get_governance_kernel\n"
     "from core.memory.unified_memory import get_unified_memory\n"
     "\n"
+    "class LearningTier:\n"
+    "    LEARNING = 'learning'\n"
+    "    ADAPTATION = 'adaptation'\n"
+    "    EVOLUTION = 'evolution'\n"
+    "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
+    "\n"
+    "class ContentDomain:\n"
+    "    SKILL = 'skill'\n"
+    "    INTENT_ONTOLOGY = 'intent_ontology'\n"
+    "    USER_MODEL = 'user_model'\n"
+    "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\n"
+    "\n"
     "async def _find_contradiction(content_domain, candidate_content, memory):\n"
     "    results = await memory.search(candidate_content, limit=5)\n"
     "    return None\n"
@@ -290,8 +302,39 @@ def test_drift_10_trusted_governance_imports_pinned():
 @pytest.mark.parametrize("unsafe_module_statement", [
     "GovernanceKernel.evaluate_action = fake_evaluate\n",
     "EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\n",
+    "LearningTier.EVOLUTION = LearningTier.LEARNING\n",
+    "ContentDomain.USER_MODEL = ContentDomain.SKILL\n",
+    "LearningTier = FakeTier\n",
     "get_governance_kernel = lambda: FakeGovernance()\n",
 ])
+def test_check_drift_10_rejects_missing_policy_class(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "class LearningTier:\\n"
+        "    LEARNING = 'learning'\\n"
+        "    ADAPTATION = 'adaptation'\\n"
+        "    EVOLUTION = 'evolution'\\n"
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\\n"
+        "\\n"
+        "class ContentDomain:\\n"
+        "    SKILL = 'skill'\\n"
+        "    INTENT_ONTOLOGY = 'intent_ontology'\\n"
+        "    USER_MODEL = 'user_model'\\n"
+        "    ALL = (SKILL, INTENT_ONTOLOGY, USER_MODEL)\\n"
+        "\\n"
+        "async def _find_contradiction(content_domain, candidate_content, memory):\\n"
+        ,
+        "async def _find_contradiction(content_domain, candidate_content, memory):\\n"
+        ,
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("policy class 'LearningTier'" in v.detail for v in result.violations)
+    assert result.notes == ""
+
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(
     tmp_path, monkeypatch, unsafe_module_statement
 ):
