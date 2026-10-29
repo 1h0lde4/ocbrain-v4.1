@@ -833,6 +833,42 @@ def test_check_drift_10_allows_terminal_learning_write_before_evolution_governan
     "    writer = vars(memory).get('write')\n    await writer(candidate)\n",
     "    writer = memory.__dict__.setdefault('write', None)\n    await writer(candidate)\n",
 ])
+@pytest.mark.parametrize("inserted_statement", [
+    "    mutate_memory(memory)\n",
+    "    store = memory\n    mutate_memory(store)\n",
+    "    store = (memory,)\n    mutate_memory(store[0])\n",
+])
+def test_check_drift_10_rejects_unapproved_memory_object_escape(
+    tmp_path, monkeypatch, inserted_statement
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        inserted_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("memory object is passed to an unapproved helper" in v.detail for v in result.violations)
+    assert result.notes == ""
+
+
+def test_check_drift_10_allows_exact_contradiction_reader_memory_argument(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        "    contradiction = await _find_contradiction(content_domain, candidate_content, memory)\n"
+        "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+
+
 def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.replace(

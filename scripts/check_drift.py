@@ -1043,6 +1043,72 @@ def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
     return visitor.writes
 
 
+def _contains_name_reference(node: ast.AST, name: str) -> bool:
+    return any(
+        isinstance(child, ast.Name) and child.id == name
+        for child in ast.walk(node)
+    )
+
+
+def _is_approved_contradiction_read(call: ast.Call) -> bool:
+    """Whitelist only the exact read-only contradiction helper call in this gate."""
+    return (
+        isinstance(call.func, ast.Name)
+        and call.func.id == "_find_contradiction"
+        and len(call.args) == 3
+        and not call.keywords
+        and isinstance(call.args[2], ast.Name)
+        and call.args[2].id == "memory"
+        and not _contains_name_reference(call.args[0], "memory")
+        and not _contains_name_reference(call.args[1], "memory")
+    )
+
+
+def _memory_object_escape_sites(scope: ast.AST) -> list[ast.AST]:
+    """Find calls/aliases that hand the memory object to unapproved code."""
+    sites: dict[int, ast.AST] = {}
+
+    def record(node: ast.AST) -> None:
+        sites.setdefault(id(node), node)
+
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Call):
+            passed_memory = any(
+                _contains_name_reference(arg, "memory") for arg in node.args
+            ) or any(
+                _contains_name_reference(keyword.value, "memory")
+                for keyword in node.keywords
+            )
+            if passed_memory and not _is_approved_contradiction_read(node):
+                record(node)
+        elif isinstance(node, ast.Assign):
+            # ValidationGate initializes the dependency through its designated
+            # memory-default assignment. Do not allow it to hand the object to an
+            # alias or container elsewhere in the gate.
+            if (
+                not (
+                    len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == "memory"
+                )
+                and not any(isinstance(child, ast.Call) for child in ast.walk(node.value))
+                and _contains_name_reference(node.value, "memory")
+            ):
+                record(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if (
+                not (isinstance(node.target, ast.Name) and node.target.id == "memory")
+                and not any(isinstance(child, ast.Call) for child in ast.walk(node.value))
+                and _contains_name_reference(node.value, "memory")
+            ):
+                record(node)
+        elif isinstance(node, ast.Return) and node.value is not None:
+            if _contains_name_reference(node.value, "memory"):
+                record(node)
+
+    return sorted(sites.values(), key=lambda node: getattr(node, "lineno", 0))
+
+
 def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
     """Find direct writes, bound-method extraction, and common literal reflection.
 
@@ -1535,7 +1601,17 @@ def _governance_boundary_violations(
                 Violation(rel, getattr(mutation_node, "lineno", approved_call_node.lineno), detail)
             )
 
-        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not any(
+        memory_escape_sites = _memory_object_escape_sites(approved_gate_node)
+        for escape_node in memory_escape_sites:
+            violations.append(
+                Violation(
+                    rel,
+                    getattr(escape_node, "lineno", approved_call_node.lineno),
+                    "memory object is passed to an unapproved helper, aliased, or returned",
+                )
+            )
+
+        result_flow_is_safe = result_flow_is_safe and not result_object_mutations and not memory_escape_sites and not any(
             "governance result 'result' is rebound or deleted after/beside the approved call" in violation.detail
             for violation in violations
             if violation.file == rel
