@@ -636,7 +636,12 @@ def _governance_boundary_violations(
         parent = parents.get(node)
         while parent is not None:
             if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                enclosing_function = parent.name
+                # The sole exception must be the module-level validation_gate,
+                # not a nested function or method with the same name.
+                if isinstance(parents.get(parent), ast.Module):
+                    enclosing_function = parent.name
+                else:
+                    enclosing_function = f"<nested:{parent.name}>"
                 break
             parent = parents.get(parent)
         call_sites.append((node, enclosing_function))
