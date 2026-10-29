@@ -663,14 +663,21 @@ def _pattern_binds_name(pattern: ast.AST, name: str) -> bool:
     )
 
 
-def _first_return_or_raise_in_scope(node: ast.AST) -> ast.Return | ast.Raise | None:
-    """Find a return/raise path without entering a nested function, class, or lambda."""
+def _first_unconditional_return_or_raise(node: ast.AST) -> ast.Return | ast.Raise | None:
+    """Find unconditional early exits, without misclassifying tier-dependent branches."""
     if isinstance(node, (ast.Return, ast.Raise)):
         return node
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         return None
-    for child in ast.iter_child_nodes(node):
-        found = _first_return_or_raise_in_scope(child)
+    # Only descend through an if-statement when a literal condition selects the
+    # branch with certainty. Arbitrary conditions are domain control flow in
+    # ValidationGate (including legitimate non-Evolution exits), not proof of a
+    # governance bypass.
+    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Constant):
+        return None
+    selected_body = node.body if bool(node.test.value) else node.orelse
+    for stmt in selected_body:
+        found = _first_unconditional_return_or_raise(stmt)
         if found is not None:
             return found
     return None
@@ -855,7 +862,7 @@ def _governance_boundary_violations(
                 else:
                     early_exit = None
                     for stmt in gate_node.body[:call_stmt_idx]:
-                        early_exit = _first_return_or_raise_in_scope(stmt)
+                        early_exit = _first_unconditional_return_or_raise(stmt)
                         if early_exit is not None:
                             break
 

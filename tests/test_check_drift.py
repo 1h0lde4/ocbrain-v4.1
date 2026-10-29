@@ -587,8 +587,9 @@ def test_check_drift_10_rejects_wrapped_or_lambda_call(tmp_path, monkeypatch):
 @pytest.mark.parametrize("early_exit_stmt", [
     "return None",
     "raise ValueError('early exit')",
-    "if action:\n        return None",
-    "if action:\n        raise ValueError('conditional early exit')",
+    "if True:\n        return None",
+    "if True:\n        raise ValueError('constant-condition early exit')",
+    "if False:\n        pass\n    else:\n        return None",
 ])
 def test_check_drift_10_rejects_early_exit_paths_before_call(tmp_path, monkeypatch, early_exit_stmt):
     _setup_clean_governance_files(tmp_path)
