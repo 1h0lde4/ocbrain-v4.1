@@ -1035,16 +1035,28 @@ def _scope_name_writes(scope: ast.AST, name: str) -> list[ast.AST]:
     return visitor.writes
 
 
-def _memory_write_calls(node: ast.AST) -> list[ast.Call]:
-    """Find direct memory.write(...) AST calls within a candidate statement."""
-    return [
-        child for child in ast.walk(node)
+def _memory_write_calls(node: ast.AST) -> list[ast.AST]:
+    """Find .write(...) calls and extracted .write references in a candidate statement.
+
+    Any receiver's .write method is treated as a persistence write inside
+    ValidationGate. Bound-method extraction is also detected so assigning
+    memory.write to another name cannot bypass the direct-call check.
+    """
+    descendants = list(ast.walk(node))
+    calls = [
+        child for child in descendants
         if isinstance(child, ast.Call)
         and isinstance(child.func, ast.Attribute)
         and child.func.attr == "write"
-        and isinstance(child.func.value, ast.Name)
-        and child.func.value.id == "memory"
     ]
+    direct_callee_ids = {id(call.func) for call in calls}
+    extracted_references = [
+        child for child in descendants
+        if isinstance(child, ast.Attribute)
+        and child.attr == "write"
+        and id(child) not in direct_callee_ids
+    ]
+    return [*calls, *extracted_references]
 
 
 def _is_direct_entry_memory_write(statement: ast.stmt) -> bool:

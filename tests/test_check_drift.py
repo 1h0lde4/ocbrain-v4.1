@@ -794,6 +794,24 @@ def test_check_drift_10_allows_terminal_learning_write_before_evolution_governan
     assert result.status == "PASS"
 
 
+@pytest.mark.parametrize("inserted_statement", [
+    "    writer = memory.write\n    await writer(candidate)\n",
+    "    store = memory\n    await store.write(candidate)\n",
+])
+def test_check_drift_10_rejects_write_aliases_before_governance(tmp_path, monkeypatch, inserted_statement):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    result = governance.evaluate_action(action)\n",
+        inserted_statement + "    result = governance.evaluate_action(action)\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any("memory.write(...) occurs before the required GovernanceKernel evaluation" in v.detail for v in result.violations)
+
+
 def test_check_drift_10_rejects_result_rebinding_after_approval_guards(tmp_path, monkeypatch):
     _setup_clean_governance_files(tmp_path)
     code = VALID_LEARNING_PY.rsplit("    return result\n", 1)[0] + (
