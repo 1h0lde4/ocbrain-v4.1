@@ -1828,6 +1828,30 @@ def _trusted_policy_class_violations(tree: ast.Module, rel: str) -> list[Violati
                         f"policy constant '{symbol}.{field_name}' must retain its frozen value {expected_value!r}",
                     )
                 )
+
+        # Policy namespaces must be inert at import time. Pinning their expected
+        # constants is not enough if an extra class-body expression can mutate
+        # trusted globals via indirect access during class construction.
+        allowed_statement_ids = {
+            id(stmt)
+            for stmt in node.body
+            if isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and stmt.targets[0].id in expected_values
+        }
+        if node.body and isinstance(node.body[0], ast.Expr):
+            doc_value = node.body[0].value
+            if isinstance(doc_value, ast.Constant) and type(doc_value.value) is str:
+                allowed_statement_ids.add(id(node.body[0]))
+        for statement in node.body:
+            if id(statement) not in allowed_statement_ids:
+                violations.append(
+                    Violation(
+                        rel, getattr(statement, "lineno", node.lineno),
+                        f"policy class '{symbol}' contains an unexpected executable or undeclared class-body statement",
+                    )
+                )
     return violations
 
 def _trusted_governance_import_violations(tree: ast.Module, rel: str) -> list[Violation]:

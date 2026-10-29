@@ -431,6 +431,25 @@ def test_check_drift_10_rejects_mutated_content_domain_policy_values(
     "tier_class = LearningTier\n",
     "get_governance_kernel = lambda: FakeGovernance()\n",
 ])
+def test_check_drift_10_rejects_executable_policy_class_body_statement(tmp_path, monkeypatch):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n",
+        "    ALL = (LEARNING, ADAPTATION, EVOLUTION)\n"
+        "    globals()['EvolutionGovernor'].SELF_MODIFYING_ACTIONS.clear()\n",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "VIOLATION"
+    assert any(
+        "contains an unexpected executable or undeclared class-body statement" in v.detail
+        for v in result.violations
+    )
+    assert result.notes == ""
+
+
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(
     tmp_path, monkeypatch, unsafe_module_statement
 ):
