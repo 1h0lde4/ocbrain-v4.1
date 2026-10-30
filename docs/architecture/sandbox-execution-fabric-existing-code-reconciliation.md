@@ -1023,7 +1023,7 @@ A first probe of D-2 built its sources wrongly (booleans where callables are req
 | Mutation | 27 scratch mutations (the 19 of §22.4, the 8 below) | All caught. The first run caught 26 of 27: a `__reduce__` that rebuilds the base class instead of `type(self)` survived because no test used a subclass; a test was added |
 | Package | `python3 -m pytest tests/core/sandbox -q -p no:cacheprovider` | 255 passed, 1 failed, 85 skipped. No Docker daemon was reachable, so the Docker-dependent tests were skipped ("requires a reachable Docker daemon"); this is not comparable with §22.3's run, which had a daemon |
 
-The one failure, `tests/core/sandbox/test_allowed_hosts.py::test_allowed_host_is_reachable_through_the_proxy` (`NamespaceBackend`, "Connection refused"), fails identically on the unmodified `6643309` and on the base `e2266603cf215c301af4a6b47124b44730d41f0f` in this environment. It is not in `D10_KNOWN_ENVIRONMENTAL_FAILURES.txt`, its cause was not established here, B03 does not touch it, and it was neither changed nor added to any list. The new mutations: `__reduce__` removed from each class, state dropped from each, rebuild through the base class, the non-text guard removed, a non-text value ignored (fail open), a non-text value coerced with `str()`. Supplementary, not a repository gate: `ruff` and `bandit` report nothing new (three `ruff` default findings, two of them the deliberate fail-closed `except Exception`, are unchanged from `6643309`).
+The one failure, `tests/core/sandbox/test_allowed_hosts.py::test_allowed_host_is_reachable_through_the_proxy` (`NamespaceBackend`, "Connection refused"), fails identically on the unmodified `6643309` and on the base `e2266603cf215c301af4a6b47124b44730d41f0f` in this environment. It is not in `D10_KNOWN_ENVIRONMENTAL_FAILURES.txt`, B03 does not touch it, and it was neither changed nor added to any list. Its cause is the `NO_PROXY` and `no_proxy` environment variables set in this environment: with both unset it passes on the unmodified base and on the candidate (§22.9.1; this sentence originally said the cause was not established). The new mutations: `__reduce__` removed from each class, state dropped from each, rebuild through the base class, the non-text guard removed, a non-text value ignored (fail open), a non-text value coerced with `str()`. Supplementary, not a repository gate: `ruff` and `bandit` report nothing new (three `ruff` default findings, two of them the deliberate fail-closed `except Exception`, are unchanged from `6643309`).
 
 **Not verified, and why.**
 - **Docker-side behavior.** No daemon was reachable in this session (the socket paths exist; no `dockerd` or `containerd` process; `docker version` could not connect) and none was started: starting one changes bridge and firewall state of the host, which was not authorized. TC-13, probe-by-creation, ambiguous-create recovery, daemon identity and the H2 capacity figure were not re-measured and stay as in §22.6.
@@ -1042,3 +1042,90 @@ The one failure, `tests/core/sandbox/test_allowed_hosts.py::test_allowed_host_is
 | Kernel commit "[NET]: socket family using RCU" (2006) | `if (net_families[family] == NULL) request_module("net-pf-%d", family);` under `CONFIG_KMOD`: the loader is asked for an unregistered socket family | A 2006 commit, not a current kernel; the enclosing function and the `ipv6` module alias were not confirmed; applicability to any production host is unverified |
 
 Correction to the decision pack that this reading prompts (the pack is not a repository file): its statement that the Docker documentation "states no precedence" among the endpoint overrides holds for the contexts page only; the CLI reference page states partial precedence as above.
+
+### 22.9 Addendum, 2026-10-30: three further defects, test gaps, documentation cautions, and what was re-verified
+
+Appended. §22.1 to §22.8 are the record at their dates; the only edit to them is the one sentence of §22.8 named in 22.9.1. **The guards are still inert: INV-7 and INV-8 are not enforced by the product, G4 and G6 are not earned, no `SandboxCapability` changed, PR #86 is not merged, and nothing here is a merge recommendation or a ruling.** Nothing here rules on any item named in 22.9.6.
+
+**Code state described here:** `35c13c3dfb16beda32d005661ad238fe842b5d64` (the fixes), `b70e887117778bb7ff10e201b2eaffe7239a07c0` (module cautions and two more tests; no logic change from `35c13c3`) and `5e06c1abc4c6aae4800e2f376e3df7a4a377a217` (one more test; the module is byte-identical to `b70e887`), on top of `aa99505cb46eaf93d5dfe3b56018401fa773a3c5`. A later commit records this section and changes only this document.
+
+| File at `5e06c1a` | git blob | sha256 | Lines |
+|---|---|---|---|
+| `core/sandbox/backends/_sandbox_network.py` | `031ab5f7e466307176bdde30aeb4a563f15bab6b` | `719272fd051c64277153850f3d6a1179a09153e21ec68b59eacf26c753b3017f` | 531 |
+| `tests/core/sandbox/test_sandbox_network_guards.py` | `372d2f318f883aca5ce548771ff4daa6a080c258` | `756d9e37e8871a3abd04b360536b415b81691e9e5c1b1d50509af4647538134a` | 1287 |
+
+#### 22.9.1 Corrections to the record
+
+| Where | Was | Now |
+|---|---|---|
+| §22.8, the paragraph on `test_allowed_hosts` | "its cause was not established here" (edited in place) | The cause is the `NO_PROXY` and `no_proxy` variables set in this environment. With both unset, `tests/core/sandbox/test_allowed_hosts.py` gives 4 passed on the unmodified base `e2266603…` and on the candidate; with them set it fails identically on both (§22.8). §22.3 already lists "`NO_PROXY`/`no_proxy` unset" among the environment adjustments |
+| §22.8, "`ruff` and `bandit` report nothing new" | no versions | `ruff` 0.17.2 (default rules; the repository has no `ruff` configuration, so none of this is a repository gate) and `bandit` 1.9.4. On `aa99505`: 3 `ruff` findings in the two files (2 deliberate fail-closed `except Exception` as `BLE001`, 1 `PLW1510` on a `subprocess.run` in a test). On this head: none. The deliberate catches now carry `# noqa: BLE001` with their reason and the test passes `check=False` |
+| §22.2 and §22.3 (dated 2026-10-18), for the head described here | pin `test_nothing_in_core_imports_the_guard_module_yet`; 112 tests; a 20-row matrix; 19 mutations | superseded by the figures below: pin `test_nothing_in_the_repository_imports_the_guard_module_yet`, which scans every `.py` file outside `tests/`; 223 tests; a 22-row matrix; 68 mutants. The full-directory figures of §22.3 (273 passed, 8 xfailed) were taken on a host with a Docker daemon and are not comparable with any run in this section |
+
+#### 22.9.2 Three further defects, found and fixed (tests first, in `35c13c3`)
+
+Each was reproduced by running the real code on `aa99505` before any change, and the new tests failed there (22 for D-3, 4 for D-4, 4 for D-5).
+
+| ID | Defect | Found by | Effect | Fix |
+|---|---|---|---|---|
+| D-3 | `evaluate_ipv6` read the two presence checks (`sysctl_net_present`, `ipv6_dir_present`) by truthiness. A falsy non-`bool` from `ipv6_dir_present` (`None`, `0`, `""`, `[]`, `b""`) counted as "directory absent", which is OFF, even when `disable_ipv6` read `0` for both scopes; a truthy non-`bool` from `sysctl_net_present` (`"no"`, `"False"`, `1`, an object) with the directory absent also gave OFF | Reported against `aa99505` by an independent review of that commit (not of this head), then reproduced by the author | The guard would admit while IPv6 is on, but only through an injected source that breaks its `bool` contract; `proc_ipv6_sources()` always returns a `bool`, and nothing calls the guard. The same fault class as D-2, on the other two sources | The two answers are compared with `is True` and `is False`; any other value is UNKNOWN ("the … check returned a NoneType, not a bool"). `Ipv6Sources` documents the contract |
+| D-4 | `NetworkSlotLimiter.reserve` took the slot under the lock and then logged. A log call that raises propagated after the slot was taken: a `logging.Filter` that raises does this (`logging` swallows only failing handlers), as does an owner whose `__repr__` raises. The caller never received the slot, so nothing could release it and each such call shrank the limit for good | Same; the hostile-owner case was reproduced by the author on `aa99505` (two failed calls exhausted a limit of 2) | Needs a hostile logging setup (the default WARNING level does not exercise the DEBUG record) or a hostile owner object, which fails the log call at any level because the record is built from `repr(owner)` | The log call is wrapped: on any `BaseException` the slot is removed under the lock and the exception propagates. `release` already frees the slot before it logs |
+| D-5 | An exception raised by an injected source or by the probe whose own `__str__` raises escaped `SandboxNetworkGuardError`: the f-string that formats the reason raised inside the `except` block | The author, while fixing D-3 and D-4; reproduced at four sites on `aa99505` (net check, ipv6-directory check, scope read, probe) | Still failed closed (an exception, never a pass), but "any exception is UNKNOWN" and "a failing probe is a `SandboxNetworkCapacityProbeError`" did not hold | `_describe_error` renders `TypeName: message` and falls back to `TypeName: <its message could not be rendered>` |
+
+#### 22.9.3 Test gaps closed, and the mutant that proves each
+
+The mutation harness is a scratch script, not in the repository: it applies one change to a committed tree, runs the guard tests, restores exactly the files it changed with `git checkout -- <path>`, and asserts a clean tree before and after. **68 mutants, all caught** on `b70e887`: the 27 of §22.8 (two of them re-anchored to the changed code) and 41 new ones.
+
+| Gap on `aa99505` | Change | New mutants (all caught) |
+|---|---|---|
+| The two presence checks were tested only with real `bool`s | Two matrix rows (an unexpected error from each check); 9 non-`bool` values through three tests; "only a real `bool` pair can give OFF by absence" | falsy `bool` accepted as absent; truthy non-`bool` accepted as present (each check); non-`bool` reported as OFF |
+| The reason text of an unreadable net sysctl directory was never asserted | `"not readable"` is asserted | reason lost |
+| Lock discipline was proven only by thread interleavings, which are probabilistic | `_LockCheckedSet` replaces the slot set and fails on any touch without the lock; it covers `reserve`, refusal, `release`, `in_use`, `available` and the give-back path | `in_use`, `available`, `release` and the give-back without the lock; each is caught by this one deterministic test and by nothing else |
+| No test for a log call that raises | Leak test over `RuntimeError`, `KeyboardInterrupt` and `CancelledError`, with an unrelated holder that must keep its slot; an owner whose `__repr__` raises; a refusal test; a release test | no give-back; give-back only for `Exception`; give-back that clears every slot; give-back that swallows the exception; `release` that logs before freeing |
+| No test for an exception with a broken `__str__` | three sites and the probe | the helper unprotected; each site formatting the raw exception |
+| Real procfs reads: only injected failures for undecodable bytes and `NotADirectoryError` | Two tests on real files | `NotADirectoryError` as absent; `errors="ignore"` on the read |
+| Round-trip tests used equal numbers (`limit == in_use`) | Distinct numbers; message and owner asserted | field swap; message order; owner dropped from the message |
+| Log tests counted records | Event, level and `in_use` of each record pinned in order | each level and field changed |
+| `expected.value in str(info.value)` was always true for ON (`"on"` is inside "isolation") | The phrase `IPv6 is <state> on this host` is asserted | message that always says unknown; message without the reason |
+| The inertness pin scanned `core/` only | Scans every `.py` outside `tests/` and non-code directories; an unparseable file is searched as text; the scan has its own test; it asserts it saw more than 100 files | import or string reference in `main.py` |
+| No check that the module stays free of dynamic imports or generated code, or that `__all__` is complete | Two tests | `__import__`, `importlib`, `eval`; an unexported public name; a dropped name; a duplicated name |
+
+Two more tests pin statements added to the module docstring: an `async def probe` is refused as a probe error, and a copied slot cannot release the original.
+
+#### 22.9.4 Residuals recorded, not changed
+
+- A **refusal whose log call raises** propagates the logging exception instead of `SandboxNetworkCapacityError` or `SandboxIPv6RefusedError`. State is unchanged, so it fails closed, but it is outside the guard hierarchy. Not changed: making `_emit` swallow errors would be silent exception swallowing, which the project forbids; the wiring boundary in B11 can translate any exception.
+- The **inertness pin is static**. It cannot see a module name built at run time (`importlib.import_module("a" + "b")`) or a reference in a file that is not `.py`.
+- A **`str` subclass with a raising `strip()`** returned by a source escapes the hierarchy; `str.strip()` also removes Unicode whitespace (`"\x1c1"` reads as `1`). The kernel emits neither.
+- `effective_limit` accepts an `int` subclass: for an `IntEnum` member at or under the ceiling it returns the member, and a limiter built with it keeps the member as `limit` (observed).
+- The refusal text for state ON reads "IPv6 is on on this host" (wording only; a test pins the phrase).
+- A round-tripped refusal does not keep `__cause__` or the traceback (as with stock exceptions), and a subclass with a different constructor signature does not copy.
+- `test_proc_sources_on_this_host_agree_with_a_direct_look` depends on the host; where `/proc/sys/net/ipv6` exists its last branch asserts only that the state is an `Ipv6State`. This host has no such directory.
+
+#### 22.9.5 Verification of the code at `5e06c1a`
+
+| Check | Command (from the repository root) | Result |
+|---|---|---|
+| Focused tests | `env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_sandbox_network_guards.py -q -p no:cacheprovider` | 223 passed on Python 3.13.16 and on 3.12.3 (the system `/usr/bin/python3.12` with the packages of a virtual environment); also with `-W error::RuntimeWarning` |
+| Types | `MYPYPATH=. mypy [--strict] --explicit-package-bases --follow-imports=silent <the two files>` (mypy 2.4.0) | Clean, default and strict |
+| Lint, security | `ruff check` (0.17.2), `bandit` (1.9.4) on the module | `ruff`: all checks passed on both files. `bandit`: no findings |
+| Mutation | the harness above | 68 of 68 caught; clean tree before and after |
+| Drift | `python3 scripts/check_drift.py` | Exit 0, 15 of 15 PASS (run on the head that carries this section) |
+| Whole suite, in CI order | A mirror of the `tests` job of `.github/workflows/ci.yml`: system Python 3.12.3 with `requirements.txt` installed, `NO_PROXY`/`no_proxy` unset, `pytest tests/ -q --tb=short`, then `scripts/ci_test_gate.py` with the D10 list. Run on an export of `b70e887`, in groups of files that each fit one call (the first attempts to run it as a single background process were killed before finishing). `5e06c1a` differs from `b70e887` by one added test in `test_sandbox_network_guards.py` and nothing else, and no other test reads that file; the group that contains it was run again on the head | 2315 collected: **2188 passed, 41 failed, 85 skipped, 1 xfailed**. The 85 skips are the Docker-dependent tests (no daemon was reachable) |
+
+**The 41 failures, and why they are not B03's.** This environment's proxy refuses `huggingface.co` (HTTP 403 on the tunnel), and every failure is a test that needs the embedding model. 21 are in the D10 list. The other 20 are not in the list: `test_context_scope_security.py::test_planner_worker_scopes_long_term_memory_save_and_dispatch` (1), `test_module_factory_security.py` (2), `test_planner_capability_migration.py` (6) and `test_planner_worker.py` (11). **Each of those 20 was run on the unmodified base and failed identically** (same files, same counts, node by node for `test_planner_worker.py`). Consequences: in this environment the gate script fails on the base and on the candidate alike for the same reason; whether it passes where `huggingface.co` is reachable is **UNVERIFIED** (no workflow ran for this head); the D10 list is not changed here (that is not B03's to widen); the 21 listed failures were not re-run on the base.
+
+**A second environmental effect, same on base.** Run under a virtual-environment interpreter outside the sandbox's visible filesystem, 8 tests in `tests/core/sandbox/test_namespace_backend.py` fail (`FileNotFoundError` from `execvp` in `_ns_init.py`); the failing set is identical on `e2266603…`, on `aa99505` and on this head, and all pass under the system interpreter. **The directory on the code at `5e06c1a`: 307 passed, 85 skipped, on Python 3.12.3 and on 3.13.16** (no Docker daemon was reachable, so the Docker-dependent tests were skipped; not comparable with §22.3).
+
+#### 22.9.6 Identifiers used in §22.8 and here
+
+None of these is a ruling. **No decision named below has been made by the user.**
+
+| Identifier | Defined in | Meaning, and state |
+|---|---|---|
+| Q34(1) to Q34(4) | `handoff.md` on the remote branch `handoff/sandbox-network-isolation-v4` at `7b99cbb7e0b61164181ed8533272cca269dfda09` (§5 row Q34) | Four B03 items for the user: (1) the errors are not `DockerBackendError` subclasses (§22.5 item 1), (2) "absent" means off only when `/proc/sys/net` is present (item 2), (3) the §9 rule is implemented as specified although the kernel documents that reading `conf/all/disable_ipv6` has no particular meaning (item 3), (4) the limiter counts reservations, not networks (item 5). Numbering differs from §22.5: Q34(4) is item 5. **OPEN** |
+| DEC-42 to DEC-45 | the same file (§10) | The assistant's recorded decisions behind Q34(1) to (4) (DEC-45 also cites §22.5 item 6). "Settled" there is the assistant's own bookkeeping, not a user ruling |
+| DEC-46 | the same file (§10) | The inertness pin is temporary and B11 replaces it with its wiring tests (§22.5 item 8). Not part of Q34. Not acknowledged by the user |
+| "the decision pack" | Not in the repository: an assistant-authored proposal document for the user's decisions (DG-1, DG-2, Q34). Revision 1 sha256 `98f6813babdf19400819e1f58781a8967eb2571124dd0c394161c2213b625a76`; revision 2 sha256 `6e76e97b67154f321d84be0542d57a61773595c8c5e04543fe4cc7f63c757d42` | Every recommendation in it is a **PROPOSAL**. It was delivered to the user separately. If it is to be preserved with the repository, that is the user's call |
+| AMEND-IPV6-1 | decision pack D.3 | A proposed evidence-tier amendment to specification §9 for B11 and B14. **PROPOSED, NOT ACCEPTED.** B03 does not implement it |
+| TC-15b | decision pack G.4 | A proposed false-negative test for hosts that the §9 rule calls OFF while an interface has IPv6. **PROPOSED**; not in the specification's test catalogue; against the current detector it is expected to fail by design, so it cannot be a PR #86 test |
