@@ -356,6 +356,56 @@ Verification notes on the rulings (Oct 6, 2026, on this branch):
 
 The Option C study (Q3) is separate and does not block promotion.
 
+## 8.2 Status notes (added Oct 30, 2026, after the Oct 6 approval; not part of what was approved)
+
+State of the §8.1 items against PR #93 reconciled with `main` `16d663a`. This section records
+facts; it approves nothing and changes no decision in §§1-8.
+
+1. **Review performed; owner acceptance pending.** At the owner's instruction a Claude session
+   reviewed `live_citation_check.py` end to end and exercised it. Verified: one decision point
+   produces both the printed verdict and the exit code; precedence is escalation (1) over every
+   inconclusive condition (2) over 0; every "cannot report" path fails closed (zero runs, missing
+   or invalid event fields, rejected event keys, no goals, a failing escalation check, per-payload
+   exposure and answer coverage, self-coverage, provenance defects, the strict policy); escalation
+   is counted over all runs; trial outcomes are mutually exclusive and reconcile; run metadata
+   holds class, model and a sanitized `scheme://host:port` only (0 credential-like strings in a
+   produced JSON file). The real-provider code path, which `--dry-run` never executes, was driven
+   against a local HTTP stub impersonating Ollama (plumbing check only; **not model evidence**):
+   no provider gave exit 2; an answering stub gave exit 0 with the answering provider recorded,
+   the cache cleared before 30 of 30 trials and 0 cache hits; a blank-returning stub gave exit 2
+   under both coverage policies.
+   **One defect found and fixed (commit `0c16cd3`):** with an unwritable `--json` path the harness
+   printed "invariant held" and then exited **1** from an unhandled exception. Exit 1 is reserved
+   for a genuine escalation, so a harness crash was indistinguishable from the CTX-AUTH-002
+   failure. It failed safe (never a false pass). Now: the path is checked before the first trial,
+   a failed write downgrades a pass to 2 and never masks an escalation, and an unexpected crash
+   exits 2. Five tests; each part of the fix is mutation-checked; the invariant, the escalation
+   test and the coverage policy are unchanged.
+   Observations, not changed: `_Recorder` keeps only the last provider call (one call per trial
+   today, measured); events are keyed by type (one goal per request today); `--fail-on-selected`
+   does not apply when the verdict is already 2; "real" mode certifies "not `--dry-run`", not that
+   a model produced the text, so the owner should check the recorded provider, model and endpoint.
+   Limit of this review: it is independent of the sessions that wrote the harness, not of the
+   model family. The owner's own acceptance of item 1 remains the owner's.
+2. **OPEN. Not performed; no real-model evidence exists.** No configured provider is available in
+   the verification environment: no Ollama binary or listener on `:11434`, none on `:8080`, no
+   provider credentials in the environment, and DNS resolution fails for `registry.ollama.ai` and
+   `huggingface.co`, so no model could be fetched either. Dry-run stand-ins and the stub server are
+   not real-model evidence and cover neither R3 nor R5. To satisfy it, on a machine with the
+   configured provider run `python3 live_citation_check.py --json out.json` from the PR head
+   (defaults: 10 requests x 3 trials; `--require-all-answered` for the strict policy). Acceptance
+   needs exit 0, the recorded provider and model to be the intended ones, cache hits 0, and the
+   recorded harness sha256 and commit to match the head under test.
+3. **Done (Oct 30, 2026).** `main` refreshed to `16d663a`; `ADR-KERNEL-08` is still the free number
+   (`ADR-KERNEL-07` is the creative content-anchor detector); `main` merged into the branch
+   (`7fbf7c2`, no conflicts, diff against `main` unchanged); critical gates re-run: suite 2169
+   passed, 1 xfailed, 8 failed (`main` baseline 2080 / 1 / 8; the same 8 sandbox-namespace tests,
+   which need privileges the sandbox lacks); drift 30 PASS / 0 FAIL; mutation check 43/43; the six
+   `--dry-run` stand-ins at 10 requests x 3 trials all exit 0 with ESCALATED 0.
+4. **Not promoted.** PR #93 is open. Item 2 is a precondition of promotion as written in §8.1, so
+   the merge is held until the owner either runs it or explicitly waives it. ADR-KERNEL-08 stays
+   APPROVED, not IMPLEMENTED; CTX-AUTH-002 is not closed; CTX-AUTH-001b stays OPEN.
+
 ## 9. Lifecycle
 
 APPROVED (Oct 6, 2026, by Moncif). Not IMPLEMENTED: the replacement exists on
