@@ -455,12 +455,6 @@ def test_check_drift_10_rejects_executable_policy_class_body_statement(tmp_path,
     "globals()['EvolutionGovernor'].SELF_MODIFYING_ACTIONS.clear()\n",
     "exec(\"EvolutionGovernor.SELF_MODIFYING_ACTIONS.clear()\")\n",
 ])
-
-
-
-
-
-
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(
     tmp_path, monkeypatch, unsafe_module_statement
 ):
