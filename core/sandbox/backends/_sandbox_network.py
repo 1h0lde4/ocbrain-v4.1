@@ -29,8 +29,10 @@ What is here
   network is created and released only after the network's removal is
   confirmed. If removal cannot be confirmed the caller keeps the slot held
   (the handle is retained, spec section 10). It is a single lock-protected
-  counter (D11); critical sections are O(1) and do no I/O, so it is safe to
-  call from async code.
+  counter (D11); critical sections are O(1) and do no I/O, and the log calls
+  run outside the lock. The lock is therefore safe to take from async code;
+  the log handlers attached to ``ocbrain.sandbox.network`` are not under this
+  module's control and may block.
 * ``Ipv6Sources`` / ``evaluate_ipv6`` / ``enforce_ipv6_guard`` -- IPv6 is
   treated as off only if ``/proc/sys/net/ipv6`` is absent or ``disable_ipv6``
   is 1 for ``all`` and ``default``; anything else is on or unknown and is
@@ -53,7 +55,11 @@ Design decisions the wiring batch must know
   8 asks for a defined error in that family). This is recorded as an
   interpretation in reconciliation section 22.
 * ``proc_ipv6_sources()`` does three small synchronous procfs reads. In an
-  async path call the guard through ``asyncio.to_thread``.
+  async path call the guard through ``asyncio.to_thread``. The same holds for
+  a ``CapacityProbe``: ``probe()`` is synchronous, and an ``async def probe``
+  returns a coroutine, which is refused as a probe error (and leaves an
+  un-awaited coroutine behind); run a blocking probe through
+  ``asyncio.to_thread`` and pass the integer.
 * ``/proc/sys/net/ipv6`` being absent only counts as "IPv6 off" when
   ``/proc/sys/net`` itself is present. If procfs is not readable the absence
   proves nothing, and that case is UNKNOWN (refused). This narrows the
@@ -65,6 +71,13 @@ Design decisions the wiring batch must know
   sandbox network is isolated for IPv6, and ``enforce_ipv6_guard`` is not by
   itself enforcement of INV-8 (spec section 9: IPv6 isolation is UNVERIFIED).
   Which mechanism enforces INV-8, and over what scope, is not decided here.
+  Two limits of that reading follow. It is a point-in-time fact: an absent
+  ``/proc/sys/net/ipv6`` is what ``ipv6.disable=1`` produces, but on a kernel
+  where IPv6 is a loadable module that is not loaded yet, whether the first
+  IPv6 socket loads it is unverified here, so the reason text states what the
+  kernel exposes, not that IPv6 cannot appear. And the controller may run in a
+  container whose network namespace is not the one in which the Docker daemon
+  creates bridges; a pass read there says nothing about the daemon's.
 * The refusals are picklable and copyable (``__reduce__``): the worker pool,
   the webhook process and the task runner are separate processes, so a refusal
   must survive crossing one.
@@ -236,7 +249,10 @@ class NetworkSlot:
     """A held capacity slot, returned by ``NetworkSlotLimiter.reserve``.
 
     Compared by identity on purpose: two reservations by the same owner are two
-    slots. Create it only through ``reserve``."""
+    slots. Create it only through ``reserve``. Do not copy or pickle a slot: a
+    copy is a different object, so ``release(copy)`` returns False and the
+    original stays held (a deep copy or a pickle fails outright, as the limiter
+    holds a lock). Keep the one object ``reserve`` returned."""
 
     owner: str
     limiter: NetworkSlotLimiter = field(repr=False)

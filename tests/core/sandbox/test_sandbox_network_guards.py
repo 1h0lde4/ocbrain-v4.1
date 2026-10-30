@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import copy
+import gc
 import logging
 import os
 import pickle
@@ -47,6 +48,7 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -57,6 +59,7 @@ import pytest
 from core.sandbox.backends import _sandbox_network as sn
 from core.sandbox.backends._sandbox_network import (
     MAX_CONCURRENT_SANDBOX_NETWORKS,
+    CapacityProbe,
     Ipv6Decision,
     Ipv6Sources,
     Ipv6State,
@@ -378,6 +381,21 @@ def test_a_probe_returning_garbage_is_a_probe_error() -> None:
         resolve_effective_limit(_FixedProbe("many"))
 
 
+def test_an_async_probe_is_refused_as_a_probe_error() -> None:
+    """Documented in the module docstring: ``probe()`` is synchronous, and an
+    ``async def probe`` hands back a coroutine, which is not an integer."""
+
+    class _AsyncProbe:
+        async def probe(self) -> int:
+            return 5
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # the coroutine is never awaited
+        with pytest.raises(SandboxNetworkCapacityProbeError, match="coroutine"):
+            resolve_effective_limit(cast(CapacityProbe, _AsyncProbe()))
+        gc.collect()
+
+
 def test_cancellation_inside_the_probe_is_not_converted() -> None:
     cancelled = asyncio.CancelledError()
     with pytest.raises(asyncio.CancelledError) as info:
@@ -490,6 +508,20 @@ def test_a_foreign_slot_is_rejected_and_changes_nothing() -> None:
         mine.release(foreign)
     assert (mine.in_use, other.in_use) == (1, 1)
     assert mine.release(mine_slot) is True
+
+
+def test_a_copied_slot_is_not_the_slot_and_cannot_release_it() -> None:
+    """Documented on ``NetworkSlot``: release is by identity, so a copy that is
+    released does not free the original, and a copy is not silently accepted."""
+    limiter = NetworkSlotLimiter(1)
+    slot = limiter.reserve("a")
+    clone = copy.copy(slot)
+    assert clone is not slot
+    assert limiter.release(clone) is False
+    assert limiter.in_use == 1, "releasing a copy must not free the original"
+    with pytest.raises((TypeError, pickle.PicklingError)):
+        pickle.dumps(slot)
+    assert limiter.release(slot) is True
 
 
 class _LockCheckedSet(set[sn.NetworkSlot]):
