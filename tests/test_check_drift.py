@@ -458,25 +458,7 @@ def test_check_drift_10_rejects_executable_policy_class_body_statement(tmp_path,
 
 
 
-@pytest.mark.parametrize("policy_read", [
-    "DEFAULT_TIER: str = LearningTier.LEARNING\n",
-    "DEFAULT_DOMAIN: str = ContentDomain.USER_MODEL\n",
-    "USER_MODEL_EVENT = \"updated\" if ContentDomain.USER_MODEL == \"user_model\" else \"other\"\n",
-])
-def test_check_drift_10_allows_read_only_frozen_policy_constant_reads(
-    tmp_path, monkeypatch, policy_read
-):
-    _setup_clean_governance_files(tmp_path)
-    code = VALID_LEARNING_PY.replace(
-        "async def _find_contradiction",
-        policy_read + "\nasync def _find_contradiction",
-        1,
-    )
-    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
-    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
-    result = check_drift.check_drift_10()
-    assert result.status == "PASS"
-    assert result.notes
+
 
 
 def test_check_drift_10_rejects_module_level_governance_monkeypatches(
@@ -497,6 +479,28 @@ def test_check_drift_10_rejects_module_level_governance_monkeypatches(
         or "module-scope binding" in v.detail
         for v in result.violations
     )
+
+
+@pytest.mark.parametrize("policy_read", [
+    "DEFAULT_TIER: str = LearningTier.LEARNING\n",
+    "DEFAULT_DOMAIN: str = ContentDomain.USER_MODEL\n",
+    "DEFAULT_DOMAINS: tuple = ContentDomain.ALL\n",
+    "USER_MODEL_EVENT = \"updated\" if ContentDomain.USER_MODEL == \"user_model\" else \"other\"\n",
+])
+def test_check_drift_10_allows_read_only_frozen_policy_constant_reads(
+    tmp_path, monkeypatch, policy_read
+):
+    _setup_clean_governance_files(tmp_path)
+    code = VALID_LEARNING_PY.replace(
+        "async def _find_contradiction",
+        policy_read + "\nasync def _find_contradiction",
+        1,
+    )
+    (tmp_path / "core/cognitive/learning.py").write_text(code, encoding="utf-8")
+    monkeypatch.setattr(check_drift, "REPO_ROOT", tmp_path)
+    result = check_drift.check_drift_10()
+    assert result.status == "PASS"
+    assert result.notes
 
 
 def test_check_drift_10_exception_configuration_drives_enforcement_and_notes(tmp_path, monkeypatch):
