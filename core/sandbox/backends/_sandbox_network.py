@@ -124,6 +124,17 @@ def _emit(level: int, event: str, **fields: object) -> None:
     )
 
 
+def _describe_error(error: BaseException) -> str:
+    """``TypeName: message`` for a reason or a log field. An injected source or
+    probe is outside this module's control, so the text of its exception is not
+    trusted: an exception whose own ``__str__`` raises must not turn into a
+    second, unrelated exception inside a guard."""
+    try:
+        return f"{type(error).__name__}: {error}"
+    except Exception:  # noqa: BLE001 - fail closed: the text of a foreign exception is not trusted
+        return f"{type(error).__name__}: <its message could not be rendered>"
+
+
 # --------------------------------------------------------------------
 # Errors
 # --------------------------------------------------------------------
@@ -204,13 +215,10 @@ def resolve_effective_limit(probe: CapacityProbe) -> int:
     try:
         result = probe.probe()
     except Exception as exc:
-        _emit(
-            logging.ERROR,
-            "sandbox_network_capacity_probe_failed",
-            error=f"{type(exc).__name__}: {exc}",
-        )
+        description = _describe_error(exc)
+        _emit(logging.ERROR, "sandbox_network_capacity_probe_failed", error=description)
         raise SandboxNetworkCapacityProbeError(
-            f"capacity probe failed ({type(exc).__name__}: {exc}); not assuming the ceiling"
+            f"capacity probe failed ({description}); not assuming the ceiling"
         ) from exc
     limit = effective_limit(result)
     _emit(
@@ -276,7 +284,12 @@ class NetworkSlotLimiter:
 
     def reserve(self, owner: str) -> NetworkSlot:
         """Take a slot or raise ``SandboxNetworkCapacityError``. A refusal
-        changes no state. ``owner`` only labels the log records."""
+        changes no state. ``owner`` only labels the log records.
+
+        If the log call that follows the reservation raises (a logging filter
+        or hook can; ``logging`` itself only swallows failing handlers), the
+        slot is given back before the exception propagates: the caller never
+        received it and so could never release it."""
         with self._lock:
             in_use = len(self._held)
             slot: NetworkSlot | None = None
@@ -293,19 +306,25 @@ class NetworkSlotLimiter:
                 in_use=in_use,
             )
             raise SandboxNetworkCapacityError(limit=self._limit, in_use=in_use, owner=owner)
-        _emit(
-            logging.DEBUG,
-            "sandbox_network_slot_reserved",
-            owner=owner,
-            limit=self._limit,
-            in_use=in_use,
-        )
+        try:
+            _emit(
+                logging.DEBUG,
+                "sandbox_network_slot_reserved",
+                owner=owner,
+                limit=self._limit,
+                in_use=in_use,
+            )
+        except BaseException:
+            with self._lock:
+                self._held.discard(slot)
+            raise
         return slot
 
     def release(self, slot: NetworkSlot) -> bool:
         """Return ``slot``; True if this call released it, False if it was not
         held (already released). A slot of another limiter is a ``ValueError``
-        and changes nothing."""
+        and changes nothing. The slot is freed before the log call, so a log
+        call that raises cannot keep it held."""
         if slot.limiter is not self:
             raise ValueError("slot belongs to a different limiter")
         with self._lock:
@@ -373,7 +392,9 @@ class Ipv6Sources:
     something. ``ipv6_dir_present``: ``/proc/sys/net/ipv6`` exists.
     ``read_disable_ipv6(scope)``: the text of ``conf/<scope>/disable_ipv6``
     for scope ``all`` or ``default``. Each may raise; any exception is read as
-    UNKNOWN, never as off."""
+    UNKNOWN, never as off. The two presence checks must return a real ``bool``
+    and the read a ``str``: a value of any other type is a source that broke
+    its contract, and is UNKNOWN too, whether or not it is falsy."""
 
     sysctl_net_present: Callable[[], bool]
     ipv6_dir_present: Callable[[], bool]
@@ -414,18 +435,36 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
     unrecognised), is UNKNOWN. ON takes precedence over UNKNOWN when both
     occur."""
     try:
-        if not sources.sysctl_net_present():
+        # Both answers are compared with ``is``, not truthiness. A real ``False``
+        # from the first check means the net sysctl directory is unreadable
+        # (UNKNOWN); a real ``False`` from the second means the ipv6 directory is
+        # absent (OFF). Any other value, including one that merely happens to be
+        # falsy (None, 0, "", []), is a source that broke its ``bool`` contract:
+        # UNKNOWN, never OFF.
+        net_present: object = sources.sysctl_net_present()
+        if net_present is False:
             return Ipv6Decision(
                 Ipv6State.UNKNOWN,
                 "the net sysctl directory is not readable, so the absence of its ipv6 "
                 "subdirectory proves nothing",
             )
-        if not sources.ipv6_dir_present():
+        if net_present is not True:
+            return Ipv6Decision(
+                Ipv6State.UNKNOWN,
+                f"the net sysctl check returned a {type(net_present).__name__}, not a bool",
+            )
+        ipv6_dir_present: object = sources.ipv6_dir_present()
+        if ipv6_dir_present is False:
             return Ipv6Decision(Ipv6State.OFF, "the kernel exposes no ipv6 sysctl directory")
-    except Exception as exc:
+        if ipv6_dir_present is not True:
+            return Ipv6Decision(
+                Ipv6State.UNKNOWN,
+                f"the ipv6 sysctl directory check returned a {type(ipv6_dir_present).__name__}, not a bool",
+            )
+    except Exception as exc:  # noqa: BLE001 - fail closed: any failure of an injected source is UNKNOWN
         return Ipv6Decision(
             Ipv6State.UNKNOWN,
-            f"could not check for the ipv6 sysctl directory ({type(exc).__name__}: {exc})",
+            f"could not check for the ipv6 sysctl directory ({_describe_error(exc)})",
         )
 
     enabled: list[str] = []
@@ -433,8 +472,8 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
     for scope in _IPV6_SCOPES:
         try:
             raw: object = sources.read_disable_ipv6(scope)
-        except Exception as exc:
-            unknown.append(f"{scope}: unreadable ({type(exc).__name__}: {exc})")
+        except Exception as exc:  # noqa: BLE001 - fail closed: any failure of an injected source is UNKNOWN
+            unknown.append(f"{scope}: unreadable ({_describe_error(exc)})")
             continue
         if not isinstance(raw, str):
             # A source that breaks its ``str`` contract is not a "1": UNKNOWN,

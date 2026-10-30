@@ -47,7 +47,8 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
 
@@ -119,31 +120,108 @@ def test_both_import_orders_work_in_a_fresh_interpreter(statement: str) -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert result.returncode == 0, f"import failed: {result.stderr}"
 
 
-def test_nothing_in_core_imports_the_guard_module_yet() -> None:
+# Directories that are not repository code: VCS data, caches, virtual
+# environments and vendored packages. The top-level ``tests`` directory is
+# skipped by path in ``_production_python_files`` (tests may import the module).
+_NOT_REPOSITORY_CODE = frozenset(
+    {".git", ".hg", ".venv", "venv", "env", "node_modules", "site-packages", "__pycache__"}
+)
+
+
+def _production_python_files() -> Iterator[Path]:
+    """Every ``.py`` file in the repository outside ``tests/`` and the
+    directories above, not just ``core/``: the wiring batch could import the
+    guards from ``interface/``, ``modules/``, ``scripts/`` or ``main.py``."""
+    tests_root = REPO_ROOT / "tests"
+    for directory, subdirectories, files in os.walk(REPO_ROOT):
+        subdirectories[:] = sorted(
+            name
+            for name in subdirectories
+            if name not in _NOT_REPOSITORY_CODE
+            and not name.endswith((".egg-info", "_cache"))
+            and Path(directory, name) != tests_root
+        )
+        for name in sorted(files):
+            if name.endswith(".py"):
+                yield Path(directory, name)
+
+
+def _guard_references(path: Path) -> list[int]:
+    """Lines at which ``path`` names the guard module as an import or a string.
+    A file that does not parse is searched as plain text instead of skipped."""
+    source = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return [
+            number
+            for number, line in enumerate(source.splitlines(), start=1)
+            if _GUARD_MODULE_NAME.search(line)
+        ]
+    lines: list[int] = []
+    for node in ast.walk(tree):
+        names: list[str]
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""] + [alias.name for alias in node.names]
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names = [node.value]
+        else:
+            continue
+        if any(_GUARD_MODULE_NAME.search(name) for name in names):
+            lines.append(node.lineno)
+    return lines
+
+
+def test_nothing_in_the_repository_imports_the_guard_module_yet() -> None:
     """Inertness pin (B03: 'not wired into create()'). B11 replaces this test
     with its wiring tests in the same change that wires the guards."""
+    scanned = 0
     offenders: list[str] = []
-    for path in sorted((REPO_ROOT / "core").rglob("*.py")):
+    for path in _production_python_files():
+        scanned += 1
         if path == MODULE_PATH:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            names: list[str]
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                names = [node.module or ""] + [alias.name for alias in node.names]
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                names = [node.value]
-            else:
-                continue
-            if any(_GUARD_MODULE_NAME.search(name) for name in names):
-                offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+        offenders += [f"{path.relative_to(REPO_ROOT)}:{line}" for line in _guard_references(path)]
+    assert scanned > 100, f"the scan found only {scanned} files, so it is looking in the wrong place"
     assert not offenders, f"the B03 guards must stay inert until B11 wires them; referenced at {offenders}"
+
+
+def test_the_pin_sees_a_reference_in_a_file_outside_core(tmp_path: Path) -> None:
+    """The scan itself is tested: it must catch each way of naming the module,
+    including from a file that does not parse."""
+    import_form = tmp_path / "a.py"
+    import_form.write_text("from core.sandbox.backends import _sandbox_network\n", encoding="utf-8")
+    string_form = tmp_path / "b.py"
+    string_form.write_text("name = 'core.sandbox.backends._sandbox_network'\n", encoding="utf-8")
+    broken = tmp_path / "c.py"
+    broken.write_text("def f(:\n    import _sandbox_network\n", encoding="utf-8")
+    unrelated = tmp_path / "d.py"
+    unrelated.write_text("from core.sandbox.backends.docker_backend import _ensure_sandbox_network\n", encoding="utf-8")
+    assert _guard_references(import_form) == [1]
+    assert _guard_references(string_form) == [1]
+    assert _guard_references(broken) == [2]
+    assert _guard_references(unrelated) == []
+
+
+def test_module_does_no_dynamic_import_and_runs_no_generated_code() -> None:
+    """LAW 3 and the leaf claim: no ``eval``/``exec``/``compile``/``__import__``
+    and no ``importlib`` in the module."""
+    tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+    forbidden = {"eval", "exec", "compile", "__import__", "import_module"}
+    called = {
+        node.func.id if isinstance(node.func, ast.Name) else node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name | ast.Attribute)
+    }
+    assert not called & forbidden, sorted(called & forbidden)
+    assert "importlib" not in _imported_top_level_names(MODULE_PATH)
 
 
 def test_the_ceiling_is_the_ruled_29() -> None:
@@ -161,7 +239,8 @@ def test_every_refusal_is_a_runtime_error_under_one_base() -> None:
 
 _REFUSALS = [
     pytest.param(
-        lambda: SandboxNetworkCapacityError(limit=29, in_use=29, owner="op-1"),
+        # Distinct numbers, so that a rebuild which swaps the two is caught.
+        lambda: SandboxNetworkCapacityError(limit=27, in_use=29, owner="op-1"),
         id="capacity",
     ),
     pytest.param(
@@ -228,15 +307,22 @@ def test_a_copied_refusal_keeps_the_subclass_it_was_raised_as() -> None:
 
 
 def test_a_pickled_capacity_refusal_keeps_its_fields() -> None:
-    clone = pickle.loads(pickle.dumps(SandboxNetworkCapacityError(limit=3, in_use=3, owner="op-9")))
-    assert (clone.limit, clone.in_use, clone.owner) == (3, 3, "op-9")
+    original = SandboxNetworkCapacityError(limit=5, in_use=3, owner="op-9")
+    clone = pickle.loads(pickle.dumps(original))
+    assert (clone.limit, clone.in_use, clone.owner) == (5, 3, "op-9")
+    assert str(clone) == str(original)
+    assert "3 of 5 slots in use" in str(clone) and "'op-9'" in str(clone)
 
 
 def test_a_pickled_ipv6_refusal_keeps_its_decision() -> None:
     decision = Ipv6Decision(Ipv6State.UNKNOWN, "disable_ipv6 for 'all': unreadable")
-    clone = pickle.loads(pickle.dumps(SandboxIPv6RefusedError(decision)))
+    original = SandboxIPv6RefusedError(decision)
+    clone = pickle.loads(pickle.dumps(original))
     assert clone.decision == decision
     assert clone.decision.state is Ipv6State.UNKNOWN
+    assert clone.decision.supported is False
+    assert str(clone) == str(original)
+    assert "IPv6 is unknown on this host" in str(clone)
 
 
 # ---------------------------------------------------------------- effective limit
@@ -406,6 +492,52 @@ def test_a_foreign_slot_is_rejected_and_changes_nothing() -> None:
     assert mine.release(mine_slot) is True
 
 
+class _LockCheckedSet(set[sn.NetworkSlot]):
+    """A ``_held`` replacement that fails the moment the limiter touches its
+    slot set without holding its lock. Deterministic, unlike the thread tests,
+    which can only fail when a bad interleaving happens to occur."""
+
+    lock: threading.Lock
+
+    def _check(self) -> None:
+        assert self.lock.locked(), "the limiter touched its slot set without holding its lock"
+
+    def add(self, item: sn.NetworkSlot) -> None:
+        self._check()
+        super().add(item)
+
+    def discard(self, item: object) -> None:
+        self._check()
+        super().discard(item)
+
+    def __contains__(self, item: object) -> bool:
+        self._check()
+        return super().__contains__(item)
+
+    def __len__(self) -> int:
+        self._check()
+        return super().__len__()
+
+
+def test_every_touch_of_the_slot_set_happens_under_the_lock(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    limiter = NetworkSlotLimiter(3)
+    checked = _LockCheckedSet()
+    checked.lock = limiter._lock
+    limiter._held = checked
+    first = limiter.reserve("a")
+    limiter.reserve("b")
+    with _logging_fails(RuntimeError("log sink down")), pytest.raises(RuntimeError):
+        limiter.reserve("compensated")  # the give-back path touches the set too
+    limiter.reserve("c")
+    with pytest.raises(SandboxNetworkCapacityError):
+        limiter.reserve("d")
+    assert limiter.in_use == 3 and limiter.available == 0
+    assert limiter.release(first) is True
+    assert limiter.release(first) is False
+    assert limiter.in_use == 2 and limiter.available == 1
+
+
 # ---------------------------------------------------------------- limiter, concurrently
 
 
@@ -572,6 +704,10 @@ _MATRIX = [
     pytest.param({"net": False, "ipv6_dir": False}, Ipv6State.UNKNOWN, id="net-sysctl-not-readable"),
     pytest.param({"net": _DENIED}, Ipv6State.UNKNOWN, id="net-check-denied"),
     pytest.param({"ipv6_dir": OSError(5, "I/O error")}, Ipv6State.UNKNOWN, id="ipv6-dir-check-failed"),
+    pytest.param({"net": RuntimeError("broken source")}, Ipv6State.UNKNOWN, id="net-check-unexpected-error"),
+    pytest.param(
+        {"ipv6_dir": RuntimeError("broken source")}, Ipv6State.UNKNOWN, id="ipv6-dir-check-unexpected-error"
+    ),
 ]
 
 
@@ -593,7 +729,8 @@ def test_tc14_the_guard_refuses_unless_ipv6_is_off(kwargs: dict[str, object], ex
     with pytest.raises(SandboxIPv6RefusedError) as info:
         enforce_ipv6_guard(reads.sources())
     assert info.value.decision.state is expected
-    assert expected.value in str(info.value)
+    # The whole phrase: for ON the bare word "on" is also inside "isolation".
+    assert f"IPv6 is {expected.value} on this host" in str(info.value)
     assert info.value.decision.reason in str(info.value)
 
 
@@ -605,7 +742,9 @@ def test_tc14_an_absent_ipv6_directory_is_not_followed_by_any_read() -> None:
 
 def test_tc14_when_the_net_sysctl_is_unreadable_nothing_else_is_asked() -> None:
     reads = _Reads(net=False)
-    assert evaluate_ipv6(reads.sources()).state is Ipv6State.UNKNOWN
+    decision = evaluate_ipv6(reads.sources())
+    assert decision.state is Ipv6State.UNKNOWN
+    assert "not readable" in decision.reason, "the reason must say why, not only refuse"
     assert reads.asked == ["net"]
 
 
@@ -626,16 +765,19 @@ def test_tc14_a_zero_in_one_scope_is_still_checked_in_the_other() -> None:
 # ---------------------------------------------------------------- TC-14: a source that breaks its contract
 
 
-def _sources_answering(values: dict[str, object]) -> Ipv6Sources:
-    """Sources whose scope reads return ``values`` unchecked, including values
-    that break the declared ``str`` contract (a faulty injected source)."""
+def _sources_answering(
+    values: Mapping[str, object], *, net: object = True, ipv6_dir: object = True
+) -> Ipv6Sources:
+    """Sources that return ``values`` (scope reads), ``net`` and ``ipv6_dir``
+    (the two presence checks) unchecked, including values that break the
+    declared ``str`` and ``bool`` contracts (a faulty injected source)."""
 
     def read(scope: str) -> str:
         return cast(str, values[scope])
 
     return Ipv6Sources(
-        sysctl_net_present=lambda: True,
-        ipv6_dir_present=lambda: True,
+        sysctl_net_present=lambda: cast(bool, net),
+        ipv6_dir_present=lambda: cast(bool, ipv6_dir),
         read_disable_ipv6=read,
     )
 
@@ -688,6 +830,100 @@ def test_tc14_a_zero_still_wins_over_a_non_text_value(values: dict[str, object])
     """ON takes precedence over UNKNOWN, as it does for an unreadable scope."""
     decision = evaluate_ipv6(_sources_answering(values))
     assert decision.state is Ipv6State.ON, decision.reason
+
+
+_NOT_BOOL = [
+    pytest.param(None, id="None"),
+    pytest.param(0, id="int-0"),
+    pytest.param(1, id="int-1"),
+    pytest.param("", id="empty-str"),
+    pytest.param("no", id="str-no"),
+    pytest.param("False", id="str-False"),
+    pytest.param([], id="empty-list"),
+    pytest.param(b"", id="empty-bytes"),
+    pytest.param(object(), id="object"),
+]
+_ON_FACTS = {"all": "0\n", "default": "0\n"}
+
+
+@pytest.mark.parametrize("bad", _NOT_BOOL)
+def test_tc14_a_non_bool_ipv6_directory_check_is_unknown_never_off(bad: object) -> None:
+    """A falsy non-bool from the presence check used to read as 'directory
+    absent', which is OFF, even when the facts underneath say IPv6 is on."""
+    decision = evaluate_ipv6(_sources_answering(_ON_FACTS, ipv6_dir=bad))
+    assert decision.state is Ipv6State.UNKNOWN, decision.reason
+    assert decision.supported is False
+    assert "ipv6 sysctl directory check" in decision.reason
+
+
+@pytest.mark.parametrize("bad", _NOT_BOOL)
+def test_tc14_a_non_bool_net_sysctl_check_is_unknown_never_off(bad: object) -> None:
+    """The same for the net-sysctl check: only a real ``True`` lets 'ipv6 absent'
+    count, and only a real ``False`` is the documented 'not readable' case."""
+    decision = evaluate_ipv6(_sources_answering(_ON_FACTS, net=bad, ipv6_dir=False))
+    assert decision.state is Ipv6State.UNKNOWN, decision.reason
+    assert decision.supported is False
+    assert "net sysctl" in decision.reason
+
+
+@pytest.mark.parametrize("bad", _NOT_BOOL)
+def test_tc14_the_guard_refuses_with_its_own_error_for_a_non_bool_check(bad: object) -> None:
+    for kwargs in ({"ipv6_dir": bad}, {"net": bad, "ipv6_dir": False}):
+        with pytest.raises(SandboxIPv6RefusedError) as info:
+            enforce_ipv6_guard(_sources_answering(_ON_FACTS, **kwargs))
+        assert info.value.decision.state is Ipv6State.UNKNOWN
+
+
+def test_tc14_only_a_real_bool_pair_can_make_ipv6_off_by_absence() -> None:
+    assert evaluate_ipv6(_sources_answering(_ON_FACTS, net=True, ipv6_dir=False)).state is Ipv6State.OFF
+    assert evaluate_ipv6(_sources_answering(_ON_FACTS, net=True, ipv6_dir=True)).state is Ipv6State.ON
+
+
+class _HostileText(Exception):
+    """An exception whose own ``__str__`` raises: formatting it into a reason
+    must not become a second, unrelated exception inside the guard."""
+
+    def __str__(self) -> str:
+        raise ValueError("str() of the exception is broken")
+
+
+def _raise_hostile(*_: object) -> bool:
+    raise _HostileText()
+
+
+@pytest.mark.parametrize(
+    ("which", "expected_in_reason"),
+    [
+        pytest.param("net", "could not check for the ipv6 sysctl directory", id="net-check"),
+        pytest.param("ipv6_dir", "could not check for the ipv6 sysctl directory", id="ipv6-dir-check"),
+        pytest.param("read", "all: unreadable", id="scope-read"),
+    ],
+)
+def test_tc14_an_exception_with_a_broken_str_is_unknown_not_a_foreign_error(
+    which: str, expected_in_reason: str
+) -> None:
+    sources = Ipv6Sources(
+        sysctl_net_present=_raise_hostile if which == "net" else (lambda: True),
+        ipv6_dir_present=_raise_hostile if which == "ipv6_dir" else (lambda: True),
+        read_disable_ipv6=cast(Callable[[str], str], _raise_hostile) if which == "read" else (lambda scope: "1\n"),
+    )
+    decision = evaluate_ipv6(sources)
+    assert decision.state is Ipv6State.UNKNOWN
+    assert "_HostileText" in decision.reason and expected_in_reason in decision.reason
+    with pytest.raises(SandboxIPv6RefusedError):
+        enforce_ipv6_guard(sources)
+
+
+def test_a_probe_that_raises_an_exception_with_a_broken_str_is_a_probe_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    with pytest.raises(SandboxNetworkCapacityProbeError) as info:
+        resolve_effective_limit(_FailingProbe(_HostileText()))
+    assert isinstance(info.value.__cause__, _HostileText)
+    assert "_HostileText" in str(info.value)
+    (record,) = _events(caplog, "sandbox_network_capacity_probe_failed")
+    assert "_HostileText" in record.sandbox_network_event["error"]  # type: ignore[attr-defined]
 
 
 def test_tc14_both_scopes_are_still_read_after_a_non_text_value() -> None:
@@ -756,6 +992,24 @@ def test_proc_sources_an_unreadable_scope_file_is_unknown(tmp_path: Path) -> Non
     assert evaluate_ipv6(proc_ipv6_sources(str(tmp_path / "net"))).state is Ipv6State.UNKNOWN
 
 
+def test_proc_sources_a_net_sysctl_that_is_a_file_is_unknown_not_absent(tmp_path: Path) -> None:
+    """``stat('<file>/ipv6')`` is ``NotADirectoryError``, not ``FileNotFoundError``:
+    only the latter may count as 'the ipv6 directory is absent'."""
+    (tmp_path / "net").write_text("not a directory", encoding="ascii")
+    decision = evaluate_ipv6(proc_ipv6_sources(str(tmp_path / "net")))
+    assert decision.state is Ipv6State.UNKNOWN
+    assert "NotADirectoryError" in decision.reason
+
+
+def test_proc_sources_a_scope_file_that_is_not_ascii_is_unknown(tmp_path: Path) -> None:
+    (tmp_path / "net/ipv6/conf/all").mkdir(parents=True)
+    (tmp_path / "net/ipv6/conf/all/disable_ipv6").write_bytes(b"1\xff")
+    _write(tmp_path, "net/ipv6/conf/default/disable_ipv6", "1\n")
+    decision = evaluate_ipv6(proc_ipv6_sources(str(tmp_path / "net")))
+    assert decision.state is Ipv6State.UNKNOWN
+    assert "all: unreadable (UnicodeDecodeError" in decision.reason
+
+
 def test_proc_sources_a_failed_stat_is_unknown_not_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -818,15 +1072,112 @@ def test_a_capacity_refusal_is_logged_with_structured_fields(caplog: pytest.LogC
     }
 
 
+def _sequence(caplog: pytest.LogCaptureFixture) -> list[tuple[str, int, object]]:
+    """``(event, level, in_use)`` of every guard record, in emission order."""
+    return [
+        (
+            record.sandbox_network_event["event"],
+            record.levelno,
+            record.sandbox_network_event.get("in_use"),
+        )
+        for record in caplog.records
+        if hasattr(record, "sandbox_network_event")
+    ]
+
+
 def test_reservations_and_releases_are_logged(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
-    limiter = NetworkSlotLimiter(2)
+    limiter = NetworkSlotLimiter(3)
+    limiter.reserve("holder")
     slot = limiter.reserve("a")
     limiter.release(slot)
     limiter.release(slot)
-    assert len(_events(caplog, "sandbox_network_slot_reserved")) == 1
-    assert len(_events(caplog, "sandbox_network_slot_released")) == 1
-    assert len(_events(caplog, "sandbox_network_slot_release_ignored")) == 1
+    assert _sequence(caplog) == [
+        ("sandbox_network_slot_reserved", logging.DEBUG, 1),
+        ("sandbox_network_slot_reserved", logging.DEBUG, 2),
+        ("sandbox_network_slot_released", logging.DEBUG, 1),
+        ("sandbox_network_slot_release_ignored", logging.DEBUG, 1),
+    ]
+    reserved = _events(caplog, "sandbox_network_slot_reserved")[1]
+    assert reserved.sandbox_network_event == {  # type: ignore[attr-defined]
+        "event": "sandbox_network_slot_reserved",
+        "owner": "a",
+        "limit": 3,
+        "in_use": 2,
+    }
+
+
+class _RaisingFilter(logging.Filter):
+    """A log filter that fails, standing in for any logging hook that raises:
+    ``logging`` swallows a failing *handler*, but not a failing *filter*."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self._error = error
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        raise self._error
+
+
+@contextmanager
+def _logging_fails(error: BaseException) -> Iterator[None]:
+    hostile = _RaisingFilter(error)
+    sn.logger.addFilter(hostile)
+    try:
+        yield
+    finally:
+        sn.logger.removeFilter(hostile)
+
+
+_LOGGING_FAILURES = [
+    pytest.param(RuntimeError("log sink down"), id="RuntimeError"),
+    pytest.param(KeyboardInterrupt(), id="KeyboardInterrupt"),
+    pytest.param(asyncio.CancelledError(), id="CancelledError"),
+]
+
+
+@pytest.mark.parametrize("error", _LOGGING_FAILURES)
+def test_a_failing_log_call_cannot_leak_a_reserved_slot(
+    caplog: pytest.LogCaptureFixture, error: BaseException
+) -> None:
+    """A slot that ``reserve`` took but never handed back could never be
+    released, so each one would shrink the limit for good (INV-7)."""
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    limiter = NetworkSlotLimiter(3)
+    keeper = limiter.reserve("an unrelated holder")
+    for attempt in range(6):
+        with _logging_fails(error), pytest.raises(type(error)):
+            limiter.reserve(f"attempt-{attempt}")
+        assert limiter.in_use == 1, f"attempt {attempt}: a slot leaked, or the other holder lost its slot"
+    first, second = limiter.reserve("after-1"), limiter.reserve("after-2")
+    assert limiter.in_use == 3
+    with pytest.raises(SandboxNetworkCapacityError):
+        limiter.reserve("one too many")
+    assert limiter.release(keeper) is True, "the unrelated holder must still own its slot"
+    assert limiter.release(first) is True and limiter.release(second) is True
+    assert limiter.in_use == 0
+
+
+def test_a_failing_log_call_on_a_refusal_changes_no_state(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    limiter = NetworkSlotLimiter(1)
+    held = limiter.reserve("holder")
+    with _logging_fails(RuntimeError("log sink down")), pytest.raises(RuntimeError):
+        limiter.reserve("refused")
+    assert limiter.in_use == 1
+    assert limiter.release(held) is True
+    assert limiter.in_use == 0
+
+
+def test_a_failing_log_call_on_release_still_releases(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    limiter = NetworkSlotLimiter(1)
+    slot = limiter.reserve("a")
+    with _logging_fails(RuntimeError("log sink down")), pytest.raises(RuntimeError):
+        limiter.release(slot)
+    assert limiter.in_use == 0, "the slot was freed before the log call and must stay freed"
+    assert limiter.release(slot) is False
+    limiter.reserve("b")
 
 
 def test_an_ipv6_refusal_is_logged(caplog: pytest.LogCaptureFixture) -> None:
@@ -842,12 +1193,47 @@ def test_a_probe_failure_and_the_resolved_limit_are_logged(caplog: pytest.LogCap
     caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
     with pytest.raises(SandboxNetworkCapacityProbeError):
         resolve_effective_limit(_FailingProbe(RuntimeError("down")))
-    assert len(_events(caplog, "sandbox_network_capacity_probe_failed")) == 1
+    (failed,) = _events(caplog, "sandbox_network_capacity_probe_failed")
+    assert failed.levelno == logging.ERROR
+    assert failed.sandbox_network_event["error"] == "RuntimeError: down"  # type: ignore[attr-defined]
     resolve_effective_limit(_FixedProbe(31))
     (record,) = _events(caplog, "sandbox_network_capacity_resolved")
-    assert record.sandbox_network_event["effective_limit"] == 29  # type: ignore[attr-defined]
+    assert record.levelno == logging.INFO
+    assert record.sandbox_network_event == {  # type: ignore[attr-defined]
+        "event": "sandbox_network_capacity_resolved",
+        "probe_result": 31,
+        "ceiling": 29,
+        "effective_limit": 29,
+    }
+
+
+def test_an_ipv6_pass_is_logged_at_debug(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    enforce_ipv6_guard(_Reads().sources())
+    (record,) = _events(caplog, "sandbox_network_ipv6_ok")
+    assert record.levelno == logging.DEBUG
+    assert record.sandbox_network_event["state"] == "off"  # type: ignore[attr-defined]
+    assert not _events(caplog, "sandbox_network_ipv6_refused")
 
 
 def test_every_name_in_all_exists() -> None:
     missing = [name for name in sn.__all__ if not hasattr(sn, name)]
     assert not missing, f"__all__ lists names the module does not define: {missing}"
+
+
+def test_all_lists_every_public_name_the_module_defines() -> None:
+    """The other direction: a public class, function or constant added later
+    must be exported on purpose, not forgotten. ``logger`` is the one public
+    name that is deliberately not part of the interface."""
+    tree = ast.parse(MODULE_PATH.read_text(encoding="utf-8"))
+    defined: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            defined.add(node.name)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            defined.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            defined.update(target.id for target in node.targets if isinstance(target, ast.Name))
+    public = {name for name in defined if not name.startswith("_")} - {"logger", "__all__"}
+    assert public == set(sn.__all__)
+    assert len(sn.__all__) == len(set(sn.__all__)), "__all__ lists a name twice"
