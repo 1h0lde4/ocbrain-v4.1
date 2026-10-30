@@ -1190,6 +1190,22 @@ def test_a_failing_log_call_cannot_leak_a_reserved_slot(
     assert limiter.in_use == 0
 
 
+def test_an_owner_whose_repr_raises_cannot_leak_a_slot() -> None:
+    """The log record is built from ``repr(owner)`` at any log level, so a
+    hostile owner object fails the log call without any logging setup."""
+
+    class _HostileOwner:
+        def __repr__(self) -> str:
+            raise ValueError("repr is broken")
+
+    limiter = NetworkSlotLimiter(2)
+    for attempt in range(4):
+        with pytest.raises(ValueError, match="repr is broken"):
+            limiter.reserve(cast(str, _HostileOwner()))
+        assert limiter.in_use == 0, f"attempt {attempt} leaked a slot"
+    assert limiter.release(limiter.reserve("fine")) is True
+
+
 def test_a_failing_log_call_on_a_refusal_changes_no_state(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
     limiter = NetworkSlotLimiter(1)
