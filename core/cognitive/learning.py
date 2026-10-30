@@ -683,6 +683,14 @@ async def validation_gate(
     if result.verdict == GovernanceVerdict.REJECT:
         return _rejected(result.reason)
 
+    # Do not let an unknown or future verdict fall through into promotion.
+    # Only the positive APPROVE verdict authorizes the write below.
+    if result.verdict != GovernanceVerdict.APPROVE:
+        return _rejected(
+            f"Unexpected GovernanceKernel verdict {result.verdict!r}; "
+            "rejecting rather than promoting without explicit approval."
+        )
+
     # APPROVE — reachable only when hitl_approved=True was explicitly
     # supplied by the caller (see docstring: no path here sets it
     # automatically).
