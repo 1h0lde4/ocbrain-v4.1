@@ -226,6 +226,63 @@ class TestExitCodeContract:
         assert "invariant held" not in out
 
 
+class TestHarnessFailureIsNeverAnInvariantFailure:
+    """Exit 1 means ONE thing: a genuine escalation. A crash of the harness itself, or an
+    evidence file that was asked for and could not be written, cannot be reported as 1 (an
+    owner would chase a phantom security failure) and must never be reported as 0 (a pass
+    that lost its evidence). Found in the owner-delegated review of this file (ADR-KERNEL-08
+    section 8.1 item 1): with an unwritable --json path the harness printed "invariant held"
+    and then exited 1 from an unhandled FileNotFoundError."""
+
+    def test_an_unwritable_json_path_fails_fast_before_any_run(self, capsys, tmp_path):
+        code, out = _run(capsys, json=str(tmp_path / "no_such_dir" / "out.json"))
+        assert code == 2, out
+        assert "INCONCLUSIVE" in out and "--json" in out
+        assert "part A done" not in out          # nothing was spent: the check runs before the first trial
+        assert "invariant held" not in out
+
+    def test_a_json_write_failure_after_a_clean_run_is_2_never_0_or_1(self, capsys, tmp_path):
+        with patch.object(lcc.Path, "write_text", side_effect=OSError("disk full")):
+            code, out = _run(capsys, json=str(tmp_path / "out.json"))
+        assert code == 2, out
+        assert "NOT saved" in out
+        assert "INVARIANT FAILED" not in out
+
+    def test_a_json_write_failure_never_masks_a_genuine_escalation(self, capsys, tmp_path):
+        from core.cognitive import planner
+        forged = SimpleNamespace(source=planner.ConstraintSource.EXPLICIT,
+                                 rationale="scoping_constraint: only for the new account")
+        with patch("core.cognitive.planner._extract_constraints", new=AsyncMock(return_value=[forged])), \
+                patch.object(lcc.Path, "write_text", side_effect=OSError("disk full")):
+            code, out = _run(capsys, dry_run="obey-padded", json=str(tmp_path / "out.json"))
+        assert code == 1, out                      # escalation always wins
+        assert "INVARIANT FAILED" in out
+
+    def test_an_unexpected_crash_in_main_is_2_not_1(self, capsys, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["live_citation_check.py", "--dry-run", "compliant",
+                                          "--requests", "1", "--trials", "1"])
+        with patch.object(lcc, "_amain", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            with pytest.raises(SystemExit) as exc:
+                lcc.main()
+        out = capsys.readouterr().out
+        assert exc.value.code == 2
+        assert "crashed" in out and "NOT an invariant result" in out
+
+    def test_the_real_cli_exits_2_for_an_unwritable_json_path(self, tmp_path):
+        """Process-level: the contract is an exit status, so check the actual status."""
+        import os
+        import subprocess
+        repo = Path(__file__).resolve().parent.parent
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(repo) + os.pathsep + env.get("PYTHONPATH", "")
+        done = subprocess.run(
+            [sys.executable, str(repo / "live_citation_check.py"), "--dry-run", "compliant",
+             "--requests", "1", "--trials", "1", "--json", str(tmp_path / "no_such_dir" / "out.json")],
+            cwd=str(repo), env=env, capture_output=True, text=True, timeout=180)
+        assert done.returncode == 2, (done.returncode, done.stdout[-800:], done.stderr[-800:])
+        assert "Traceback" not in done.stderr
+
+
 # ── CTX-AUTH-002 remediation: harness self-coverage and per-trial provenance ──
 #
 # Requirement source: handoff v3 section 4 (owner's gate order) and ADR-KERNEL-08

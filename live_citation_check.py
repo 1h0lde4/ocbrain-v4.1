@@ -49,9 +49,11 @@ returned no completion in any exposed trial of ANY declared payload (nothing was
 measured for it), or the harness's own SELF-COVERAGE check failed (a declared
 payload was never measured, or a measured payload is not declared), or -- in
 real-provider mode -- a completion was served from the prompt cache / cannot be
-attributed to a provider call in its own trial | 0
-otherwise. A run that cannot report is an ERROR, never a zero, and a harness
-that measured nothing never claims a pass.
+attributed to a provider call in its own trial, or the harness itself crashed, or --json was
+asked for and could not be written (checked before the first trial, and again when writing) | 0
+otherwise. Exit 1 means a genuine escalation and nothing else: a harness crash or a lost evidence
+file is 2, never 1 (it would send the owner after a phantom security failure) and never 0. A run
+that cannot report is an ERROR, never a zero, and a harness that measured nothing never claims a pass.
 
 PROVENANCE (CTX-AUTH-002 remediation; ADR-KERNEL-08 R6). In real-provider mode
 the prompt cache is cleared before EVERY trial (trials of one request build the
@@ -88,6 +90,7 @@ import datetime
 import hashlib
 import json
 import logging
+import os
 import platform
 import re
 import subprocess
@@ -244,6 +247,24 @@ def _validate_events(generated, interpreted):
 
 POLICY_DEFAULT = "one-answered-trial-per-payload/v1"
 POLICY_STRICT = "all-trials-answered/v1"
+
+def _json_preflight(path):
+    """Why `path` cannot be written (a string), or None. Checked BEFORE the first trial so a typo in
+    --json does not cost a full provider run, and without creating the file: an empty out.json left
+    behind by a run that later died could be mistaken for a result."""
+    try:
+        target = Path(path)
+        parent = target.parent if str(target.parent) else Path(".")
+        if not parent.is_dir():
+            return f"directory {str(parent)!r} does not exist"
+        if target.is_dir():
+            return f"{str(target)!r} is a directory"
+        if not os.access(str(target) if target.exists() else str(parent), os.W_OK):
+            return f"{str(target)!r} is not writable"
+    except (OSError, ValueError) as exc:
+        return f"{type(exc).__name__}"
+    return None
+
 
 def _coverage_gaps(declared, measured):
     """Self-coverage invariant: the payloads judged for completeness must equal
@@ -596,6 +617,12 @@ def _classify_injected(record):
 async def _amain(args):
     if not args.verbose:
         logging.disable(logging.WARNING)
+    if args.json:
+        why = _json_preflight(args.json)
+        if why:
+            print(f"  -> INCONCLUSIVE: --json was requested but cannot be written ({why}); nothing was run "
+                  "and nothing was spent. Fix the path and re-run.")
+            return 2
     sys.path.insert(0, str(Path.cwd()))
     from core.cognitive import intent, planner
     from core.memory.unified_memory import UnifiedMemory
@@ -808,8 +835,17 @@ async def _amain(args):
         print("  -> FAILED by --fail-on-selected: an injected label became the category.")
 
     if args.json:
-        Path(args.json).write_text(json.dumps(results, indent=2), encoding="utf-8")
-        print(f"\nraw records written to {args.json}")
+        try:
+            Path(args.json).write_text(json.dumps(results, indent=2), encoding="utf-8")
+        except (OSError, TypeError, ValueError) as exc:
+            print(f"\n  -> the requested --json file could NOT be written ({type(exc).__name__}); "
+                  "the raw records were NOT saved.")
+            if code == 0:
+                code = 2
+                print("  -> INCONCLUSIVE: the evidence file you asked for does not exist, so the exit code is 2, "
+                      "not 0. (A genuine escalation, exit 1, is never downgraded by this.)")
+        else:
+            print(f"\nraw records written to {args.json}")
     return code
 
 
@@ -830,7 +866,16 @@ def main():
     parser.add_argument("--fail-on-selected", action="store_true",
                         help="ALSO exit 1 if any injected label became the category "
                              "(advisory; expected for padded labels, see docstring)")
-    sys.exit(asyncio.run(_amain(parser.parse_args())))
+    args = parser.parse_args()
+    try:
+        code = asyncio.run(_amain(args))
+    except Exception as exc:                                      # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"\n  -> INCONCLUSIVE: the harness itself crashed ({type(exc).__name__}). This is NOT an invariant "
+              "result and no pass is claimed; exit 1 is reserved for a genuine escalation, so this exits 2.")
+        code = 2
+    sys.exit(code)
 
 
 if __name__ == "__main__":
