@@ -10,6 +10,7 @@
 - Source session purpose: implement B2c under the owner's tightened approval contract, then checkpoint it and write this handoff so the work can resume in a fresh discussion.
 - Repository: https://github.com/1h0lde4/ocbrain-v4.1 (owner/architect: Moncif, `1h0lde4`, also commits as `N4Z`)
 - Transfer status: **TRANSFER READY** (see section 19). The implementation checkpoint and the handoff commit are both pushed and verified on the remote.
+- Corrections: **C1 (2026-10-31)** retracts one claim in section 11; see `### C1` there. Every line it changed is marked **[C1]**.
 
 ## 2. Original Starting Prompt (faithful extraction, not verbatim)
 
@@ -50,7 +51,7 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 
 **In scope:** `core/model_router.py` monitored streaming, `core/capabilities/adapter_runtime.py`, the pure helper in `core/runtime/watchdog_decision.py`, and `tests/test_b2c_cancellation.py`.
 
-**Out of scope (explicit):** cooldown/health policy redesign; fallback-after-stall policy; router redesign; B3a structured failure metadata (`attempts`, `partial_outputs`, `module_failures`); FZ-01/05/06 and other adapters; the shared-token sibling-cut defect (P4, recorded as a strict xfail); interrupting a non-token-aware adapter that is already mid-call on a token cancel (strict xfail); the training-pair side effects of non-cancel outcomes; documentation corrections (wait for the next doc sync).
+**Out of scope (explicit):** cooldown/health policy redesign; fallback-after-stall policy; router redesign; B3a structured failure metadata (`attempts`, `partial_outputs`, `module_failures`); FZ-01/05/06 and other adapters; the shared-token sibling-cut defect (P4, recorded as a strict xfail) **[C1]** (latent: no production caller gives the router a shared token, C1.2); interrupting a non-token-aware adapter that is already mid-call on a token cancel (strict xfail); the training-pair side effects of non-cancel outcomes; documentation corrections (wait for the next doc sync).
 
 **Success criteria.** The ruling in item 14, with evidence: logical cancellation proven by deterministic tests; in-process stop proven; physical provider termination either verified or explicitly marked **unverified**; fresh CI and CodeQL green on the final head; review and sign-off before merge.
 
@@ -131,7 +132,7 @@ Behaviour/contract notes for review: governance (no new authority; cancellation 
 | D3 | EMPTY_RESPONSE and COMPLETED_WITH_PARTIAL_OUTPUT stay pinned unchanged | ACCEPTED as an *implementation constraint*, not an owner-approved contract (per #83) | owner ruling on PR #67 | PR #67 | outcome-policy work |
 | D4 | B2c approved ahead of B3a with the tightened contract (section 3, item 14) | ACCEPTED | owner | ruling | |
 | D5 | Distinguish the attempt's own watchdog reasons from caller cancellation **by reason string** (`stall`, `hard_deadline`) rather than a per-attempt token | IMPLEMENTED; my choice to keep B2c narrow | me, within the ruling | tests | owner prefers the per-attempt token now |
-| D6 | Per-attempt token (fixes the shared-token sibling cut and enables in-flight interruption) is **not** in B2c | DEFERRED | me, flagged to the owner | strict xfails | owner decision |
+| D6 | Per-attempt token (fixes the shared-token sibling cut and enables in-flight interruption) is **not** in B2c. **[C1]** The sibling cut is latent today (C1.2); D6 becomes relevant once a production caller threads a token. | DEFERRED | me, flagged to the owner | strict xfails | owner decision |
 | D7 | Merge sequence for reviewed PRs: sign off the current head, then update with a merge commit pinned to that head, fresh CI/CodeQL, then merge | ACCEPTED | owner | B2a/B2b | |
 | D8 | No doc-only merges; fold doc fixes into the next natural sync | ACCEPTED | owner | | |
 
@@ -142,15 +143,67 @@ Behaviour/contract notes for review: governance (no new authority; cancellation 
 | Area | Result | Evidence | Revisit trigger |
 |---|---|---|---|
 | Who cancels cancellation tokens in production | Only watchdogs: the router's own (`stall`/`hard_deadline`) and the graph watchdog (`execution stall`/`execution hard_deadline`); **no production code cancels a token for a user stop** | grep of `.cancel(` sites | new caller added |
-| Which token the router sees | The workflow-level token (`workflow/runtime.py:483, :885` passes it into the node's `ExecutionContext`); so one module's stall cancels a token shared with sibling modules | code reading + probe P4 | per-attempt token work |
-| Task cancellation through the runtime | `CancelledError` already propagated through `AdapterRuntime` (its `except Exception` does not catch it): no fallback, no penalty | probe P3 (baseline) | |
-| Defects found at baseline | P1 orphaned consumer/watchdog tasks and stream never closed on caller cancel; P2 caller cancel swallowed during the router's own consumer cancellation; P3 token cancel fell back and penalised the router; P4 stall of one module cuts a healthy sibling (sharing the token) | deterministic probes, then tests | |
+| Which token the router sees | **[C1] RETRACTED.** The original claim (quoted verbatim in C1.1) was wrong: at `main` 16d663a no production caller gives the router a caller token; it creates a fresh local one per call (C1.2). | ~~code reading + probe P4~~ (why that evidence did not support the claim: C1.6) | a production caller threads a token |
+| Task cancellation through the runtime | `CancelledError` already propagated through `AdapterRuntime` (its `except Exception` does not catch it): no fallback, no penalty. **[C1]** True at `AdapterRuntime` only: above it `Worker.execute()` turns the cancel into a failed result and the workflow retries (C1.4). | probe P3 (baseline) | |
+| Defects found at baseline | P1 orphaned consumer/watchdog tasks and stream never closed on caller cancel; P2 caller cancel swallowed during the router's own consumer cancellation; P3 token cancel fell back and penalised the router; P4 stall of one module cuts a healthy sibling (sharing the token). **[C1]** P3 and P4 reproduce only for a caller that gives the router a token-carrying context; no production path does (C1.2). P1 and P2 (task cancellation) are the production-reachable ones. | deterministic probes, then tests | |
 | Production adapter chain | `main.py:282-287` registers `ModelRouterAdapter`, `OllamaAdapter`, `OpenAICompatAdapter`; ranking by health, cooldown 60 s x 2^(n-1) capped at 1 h | code + measured probe | |
 | B2a/B2b activated fallback | A failure/stall/cancel on the router now benches it ~59 s and falls back to `OllamaAdapter` (full second generation; cancel did not stop it); recorded in design rev 2 and the B2b erratum | measured probe on pre-B2 vs current | |
 | `OllamaAdapter` | Same default host, non-streaming, no watchdog (timeouts not inspected), **raw exception text in its `error`** | code reading | |
 | Open PRs #83 and #88 | #83 records FZ-D1/FZ-D2 and says FZ-02 is not fully closed and FZ-01 is open; #88 records the DEBT-043 response-path disposition (K4.2 pairing retained, "C-plus" selected for implementation) | read via fetched PR heads | before B3b |
 
-Not investigated: real provider/server cancellation behaviour; `OpenAICompatAdapter` internals; other adapters; the graph watchdog's own cancellation of node tasks.
+Not investigated: real provider/server cancellation behaviour; `OpenAICompatAdapter` internals; other adapters. **[C1]** (Previously also listed here: the graph watchdog's own cancellation of node tasks. Investigated on 2026-10-31: it does not cancel node tasks, see C1.5.)
+
+### C1. Correction (2026-10-31): the production router does NOT receive the workflow-level cancellation token
+
+Verified against `main` 16d663a by reading the code and by running `docs/handoffs/fz02_b2c/fz02_gate_probe.py` (attached on this branch; `OCROOT=<checkout> python3 <path>`). The live code is authoritative. Nothing is silently replaced: the retracted text is quoted below, and the lines C1 changed are listed in C1.7.
+
+**C1.1 Retracted claim (verbatim from the original section 11 row)**
+
+> Which token the router sees: "The workflow-level token (`workflow/runtime.py:483, :885` passes it into the node's `ExecutionContext`); so one module's stall cancels a token shared with sibling modules." Evidence given: "code reading + probe P4".
+
+Statements that depended on it and are now annotated **[C1]**: the "Defects found at baseline" row (P3, P4) and section 15 item 4 (the shared-token sibling cut).
+
+**C1.2 Verified call paths** [verified at `main` 16d663a]
+
+| Path | Passed as the context | Carries `cancellation_token`? |
+|---|---|---|
+| `PlannerWorker` (`core/workers/planner.py:321-326`): the `CapabilityRequest` payload has `"context": self._context_memory`; its direct fallback is `self._model_router.route(mod_name, query, self._context_memory, scope=scope)` (`:344-345`) | `context_memory` | no |
+| `capability_executor` (`core/workers/capability_executor.py:116-121`) | `""` | no |
+| `orchestrator.py:923`: `self.router.route(mod_name, query, self.context)`; `self.context` is set at `:123`; `main.py:403` builds `Orchestrator(modules, context_memory, ...)` | `context_memory` | no |
+
+Probe on the real objects: `ContextMemory` has no `cancellation_token`; `_request_token()` returns `None` for both request shapes; `ModelRouter._resolve_cancellation_token()` returns a fresh `CancellationToken()` on every call (not shared, and cancelled only by the router's own watchdog). The workflow token does exist one level up: `workflow/runtime.py:885` passes it into each node's `ExecutionContext`, so `PlannerWorker._run` receives it. It is not forwarded to the router.
+
+**C1.3 Live versus latent** [verified]
+
+| Behaviour | Status at `main` 16d663a |
+|---|---|
+| Caller-**task** cancellation (`asyncio.CancelledError` while a task awaits `ModelRouter.route()`): the router stops its consumer/watchdog tasks and the stream and does not swallow the cancel; `AdapterRuntime` does not contain it (no fallback, no health penalty) | **LIVE**: reachable whenever something cancels that task |
+| **Token-driven** cancellation (`CancellationToken.cancel(reason)` observed by the router or `AdapterRuntime`): `CANCELLED` classification, pre-attempt token check, terminal `cancelled` handling, token delivery to an in-flight fallback, the shared-token sibling cut | **LATENT**: no production caller supplies a token |
+
+"Live" means reachable. Whether an in-process mechanism actually triggers it is C1.4 and C1.5.
+
+**C1.4 What happens in the real workflow when the task is cancelled** [verified, probe 2]
+
+The task running `WorkflowRuntime.execute()` was cancelled at 0.5 s (node retry policy `max_retries=1`). `execute()` returned a result at about 2.5 s (`task.cancelled()` was False) and the node ran twice. Cause: `Worker.execute()` (`core/workers/base.py:293`) catches `asyncio.CancelledError` and returns `WorkerResult(success=False, error="Worker cancelled")`; the workflow retry loop checks only the token (`core/workflow/runtime.py:865`), not task cancellation. With the B2c router fix the first provider stream closed at 0.5 s; on unchanged `main` no close was observed for that attempt. This is NOT fixed by B2c and needs its own tracked item and an owner decision.
+
+**C1.5 The graph watchdog does not stop a node's task** [verified, probe 1]
+
+`GraphExecutionWatchdog` only sets the workflow token (`core/runtime/watchdog.py:180,196`). That token is read cooperatively before a node is traversed and before each retry attempt (`core/workflow/runtime.py:723,865`), and by workers that choose to check it. Probe 1: graph budget hard=0.3 s; the token was cancelled with reason `execution hard_deadline`; the node kept running inside the router until the router's own hard deadline, and the workflow returned after 2.03 s. The repo's own test fixture `SlowNodeWorker` (`tests/test_workflow_runtime.py`) states the same: `ExecutionRuntime.invoke()` does not forcibly preempt a running worker. In-process I found no site that cancels a task on the request path (no `wait_for` or timeout around `handle()` or node execution). External triggers (server shutdown, Ctrl-C, client disconnect) were NOT verified.
+
+**C1.6 How the incorrect claim entered this handoff**
+
+[verified] The handoff cited "code reading + probe P4" as its evidence.
+(a) The code reading was right as far as it went: `workflow/runtime.py:885` does put the workflow token into each node's `ExecutionContext`.
+(b) The hop that was not traced is from the node's `ExecutionContext` to the router. `PlannerWorker` does not forward `context.cancellation_token`; it passes `self._context_memory` (C1.2).
+(c) The probes drove the router with a test context that carries a token: the helper `_Ctx` in `tests/test_b2c_cancellation.py` (at checkpoint `5dade77`) gives its context a `cancellation_token`. Those probes showed what the router does when it is given a token, and were read as showing what production gives it.
+
+[inferred] That (b) and (c) are how the claim formed. The original session's reasoning is not available; this is reconstructed from the evidence the handoff itself cited.
+
+Propagation: the claim was repeated in the P3/P4 baseline-defects row, in section 15 item 4, and in the first text of PR #104 (limitation 3). The PR text was corrected on 2026-10-31 by editing the PR body (head unchanged) before any review.
+
+**C1.7 Scope of this correction**
+
+Changed: one metadata line in section 1; one clause in the section 4 out-of-scope line; the D6 row in section 10; in section 11, three table rows and the "Not investigated" line; section 15 item 4; this block; and the attachment `docs/handoffs/fz02_b2c/fz02_gate_probe.py`. Nothing else in this file was modified. Sections 7 and 17-19 still describe the state at `90b375e` and are NOT updated here: later events (PR #104, the narrowing of B2c, and the deferred portion on `follow-up/fz02-b2d-latent-token-cancellation-oct2026`) are recorded in PR #104 and on that branch, not in this file.
 
 ## 12. Failed Attempts / Dead Ends
 
@@ -191,7 +244,7 @@ The red-state failures are genuine assertions, not timeouts: stream `finally` ne
 1. **Credential hygiene (not a blocker for reading this):** pushing from a fresh session needs a valid credential (see section 14); the one used for the handoff push was exposed in chat and should be rotated.
 2. Physical provider termination on cancel is unverified (R4).
 3. A token cancel arriving while a non-token-aware fallback adapter is already mid-call is not delivered to it (strict xfail). Task cancellation is.
-4. One module's stall cancels the shared workflow token and cuts healthy sibling modules mid-stream (strict xfail; pre-dates B2a/B2b; B2b made its consequence a failure plus fallback). Proper fix needs a per-attempt token.
+4. One module's stall cancels the shared workflow token and cuts healthy sibling modules mid-stream (strict xfail; pre-dates B2a/B2b; B2b made its consequence a failure plus fallback). Proper fix needs a per-attempt token. **[C1]** Not reachable through any production path at `main` 16d663a (no shared token reaches the router); it holds only for a caller that shares one token across modules (C1.2).
 5. Live production effects of B2a/B2b not changed by B2c: a genuine failure/stall benches `ModelRouterAdapter` for ~59 s and later 2, 4, ... minutes (D2.2), and a stall triggers a second full generation on `OllamaAdapter` (D2.3). B2c removes only the cancel case.
 6. Training pairs, `query_count` and promotion are still recorded for provider failure, stalled and hard-deadline outcomes (pinned by a test, tracked separately).
 7. `OllamaAdapter`'s `error` and the final `AdapterRuntime` error carry raw exception text (log-only today; must never reach a user-facing channel).
