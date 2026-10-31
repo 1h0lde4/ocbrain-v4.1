@@ -1047,12 +1047,12 @@ Correction to the decision pack that this reading prompts (the pack is not a rep
 
 Appended. §22.1 to §22.8 are the record at their dates; the only edit to them is the one sentence of §22.8 named in 22.9.1. **The guards are still inert: INV-7 and INV-8 are not enforced by the product, G4 and G6 are not earned, no `SandboxCapability` changed, PR #86 is not merged, and nothing here is a merge recommendation or a ruling.** Nothing here rules on any item named in 22.9.6.
 
-**Code state described here:** `35c13c3dfb16beda32d005661ad238fe842b5d64` (the fixes), `b70e887117778bb7ff10e201b2eaffe7239a07c0` (module cautions and two more tests; no logic change from `35c13c3`) and `5e06c1abc4c6aae4800e2f376e3df7a4a377a217` (one more test; the module is byte-identical to `b70e887`), on top of `aa99505cb46eaf93d5dfe3b56018401fa773a3c5`. A later commit records this section and changes only this document.
+**Code state described here:** `35c13c3dfb16beda32d005661ad238fe842b5d64` (the fixes), `b70e887117778bb7ff10e201b2eaffe7239a07c0` (module cautions and two more tests; no logic change from `35c13c3`), `5e06c1abc4c6aae4800e2f376e3df7a4a377a217` (one more test; the module is byte-identical to `b70e887`) and `0c28972d2830b9cc7cc8d60b1b7a4b7ce9b08bb2` (three test pins, see 22.9.3; test-only, the module is still byte-identical to `b70e887`), on top of `aa99505cb46eaf93d5dfe3b56018401fa773a3c5`. A later commit records this section and changes only this document.
 
-| File at `5e06c1a` | git blob | sha256 | Lines |
+| File at `0c28972` | git blob | sha256 | Lines |
 |---|---|---|---|
 | `core/sandbox/backends/_sandbox_network.py` | `031ab5f7e466307176bdde30aeb4a563f15bab6b` | `719272fd051c64277153850f3d6a1179a09153e21ec68b59eacf26c753b3017f` | 531 |
-| `tests/core/sandbox/test_sandbox_network_guards.py` | `372d2f318f883aca5ce548771ff4daa6a080c258` | `756d9e37e8871a3abd04b360536b415b81691e9e5c1b1d50509af4647538134a` | 1287 |
+| `tests/core/sandbox/test_sandbox_network_guards.py` | `8d5316c9a727cd6bbb466a715ad5cd9f992df384` | `ec4f763bce0fd9d4a8ff27fea1259e8970505885aa2de042ef0727db28c89d47` | 1321 |
 
 #### 22.9.1 Corrections to the record
 
@@ -1074,7 +1074,7 @@ Each was reproduced by running the real code on `aa99505` before any change, and
 
 #### 22.9.3 Test gaps closed, and the mutant that proves each
 
-The mutation harness is a scratch script, not in the repository: it applies one change to a committed tree, runs the guard tests, restores exactly the files it changed with `git checkout -- <path>`, and asserts a clean tree before and after. **68 mutants, all caught** on `b70e887`: the 27 of §22.8 (two of them re-anchored to the changed code) and 41 new ones.
+The mutation harness is a scratch script, not in the repository: it applies one change to a committed tree, runs the guard tests, restores exactly the files it changed with `git checkout -- <path>`, and asserts a clean tree before and after. **68 mutants, all caught** on `b70e887` and again on `0c28972`: the 27 of §22.8 (two of them re-anchored to the changed code) and 41 new ones.
 
 | Gap on `aa99505` | Change | New mutants (all caught) |
 |---|---|---|
@@ -1092,6 +1092,16 @@ The mutation harness is a scratch script, not in the repository: it applies one 
 
 Two more tests pin statements added to the module docstring: an `async def probe` is refused as a probe error, and a copied slot cannot release the original.
 
+**Round 3 (`0c28972`, test-only).** The independent review of `aa99505` came with a 117-mutant script of its own. Run against `0c28972` (a patched copy of that script, because 12 of its anchors name text that the round-2 fixes changed): **99 killed, 6 survived, 12 could not be applied**. Those 12 and two variants were re-written by hand against the current text (`r1`, `r3`, `r4`, `r6`, `l8` for `release` and for the give-back, `l20`, `i13` to `i16`, `i18`, and the `b2` hardening undone for each of the two presence checks): **14 of 14 killed**. Two survivors of the earlier run were closed by new pins; one of the 14 needed a tighter assertion first.
+
+| Survivor on `cae8694` | Pin added in `0c28972` | Mutant it now kills |
+|---|---|---|
+| `b8`: the logger renamed to a child logger | `test_every_guard_event_is_logged_under_the_one_documented_logger` asserts `ocbrain.sandbox.network` on every guard record from all five event families | logger renamed |
+| `b11`: scopes listed in reverse order in the ON reason | the reason of a zero in both scopes is asserted exactly, `disable_ipv6 is 0 for 'all' and 'default'` | order reversed |
+| (found while porting) the net-sysctl check read by truthiness again | the reasons of a non-`bool` answer from either presence check are asserted exactly, so the contract-break wording cannot be replaced by the documented "not readable" wording | truthiness on the net check |
+
+The 6 survivors that remain are not defects, each for its own reason: `i8` (`rstrip("\n")` instead of `strip()`) is stricter, so a value with surrounding spaces reads UNKNOWN instead of OFF, which fails closed, and the kernel writes `0\n` or `1\n`; `i11` (`str(raw)`) is unreachable behind the `isinstance` check; `i33` (a trailing slash on the default sysctl path) gives the same `os.path.join` and `os.stat` result for a directory, which is all procfs has there; `w4` and `w5` (module name built at run time) are the static-pin residual of 22.9.4; `w10` (a comment that merely mentions the file) is a case where the pin must not trip, so surviving is the expected result.
+
 #### 22.9.4 Residuals recorded, not changed
 
 - A **refusal whose log call raises** propagates the logging exception instead of `SandboxNetworkCapacityError` or `SandboxIPv6RefusedError`. State is unchanged, so it fails closed, but it is outside the guard hierarchy. Not changed: making `_emit` swallow errors would be silent exception swallowing, which the project forbids; the wiring boundary in B11 can translate any exception.
@@ -1102,20 +1112,20 @@ Two more tests pin statements added to the module docstring: an `async def probe
 - A round-tripped refusal does not keep `__cause__` or the traceback (as with stock exceptions), and a subclass with a different constructor signature does not copy.
 - `test_proc_sources_on_this_host_agree_with_a_direct_look` depends on the host; where `/proc/sys/net/ipv6` exists its last branch asserts only that the state is an `Ipv6State`. This host has no such directory.
 
-#### 22.9.5 Verification of the code at `5e06c1a`
+#### 22.9.5 Verification of the code at `0c28972`
 
 | Check | Command (from the repository root) | Result |
 |---|---|---|
-| Focused tests | `env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_sandbox_network_guards.py -q -p no:cacheprovider` | 223 passed on Python 3.13.16 and on 3.12.3 (the system `/usr/bin/python3.12` with the packages of a virtual environment); also with `-W error::RuntimeWarning` |
+| Focused tests | `env -u NO_PROXY -u no_proxy python3 -m pytest tests/core/sandbox/test_sandbox_network_guards.py -q -p no:cacheprovider` | 224 passed on Python 3.13.16 and on 3.12.3 (the system `/usr/bin/python3.12` with the packages of a virtual environment); also with `-W error::RuntimeWarning` |
 | Types | `MYPYPATH=. mypy [--strict] --explicit-package-bases --follow-imports=silent <the two files>` (mypy 2.4.0) | Clean, default and strict |
 | Lint, security | `ruff check` (0.17.2), `bandit` (1.9.4) on the module | `ruff`: all checks passed on both files. `bandit`: no findings |
-| Mutation | the harness above | 68 of 68 caught; clean tree before and after |
+| Mutation | the harness above | 68 of 68 caught on `0c28972`; clean tree before and after. The reviewer's script (patched copy): 99 of 117 killed, 6 survived, 12 not applicable; the 14 ports: 14 of 14 killed (22.9.3) |
 | Drift | `python3 scripts/check_drift.py` | Exit 0, 15 of 15 PASS (run on the head that carries this section) |
-| Whole suite, in CI order | A mirror of the `tests` job of `.github/workflows/ci.yml`: system Python 3.12.3 with `requirements.txt` installed, `NO_PROXY`/`no_proxy` unset, `pytest tests/ -q --tb=short`, then `scripts/ci_test_gate.py` with the D10 list. Run on an export of `b70e887`, in groups of files that each fit one call (the first attempts to run it as a single background process were killed before finishing). `5e06c1a` differs from `b70e887` by one added test in `test_sandbox_network_guards.py` and nothing else, and no other test reads that file; the group that contains it was run again on the head | 2315 collected: **2188 passed, 41 failed, 85 skipped, 1 xfailed**. The 85 skips are the Docker-dependent tests (no daemon was reachable) |
+| Whole suite, in CI order | A mirror of the `tests` job of `.github/workflows/ci.yml`: system Python 3.12.3 with `requirements.txt` installed, `NO_PROXY`/`no_proxy` unset, `pytest tests/ -q --tb=short`, then `scripts/ci_test_gate.py` with the D10 list. Run on an export of `b70e887`, in groups of files that each fit one call (the first attempts to run it as a single background process were killed before finishing). `0c28972` differs from `b70e887` in `test_sandbox_network_guards.py` and in this document only, and a search of `tests/` and `scripts/` found no other test that reads either as data (four sandbox tests name this document in a docstring); the group of files that contains the guard tests was run again on an export of `0c28972`: **339 passed, 85 skipped, `scripts/ci_test_gate.py` exit 0**. The other groups were not re-run on `0c28972` | At `b70e887`: 2315 collected: **2188 passed, 41 failed, 85 skipped, 1 xfailed**. The 85 skips are the Docker-dependent tests (no daemon was reachable) |
 
 **The 41 failures, and why they are not B03's.** This environment's proxy refuses `huggingface.co` (HTTP 403 on the tunnel), and every failure is a test that needs the embedding model. 21 are in the D10 list. The other 20 are not in the list: `test_context_scope_security.py::test_planner_worker_scopes_long_term_memory_save_and_dispatch` (1), `test_module_factory_security.py` (2), `test_planner_capability_migration.py` (6) and `test_planner_worker.py` (11). **Each of those 20 was run on the unmodified base and failed identically** (same files, same counts, node by node for `test_planner_worker.py`). Consequences: in this environment the gate script fails on the base and on the candidate alike for the same reason; whether it passes where `huggingface.co` is reachable is **UNVERIFIED** (no workflow ran for this head); the D10 list is not changed here (that is not B03's to widen); the 21 listed failures were not re-run on the base.
 
-**A second environmental effect, same on base.** Run under a virtual-environment interpreter outside the sandbox's visible filesystem, 8 tests in `tests/core/sandbox/test_namespace_backend.py` fail (`FileNotFoundError` from `execvp` in `_ns_init.py`); the failing set is identical on `e2266603…`, on `aa99505` and on this head, and all pass under the system interpreter. **The directory on the code at `5e06c1a`: 307 passed, 85 skipped, on Python 3.12.3 and on 3.13.16** (no Docker daemon was reachable, so the Docker-dependent tests were skipped; not comparable with §22.3).
+**A second environmental effect, same on base.** Run under a virtual-environment interpreter outside the sandbox's visible filesystem, 8 tests in `tests/core/sandbox/test_namespace_backend.py` fail (`FileNotFoundError` from `execvp` in `_ns_init.py`); the failing set is identical on `e2266603…`, on `aa99505` and on this head, and all pass under the system interpreter. **`tests/core/sandbox` on the code at `0c28972`: 308 passed, 85 skipped, on Python 3.12.3 and on 3.13.16** (no Docker daemon was reachable, so the Docker-dependent tests were skipped; not comparable with §22.3).
 
 #### 22.9.6 Identifiers used in §22.8 and here
 
