@@ -11,6 +11,7 @@
 - Repository: https://github.com/1h0lde4/ocbrain-v4.1 (owner/architect: Moncif, `1h0lde4`, also commits as `N4Z`)
 - Transfer status: **TRANSFER READY** (see section 19). The implementation checkpoint and the handoff commit are both pushed and verified on the remote.
 - Corrections: **C1 (2026-10-31)** retracts one claim in section 11; see `### C1` there. Every line it changed is marked **[C1]**.
+- Reconciliation: **C2 (2026-10-31)** brings sections 5, 7 and 17-19 up to date with events after the checkpoint (PR #104 merged, scope narrowed, issue #105); see `### C2` after C1. Reconciled blocks are marked **[C2]**; the original text under them is kept, labelled historical or superseded.
 
 ## 2. Original Starting Prompt (faithful extraction, not verbatim)
 
@@ -72,6 +73,25 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 | R11 | B2c review, then B3a | ruling 14 | OPEN | no PR yet | next steps |
 | R12 | Handoff pushed and verified | current instruction | MET | remote branch verified from a fresh clone | section 19 |
 
+**[C2] Reconciled status as of 2026-10-31.** The table above is as of checkpoint `5dade77` (un-narrowed B2c).
+
+| ID | Status now | Where / evidence |
+|---|---|---|
+| R1 | **SPLIT.** Task-cancel part (router cleanup, `CancelledError` not swallowed, `AdapterRuntime` propagation) **MERGED** in PR #104 with narrow boundaries (C2.2). Token-driven part **DEFERRED, latent, unreviewed** | `main` `ed3d141`; follow-up branch `b44bddf` |
+| R2 | **MERGED** (pinned by 2 tests; pass on `main` too) | PR #104 |
+| R3 | `CANCELLED` no-recording guard **DEFERRED** with the token-driven part. Task cancel needs no guard by code path: the `CancelledError` leaves `route()` before the recording step (read from the code; not separately asserted by a test; the merged pin covers cancel *during* recording) | follow-up branch; PR #104 |
+| R4 | **UNVERIFIED** (unchanged) | C2.2 |
+| R5 | **MERGED**; red on `main` before the change | PR #104 |
+| R6 | Task cancel during fallback **MERGED** as a pin. Token cancel of an in-flight fallback **NOT implemented** (strict xfail on the follow-up branch) | PR #104; follow-up branch |
+| R7 | Cancel during training-pair recording propagates: **MERGED** (pin). `CANCELLED` no-recording: **DEFERRED** | PR #104; follow-up branch |
+| R8-R10, R12 | MET (R10 re-verified on the merged files: 0 CR bytes) | |
+| R11 | B2c review **DONE** (narrow sign-off, merged). B3a **OPEN**, not started, not authorized by this handoff | C2.1 |
+| S1 | (owner 2026-10-31) Split the latent token-driven part out of B2c and preserve its tests and evidence | **DONE**: `follow-up/fz02-b2d-latent-token-cancellation-oct2026` @ `b44bddf` |
+| S2 | Record the sign-off boundaries explicitly; do not close the broader cancellation gap or mark workflow cancellation solved | **DONE** in the PR body, the merge commit message and C2.2 |
+| S3 | `Worker.execute()` cancellation-swallow/retry becomes a separate tracked item with its own owner, branch, tests and an explicit contract decision | **OPENED** as issue #105, unassigned; owner, branch, tests and decision remain **OPEN** |
+| S4 | Inspect how the graph watchdog stops a node's task, before sign-off | **DONE** (C1.5): it does not stop it |
+| S5 | Reconcile sections 7 and 17-19 | **DONE** in this commit (C2) |
+
 ## 6. Current Verified State
 
 **VERIFIED**
@@ -89,6 +109,17 @@ Standing preferences [reported]: always LF line endings; terse approvals authori
 **DEFERRED (deliberately not in B2c):** see section 4 out-of-scope list.
 
 ## 7. Git / Repository Checkpoint
+
+**[C2] Reconciled state as of 2026-10-31** (verified against the remote):
+
+- `main` = `ed3d141e4bbfd0231afb1104d0a7479419f9bbf1`: merge of PR #104 (parents `16d663a` and `4891756`). CI on that commit: `tests`, `drift-and-ownership`, `Analyze (python)`, `Analyze (actions)` all success. If `main` has moved since, re-verify before relying on this.
+- PR #104 (**MERGED**): branch `fix/fz02-b2c-cancellation-terminal-oct2026` is still on the remote at `4891756` (not deleted); it is `fc845d0` (first B2c commit, cherry-picked from `5dade77` onto `main` 16d663a) plus one additive narrowing commit. Net change: `core/model_router.py` and `tests/test_b2c_cancellation.py` only.
+- Deferred token-driven portion: branch `follow-up/fz02-b2d-latent-token-cancellation-oct2026` @ `b44bddf` (no PR, unreviewed, not for merge as-is).
+- Tracked item: issue #105 (`Worker.execute()` cancellation swallow), unassigned.
+- This wip branch: tip is the commit that introduced C2 (find it with `git log -1 -- handoff.md`). It contains the checkpoint `5dade77`, this handoff, C1 (`03a16c0`) and C2. It is still never to be merged into `main`.
+- Credential: pushes this session used the token the owner told Claude to keep using, passed only as a one-off URL; none is stored in this repository or in `.git/config`.
+
+**Checkpoint-time record (historical, as of `90b375e`; the bullets below are not current):**
 
 - Primary repository: `/home/claude/ocbrain-v4.1` in the sandbox (may be gone: the sandbox has been reset once already; re-clone)
 - Remote: https://github.com/1h0lde4/ocbrain-v4.1.git
@@ -112,6 +143,7 @@ In the transfer commit (all LF):
 Attachments added with the handoff commit under `docs/handoffs/fz02_b2c/` (these existed **only** in the sandbox's `/mnt/user-data/outputs` before):
 - `fz01_b3_b4_design.md`: B3/B4 design, **revision 2** (proposed, not accepted)
 - `fz02_b2a_evidence.md`, `fz02_b2b_evidence.md`: evidence records (the B2b one has an erratum about the single-adapter measurement)
+- **[C2] Added later on this branch:** `fz02_gate_probe.py` (C1 evidence, reproducible with `OCROOT=<checkout>`) and `fz02_b2c_evidence.md` (final B2c record: narrowed scope, gate, sign-off boundaries, merge and post-merge audit). Sections 6, 8 (above) and 9 describe the un-narrowed checkpoint `5dade77`, not `main`.
 
 ## 9. Changes Made (B2c, as implemented)
 
@@ -205,6 +237,25 @@ Propagation: the claim was repeated in the P3/P4 baseline-defects row, in sectio
 
 Changed: one metadata line in section 1; one clause in the section 4 out-of-scope line; the D6 row in section 10; in section 11, three table rows and the "Not investigated" line; section 15 item 4; this block; and the attachment `docs/handoffs/fz02_b2c/fz02_gate_probe.py`. Nothing else in this file was modified. Sections 7 and 17-19 still describe the state at `90b375e` and are NOT updated here: later events (PR #104, the narrowing of B2c, and the deferred portion on `follow-up/fz02-b2d-latent-token-cancellation-oct2026`) are recorded in PR #104 and on that branch, not in this file.
 
+### C2. Reconciliation (2026-10-31): events after the checkpoint
+
+**C2.1 What happened since `90b375e`** [verified]
+- Official branch cut from `main` 16d663a and PR #104 opened with `fc845d0`; the first PR text repeated the retracted C1 claim and was corrected before review.
+- Owner decision: split the latent token-driven portion out of B2c. Done as one additive commit `4891756` on the PR branch (no force-push); the split-out portion is preserved byte-for-byte on `follow-up/fz02-b2d-latent-token-cancellation-oct2026` (`b44bddf`) with its own record.
+- Gate (C1.5): the graph watchdog does not stop a node's task.
+- Owner signed off narrowly on the exact head `4891756`; `main` had not moved; PR #104 merged as `ed3d141`. Post-merge audit: parents `16d663a` + `4891756`; diff against the first parent is exactly the two files (+355/-5); `tests/test_b2c_cancellation.py` on merged `main` 7 passed; `scripts/check_drift.py` rc 0; CI on the merge commit all success; the wip, follow-up and PR-branch tips unchanged by the merge.
+- Issue #105 opened for the `Worker.execute()` finding (C1.4), unassigned.
+
+**C2.2 Boundaries of what PR #104 delivers** (owner sign-off; also in the PR body and the merge commit message)
+1. Guaranteed: when the task running the provider call is cancelled, the router stops its consumer/watchdog tasks and the provider stream closes; a caller cancellation arriving during the router's own consumer cancellation is not swallowed.
+2. NOT done: the graph watchdog does not cancel node tasks.
+3. NOT established: that execution stops on cancellation. Cleanup must not be mistaken for cancellation of the workflow (`Worker.execute()` still converts a task cancel into a failed result and the workflow retries: #105).
+4. UNVERIFIED: shutdown, Ctrl-C and client-disconnect cancellation; physical provider-side termination.
+5. The broader cancellation gap is NOT closed and workflow cancellation is NOT marked solved. FZ-01 stays open; no freeze claim.
+
+**C2.3 Scope of C2**
+Changed: one metadata line in section 1; section 5 (reconciled table added under the original); section 7 (reconciled block added above the original); one bullet in section 8; sections 17, 18, 19 (reconciled block added above the original, which is kept and labelled superseded); this block; and the attachment `docs/handoffs/fz02_b2c/fz02_b2c_evidence.md`. Sections 1-4, 6, 9-16 are unmodified checkpoint-time records (C1 annotations aside): where they conflict with C1, C2 or the live repository, the latter wins. In particular sections 6 and 9 describe the un-narrowed checkpoint `5dade77`, not `main`.
+
 ## 12. Failed Attempts / Dead Ends
 
 - **Shared `ExecutionBudget` in probes.** `ExecutionBudget` is a non-frozen dataclass; a probe that returned one shared instance from `ExecutionPolicy.for_generation` leaked state across scenarios and produced a bogus "healthy stream classified hard_deadline". Production builds a fresh budget per request. Always return a fresh budget in probes and tests.
@@ -265,6 +316,30 @@ May work safely continue without resolving these? Yes for B2c review (items 2-7 
 
 ## 17. Next Steps (in execution order)
 
+**[C2] Reconciled (2026-10-31).** The original plan is kept below under "Superseded" for audit.
+
+Original steps 1-7, outcome:
+
+| Step | Outcome |
+|---|---|
+| 1 Restore access and state | done |
+| 2 Confirm the transfer | done (wip verified at `90b375e`) |
+| 3 Cut the official branch | done, from `main` 16d663a (not 488129b: `main` had moved; dry-run cherry-pick clean): `fc845d0` |
+| 4 Re-establish evidence | done; the numbers in the original step differ and are in `fz02_b2c_evidence.md` |
+| 5 Open the PR | done: #104 (title/body later narrowed) |
+| 6 Evidence record | done: `docs/handoffs/fz02_b2c/fz02_b2c_evidence.md` |
+| 7 Review, sign-off, merge, audit | done: narrow owner sign-off on `4891756`; `main` had not moved, so no update step; merged `ed3d141`; audit: parents, 2-file diff, 7 tests passed, drift rc 0, CI green |
+
+**Remaining, in order. None of these is started or authorized by this handoff; ask the owner which to take:**
+
+1. **#105: `Worker.execute()` cancellation contract.** Owner to name an owner, then: own branch, tests that fail on `main` (task cancel mid-node must not be retried or returned as an ordinary failure), and an explicit owner decision on the contract (re-raise, or a distinct cancelled outcome that callers honour, or a hybrid) recorded before implementation.
+2. **Open cancellation gaps, not solved by #104 (do not mark workflow cancellation solved):** the graph watchdog does not cancel node tasks (C1.5); no production caller threads a token (C1.2), so the follow-up branch stays deferred until one does; shutdown, Ctrl-C and client-disconnect cancellation are unverified; physical provider-side termination is unverified.
+3. **B3a** (original step 8): B2c has passed review, so the earlier hold no longer applies, but the owner has not scheduled it. Before starting: reconcile with PR #83's FZ-D1 wording and PR #88, decide D1.1-D1.4 and D2.2-D2.3, and first define precisely how failure metadata crosses adapters -> `AdapterRuntime` -> `PlannerWorker` dispatch -> workflow (the 2026-10-09 finding in the project notes). Design: `docs/handoffs/fz02_b2c/fz01_b3_b4_design.md` (revision 2, proposed, not accepted). No change to ranking, health, fallback, success flags or answer text.
+4. Keep tracked and separate (original step 9): per-attempt token (D6; now tied to the follow-up branch), training-pair side effects of non-cancel outcomes, the pending documentation corrections (FZ-02 register row, FZ-05 wording, DEBT-033 row, CTX-EXPORT-001 reconciliation, and now the B2c merge with its boundaries and #105), which wait for the next natural doc sync per the owner's workflow rule, #54 follow-ups (TOCTOU, bundle validation), FZ-05/06/B5-B7.
+5. Housekeeping the owner has not asked for and Claude has not done: deleting merged/obsolete branches.
+
+**Superseded: original plan at `90b375e` (historical):**
+
 1. **Restore access and state.** Re-clone, reinstall dependencies (section 14), obtain a fresh push credential from the owner, and verify `main`, the checkpoint branch and the branch list before touching anything (R9 applies again: confirm one owner, no rival branch or PR for B2c).
 2. **Confirm the transfer.** `handoff.md` and `docs/handoffs/fz02_b2c/` are already on `wip/fz02-b2c-cancellation-checkpoint-oct2026`; just verify (a copy of `handoff.md`, the three attachments and a git bundle of the first handoff commit were also saved in the session outputs).
 3. **Cut the official branch.** `git checkout -b fix/fz02-b2c-cancellation-terminal-oct2026 origin/main && git cherry-pick 5dade77` (never merge the wip branch; never put `handoff.md` in the PR). If `main` moved onto the B2c files, re-verify first. Name the immutable review target (the `main` SHA at that point).
@@ -277,6 +352,15 @@ May work safely continue without resolving these? Yes for B2c review (items 2-7 
 
 ## 18. Resume Instructions
 
+**[C2] Reconciled (2026-10-31). Do these first, in order, and stop on any mismatch:**
+1. Read `docs/architecture/PROJECT_INSTRUCTIONS.md`, this file completely (including C1 and C2) and the project memory notes.
+2. `git fetch origin`; confirm `origin/main` is `ed3d141e4bbfd0231afb1104d0a7479419f9bbf1` or a descendant. If it moved, check whether `core/model_router.py` or `core/capabilities/adapter_runtime.py` changed, and re-verify C1.2 (the call paths) before relying on it.
+3. Confirm PR #104 is merged, issue #105 is open (and whether it has an owner or a decision), and `follow-up/fz02-b2d-latent-token-cancellation-oct2026` is at `b44bddf` or has a newer reviewed history.
+4. Confirm this wip branch's tip contains C2 and the attachments `fz02_gate_probe.py` and `fz02_b2c_evidence.md`.
+5. Do not repeat the investigations in section 11 or C1 unless the repository changed. Ask the owner which remaining item (section 17) to take; do not start #105 or B3a unprompted, and do not describe the cancellation gap as closed.
+
+**Superseded: original resume instructions at `90b375e` (historical):**
+
 Do these first, in order, and stop on any mismatch:
 1. Read `docs/architecture/PROJECT_INSTRUCTIONS.md` and this file completely; read the memory notes for the OCBrain project (they hold the owner's standing preferences and decision history).
 2. `git fetch origin`; confirm `origin/main` (written as `f13bfde...`) and whether it touched `core/capabilities/adapter_runtime.py`, `core/model_router.py`, `core/runtime/watchdog_decision.py`, `core/runtime/execution_watchdog.py`, `core/workers/planner.py`, `core/workflow/runtime.py` or `core/orchestrator.py`.
@@ -285,6 +369,15 @@ Do these first, in order, and stop on any mismatch:
 5. Resolve any mismatch with the live repository before changing code; correct this file if it was wrong. Do not repeat investigations listed in section 11 unless the repository changed.
 
 ## 19. Transfer Status
+
+**[C2] Reconciled (2026-10-31): TRANSFER READY for the remaining work in section 17.**
+
+- B2c's production-reachable change is **merged** (`ed3d141`) with its boundaries recorded; nothing of it exists only locally. The deferred part is pushed on its own branch; the attachments and this reconciliation are pushed on this wip branch.
+- Not transferred as done, deliberately: #105 (open, unassigned), the cancellation gaps listed in section 17 item 2, and B3a. The handoff must not be read as "cancellation is fixed".
+- Remote verification of this commit is by comparing the remote tip with the local commit after pushing; re-check with `git ls-remote origin refs/heads/wip/fz02-b2c-cancellation-checkpoint-oct2026`.
+- Never merge this branch into `main` (it carries a session artefact).
+
+**Superseded: transfer status at `90b375e` (historical):**
 
 **TRANSFER READY.**
 
