@@ -27,6 +27,7 @@ from .runtime.cancellation import CancellationToken
 from .runtime.execution_budget import ExecutionPolicy, record_observed_throughput
 from .runtime.execution_outcome import ExecutionOutcome, FailureType
 from .runtime.execution_watchdog import CancelReason, ExecutionWatchdog
+from .runtime.watchdog_decision import is_caller_cancellation
 from .runtime.progress_monitor import ProgressMonitor
 from .runtime.state import state_store
 
@@ -73,6 +74,22 @@ class ProviderStreamError(str):
         obj = super().__new__(cls, text)
         obj.error_id = error_id
         return obj
+
+
+async def _stop_generation(watchdog, watchdog_task, consumer_task) -> None:
+    """B2c: stop a monitored generation whose CALLER was cancelled.
+
+    asyncio.wait() does not cancel the tasks it was given, so a cancelled caller
+    used to leave the provider stream being consumed in the background (and the
+    watchdog polling). Cancel both and wait for them, so the stream generator's
+    `finally` runs and no task outlives the request. The caller then re-raises
+    its own CancelledError; this never converts it into a result.
+    """
+    watchdog.stop()
+    for task in (consumer_task, watchdog_task):
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(consumer_task, watchdog_task, return_exceptions=True)
 
 
 async def _maybe_await(value):
@@ -176,9 +193,13 @@ class ModelRouter:
                 model_label=model_label, estimated_output_tokens=estimated_tokens,
                 scope=scope,
             )
-            await _maybe_await(self._record_training_pair(module_name, subtask, answer))
-            count = self._increment_query_count(module_name)
-            self._maybe_promote(module_name, count=count)
+            if outcome.failure_type != FailureType.CANCELLED:
+                # B2c: a cancelled generation is incomplete by definition. It is
+                # not recorded as a training pair, not counted, and not allowed
+                # to advance promotion.
+                await _maybe_await(self._record_training_pair(module_name, subtask, answer))
+                count = self._increment_query_count(module_name)
+                self._maybe_promote(module_name, count=count)
             return RouteResult(
                 answer=answer,
                 source=source,
@@ -443,9 +464,15 @@ class ModelRouter:
         # actually interrupts a hung stream (propagates asyncio.CancelledError
         # into _ollama_stream's httpx read, which re-raises it rather than
         # swallowing it).
-        done, _pending = await asyncio.wait(
-            {watchdog_task, consumer_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        try:
+            done, _pending = await asyncio.wait(
+                {watchdog_task, consumer_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+        except asyncio.CancelledError:
+            # B2c: the CALLER was cancelled while we waited. Stop the generation
+            # (see _stop_generation), then let the cancellation propagate.
+            await _stop_generation(watchdog, watchdog_task, consumer_task)
+            raise
 
         if consumer_task in done:
             watchdog.stop()
@@ -453,9 +480,16 @@ class ModelRouter:
         else:
             consumer_task.cancel()
             try:
-                await consumer_task
+                # Wait for OUR cancellation of the consumer to finish. This uses
+                # asyncio.wait() on purpose: `await consumer_task` inside
+                # `except CancelledError: pass` would also swallow a cancellation
+                # of the CALLER arriving at this await (B2c).
+                await asyncio.wait({consumer_task})
             except asyncio.CancelledError:
-                pass
+                await _stop_generation(watchdog, watchdog_task, consumer_task)
+                raise
+            if not consumer_task.cancelled():
+                consumer_task.result()  # surfaces a non-cancellation error, as before
 
         full_answer = "".join(chunks)
         # FZ-02 (B2a): the provider's own error token is part of full_answer
@@ -468,10 +502,15 @@ class ModelRouter:
         if provider_failure:
             failure_type = FailureType.PROVIDER_FAILURE
         elif token.is_cancelled:
-            failure_type = (
-                FailureType.STALLED if token.reason == CancelReason.STALL.value
-                else FailureType.HARD_DEADLINE
-            )
+            if is_caller_cancellation(token):
+                # B2c: cancelled by someone other than this attempt's own
+                # watchdog (the caller, or the execution-level supervisor).
+                failure_type = FailureType.CANCELLED
+            else:
+                failure_type = (
+                    FailureType.STALLED if token.reason == CancelReason.STALL.value
+                    else FailureType.HARD_DEADLINE
+                )
         elif not has_output:
             failure_type = FailureType.EMPTY_RESPONSE
         else:
