@@ -62,28 +62,6 @@ class CancelReason(str, Enum):
     EXTERNAL = "external"
 
 
-# B2c. The reasons a generation attempt's OWN watchdog cancels its token with.
-# A token cancelled for one of these is an adapter-local timeout: the attempt
-# failed, and fallback and health policy apply as for any failure. Any other
-# reason (CancelReason.EXTERNAL, the default "cancelled", the graph watchdog's
-# "execution ..." reasons, an arbitrary caller string) means the invocation is
-# no longer wanted, which is cancellation, not failure.
-ADAPTER_LOCAL_CANCEL_REASONS = frozenset({
-    CancelReason.STALL.value,
-    CancelReason.HARD_DEADLINE.value,
-})
-
-
-def is_caller_cancellation(token) -> bool:
-    """True when `token` has been cancelled by something other than a
-    generation attempt's own watchdog. None and un-cancelled tokens are False."""
-    return bool(
-        token is not None
-        and getattr(token, "is_cancelled", False)
-        and getattr(token, "reason", "") not in ADAPTER_LOCAL_CANCEL_REASONS
-    )
-
-
 class WatchdogVerdict(str, Enum):
     HEALTHY = "healthy"
     SLOW_BUT_PROGRESSING = "slow_but_progressing"

@@ -18,19 +18,11 @@ would violate the Kernel Constitution's Law of Evidence over Assumption
 new") for no benefit -- the two problems (which LLM provider, which
 capability adapter) are the same shape.
 
-Failure containment: invoke() never raises on failure. Every failure path
-returns a CapabilityResult(success=False, ...), matching ExecutionRuntime.invoke()
+Failure containment: invoke() never raises. Every failure path returns a
+CapabilityResult(success=False, ...), matching ExecutionRuntime.invoke()
 and WorkflowRuntime.execute()'s established never-raise contract
 elsewhere in this runtime (Kernel Constitution, Law of Failure
 Containment).
-
-Cancellation is not a failure (B2c). asyncio.CancelledError is deliberately
-NOT contained: it propagates, no fallback starts and no adapter is penalised.
-A token cancelled by the caller (see core.runtime.watchdog_decision.
-is_caller_cancellation) or an adapter reporting failure_type "cancelled" ends the
-invocation with a terminal result marked metadata["cancelled"] -- again with no
-fallback and no health penalty. An adapter-local timeout (a token cancelled with
-the attempt's own "stall"/"hard_deadline" reasons) is still an ordinary failure.
 """
 from __future__ import annotations
 
@@ -41,18 +33,8 @@ from typing import List, Optional
 from core.capabilities.capability import Adapter, CapabilityRequest, CapabilityResult
 from core.capabilities.registry import CapabilityRegistry
 from core.capabilities.resource import ResourceManager
-from core.runtime.execution_outcome import FailureType
-from core.runtime.watchdog_decision import is_caller_cancellation
 
 logger = logging.getLogger("ocbrain.capabilities.adapter_runtime")
-
-
-
-def _request_token(request):
-    """The caller's CancellationToken, when the request context carries one."""
-    payload = getattr(request, "payload", None)
-    context = payload.get("context") if isinstance(payload, dict) else None
-    return getattr(context, "cancellation_token", None)
 
 
 class AdapterRuntime:
@@ -64,7 +46,6 @@ class AdapterRuntime:
         self._event_stream = event_stream
         self._total_invocations = 0
         self._total_failures = 0
-        self._total_cancelled = 0
 
     async def invoke(self, capability_type: str,
                       request: Optional[CapabilityRequest] = None,
@@ -104,14 +85,8 @@ class AdapterRuntime:
         ranked = self._rank_adapters(adapters)
 
         last_error = "no adapters attempted"
-        tried: List[str] = []
         for adapter in ranked:
             adapter_name = getattr(adapter, "adapter_name", type(adapter).__name__)
-            if is_caller_cancellation(_request_token(request)):
-                # Cancelled before this attempt began: do not start it (B2c).
-                return await self._cancelled(
-                    capability_type, request, start, tried, "", "before_attempt")
-            tried.append(adapter_name)
             attempt_start = time.time()
             try:
                 result = await adapter.execute(request, self._resources)
@@ -139,11 +114,6 @@ class AdapterRuntime:
                 })
                 return result
 
-            if (result.metadata or {}).get("failure_type") == FailureType.CANCELLED.value:
-                # The adapter reports the invocation was cancelled: that is not a
-                # failure of the adapter, so no penalty and no further fallback.
-                return await self._cancelled(
-                    capability_type, request, start, tried, adapter_name, "adapter")
             last_error = result.error or f"{adapter_name} returned success=False"
             self._mark_failure(adapter)
             await self._emit_event("adapter.failed", {
@@ -161,28 +131,6 @@ class AdapterRuntime:
             duration_ms=(time.time() - start) * 1000,
             metadata={"adapters_tried": [
                 getattr(a, "adapter_name", type(a).__name__) for a in ranked]},
-        )
-
-    async def _cancelled(self, capability_type: str, request: CapabilityRequest,
-                         start: float, tried: List[str], adapter_name: str,
-                         stage: str) -> CapabilityResult:
-        """Terminal result for a cancelled invocation. Counts as neither a
-        success nor a failure and touches no adapter's health."""
-        self._total_cancelled += 1
-        await self._emit_event("adapter.cancelled", {
-            "capability_type": capability_type,
-            "adapter": adapter_name,
-            "stage": stage,
-            "trace_id": request.trace_id,
-        })
-        return CapabilityResult(
-            success=False,
-            error=f"Invocation of '{capability_type}' was cancelled.",
-            adapter_used=adapter_name,
-            duration_ms=(time.time() - start) * 1000,
-            metadata={"cancelled": True,
-                      "failure_type": FailureType.CANCELLED.value,
-                      "adapters_tried": list(tried)},
         )
 
     def _rank_adapters(self, adapters: List[Adapter]) -> List[Adapter]:
@@ -242,6 +190,5 @@ class AdapterRuntime:
         return {
             "total_invocations": self._total_invocations,
             "total_failures": self._total_failures,
-            "total_cancelled": self._total_cancelled,
             **self._registry.stats(),
         }
