@@ -791,7 +791,10 @@ def test_tc14_a_zero_in_one_scope_is_still_checked_in_the_other() -> None:
     names every scope that is enabled."""
     reads = _Reads(all_="0\n", default="0\n")
     decision = evaluate_ipv6(reads.sources())
-    assert "'all'" in decision.reason and "'default'" in decision.reason
+    assert decision.state is Ipv6State.ON
+    # Exact text and order: the scopes are named in the order they are read
+    # (``all`` then ``default``), so the same host always logs the same line.
+    assert decision.reason == "disable_ipv6 is 0 for 'all' and 'default'"
 
 
 # ---------------------------------------------------------------- TC-14: a source that breaks its contract
@@ -885,7 +888,9 @@ def test_tc14_a_non_bool_ipv6_directory_check_is_unknown_never_off(bad: object) 
     decision = evaluate_ipv6(_sources_answering(_ON_FACTS, ipv6_dir=bad))
     assert decision.state is Ipv6State.UNKNOWN, decision.reason
     assert decision.supported is False
-    assert "ipv6 sysctl directory check" in decision.reason
+    assert decision.reason == (
+        f"the ipv6 sysctl directory check returned a {type(bad).__name__}, not a bool"
+    )
 
 
 @pytest.mark.parametrize("bad", _NOT_BOOL)
@@ -895,7 +900,9 @@ def test_tc14_a_non_bool_net_sysctl_check_is_unknown_never_off(bad: object) -> N
     decision = evaluate_ipv6(_sources_answering(_ON_FACTS, net=bad, ipv6_dir=False))
     assert decision.state is Ipv6State.UNKNOWN, decision.reason
     assert decision.supported is False
-    assert "net sysctl" in decision.reason
+    # The reason names the broken contract, not the documented "not readable"
+    # case that only a real ``False`` may report.
+    assert decision.reason == f"the net sysctl check returned a {type(bad).__name__}, not a bool"
 
 
 @pytest.mark.parametrize("bad", _NOT_BOOL)
@@ -1137,6 +1144,33 @@ def test_reservations_and_releases_are_logged(caplog: pytest.LogCaptureFixture) 
         "limit": 3,
         "in_use": 2,
     }
+
+
+def test_every_guard_event_is_logged_under_the_one_documented_logger(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Operators filter on the logger name; it is part of the observable contract
+    (a child or renamed logger would silently drop a filter or a routing rule)."""
+    caplog.set_level(logging.DEBUG, logger="ocbrain.sandbox.network")
+    assert sn.logger.name == "ocbrain.sandbox.network"
+    limiter = NetworkSlotLimiter(1)
+    slot = limiter.reserve("first")
+    with pytest.raises(SandboxNetworkCapacityError):
+        limiter.reserve("second")
+    limiter.release(slot)
+    with pytest.raises(SandboxNetworkCapacityProbeError):
+        resolve_effective_limit(_FailingProbe(OSError("no daemon")))
+    with pytest.raises(SandboxIPv6RefusedError):
+        enforce_ipv6_guard(_Reads(all_="0\n").sources())
+    guard_records = [r for r in caplog.records if hasattr(r, "sandbox_network_event")]
+    assert {event for event, _level, _in_use in _sequence(caplog)} >= {
+        "sandbox_network_slot_reserved",
+        "sandbox_network_capacity_refused",
+        "sandbox_network_slot_released",
+        "sandbox_network_capacity_probe_failed",
+        "sandbox_network_ipv6_refused",
+    }
+    assert {r.name for r in guard_records} == {"ocbrain.sandbox.network"}
 
 
 class _RaisingFilter(logging.Filter):
