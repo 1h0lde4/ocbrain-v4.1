@@ -27,6 +27,7 @@ from .runtime.cancellation import CancellationToken
 from .runtime.execution_budget import ExecutionPolicy, record_observed_throughput
 from .runtime.execution_outcome import ExecutionOutcome, FailureType
 from .runtime.execution_watchdog import CancelReason, ExecutionWatchdog
+from .runtime.watchdog_decision import is_caller_cancellation
 from .runtime.progress_monitor import ProgressMonitor
 from .runtime.state import state_store
 
@@ -192,9 +193,13 @@ class ModelRouter:
                 model_label=model_label, estimated_output_tokens=estimated_tokens,
                 scope=scope,
             )
-            await _maybe_await(self._record_training_pair(module_name, subtask, answer))
-            count = self._increment_query_count(module_name)
-            self._maybe_promote(module_name, count=count)
+            if outcome.failure_type != FailureType.CANCELLED:
+                # B2c: a cancelled generation is incomplete by definition. It is
+                # not recorded as a training pair, not counted, and not allowed
+                # to advance promotion.
+                await _maybe_await(self._record_training_pair(module_name, subtask, answer))
+                count = self._increment_query_count(module_name)
+                self._maybe_promote(module_name, count=count)
             return RouteResult(
                 answer=answer,
                 source=source,
@@ -497,10 +502,15 @@ class ModelRouter:
         if provider_failure:
             failure_type = FailureType.PROVIDER_FAILURE
         elif token.is_cancelled:
-            failure_type = (
-                FailureType.STALLED if token.reason == CancelReason.STALL.value
-                else FailureType.HARD_DEADLINE
-            )
+            if is_caller_cancellation(token):
+                # B2c: cancelled by someone other than this attempt's own
+                # watchdog (the caller, or the execution-level supervisor).
+                failure_type = FailureType.CANCELLED
+            else:
+                failure_type = (
+                    FailureType.STALLED if token.reason == CancelReason.STALL.value
+                    else FailureType.HARD_DEADLINE
+                )
         elif not has_output:
             failure_type = FailureType.EMPTY_RESPONSE
         else:

@@ -1,26 +1,30 @@
-"""B2c -- a cancelled caller task must stop the generation and must not look like a failure.
+"""B2c -- cancellation is not a failure.
 
-Scope (what is reachable in production at this head): TASK cancellation, i.e.
-asyncio.CancelledError arriving while a task awaits ModelRouter.route(). No
-production caller currently hands the router or AdapterRuntime a cancellation
-TOKEN (PlannerWorker and capability_executor pass context_memory / ""; see
-PR #104), so token-driven cancellation is out of this file's scope.
+Two different events were being conflated:
 
-Covered here:
+  failure       the adapter cannot complete the request: the runtime records it,
+                applies the existing health policy and may fall back;
+  cancellation  the invocation is no longer wanted: nothing should be retried
+                elsewhere, nothing should be penalised, and the work should stop.
 
-  * the router stops its consumer/watchdog tasks and the provider stream when
-    its caller is cancelled (no task outlives the request, the stream's
-    `finally` runs);
-  * a caller cancelled while the router is cancelling its own consumer is not
-    swallowed;
-  * AdapterRuntime lets CancelledError propagate: no fallback is started and no
-    adapter is penalised because of the cancellation, while genuine failures
-    and stalls keep their existing behaviour (pinned);
-  * cancelling one request does not disturb a concurrent request.
+Cancellation reaches this runtime two ways, and both are covered:
 
-What this file can and cannot show: logical cancellation and in-process stop are
-proven with deterministic fakes; that a real model server stopped generating is
-NOT proven here. Closing a client stream does not by itself prove it.
+  * task cancellation (asyncio.CancelledError): a control-flow exception that
+    must propagate untouched and must stop the provider stream in-process;
+  * token cancellation (CancellationToken.cancel(reason)): cooperative. A token
+    cancelled with the monitored attempt's OWN watchdog reasons ("stall",
+    "hard_deadline") is an adapter-local timeout and keeps its existing
+    behaviour; any other reason is a caller-side cancellation.
+
+What this file can and cannot show:
+  * logical cancellation (no fallback, no health penalty, no success, no
+    training pair) and in-process stop (the stream generator's `finally` runs,
+    no task is left running) are proven with deterministic fakes;
+  * that a real model server stopped generating is NOT proven here. Closing a
+    client stream does not by itself prove the server stopped.
+
+Two behaviours B2c deliberately does not change are recorded as strict xfails so
+they stay visible: see the two tests at the end.
 """
 import asyncio
 import time
@@ -35,16 +39,17 @@ from core.capabilities import (
 from core.capabilities.adapters.model_router_adapter import ModelRouterAdapter
 from core.capabilities.adapters.ollama_adapter import OllamaAdapter
 from core.model_router import ModelRouter
+from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
+from core.runtime.execution_outcome import FailureType
 
 # An explicit word count sends route() down the monitored-streaming branch.
 LONG = "write a short story of 1000 words, fantasy type"
 
 
 class _Ctx:
-    """Shaped like the context production hands the router (ContextMemory):
-    it has NO `cancellation_token`, so the router uses its own fresh token."""
-    def __init__(self):
+    def __init__(self, token=None):
+        self.cancellation_token = token or CancellationToken()
         self.metadata = {}
 
     def format_for_prompt(self, n, scope=None):
@@ -111,9 +116,19 @@ def _slow_cleanup(ev):
     return stream
 
 
-def _provider_error():
+def _cancels_token_with(reason):
+    async def stream(module_name, subtask, context, scope=""):
+        yield "partial before cancel"
+        context.cancellation_token.cancel(reason)
+        await asyncio.sleep(9999)
+    return stream
+
+
+def _provider_error(then_cancel_with=None):
     async def stream(module_name, subtask, context, scope=""):
         yield mr.ProviderStreamError("[Error: model request failed (ref x)]", "x")
+        if then_cancel_with is not None:
+            context.cancellation_token.cancel(then_cancel_with)
     return stream
 
 
@@ -177,7 +192,7 @@ def _invoke(runtime, ctx, subtask=LONG):
 
 
 # ==========================================================================
-# Router: the caller task is cancelled
+# Router: the caller is cancelled (task cancellation)
 # ==========================================================================
 
 @pytest.mark.asyncio
@@ -214,8 +229,105 @@ async def test_caller_cancel_while_the_router_cancels_its_consumer_is_not_swallo
 
 
 # ==========================================================================
+# Router: token cancellation
+# ==========================================================================
+
+def test_caller_cancellation_helper_distinguishes_the_attempts_own_reasons():
+    import core.runtime.watchdog_decision as wd
+    assert wd.is_caller_cancellation(None) is False
+    assert wd.is_caller_cancellation(CancellationToken()) is False          # not cancelled
+    for own in ("stall", "hard_deadline"):                                  # the attempt's own watchdog
+        token = CancellationToken()
+        token.cancel(own)
+        assert wd.is_caller_cancellation(token) is False
+    for other in ("cancelled", "user pressed stop", "execution stall", "execution hard_deadline"):
+        token = CancellationToken()
+        token.cancel(other)
+        assert wd.is_caller_cancellation(token) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["cancelled", "user pressed stop",
+                                    "execution stall", "execution hard_deadline"])
+async def test_a_token_cancelled_by_someone_else_is_classified_cancelled(router, reason):
+    r, _ = router
+    r._stream_external = _cancels_token_with(reason)
+    routed = await asyncio.wait_for(r.route("coding", LONG, _Ctx()), timeout=6)
+    detail = routed.execution_detail
+    assert detail.failure_type == FailureType.CANCELLED
+    assert detail.retryable is False
+    assert detail.partial_output == "partial before cancel"     # preserved as data
+
+
+@pytest.mark.asyncio
+async def test_the_attempts_own_stall_reason_is_still_a_stall(router):
+    r, _ = router
+    r._stream_external = _hangs_after_one_token
+    routed = await asyncio.wait_for(r.route("coding", LONG, _Ctx()), timeout=6)
+    assert routed.execution_detail.failure_type == FailureType.STALLED
+
+
+# ==========================================================================
+# Completion boundary: what a cancelled generation may and may not record
+# ==========================================================================
+
+@pytest.mark.asyncio
+async def test_a_cancelled_generation_records_no_training_pair_count_or_promotion(router):
+    r, spies = router
+    r._stream_external = _cancels_token_with("user pressed stop")
+    routed = await asyncio.wait_for(r.route("coding", LONG, _Ctx()), timeout=6)
+    assert routed.execution_detail.failure_type == FailureType.CANCELLED
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_a_completed_generation_still_records_its_training_pair_and_count(router):
+    r, spies = router
+    r._stream_external = _complete
+    await asyncio.wait_for(r.route("coding", LONG, _Ctx()), timeout=6)
+    assert spies["pairs"] == ["A complete story."] and len(spies["counts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_side_effects_are_unchanged_and_tracked_separately(router):
+    """Pinned, not endorsed: a provider failure still records its error token as
+    a training pair. That pre-existing behaviour (all non-success outcomes) is a
+    separate tracked issue and is not changed by B2c."""
+    r, spies = router
+    r._stream_external = _provider_error()
+    await asyncio.wait_for(r.route("coding", LONG, _Ctx()), timeout=6)
+    assert len(spies["pairs"]) == 1 and len(spies["counts"]) == 1
+
+
+# ==========================================================================
 # AdapterRuntime
 # ==========================================================================
+
+@pytest.mark.asyncio
+async def test_token_cancel_during_the_router_attempt_is_terminal_and_not_a_health_event(router):
+    r, _ = router
+    r._stream_external = _cancels_token_with("user pressed stop")
+    calls = []
+    runtime, mra, oa, sf = _runtime(r, _ok("OLLAMA", calls))
+    result = await asyncio.wait_for(_invoke(runtime, _Ctx()), timeout=8)
+    assert result.success is False
+    assert result.metadata.get("cancelled") is True
+    assert result.metadata.get("failure_type") == "cancelled"
+    assert calls == []                                    # no fallback attempt
+    assert mra.consecutive_failures == 0 and mra.health_score == 100 and mra.is_available()
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_invocation_is_neither_a_success_nor_a_failure_in_the_stats(router):
+    r, _ = router
+    r._stream_external = _cancels_token_with("user pressed stop")
+    runtime, *_ = _runtime(r, _ok("OLLAMA"))
+    await asyncio.wait_for(_invoke(runtime, _Ctx()), timeout=8)
+    stats = runtime.stats()
+    assert stats["total_invocations"] == 1
+    assert stats["total_failures"] == 0
+    assert stats["total_cancelled"] == 1
+
 
 @pytest.mark.asyncio
 async def test_genuine_provider_failure_still_falls_back_and_is_penalised(router):
@@ -263,6 +375,19 @@ async def test_task_cancel_during_fallback_stops_it_and_keeps_the_earned_penalty
     assert second_calls == []                             # and no further fallback began
     assert mra.consecutive_failures == 1                  # the router keeps its genuine penalty
     assert oa.consecutive_failures == 0 and oa.health_score == 100   # no cancellation-induced penalty
+
+
+@pytest.mark.asyncio
+async def test_token_cancel_between_attempts_stops_further_fallback(router):
+    r, _ = router
+    r._stream_external = _provider_error(then_cancel_with="user pressed stop")
+    first, second = [], []
+    runtime, mra, oa, sf = _runtime(r, _ok("OLLAMA", first), _ok("SECOND", second))
+    result = await asyncio.wait_for(_invoke(runtime, _Ctx()), timeout=8)
+    assert result.success is False and result.metadata.get("cancelled") is True
+    assert first == [] and second == []                   # neither fallback started
+    assert mra.consecutive_failures == 1                  # the genuine provider failure is still penalised
+    assert oa.consecutive_failures == 0 and sf.consecutive_failures == 0
 
 
 @pytest.mark.asyncio
@@ -319,3 +444,58 @@ async def test_cancel_during_training_pair_recording_propagates_and_penalises_no
         await task
     assert calls == []
     assert mra.consecutive_failures == 0 and mra.health_score == 100
+
+
+# ==========================================================================
+# Known limitations, recorded as strict xfails (not fixed by B2c)
+# ==========================================================================
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Known limitation, not fixed by B2c: a token cancelled while a non-token-aware "
+    "fallback adapter is already mid-call is not delivered to it. Task cancellation "
+    "is (see the task-cancel fallback test). Needs a per-attempt token."))
+@pytest.mark.asyncio
+async def test_token_cancel_during_an_in_flight_fallback_stops_it_promptly(router):
+    r, _ = router
+    r._stream_external = _provider_error()
+    ev = {}
+
+    async def slow_but_finite(prompt, *a, **k):
+        ev["started"] = True
+        await asyncio.sleep(1.0)
+        return "LATE FALLBACK ANSWER"
+
+    ctx = _Ctx()
+    runtime, *_ = _runtime(r, slow_but_finite)
+    task = asyncio.create_task(_invoke(runtime, ctx))
+    await _wait_for(ev, "started")
+    ctx.cancellation_token.cancel("user pressed stop")
+    result = await asyncio.wait_for(task, timeout=5)
+    assert result.metadata.get("cancelled") is True
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Known defect, not fixed by B2c: one module's stall cancels the SHARED "
+    "execution token and cuts a healthy sibling mid-stream. Needs a per-attempt "
+    "token. Pre-dates B2a/B2b."))
+@pytest.mark.asyncio
+async def test_one_modules_stall_does_not_cut_a_healthy_sibling_sharing_the_token(router):
+    r, _ = router
+
+    async def by_subtask(module_name, subtask, context, scope=""):
+        if subtask.endswith("STALLER"):
+            yield "stalling module output"
+            await asyncio.sleep(9999)
+        else:
+            for i in range(60):
+                await asyncio.sleep(0.02)
+                yield f"c{i} "
+
+    r._stream_external = by_subtask
+    ctx = _Ctx(CancellationToken())                       # one token shared by both modules
+    stall = asyncio.create_task(r.route("coding", LONG + " STALLER", ctx))
+    healthy = asyncio.create_task(r.route("coding", LONG + " HEALTHY", ctx))
+    routed_stall, routed_healthy = await asyncio.wait_for(asyncio.gather(stall, healthy), timeout=10)
+    assert routed_stall.execution_detail.failure_type == FailureType.STALLED
+    assert routed_healthy.execution_detail.failure_type == FailureType.SUCCESS
+    assert len(routed_healthy.answer.split()) == 60
