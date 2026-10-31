@@ -15,7 +15,6 @@ except ImportError:
     TRAY_AVAILABLE = False
 
 from core.config import config
-from interface.auth import read_token
 
 _icon: Optional[object] = None
 PORT = 7437
@@ -41,15 +40,15 @@ def _port() -> int:
 
 
 def _ui_url(path: str = "") -> str:
-    """UI URL carrying the API token in the fragment (DEBT-025).
+    """UI URL.  It never carries the API token.
 
-    A URL fragment is never sent to the server, so it stays out of access logs;
-    interface/web/auth.js moves it into sessionStorage and strips it from the
-    address bar.  The browser may keep it in local history.
+    Handing the token to the browser through its command line would expose it to
+    every local user for as long as the launcher process lives (``ps`` and
+    ``/proc/<pid>/cmdline`` are world-readable on most systems), defeating the
+    owner-only token file.  The page asks for the token once per tab instead;
+    ``ocbrain token --show`` prints it.
     """
-    url = f"http://localhost:{_port()}{path}"
-    token = read_token()
-    return f"{url}#token={token}" if token else url
+    return f"http://localhost:{_port()}{path}"
 
 
 def _open_ui(icon, item):

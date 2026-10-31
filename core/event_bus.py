@@ -48,6 +48,7 @@ EVENTS = {
     # API boundary (DEBT-025)
     "api.auth_denied",          # request rejected by the auth boundary (payload: reason, method, path, client; never the credential)
     "api.auth_disabled",        # the auth boundary resolved to 'disabled' (explicit opt-out)
+    "api.auth_enabled",         # the auth boundary is 'required' again after having been disabled
 }
 
 

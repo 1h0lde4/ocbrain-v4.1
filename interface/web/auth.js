@@ -36,7 +36,7 @@
     if (Date.now() - declinedAt < DECLINE_QUIET_MS) return Promise.resolve('');
     if (!pendingPrompt) {
       pendingPrompt = Promise.resolve().then(function () {
-        var t = window.prompt('OCBrain API token (the contents of the data/api_token file on this machine):');
+        var t = window.prompt('OCBrain API token. On this machine run:  ocbrain token --show  and paste the result.');
         t = t ? t.trim() : '';
         if (!t) declinedAt = Date.now();
         try {
@@ -66,7 +66,14 @@
     var current = getToken();
     var token = (current && current !== used) ? current : await askForToken();
     if (!token) return res;
-    return fetch(url, withAuth(opts, token));
+    var retry = await fetch(url, withAuth(opts, token));
+    if (retry.status === 401) {
+      // The token was rejected (typed wrong, or rotated again): forget it and stay quiet for a
+      // while instead of prompting on every status poll.
+      try { sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+      declinedAt = Date.now();
+    }
+    return retry;
   };
 
   window.ocEventStream = function (url, onMessage) {

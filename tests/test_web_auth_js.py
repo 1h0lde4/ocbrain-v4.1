@@ -87,7 +87,7 @@ def test_auth_js_against_a_live_authenticated_server(monkeypatch, tmp_path):
             capture_output=True, text=True, timeout=90,
         )
         assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert "15/15 checks passed" in proc.stdout, proc.stdout
+        assert "18/18 checks passed" in proc.stdout, proc.stdout
     finally:
         server.should_exit = True
         thread.join(timeout=10)

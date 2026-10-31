@@ -69,6 +69,15 @@ function makeWindow(hash, promptAnswers) {
   check('G unauthenticated stream gives up quietly', g === 0 && w.calls.prompt === 1, `msgs=${g} prompts=${w.calls.prompt}`);
   s2.close();
 
+  // H: a WRONG token typed into the prompt: one prompt, then quiet (no prompt on every status poll)
+  w = makeWindow('', ['wrong-token-wrong-token-wrong-token-1234']);
+  r = await w.sb.ocFetch('/config');
+  const h2 = await w.sb.ocFetch('/config');
+  const h3 = await w.sb.ocFetch('/config');
+  check('H wrong token: the rejected call surfaces the 401', r.status === 401, r.status);
+  check('H wrong token: later polls do not prompt again', w.calls.prompt === 1 && h2.status === 401 && h3.status === 401, `prompts=${w.calls.prompt}`);
+  check('H wrong token: the rejected token is forgotten', !('ocbrain_api_token' in w.store));
+
   const failed = results.filter(x => !x[1]);
   for (const [n, ok, extra] of results) console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra !== '' ? '  [' + extra + ']' : ''));
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
