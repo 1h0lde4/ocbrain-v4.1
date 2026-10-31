@@ -364,6 +364,10 @@ category, and count of `source == "explicit"` constraints from
 - Real-model behavior is unmeasured. Hostile exploitation through an actual
   model is not demonstrated; the structural weakness and the synthetic
   reproduction are.
+  *Update, Oct 31, 2026:* a real-model run of the replacement (owner's machine, `llama3`, 120
+  exposed adversarial trials) measured ESCALATED 0 and 2 advisory selections. That is one model and one
+  sample: evidence, not proof, and real hostile exploitation is still not demonstrated either way.
+  See ADR-KERNEL-08 §8.2.
 - `content_grounded` is a weak signal and must never become a gate again.
 
 ---

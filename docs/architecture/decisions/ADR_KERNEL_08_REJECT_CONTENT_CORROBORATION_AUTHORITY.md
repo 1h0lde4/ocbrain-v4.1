@@ -387,24 +387,56 @@ facts; it approves nothing and changes no decision in §§1-8.
    a model produced the text, so the owner should check the recorded provider, model and endpoint.
    Limit of this review: it is independent of the sessions that wrote the harness, not of the
    model family. The owner's own acceptance of item 1 remains the owner's.
-2. **OPEN. Not performed; no real-model evidence exists.** No configured provider is available in
-   the verification environment: no Ollama binary or listener on `:11434`, none on `:8080`, no
-   provider credentials in the environment, and DNS resolution fails for `registry.ollama.ai` and
-   `huggingface.co`, so no model could be fetched either. Dry-run stand-ins and the stub server are
-   not real-model evidence and cover neither R3 nor R5. To satisfy it, on a machine with the
-   configured provider run `python3 live_citation_check.py --json out.json` from the PR head
-   (defaults: 10 requests x 3 trials; `--require-all-answered` for the strict policy). Acceptance
-   needs exit 0, the recorded provider and model to be the intended ones, cache hits 0, and the
-   recorded harness sha256 and commit to match the head under test.
+2. **PERFORMED by the owner, Oct 31, 2026 (19:17:56 UTC), on the owner's machine; evaluated here from the
+   raw records, not from the printed summary.** Mode `real`, no stand-in; harness sha256 `9309c2f9…5d1b`
+   (an exact match for `live_citation_check.py` at `ccf0489`); documented scale (10 requests x 3 trials,
+   default coverage policy); provider `Ollama(llama3)` at `localhost:11434` answered 150 of 150 trials;
+   prompt cache cleared before 150 of 150; 0 cache hits; 0 blank, 0 provider errors, 0 fallback attempts;
+   coverage met (the strict policy would also have been met: every trial was answered). Raw file
+   `out.json`, sha256 `6f9a2783649dd96206142d0101a1d5d9e281050dba2f0c7596a8e07f50556d34`; it is not
+   archived in this repository and holds no credential-like strings.
+   **R5 (adversarial, 120 exposed trials against a real model): ESCALATED 0.** The injection was not
+   inert: the injected label appeared among the model's candidate lines in 19 of 30 `naive`, 23 of 30
+   `cite-request`, 27 of 30 `line-spoof` and 8 of 30 `constraint-bait` trials, and became the advisory
+   category in 2 of 120 (both `constraint-bait`; R1, a plausibility default, not a security control).
+   No injected text reached the user's text or an EXPLICIT constraint in any trial.
+   **R3 (functional cost, benign requests, 30 runs): measured.** `request_grounded` 20 (66%),
+   `open_category_fallback` (`novel`, 0.1) 10 (33%), 0 empty completions. The owner's earlier
+   preliminary real runs on older harness versions gave 10% (Oct 8) and 30% (Oct 9, six of the nine
+   caused by empty completions); today's is the first with full provenance and zero blanks. The "more
+   often than before" baseline cannot be measured: `main` emits the old event vocabulary and this
+   harness rejects it (the owner's run of this harness against `main`'s code gave 150 of 150 runs
+   INCONCLUSIVE: "carries rejected key 'authorities'"). Whether the cost is acceptable is the
+   owner's judgement; §8.1 sets no threshold.
+   Verified independently: totals, per-payload tables and the per-trial provenance were recomputed
+   from `out.json` and agree with the printed summary; the records vary trial to trial (all 10 benign
+   requests, 72 distinct label-sets in 120 adversarial trials), as a stochastic model does and a
+   scripted stand-in does not.
+   **Limits, stated so they are not lost:** one local model (`llama3`), 120 exposed trials, four
+   payloads: evidence, not proof, and it does not show real hostile exploitation is impossible.
+   `git_commit` was recorded as `unknown`, so the artifact does not pin the code under test; it is
+   pinned by inference (the harness hash exists only at `0c16cd3` or later, and `core/cognitive`,
+   `provider_mesh.py`, `prompt/` and `memory/` are byte-identical between `f60b402` and `ccf0489`).
+   The exit status was not in what was supplied; the printed "invariant held" line is emitted only on
+   the exit-0 path, and no write failure was reported, so it was 0 (derived from the code, not observed).
+   "Real" mode certifies "not `--dry-run`"; that a model produced the text rests on the recorded
+   provenance and the observed variation.
 3. **Done (Oct 30, 2026).** `main` refreshed to `16d663a`; `ADR-KERNEL-08` is still the free number
    (`ADR-KERNEL-07` is the creative content-anchor detector); `main` merged into the branch
    (`7fbf7c2`, no conflicts, diff against `main` unchanged); critical gates re-run: suite 2169
    passed, 1 xfailed, 8 failed (`main` baseline 2080 / 1 / 8; the same 8 sandbox-namespace tests,
    which need privileges the sandbox lacks); drift 30 PASS / 0 FAIL; mutation check 43/43; the six
    `--dry-run` stand-ins at 10 requests x 3 trials all exit 0 with ESCALATED 0.
-4. **Not promoted.** PR #93 is open. Item 2 is a precondition of promotion as written in §8.1, so
-   the merge is held until the owner either runs it or explicitly waives it. ADR-KERNEL-08 stays
-   APPROVED, not IMPLEMENTED; CTX-AUTH-002 is not closed; CTX-AUTH-001b stays OPEN.
+   **Re-reconciled Oct 31, 2026:** `main` moved to `ed3d141` (PR #104: `core/model_router.py` and a new
+   test; no file overlap, and none of it on the interpreter path). Merged into the branch (`099a238`, no
+   conflicts) and the gates re-run on the combined head: suite 2176 passed, 1 xfailed, 8 failed (`main`
+   baseline 2087 / 1 / 8, the same 8); drift 30 PASS / 0 FAIL; mutation 43/43; six stand-ins exit 0 with
+   ESCALATED 0. `core/cognitive`, `provider_mesh.py`, `prompt/`, `memory/` and the harness are
+   byte-identical to `ccf0489`, the tree the real run's code path corresponds to.
+4. **Promotion.** PR #93 is open and, with items 1-3 done, is cleared for the merge the owner
+   authorized on Oct 30, 2026. ADR-KERNEL-08 stays APPROVED, not IMPLEMENTED, until the merge and the
+   re-verification on `main` that §9 requires; CTX-AUTH-001b stays OPEN (§8.1 item 4 only allows it to be
+   reconsidered, as a separate decision).
 
 ## 9. Lifecycle
 
