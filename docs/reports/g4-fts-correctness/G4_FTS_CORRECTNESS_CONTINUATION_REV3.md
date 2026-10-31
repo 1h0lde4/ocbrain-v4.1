@@ -13,7 +13,7 @@ The evidence ZIP remains outside Git, as required by the original evidence-prese
 ## 2. Exact REV3 evidence artifact
 
 - Archive: fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
-- SHA-256: f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc
+- SHA-256: f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc
 - Size: 254,581 bytes
 - Manifest: 86 entries; fresh extraction and manifest validation passed 86/86.
 - Final packet-text SHA-256: db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2

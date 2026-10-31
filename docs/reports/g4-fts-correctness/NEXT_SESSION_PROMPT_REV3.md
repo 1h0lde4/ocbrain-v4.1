@@ -13,7 +13,7 @@ Read, in this order:
 3. docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
 4. docs/reports/g4-fts-correctness/doc_fetch_quotations_as_returned_HEADER_REV2.md
 5. docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
-6. The exact externally preserved ZIP fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip uploaded by the user to this session. Verify SHA-256 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc and size 254,581 bytes. If it is not attached or does not match, stop evidence-dependent claims and report the precise blocker. Do not fabricate/reconstruct raw outputs.
+6. The exact externally preserved ZIP fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip uploaded by the user to this session. Verify SHA-256 f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc and size 254,581 bytes. If it is not attached or does not match, stop evidence-dependent claims and report the precise blocker. Do not fabricate/reconstruct raw outputs.
 
 ## First actions: establish live state, do not assume carried claims
 
