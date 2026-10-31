@@ -1,4 +1,4 @@
-# Session Handoff (v4) — Kernel v1.0 Freeze Remediation: Batch 0 → Batch 1
+# Session Handoff (v5) — Kernel v1.0 Freeze Remediation: Batch 0 done enough → Batch 1 designed, NOT implemented
 
 > Transfer record per `PROJECT_INSTRUCTIONS.md` §18.4.8. **Temporary record, not an authority** — verify against the live repo (§18.4.9). **Do not merge this file to `main`.** It supersedes handoff v3.2 *for this mission*; v3.2 (on `security/codeql-findings-sep2026`) still describes the earlier CodeQL/manifest workstream.
 
@@ -30,24 +30,25 @@ Goal: expose the real state and establish verifiable fixes; first pass may end P
 ## 5. Requirement ledger
 | ID | Requirement | Status |
 |---|---|---|
-| L1 | Batch 0 deliverables | **INCOMPLETE** — report written; see its §10 for what is not done |
-| L2 | Batch 1 (R-1) | **Implementation NOT STARTED.** State **OPEN**; **pre-fix evidence captured (VERIFIED, report §9.1)** |
+| L1 | Batch 0 deliverables | **INCOMPLETE** — report written; see its §10 for what is left |
+| L2 | Batch 1 (R-1) | **Implementation NOT STARTED** (worktree + empty branch exist). State **OPEN** on the current pin; pre-fix behaviour **MEASURED** (report §9.1); design fixed (report §9.2) |
 | L3 | Push finished work | **FAILED** — credential rejected (§7) |
-| L4 | Independent review | **NOT POSSIBLE yet** (needs a result SHA and a separate reviewer) |
+| L4 | Independent review | **NOT POSSIBLE yet** (no result SHA, no separate reviewer) |
 | L5 | Stop before Batch 2 | in force |
 
 ## 6. Current verified state
-- **VERIFIED:** `origin/main` = `f13bfdefcdd197ed1f966de0b1f93037a4168af4` (2026-10-19 08:59 UTC); workspace was clean (0 uncommitted, 0 stashes, 0 local-only commits); the GitHub token is **dead** (HTTP 401); `v1.0.0` → `0efa222` is 353 commits behind `main`; the Oct 1 audit file is **not in the repo** (every fetched ref searched); DEBT-023's docs claim a mitigation (`_net_proxy.py`, AF_ALG/AF_VSOCK) that `main`'s code lacks; `DEBT-042`/`DEBT-043` already exist on `main` (so PR #79's `DEBT-042` collides); live `enforce_admins: true`.
-- **READ (register line 131 + source):** R-1 OPEN — ` - ` truncation in `parse_failed_ids`; hand-truncated allowlist entries can tolerate a failing ` - ` id; the live gate matches by **node ID only**. 
-- **VERIFIED (executed, local):** the live gate **tolerates a genuine `AssertionError` via a hand-truncated allowlist entry (S2) and via ID-only matching (S4)**, cannot tolerate a legitimate ` - ` ID (S1), and its count cross-check catches collisions (S3) — report §9.1.
-- **NOT VERIFIED:** D4/D5, the real entries' signatures; PR checks/mergeability since the credential died; #39/#40 states; everything the prompt attributes to the Oct 1 audit.
-- Full detail: `docs/Bugs Hunt & fix reports/FREEZE_REMEDIATION_BATCH0_REPORT_f13bfde.md`.
+- **VERIFIED:** `origin/main` = `16d663ac8449965f774033da46d5063506a772a7` (2026-10-29); it was `f13bfde` when Batch 0 began. The **gate surface is unchanged** over 56+ commits (same blob `934251744567965d5b4c7919d39bf8554fddaee5`; same tests, allowlist, `ci.yml`, drift script) ⇒ **R-1 is still OPEN**. PR #89 (DEBT-029) **merged**; #79/#81/#83/#86/#87/#88 not merged. The GitHub token is **dead** (HTTP 401). `v1.0.0` → `0efa222` is 353+ commits behind. The Oct 1 audit file is **not in the repo**. DEBT-023's docs claim a mitigation absent from `main`'s code. `DEBT-042`/`DEBT-043` already exist on `main` (PR #79's `DEBT-042` collides). Live `enforce_admins: true`. `/mnt/user-data/outputs` **persists across container resets**; the repo/venv/`/tmp` do not.
+- **VERIFIED (executed, local; report §9.1):** the live gate tolerates a genuine `AssertionError` via a hand-truncated allowlist entry (S2) and via ID-only matching (S4); cannot tolerate a legitimate ` - ` ID (S1); and its count cross-check catches collisions (S3). Real pytest exit codes were 1,1,1.
+- **READ (gate blob, line-referenced in report §9.2):** R-1 at line 110; ID-only match at 178–181; the docstring declares ID-only matching by design (37–38). The allowlist header states the root cause (`huggingface.co` unreachable) and declares R-1.
+- **INFERRED, unverified:** pytest drops the `- message` part of a short-summary line when the ID is wider than the terminal (so the exception type is unavailable from text for long IDs) — one-minute check in report §9.2.
+- **NOT VERIFIED:** D4/D5, the real entries' failure signatures, PR checks since the credential died, #39/#40, anything attributed to the Oct 1 audit.
 
 ## 7. Git / repository checkpoint
-- Repo `github.com/1h0lde4/ocbrain-v4.1` (**public**). Pinned base: `main` @ `f13bfde`.
-- **New branch (docs only) `audit/freeze-remediation-batch0-oct2026`**: commit `84fe1a6` = the Batch 0 report; this handoff on top. **It exists only in the container and in the delivered `batch0-handoff.bundle` + files — it is NOT on the remote.** Push attempt 1: exit **128**, "could not read Password"; remote has 0 matching branches. Attempt 2: made after committing this file; **FAILED (exit 128) - the credential is rejected; the branch is not on the remote**.
-- **Already on the remote from earlier work (unchanged):** `security/codeql-findings-sep2026` @ `2d03b70` (handoff v3.2, manifest draft, R7 write-up, notes); PR #79 branch @ `bcbe574`; PR #87 branch @ `917bb37`.
-- **To publish later:** with a fresh credential, `git push <https-url-with-token> audit/freeze-remediation-batch0-oct2026` (non-forced). **Importing the bundle:** `git fetch batch0-handoff.bundle audit/freeze-remediation-batch0-oct2026:audit/freeze-remediation-batch0-oct2026` inside a clone of the repo.
+- Repo `github.com/1h0lde4/ocbrain-v4.1` (**public**). Batch 0 pin `f13bfde`; Batch 1 pin `16d663a`.
+- **Branch `audit/freeze-remediation-batch0-oct2026` (docs only, base `f13bfde`)**: the Batch 0 report, the probe evidence, the §9.2 design basis, and this handoff — **local + delivered as `batch0-handoff.bundle`; NOT on the remote.** Push attempts this mission: exit **128** ("could not read Password") every time; this transfer's first attempt: exit **128**; a final attempt follows the commit of this file (result in the delivering message).
+- **Container-local, empty:** worktree `/home/claude/audit/wt-batch1`, branch `fix/ci-gate-r1-structured-report-oct2026` @ `16d663a` — **no changes made**; nothing to preserve (recreate with `git worktree add <path> -b fix/ci-gate-r1-structured-report-oct2026 origin/main`).
+- **On the remote from earlier work (unchanged):** `security/codeql-findings-sep2026` @ `2d03b70`; PR #79 branch @ `bcbe574`; PR #87 branch @ `917bb37`.
+- **Import the bundle:** inside a clone, `git fetch /path/to/batch0-handoff.bundle audit/freeze-remediation-batch0-oct2026:audit/freeze-remediation-batch0-oct2026`. **Publish** with a fresh credential: `git push <https-url-with-token> audit/freeze-remediation-batch0-oct2026` (non-forced).
 
 ## 8. Active files
 `docs/Bugs Hunt & fix reports/FREEZE_REMEDIATION_BATCH0_REPORT_f13bfde.md` (the deliverable) · `handoff.md` · the Batch 1 target `scripts/ci_test_gate.py` (244 lines), `tests/test_ci_test_gate.py` (18 test functions / 67 cases per the register), `docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt` (34 entries; header documents the gate's contract), `.github/workflows/ci.yml` (`tests` job records pytest's real exit code, then the script decides).
@@ -95,13 +96,14 @@ Q1 Supply `OCBRAIN_KERNEL_V1_FREEZE_AUDIT.md`. Q2 Provide a fresh credential (or
 The Batch 0 report; `scripts/ci_test_gate.py`; `KNOWN_ISSUES.md` line 131 (R-1); the allowlist header; PR #55 (the FZ-07 primary fix); PRs #79/#81/#83/#86/#87/#88/#89; `premerge_guard.py` (merge authority pinned to a head SHA, per PR #88's text).
 
 ## 17. Next steps (in order)
-1. Re-paste the v2 mission prompt; read this file and the report; verify the transfer (§18).
-2. Obtain a credential; publish the branch non-forced (or import the bundle).
-3. Rebuild the environment (§14); re-pin `main`; `git status`.
-4. ~~Run the pre-fix probe~~ **Done this session** (report §9.1) — re-run once on the new pin to confirm; the harness is described there.
-5. Finish only the Batch 0 remainders Batch 1 needs: read `ci_test_gate.py` + `tests/test_ci_test_gate.py` + allowlist header in full; research the 34 entries' failure signatures; consult pytest's documented exit codes/hooks; re-fetch PR checks if a credential exists. **Resolve or record Q3 before designing the signature.**
-6. Implement Batch 1 in a *separate worktree* from the re-pinned `main`: `git worktree add <path> -b fix/ci-gate-r1-parser-hardening-oct2026 origin/main`; bracket every test run with `git status`; preserve the allowlist and the D-4 strict xfail; run the real gate tests and the drift check.
-7. Freeze an immutable SHA, build the reviewer package, report in the prompt's format, **stop and wait.**
+1. Re-paste the v2 mission prompt; read this file and the report (§9.1 evidence, **§9.2 design**); verify the transfer (§18).
+2. Obtain a credential and publish the Batch 0 branch (or import the bundle).
+3. Rebuild the environment (§14); re-pin `main`; `git status`. **Re-run the §9.1 probe** on the new pin (the gate blob is unchanged, so S1–S4 should reproduce; assert the blob first).
+4. Run the **one-minute long-ID check** (report §9.2, INFERRED item) and record the result.
+5. **Resolve or record Q3** (the approved failure class for the 34 entries) *before* coding the policy file; if the owner has not answered, implement with the proposed class clearly marked PROPOSED and say so in the review package.
+6. Create the worktree/branch (§7) from the re-pinned `main` and implement the §9.2 design as **one reviewable unit**: plugin → `evaluate_report` + CLI flags → policy file → `ci.yml` → tests → gate docstring. Bracket **every** test run with `git status` (DEBT-012) and attribute any tracked-file change. Keep the allowlist byte-identical, the legacy text path untouched, and the D-4 strict xfail and the drift check unchanged.
+7. Verify: the existing gate tests (67 cases) still pass **unchanged**; the new tests pass; the full suite and `check_drift.py` pass; re-run S1–S4 through the real plugin→gate path and show they now behave per the acceptance. Record exact commands, exit statuses, counts, versions, SHA; say plainly that no CI run occurred (or that it did, if a push enables one).
+8. Freeze an immutable SHA, build the reviewer package (include the **stricter-for-existing-entries** risk and the pinned-defect tests' status), report in the prompt's format, **stop and wait.**
 
 ## 18. Resume instructions
 1. Confirm the branch is reachable (bundle or remote) and read both files. 2. Compare this record with the live repo; **the repo wins.** 3. Resolve mismatches before changing code. 4. Begin at §17 step 2.
