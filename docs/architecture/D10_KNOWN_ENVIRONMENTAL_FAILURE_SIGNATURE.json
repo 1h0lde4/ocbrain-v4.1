@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "_status": "PROPOSED - owner ratification required; NOT validated against the real failures of the listed tests (they need torch/sentence-transformers with huggingface.co unreachable). Tied to D10_KNOWN_ENVIRONMENTAL_FAILURES.txt, which states the root cause as huggingface.co being unreachable.",
+  "classes": [
+    {
+      "name": "hf_hub_unreachable",
+      "phase": "call",
+      "chain_message_contains": ["huggingface.co"]
+    }
+  ]
+}

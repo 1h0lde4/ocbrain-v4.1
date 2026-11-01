@@ -16,6 +16,7 @@ The known-failure list itself is not touched or re-validated here.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import stat
 import subprocess
@@ -229,16 +230,53 @@ _NEEDS_BASH = pytest.mark.skipif(
 )
 
 
+_HF_CHAIN = [{"type": "builtins.OSError", "message": "Can't reach huggingface.co"}]
+
+
+def _synth_report(output: str, rc: int) -> dict | None:
+    """The structured report the real plugin would write for a run that printed ``output``.
+
+    None where a real run would leave no report (no final summary line = killed or
+    truncated; INTERNALERROR).  Failures carry the proposed environmental signature so
+    the listed-failure case exercises the report-mode tolerance path.
+    """
+    summary = gate.parse_summary(output)
+    if summary is None or "INTERNALERROR" in output:
+        return None
+    records = [{"nodeid": "tests/t.py::p", "when": "call", "outcome": "passed",
+                "xpass_strict": False, "wasxfail": False, "chain": []}] * min(summary.passed, 1)
+    for nid in sorted(gate.parse_failed_ids(output)):
+        records.append({"nodeid": nid, "when": "call", "outcome": "failed",
+                        "xpass_strict": False, "wasxfail": False, "chain": _HF_CHAIN})
+    collecting = "ERROR collecting" in output
+    for i in range(0 if collecting else summary.errors):
+        records.append({"nodeid": f"tests/e.py::e{i}", "when": "setup", "outcome": "failed",
+                        "xpass_strict": False, "wasxfail": False, "chain": _HF_CHAIN})
+    return {"schema": 1, "complete": True, "plugin_fault": None, "exitstatus": rc, "counts": {},
+            "records": records, "collect_errors": ["tests/a.py"] if collecting else []}
+
+
 def _job_is_red(tmp: Path, pytest_output: str, pytest_rc: int, run_step1: bool = True) -> bool:
     """Run the workflow's two real steps with a fake pytest; True if either step fails."""
     steps = _tests_job_steps()
     bindir = tmp / "bin"
     bindir.mkdir()
     shim = bindir / "pytest"
-    shim.write_text('#!/bin/bash\ncat "$FAKE_OUT"\nexit "$FAKE_RC"\n')
+    # R-1: the real workflow now passes --ci-gate-report=PATH; the fake pytest (the
+    # external boundary here) writes the structured report the real plugin would
+    # have written for this canned output, when it would have written one.
+    shim.write_text(
+        '#!/bin/bash\n'
+        'for a in "$@"; do case "$a" in --ci-gate-report=*) '
+        '[ -f "$FAKE_REPORT" ] && cp "$FAKE_REPORT" "${a#--ci-gate-report=}";; esac; done\n'
+        'cat "$FAKE_OUT"\nexit "$FAKE_RC"\n')
     shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
     (tmp / "fake_out.txt").write_bytes(pytest_output.encode())
+    report = _synth_report(pytest_output, pytest_rc)
+    if report is not None:
+        (tmp / "fake_report.json").write_text(json.dumps(report), encoding="utf-8")
     env = {
+        "FAKE_REPORT": str(tmp / "fake_report.json"),
         "PATH": f"{bindir}:/usr/bin:/bin:{Path(sys.executable).parent}",
         "FAKE_OUT": str(tmp / "fake_out.txt"),
         "FAKE_RC": str(pytest_rc),
