@@ -202,8 +202,9 @@ def _restrict_to_owner_windows(path: Path) -> None:
     listing = _run_tool(["icacls", str(path)])
     count = _windows_ace_count(listing.stdout)
     if listing.returncode != 0 or count != 1:
+        shown = " | ".join(ln.strip() for ln in listing.stdout.splitlines() if ":(" in ln)[:600]
         raise AuthConfigError(
-            f"API token file {path} still has {count} access entries after restriction; "
+            f"API token file {path} still has {count} access entries after restriction ({shown}); "
             "delete it (a new owner-only file is created on the next start)."
         )
 

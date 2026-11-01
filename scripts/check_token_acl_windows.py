@@ -64,6 +64,39 @@ def aces(path: Path) -> list[str]:
     return [ln for ln in run("icacls", str(path)).splitlines() if ":(" in ln]
 
 
+def experiment() -> None:
+    """Observe how icacls really behaves, on scratch files, before the real checks run.
+
+    Output only (annotated): which recipe leaves exactly one entry on this runner?
+    """
+    sid = run("whoami", "/user", "/fo", "csv", "/nh").strip().split('","')[-1].strip('"')
+    tmp = Path(tempfile.mkdtemp(prefix="ocb-acl-exp-"))
+    variants = {
+        "V0 untouched new file": [],
+        "V1 /inheritance:r alone": [["/inheritance:r"]],
+        "V2 /inheritance:r then /grant:r": [["/inheritance:r"], ["/grant:r", f"*{sid}:(F)"]],
+        "V3 one call: /inheritance:r /grant:r (the recipe in interface/auth.py)": [["/inheritance:r", "/grant:r", f"*{sid}:(F)"]],
+        "V4 /grant:r then /inheritance:r": [["/grant:r", f"*{sid}:(F)"], ["/inheritance:r"]],
+        "V5 /inheritance:r /grant:r then /remove:g SYSTEM,Administrators": [["/inheritance:r", "/grant:r", f"*{sid}:(F)"], ["/remove:g", "*S-1-5-18", "*S-1-5-32-544"]],
+    }
+    try:
+        for i, (name, steps) in enumerate(variants.items()):
+            f = tmp / f"v{i}"
+            f.write_text("x")
+            for step in steps:
+                res = subprocess.run(["icacls", str(f), *step], capture_output=True, text=True, timeout=30)
+                if res.returncode != 0:
+                    say(f"  [{name}] icacls {' '.join(step)} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()[:160]}")
+            lst = [ln.strip() for ln in run("icacls", str(f)).splitlines() if ":(" in ln]
+            say(f"EXPERIMENT {name}: {len(lst)} entries")
+            for ln in lst:
+                say("    " + ln.replace(str(f), "<file>"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    annotate("notice", "icacls experiment (how icacls really behaves on this runner)",
+             "\n".join(line for line in LOG if line.startswith(("EXPERIMENT", "    ", "  ["))))
+
+
 def main() -> int:
     if os.name != "nt":
         print("Not Windows: nothing to validate here (this check is Windows-only).")
@@ -71,6 +104,7 @@ def main() -> int:
 
     from interface import auth
 
+    experiment()
     say(f"python {sys.version.split()[0]} on {sys.platform}; cwd={os.getcwd()}")
     me = run("whoami").strip()
     say(f"current user: {me}")
@@ -147,7 +181,7 @@ def entry() -> int:
         code = 1
     if not LOG:  # not Windows: nothing ran
         return code
-    annotate("error" if code else "notice", "Windows token ACL " + ("FAILED" if code else "passed"), "\n".join(LOG)[-6000:])
+    annotate("error" if code else "notice", "Windows token ACL " + ("FAILED" if code else "passed"), "\n".join(LOG)[-16000:])
     for item in FAILURES:
         annotate("error", "Windows token ACL check", item)
     return code
