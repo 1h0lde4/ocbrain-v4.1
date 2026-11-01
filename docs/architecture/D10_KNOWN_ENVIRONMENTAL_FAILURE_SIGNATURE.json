@@ -1,11 +1,34 @@
 {
-  "schema": 1,
-  "_status": "PROPOSED - owner ratification required; NOT validated against the real failures of the listed tests (they need torch/sentence-transformers with huggingface.co unreachable). Tied to D10_KNOWN_ENVIRONMENTAL_FAILURES.txt, which states the root cause as huggingface.co being unreachable.",
+  "schema": 2,
+  "status": "PROPOSED",
+  "decision_ref": null,
+  "description": "Approved failure-signature classes for the tests listed in D10_KNOWN_ENVIRONMENTAL_FAILURES.txt. STATUS PROPOSED: a PROPOSED (or REVOKED) policy cannot excuse ANY failure - every listed failure stays red and its exception chain is printed and uploaded for diagnosis. To activate: obtain the owner decision, set status ACCEPTED and cite it in decision_ref, narrow exception_types to the chains observed in real CI runs. The type list below is an UNVALIDATED candidate set, not evidence. Types match exactly (no subclass inference).",
   "classes": [
     {
-      "name": "hf_hub_unreachable",
+      "name": "hf_hub_network_unreachable",
       "phase": "call",
-      "chain_message_contains": ["huggingface.co"]
+      "match": {
+        "exception_types": [
+          "builtins.ConnectionError",
+          "builtins.ConnectionRefusedError",
+          "builtins.ConnectionResetError",
+          "builtins.TimeoutError",
+          "socket.gaierror",
+          "urllib3.exceptions.NameResolutionError",
+          "urllib3.exceptions.NewConnectionError",
+          "urllib3.exceptions.ConnectTimeoutError",
+          "urllib3.exceptions.MaxRetryError",
+          "requests.exceptions.ConnectionError",
+          "requests.exceptions.ConnectTimeout",
+          "httpx.ConnectError",
+          "httpx.ConnectTimeout"
+        ],
+        "message_contains": ["huggingface.co"]
+      },
+      "deny": {
+        "exception_types": ["builtins.AssertionError"],
+        "http_status": [401, 403, 404]
+      }
     }
   ]
 }
