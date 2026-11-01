@@ -16,6 +16,8 @@ synthetic reproduction; real-world hostile exploitation NOT DEMONSTRATED)
 
 **Update (Oct 6 2026):** the CTX-AUTH-001b closure recorded elsewhere (ADR-KERNEL-06 §8, Sept 23) was REJECTED by finding CTX-AUTH-002 below. CTX-AUTH-001b is reopened; the text of this entry is left as history.
 
+**Update (Oct 31 2026):** the replacement for the rejected mechanism is now implemented on `main` (ADR-KERNEL-08, PR #93, merge `b742e4a`) and CTX-AUTH-002 is closed (qualified). CTX-AUTH-001b stays OPEN: ADR-KERNEL-08 §8.1 item 4 allows it to be reconsidered on that evidence, which is a separate owner decision that has not been made. The classification above is left as written for that decision.
+
 **Affected component:** `core/cognitive/intent.py` —
 `generate_hypotheses()` / `_build_hypothesis_prompt()` /
 `_parse_hypotheses()` (K4.2.1, Intent Interpreter)
@@ -239,10 +241,18 @@ elimination of all retrieved-content influence on output.
 **Status:** VERIFIED SECURITY FINDING — source-level, plus a synthetic
 reproduction run through the real `interpret_request` with only the model
 provider mocked. Real-model exploitation: NOT DEMONSTRATED. Reopens
-CTX-AUTH-001b. A replacement is implemented on branch
-`fix/ctx-auth-002-reject-content-corroboration-authority-sep2026` and is
-**approved in design** (`ADR-KERNEL-08`, APPROVED Oct 6, 2026 by Moncif) but
-**not promoted to `main` and not re-verified there**. Nothing here is a closure.
+CTX-AUTH-001b. **CLOSED, qualified (Oct 31, 2026):** the replacement
+(`ADR-KERNEL-08`, APPROVED Oct 6, 2026 by Moncif) was promoted to `main` by PR #93
+(merge `b742e4a`) and re-verified there (ADR-KERNEL-08 §9), which were the two
+conditions this entry named. What is closed is the tested authority/escalation
+path: a model-authored hypothesis acquires no USER authority by citation,
+grounding, overlap or score, verified mechanically on the corpus and mutations
+tested, plus one real-model run (owner's machine, `llama3`, 120 exposed
+adversarial trials: ESCALATED 0, 2 advisory selections). **Not claimed:**
+"proved with a real LLM", that real hostile exploitation is impossible, or
+anything beyond one model, one sample and four payloads. The residual risks
+R1-R6 in ADR-KERNEL-08 §6 stand as recorded (R3 measured, not closed). This does
+**not** close CTX-AUTH-001b, which stays OPEN.
 
 **Affected component:** as merged on `main` at the branch point `80a1bb8` —
 `core/cognitive/intent.py` (`_resolve_source`, `_select_operative_hypothesis`)

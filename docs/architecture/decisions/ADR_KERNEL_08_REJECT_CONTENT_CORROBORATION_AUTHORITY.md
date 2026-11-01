@@ -1,15 +1,17 @@
 # ADR-KERNEL-08: Reject Content-Corroboration Authority; Reopen CTX-AUTH-001b
 
-**Status:** APPROVED (Oct 6, 2026, by Moncif, the decision-maker) — **not
-IMPLEMENTED:** the replacement exists on the branch below but is not promoted
-to `main` and not re-verified there. CTX-AUTH-001b stays **OPEN** until it is.
-This is not a closure. Lifecycle: DRAFT → REVIEW → APPROVED → IMPLEMENTED →
-FINAL; the Oct 6 rulings in §8 are both the review outcome and the approval (no
-separate REVIEW stage was held).
+**Status:** **IMPLEMENTED** (Oct 31, 2026): approved Oct 6, 2026 by Moncif, the
+decision-maker, then promoted to `main` by PR #93 (merge `b742e4a`) and
+re-verified there (§9). Not FINAL. CTX-AUTH-001b stays **OPEN**; §8.1 item 4
+allows it to be *reconsidered* on this evidence, which is a separate owner
+decision and is not made here. Lifecycle: DRAFT → REVIEW → APPROVED →
+IMPLEMENTED → FINAL; the Oct 6 rulings in §8 are both the review outcome and the
+approval (no separate REVIEW stage was held).
 **Date:** October 6, 2026
 **Author:** Claude session, CTX-AUTH-002 workstream
 **Branch:** `fix/ctx-auth-002-reject-content-corroboration-authority-sep2026`
-(base `main` @ `80a1bb8`; nothing merged to `main`)
+(base `main` @ `80a1bb8`). Promoted to `main` Oct 31, 2026 through PR #93
+(branch `fix/ctx-auth-002-reconciled-remediation-oct2026`, merge `b742e4a`).
 **Amends / reopens:** `ADR-KERNEL-06` §8 (and its "CTX-AUTH-001b: CLOSED"
 statements). §§1–8 of that ADR are unmodified; a reconsideration notice sits
 above its §1.
@@ -433,13 +435,18 @@ facts; it approves nothing and changes no decision in §§1-8.
    baseline 2087 / 1 / 8, the same 8); drift 30 PASS / 0 FAIL; mutation 43/43; six stand-ins exit 0 with
    ESCALATED 0. `core/cognitive`, `provider_mesh.py`, `prompt/`, `memory/` and the harness are
    byte-identical to `ccf0489`, the tree the real run's code path corresponds to.
-4. **Promotion.** PR #93 is open and, with items 1-3 done, is cleared for the merge the owner
-   authorized on Oct 30, 2026. ADR-KERNEL-08 stays APPROVED, not IMPLEMENTED, until the merge and the
-   re-verification on `main` that §9 requires; CTX-AUTH-001b stays OPEN (§8.1 item 4 only allows it to be
-   reconsidered, as a separate decision).
+4. **Promoted and re-verified (Oct 31, 2026).** PR #93 was merged to `main` (`b742e4a`) under the owner's
+   Oct 30 authorization once items 1-3 were done; the re-verification §9 requires is recorded there.
+   CTX-AUTH-001b stays OPEN (§8.1 item 4 only allows it to be reconsidered, as a separate decision).
 
 ## 9. Lifecycle
 
-APPROVED (Oct 6, 2026, by Moncif). Not IMPLEMENTED: the replacement exists on
-the branch, is not promoted to `main` and is not re-verified there. The
-branch's passing tests do not close CTX-AUTH-001b.
+APPROVED (Oct 6, 2026, by Moncif). **IMPLEMENTED (Oct 31, 2026)**: the replacement was promoted to
+`main` by PR #93 (merge `b742e4a`) after §8.1 items 1-3, and re-verified there, as §8.1 item 4
+requires: the merged tree is identical to the tested head; suite 2176 passed, 1 xfailed, 8 failed
+(pre-merge `main` 2087 / 1 / 8; the same 8 sandbox-namespace environment failures); drift 30 PASS /
+0 FAIL; mutation check 43/43; six `--dry-run` stand-ins exit 0 with ESCALATED 0; CI green on the
+merge commit; plus the owner's real-model run recorded in §8.2. This is not FINAL, and it does not
+close CTX-AUTH-001b: §8.1 item 4 only says it *may be reconsidered* on this evidence. The residual
+risks R1-R6 in §6 stand as recorded (R3 is now measured and R5 has one real-model data point; neither
+is closed).
