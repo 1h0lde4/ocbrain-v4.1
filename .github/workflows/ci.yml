@@ -113,3 +113,21 @@ jobs:
             --output /tmp/pytest-output.txt \
             --exit-code-file /tmp/pytest-exit-code.txt \
             --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+
+  token-acl-windows:
+    # DEBT-025: the API token file must be owner-only.  POSIX modes prove nothing on NTFS and
+    # the unit tests stub icacls, so this job runs the real icacls on a Windows runner
+    # (scripts/check_token_acl_windows.py; stdlib only, no dependency install).
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate the owner-only ACL on the API token file (real icacls)
+        run: python scripts/check_token_acl_windows.py

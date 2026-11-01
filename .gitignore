@@ -32,6 +32,7 @@ data/raw/
 data/chunks/
 data/gaps/
 data/exports/
+data/api_token
 data/context.sqlite
 data/context.sqlite-shm
 data/context.sqlite-wal
