@@ -125,26 +125,45 @@ class IntentHypothesis:
     no lifecycle_state of its own): it only ever exists inside
     Intent.hypotheses.
 
-    source / authority (ADR-KERNEL-06, Sept 2026): additive, both
-    Optional, so the frozen label/score/embedding_ref triple above is
-    unchanged for any caller still constructing IntentHypothesis(label=...,
-    score=...) alone -- test fixtures included.
+    source / source_verified / content_grounded (this branch, reopening
+    ADR-KERNEL-06 §8's now-rejected `authority` field -- see CTX-AUTH-002):
+    additive, all defaulted, so the frozen label/score/embedding_ref triple
+    above is unchanged for any caller still constructing
+    IntentHypothesis(label=..., score=...) alone -- test fixtures included.
+
+    Three separate questions, kept separate on purpose (this is the direct
+    fix for CTX-AUTH-002, which found them collapsed into one `authority:
+    AuthorityLevel` field that a request-agnostic, common-word payload could
+    satisfy):
       source: the citation exactly as the completion claimed it -- None
-        (no citation), "request", or "[N]". Recorded for audit even when
-        never verified; a claimed source is not itself evidence of
-        anything (see _resolve_source).
-      authority: resolved by _resolve_source() against the real assembled
-        inputs for *this* execution, never against source's say-so alone.
-        None means "not authoritative" -- fail-closed default, matching
-        ProvenanceRecord.authority's own convention -- regardless of what
-        source claims. Only _resolve_source assigns this field; nothing
-        else may.
+        (no citation), "request", or "[N]". A claim, not evidence.
+      source_verified: does the claimed source actually exist for this
+        execution ("request" always does when cited; "[N]" only if N
+        indexes a real assembled block)? Existence only -- says nothing
+        about the label's own content.
+      content_grounded: given a verified source, does the label's own
+        content show any literal-token overlap with that source's real
+        text? A weak, auditable, request-agnostic-payload-defeatable signal
+        by itself (CTX-AUTH-002) -- kept for observability, never for
+        granting authority.
+
+    What is deliberately NOT here: an `authority` field. A hypothesis
+    produced by this function is, without exception, model-authored --
+    its authority is the constant AuthorityLevel.GENERATED, true for every
+    instance, not a per-instance variable to compute or store. Citation and
+    grounding, however strong, are evidence about what the model claims and
+    whether that claim checks out -- never a mechanism for a model's own
+    classification to acquire the request's own (USER) authority. See
+    _check_source_grounding and CTX-AUTH-002 in the threat model doc for
+    why the earlier design's attempt to derive authority from grounding is
+    rejected, not merely tightened.
     """
     label: str
     score: float
     embedding_ref: Optional[str] = None
     source: Optional[str] = None
-    authority: Optional[AuthorityLevel] = None
+    source_verified: bool = False
+    content_grounded: bool = False
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -630,9 +649,10 @@ def _parse_hypotheses(completion: Optional[str]) -> List[IntentHypothesis]:
     not a new failure mode requiring its own handling.
 
     source is recorded here exactly as claimed (or None) -- ADR-KERNEL-06:
-    parsing is not verification. authority stays unresolved (None) until
-    generate_hypotheses calls _resolve_source with the real request text
-    and real blocks this parse alone has no access to.
+    parsing is not verification. source_verified and content_grounded stay
+    at their defaults (False) until generate_hypotheses calls
+    _check_source_grounding with the real request text and real blocks
+    this parse alone has no access to.
     """
     hypotheses: List[IntentHypothesis] = []
     for match in _CANDIDATE_LINE.finditer(completion or ""):
@@ -704,10 +724,11 @@ def _content_tokens(text: str) -> "set[str]":
     """Lowercase alphanumeric tokens of length >=
     _MIN_CORROBORATING_TOKEN_LEN. A plain, deterministic string operation
     over literal text -- no vector, no model, no learned/inferred
-    closeness. Used only inside _resolve_source, to check whether an
-    *already-cited* candidate's content is at all consistent with the one
-    specific source it names; never used to grant authority to an uncited
-    candidate, and never used to compare candidates against each other.
+    closeness. Used only inside _check_source_grounding, to check whether
+    an *already-verified-as-existing* candidate's content is at all
+    consistent with the one specific source it names -- a weak, auditable
+    signal only (CTX-AUTH-002), never used to grant authority to anything,
+    cited or not, and never used to compare candidates against each other.
     """
     return {
         tok for tok in re.findall(r"[a-z0-9]+", text.lower())
@@ -715,90 +736,126 @@ def _content_tokens(text: str) -> "set[str]":
     }
 
 
-def _resolve_source(
+def _check_source_grounding(
     label: str,
     source: Optional[str],
     raw_request_text: str,
     blocks: List[ContextBlock],
-) -> Optional[AuthorityLevel]:
-    """ADR-KERNEL-06 Mechanism A -- deterministic lookup against the real
-    assembled inputs for this execution, not the completion's own say-so.
+) -> "tuple[bool, bool]":
+    """Reopens ADR-KERNEL-06 §8, rejected by CTX-AUTH-002 (see the threat
+    model doc): the prior `_resolve_source()` collapsed two different
+    questions into one `AuthorityLevel` result, and the second one --
+    "does the label's content look related to what it cites" -- turned out
+    to be satisfiable by a payload with no relationship to the request at
+    all, just by sharing one common English word. Splitting the two apart
+    doesn't patch that hole; it removes the reason the hole mattered, by no
+    longer letting the answer to either question touch authority.
 
-    A claimed source only inherits authority if BOTH hold:
-      1. it names something that actually exists for this execution --
-         "request" always does; "[N]" only if N indexes a real block;
-      2. the candidate's own content corroborates that specific source --
-         at least one _content_tokens overlap with the named source's
-         real text.
+    Returns (source_verified, content_grounded):
+      source_verified -- does the claimed source exist for THIS execution?
+        "request" always does, once cited (it is the real, current request);
+        "[N]" only if N indexes a real block assembled for this execution.
+        Existence only; says nothing about the label's content.
+      content_grounded -- given a verified source, does the label share at
+        least one _content_tokens overlap with that source's real text?
+        A literal-token check, not embedding similarity, evaluated only
+        against an already-verified target -- deliberately weak as a
+        standalone signal (CTX-AUTH-002 demonstrated a static, request-
+        agnostic payload can satisfy it against the majority of realistic
+        requests). Recorded for audit and for future, stronger grounding
+        work; NEVER used here or anywhere downstream to grant authority.
+        False whenever source_verified is False.
 
-    (2) exists because (1) alone is not enough to resist fabrication:
-    "request" always exists by construction, so checking existence alone
-    would let any candidate claim it for free -- exactly what
-    live_citation_check.py's cite-request/line-spoof payloads probe for.
-    (2) is a literal token-overlap check against this execution's real
-    text, not embedding similarity (no vector, no inferred closeness --
-    ADR-KERNEL-06 §2 rules that out as an authority proxy) and not a
-    content-based accept/reject heuristic evaluated on the candidate in
-    isolation (that section's "lexical heuristic" is about guessing trust
-    from a candidate's own surface features with *no* citation at all --
-    see _neutralize_role_markers/_neutralize_structural_tokens above,
-    which are deliberately content-agnostic for exactly that reason).
-    This is different in kind: it verifies a specific, already-claimed
-    pointer actually resolves to real, present data, applied identically
-    to every citation, request or block alike. Authority inherited from a
-    block is exactly that block's own provenance.authority (today always
-    RETRIEVED -- never assumed, always read from the real block); a
-    verified "request" citation inherits AuthorityLevel.USER, the base
-    case the whole chain grounds out in (the user's own literal input is
-    definitionally USER-authority by construction -- not an inference).
-
-    No citation, an unresolvable one, or one that fails corroboration:
-    None. Fail closed in every case, same as no citation at all.
+    No citation, an unresolvable one, or a malformed one: (False, False).
+    Both fields fail closed independently of each other.
     """
     if not source:
-        return None
+        return False, False
     label_tokens = _content_tokens(label)
-    if not label_tokens:
-        return None
 
     if source == "request":
-        if label_tokens & _content_tokens(raw_request_text):
-            return AuthorityLevel.USER
-        return None
+        grounded = bool(label_tokens) and bool(label_tokens & _content_tokens(raw_request_text))
+        return True, grounded
 
     match = re.fullmatch(r"\[([1-9][0-9]*)\]", source)
     if not match:
-        return None
+        return False, False
     index = int(match.group(1)) - 1
     if not (0 <= index < len(blocks)):
-        return None
+        return False, False
     block = blocks[index]
-    if label_tokens & _content_tokens(block.content):
-        return block.provenance.authority
-    return None
+    grounded = bool(label_tokens) and bool(label_tokens & _content_tokens(block.content))
+    return True, grounded
 
 
-def _select_operative_hypothesis(
+def _describe_grounding(hypothesis: IntentHypothesis) -> str:
+    """Purely descriptive, for observability only -- see the module docstring
+    note above _content_tokens. Reports facts only and never implies
+    instruction-bearing authority: every value this can return describes a
+    MODEL_PROPOSAL, not a promotion to USER or SYSTEM authority. (Selection
+    separately uses two of these facts as a fail-closed plausibility
+    default -- see _select_hypothesis, which says why that is not an
+    authority decision.) Renamed from the rejected
+    `selection_gate` /
+    "verified_operative" vocabulary (CTX-AUTH-002): those names claimed a
+    stronger guarantee -- that citing and appearing to relate to a source
+    made a hypothesis "operative", i.e. trustworthy enough to act on --
+    than grounding, however achieved, is capable of establishing for a
+    model-authored classification. These names claim only what is checked:
+    whether a claim was made, whether it pointed somewhere real, and
+    whether the label's own words showed any overlap with that real text.
+    """
+    if hypothesis.source is None:
+        return "uncited"
+    if not hypothesis.source_verified:
+        return "source_unresolved"
+    if not hypothesis.content_grounded:
+        return "content_ungrounded"
+    return "content_grounded"
+
+
+def _select_hypothesis(
     hypotheses: List[IntentHypothesis],
 ) -> "tuple[IntentHypothesis, str]":
-    """ADR-KERNEL-06 §8 (Sept 20 2026 implementation decision): the
-    accepted Intent may only be selected on a verified AuthorityLevel.USER
-    candidate. Existing in hypotheses (surfaced, inspectable, still
-    returned to the caller) is deliberately not the same bar as being
-    selected as operative -- candidate exists != candidate is trusted,
-    applied at the selection boundary, not only the acceptance boundary.
+    """Choose Intent.selected -- a FAIL-CLOSED DEFAULT, not an authority
+    decision (CTX-AUTH-002).
 
-    No verified-USER candidate -> open-category fallback: the exact same
-    label/score generate_hypotheses already uses for its own total-failure
-    fallback (K4.2 §2), not a new convention introduced here.
+    Eligible: a hypothesis that cites the user's own request AND whose label
+    shares content with it (source == "request", source_verified,
+    content_grounded). Among eligible ones, the highest score. If none is
+    eligible, the trusted-code open-category default (the same label/score
+    generate_hypotheses already uses for its own total-failure fallback,
+    K4.2 §2) -- never a model-chosen label the model did not tie to the
+    request. Returns (selected, basis); basis is "request_grounded" or
+    "open_category_fallback".
 
-    Returns (selected, gate); gate is "verified_operative" or
-    "open_category_fallback" -- live_citation_check.py's own vocabulary,
-    reported on cognitive.intent_interpreted as selection_gate.
+    What this is NOT, on purpose:
+      * Not authority. No hypothesis has an authority to be eligible on
+        (every one is AuthorityLevel.GENERATED); this is a plausibility
+        default, and the name says so. The security-relevant invariants do
+        not depend on it: nothing model-authored reaches a user-authority
+        field or an EXPLICIT constraint whichever hypothesis is selected
+        (planner._extract_constraints reads only description/raw_request).
+      * Not resistant to a deliberate adversary. The overlap test is one
+        shared 3+ character token, so a label padded with common words
+        satisfies it without knowing the request (CTX-AUTH-002's payload).
+        Such a label can therefore still win the ADVISORY category hint.
+        That residual is documented, pinned by
+        TestSelectHypothesis/test_padded_label_bypasses_the_default_but_
+        cannot_escalate, and is the reason no security claim rests here.
+        Raising the threshold would only raise the attacker's cost, which
+        is why it is not the fix.
+      * Never eligible via a block citation. A poisoned block is
+        attacker-controlled on both sides (the block text and the label the
+        injection asks the model to emit), so "the label overlaps the
+        block" carries no information about the user's request.
     """
-    verified = [h for h in hypotheses if h.authority == AuthorityLevel.USER]
-    if verified:
-        return max(verified, key=lambda h: h.score), "verified_operative"
+    eligible = [
+        h for h in hypotheses
+        if h.source == "request" and h.source_verified and h.content_grounded
+    ]
+    if eligible:
+        return max(eligible, key=lambda h: h.score), "request_grounded"
     return IntentHypothesis(label="novel", score=0.1), "open_category_fallback"
 
 
@@ -904,13 +961,17 @@ async def generate_hypotheses(
         # own docstring; kept as defense-in-depth, independent of the
         # citation verification below.
         hypotheses = _apply_output_containment(_parse_hypotheses(completion))
-        # ADR-KERNEL-06: resolve authority against the real request text
-        # and the real blocks assembled for THIS execution -- never
-        # against the completion's own claim alone. Runs after containment
+        # CTX-AUTH-002 / reopened ADR-KERNEL-06 §8: record grounding facts
+        # against the real request text and the real blocks assembled for
+        # THIS execution -- never against the completion's own claim alone.
+        # Deliberately NOT "resolve authority": a hypothesis produced here
+        # is, without exception, model-authored, and its authority is the
+        # constant AuthorityLevel.GENERATED -- nothing sets it to anything
+        # else (see IntentHypothesis's docstring). Runs after containment
         # (on the surviving candidates only) since the two checks are
         # independent; order between them does not change the result.
         for h in hypotheses:
-            h.authority = _resolve_source(
+            h.source_verified, h.content_grounded = _check_source_grounding(
                 h.label, h.source, raw_request.text, context.blocks,
             )
     except Exception:
@@ -1292,25 +1353,25 @@ async def interpret_request(
             "trace_id": trace_id,
             "hypothesis_count": len(hypotheses),
             "labels": [h.label for h in hypotheses],
-            # ADR-KERNEL-06: parallel to labels, one resolved authority
-            # (or None) per hypothesis in the same order -- ".value" so
-            # the event payload carries plain strings, not enum instances.
-            "authorities": [
-                h.authority.value if h.authority is not None else None
-                for h in hypotheses
-            ],
+            # CTX-AUTH-002 / reopened ADR-KERNEL-06 §8: replaces the
+            # rejected "authorities" list (AuthorityLevel.USER/RETRIEVED
+            # per hypothesis, driven by content-token overlap a request-
+            # agnostic payload could satisfy). "citation_grounding" is
+            # purely descriptive -- see _describe_grounding -- and never
+            # implies any hypothesis here carries anything but
+            # AuthorityLevel.GENERATED.
+            "citation_grounding": [_describe_grounding(h) for h in hypotheses],
         },
     )
 
-    # ADR-KERNEL-06 §8: selection, not just acceptance, is gated on a
-    # verified USER authority -- hypotheses (always non-empty; see
-    # generate_hypotheses) always has a candidate, but "a candidate
-    # exists" and "a candidate is operative" are no longer the same
-    # question. selected is therefore never None here (unlike the pre-
-    # ADR-KERNEL-06 `hypotheses[0] if hypotheses else None`, which was
-    # already unreachable given generate_hypotheses' own guarantee --
-    # this makes that guarantee explicit rather than re-deriving it).
-    selected, selection_gate = _select_operative_hypothesis(hypotheses)
+    # CTX-AUTH-002 / reopened ADR-KERNEL-06 §8: selection keeps a fail-closed
+    # default (the trusted open-category label unless a candidate cites the
+    # user's own request and overlaps it) but makes NO authority claim --
+    # see _select_hypothesis for exactly what it is and is not. hypotheses is
+    # always non-empty (generate_hypotheses' own fallback); Intent.hypotheses
+    # below still carries every admitted candidate ("candidate exists" !=
+    # "candidate is selected"), unchanged from ADR-KERNEL-06.
+    selected, selection_basis = _select_hypothesis(hypotheses)
     dimensions = IntentDimensions(
         category=selected.label,
         modality=_detect_modality(raw_request.text),
@@ -1334,7 +1395,15 @@ async def interpret_request(
             "trace_id": trace_id,
             "intent_id": intent.resource_id,
             "selected_label": selected.label,
-            "selection_gate": selection_gate,
+            # CTX-AUTH-002: replaces the rejected "selection_gate" /
+            # "verified_operative" vocabulary, which claimed a stronger
+            # guarantee (operative == trustworthy enough to act on) than
+            # citing-and-appearing-related establishes. Both fields below are
+            # purely descriptive: selection_basis says WHY this candidate was
+            # chosen ("request_grounded" | "open_category_fallback"), and is
+            # a plausibility default, not an authority claim.
+            "selected_citation_grounding": _describe_grounding(selected),
+            "selection_basis": selection_basis,
             "confidence": intent.confidence,
         },
     )

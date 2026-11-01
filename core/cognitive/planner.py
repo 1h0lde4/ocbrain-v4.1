@@ -545,11 +545,22 @@ async def _extract_constraints(
     # 1. Extract explicit constraints from the goal description.
     description = goal.structured_form.get("description", "")
     raw_request = goal.structured_form.get("raw_request", "")
-    # Use the most specific text available for constraint extraction.
-    # G1 (K4.2 completion): prefer semantic_description for richer
-    # semantic context; fall back to description, then raw_request.
-    text = (goal.structured_form.get("semantic_description")
-            or description or raw_request)
+    # CTX-AUTH-002 (reopened ADR-KERNEL-06 §8): explicit constraints are,
+    # by this function's own definition ("constraints the user stated
+    # directly in the request", K4.2 §12), extracted ONLY from
+    # USER-authority text -- description, then raw_request. semantic_description
+    # is deliberately NOT used here: it is "<label>: <request>", and the
+    # label is always model-authored (AuthorityLevel.GENERATED -- see
+    # IntentHypothesis's docstring in core/cognitive/intent.py), whatever
+    # it cites or how well its content appears to relate to what it cites.
+    # Mining it let a fabricated label ("only for the new account and not
+    # for any other user") become a HARD constraint attributed to the
+    # user (CTX-AUTH-002's demonstrated escalation) -- this is the
+    # consumption-boundary half of that fix; the citation/authority half
+    # is in core/cognitive/intent.py. semantic_description remains the
+    # input to capability-discovery ranking (a governed, advisory
+    # decision downstream), unchanged.
+    text = description or raw_request
     constraints.extend(_extract_explicit_constraints(text))
 
     # 2. Extract inferred constraints from the goal's structure.
