@@ -87,9 +87,15 @@ jobs:
         # The repository still has a documented set of known-failing tests
         # (docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt); the gate
         # tolerates ONLY those, only with pytest exit code 1.
+        # R-1: the structured report (scripts/ci_gate_report.py) is what the
+        # gate decides from; the text output is kept only as a cross-check.
+        # PYTHONPATH is the repo root (what `python -m pytest` would add) so
+        # the plugin is importable as scripts.ci_gate_report.
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           set +e
-          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest-output.txt
+          pytest tests/ -q --tb=short -p scripts.ci_gate_report --ci-gate-report=/tmp/ci-gate-report.json 2>&1 | tee /tmp/pytest-output.txt
           echo "${PIPESTATUS[0]}" > /tmp/pytest-exit-code.txt
           exit 0
 
@@ -101,6 +107,7 @@ jobs:
           path: |
             /tmp/pytest-output.txt
             /tmp/pytest-exit-code.txt
+            /tmp/ci-gate-report.json
 
       - name: Gate on pytest exit code, errors and unlisted failures
         # Fails on: any pytest exit code other than 0/1, a missing summary
@@ -112,4 +119,6 @@ jobs:
           python3 scripts/ci_test_gate.py \
             --output /tmp/pytest-output.txt \
             --exit-code-file /tmp/pytest-exit-code.txt \
-            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt \
+            --report /tmp/ci-gate-report.json \
+            --signature-policy docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURE_SIGNATURE.json
