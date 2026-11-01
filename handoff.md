@@ -1,10 +1,10 @@
-# Session Handoff (v5) — Kernel v1.0 Freeze Remediation: Batch 0 done enough → Batch 1 designed, NOT implemented
+# Session Handoff (v6) — Kernel v1.0 Freeze Remediation: Batch 1 (R-1) IMPLEMENTED at 667cb94, UNVERIFIED (no independent review, no CI)
 
 > Transfer record per `PROJECT_INSTRUCTIONS.md` §18.4.8. **Temporary record, not an authority** — verify against the live repo (§18.4.9). **Do not merge this file to `main`.** It supersedes handoff v3.2 *for this mission*; v3.2 (on `security/codeql-findings-sep2026`) still describes the earlier CodeQL/manifest workstream.
 
 ## 1. Handoff Metadata
-- Version 4 · Created 2026-10-27 07:10 UTC (container clock) · Workstream: Kernel v1.0 freeze remediation under the owner-delivered mission prompt **v2** · Source purpose: execute Batch 0 (read-only) then Batch 1 (CI gate residual R-1), stop at the independent-review checkpoint; ended by the user's instruction "Push the finished work to the repo, then create a handoff file to resume the work in a fresh session".
-- **Transfer status: §19 — `TRANSFER INCOMPLETE — PUSH FAILED`.**
+- Version 6 (supersedes v5; v5's header said 'v5' but its metadata said 'Version 4' — corrected) · Originally created 2026-10-27, updated 2026-11-01 07:10 UTC (container clock) · Workstream: Kernel v1.0 freeze remediation under the owner-delivered mission prompt **v2** · Source purpose: execute Batch 0 (read-only) then Batch 1 (CI gate residual R-1), stop at the independent-review checkpoint; ended by the user's instruction "Push the finished work to the repo, then create a handoff file to resume the work in a fresh session".
+- **Transfer status: §19 / §20 — `TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING`** (the original mission prompt is not preserved verbatim in the repo; the user holds it). Git side: implementation checkpoint and Batch 0 branch pushed and remote-verified (see §20).
 
 ## 2. Original starting prompt — FAITHFUL EXTRACTION (not verbatim)
 The prompt ("Canonical Freeze Remediation and Certification Prompt", ~9,000 words; v2 supersedes v1 "…Evidence-Gated Closure Prompt") is too large to reproduce reliably here. **The user holds the original — re-paste it verbatim into the fresh session; this extraction is not a substitute.** Operative requirements:
@@ -108,5 +108,25 @@ The Batch 0 report; `scripts/ci_test_gate.py`; `KNOWN_ISSUES.md` line 131 (R-1);
 ## 18. Resume instructions
 1. Confirm the branch is reachable (bundle or remote) and read both files. 2. Compare this record with the live repo; **the repo wins.** 3. Resolve mismatches before changing code. 4. Begin at §17 step 2.
 
-## 19. Transfer status
-**TRANSFER INCOMPLETE — PUSH FAILED.** All material information is recorded here and in the report, and the commits are bundled for delivery, but the new branch is **not on the remote**: the only credential was rejected.
+## 19. Transfer status (v5 text, SUPERSEDED by §20)
+**[v5] TRANSFER INCOMPLETE — PUSH FAILED.** All material information is recorded here and in the report, and the commits are bundled for delivery, but the new branch is **not on the remote**: the only credential was rejected.
+
+
+## 20. Update v6 (2026-11-01) — supersedes the stale parts of §1, §6, §7, §13, §17, §19
+**Transfer status: `TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING`** — only because the original starting prompt is held by the user, not stored verbatim in the repo (re-paste it). All Git conditions are met: implementation committed + pushed, Batch 0/handoff branch pushed, remote heads verified by `ls-remote`.
+
+**Git checkpoint (VERIFIED):** `origin/main` = `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (unmoved during the work). **Batch 1 result SHA `667cb94dfc94a82d3218b596fd5aee4e4c73c317`** on `fix/ci-gate-r1-structured-report-oct2026` (new, non-forced, remote-verified; one commit on `2491ae4`; 6 files +771/−6). Batch 0/handoff branch `audit/freeze-remediation-batch0-oct2026` was pushed at `c4fca72`; this update adds a docs-only commit on top (Batch 1 report + evidence). The push used the user-supplied token via a one-off auth header (nothing persisted). **The token still works although v5 said it was revoked; it sits in plain text in the user's saved preferences on a public repo — the user was asked to rotate it.**
+
+**What happened:** bundle verified/imported; env rebuilt (Py 3.12.3, pytest 9.2.0, chromadb 0.5.3, no torch); baseline **2184 passed, 1 xfailed** on `2491ae4`; S1–S4 re-measured (S2, S4 false greens reproduce) and the long-id inference **confirmed** (`COLUMNS=80` drops the message); R-1 implemented per the §9.2 design as a structured-report mode; CI simulation on the result: **2225 passed, 1 xfailed**, real gate exit 0, drift exit 0; 6 mutation checks caught. DEBT-012 reproduced on every full run (4 tracked files dirtied; restored; evidence saved).
+
+**Status per prompt vocabulary:** implementation **IMPLEMENTED**; local verification **PASS**; independent review **NOT DONE → UNVERIFIED**; real CI **NOT RUN → UNVERIFIED** (the `fix/…` branch cannot trigger CI; a PR to `main` would); signature class **PROPOSED**, owner decision Q3 still **OPEN**.
+
+**Resume at (replaces §17):**
+1. Re-paste the v2 prompt; read `FREEZE_REMEDIATION_BATCH1_REPORT_667cb94.md` (reviewer package §6, risks §7).
+2. Verify `origin/<fix branch>` = `667cb94…` and `main` again; if `main` moved, record it (a rebase would be a new change and need re-review).
+3. Obtain an **independent** reviewer session for `git diff 2491ae4..667cb94`; ask the owner whether to open a PR to `main` for real CI (not authorized so far).
+4. Owner to answer Q3 (approved failure class) — the proposed `hf_hub_unreachable` is unvalidated and makes CI stricter for the 34 listed entries.
+5. **Do NOT start Batch 2 (scheduler isolation) until explicitly authorized.** No merges, no `main` changes, no PR closing, no tags.
+6. Still open from §15: Q1 (Oct 1 audit file), Q4–Q8; remaining Batch 0 deliverables (crosswalk rows, PR/check report) per Batch 0 report §10.
+
+**New lessons:** a `-k` expression containing ` - ` is invalid (pytest exit 4); `PASSING + indented-fixture` concatenation puts the fixture inside the preceding test body (dedent fragments separately); my first commit subject said "closes R-1" — corrected before pushing because closure ≠ implemented+unreviewed; `/bin/sh` lacks `PIPESTATUS` (use `bash -c`).
