@@ -32,16 +32,32 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 FAILURES: list[str] = []
+LOG: list[str] = []
+
+
+def say(text: str = "") -> None:
+    """Print, and keep for the annotation: the runner's log is not readable through the API."""
+    print(text, flush=True)
+    LOG.append(text)
+
+
+def annotate(level: str, title: str, text: str) -> None:
+    """GitHub workflow command; visible through the checks API (annotations), unlike the raw log."""
+    esc = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::{level} title={title}::{esc}", flush=True)
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
-    print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""))
+    say(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  [{detail}]" if detail else ""))
     if not ok:
         FAILURES.append(f"{name}: {detail}" if detail else name)
 
 
 def run(*args: str) -> str:
-    return subprocess.run(list(args), capture_output=True, text=True, timeout=30).stdout
+    res = subprocess.run(list(args), capture_output=True, text=True, timeout=30)
+    if res.returncode != 0:
+        say(f"  (command {args[0]} exited {res.returncode}: {(res.stderr or res.stdout).strip()[:200]})")
+    return res.stdout
 
 
 def aces(path: Path) -> list[str]:
@@ -55,8 +71,10 @@ def main() -> int:
 
     from interface import auth
 
+    say(f"python {sys.version.split()[0]} on {sys.platform}; cwd={os.getcwd()}")
     me = run("whoami").strip()
-    print(f"current user: {me}")
+    say(f"current user: {me}")
+    say(f"whoami /user: {run('whoami', '/user', '/fo', 'csv', '/nh').strip()}")
     work = Path(tempfile.mkdtemp(prefix="ocb-acl-"))
     try:
         # 1. a freshly created token file
@@ -65,7 +83,8 @@ def main() -> int:
         os.environ[auth.ENV_TOKEN_FILE] = str(path)
         token = auth.load_or_create_token()
         listing = run("icacls", str(path))
-        print(listing)
+        say("icacls listing of the new file:")
+        say(listing.strip())
         entries = aces(path)
         check("new file: exactly one access entry", len(entries) == 1, f"{len(entries)} entries")
         check("new file: the entry is the current user", len(entries) == 1 and me.split("\\")[-1].lower() in entries[0].lower(), entries[0] if entries else "")
@@ -110,15 +129,29 @@ def main() -> int:
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
-    print()
+    say()
     if FAILURES:
-        for item in FAILURES:
-            print(f"::error title=Windows token ACL::{item}")
-        print(f"{len(FAILURES)} check(s) failed")
+        say(f"{len(FAILURES)} check(s) failed")
         return 1
-    print("all Windows token ACL checks passed")
+    say("all Windows token ACL checks passed")
     return 0
 
 
+def entry() -> int:
+    try:
+        code = main()
+    except BaseException as exc:  # report, never just die with a bare exit code
+        import traceback
+        say("UNCAUGHT " + "".join(traceback.format_exception_only(type(exc), exc)).strip())
+        say("".join(traceback.format_exc()[-1500:]))
+        code = 1
+    if not LOG:  # not Windows: nothing ran
+        return code
+    annotate("error" if code else "notice", "Windows token ACL " + ("FAILED" if code else "passed"), "\n".join(LOG)[-6000:])
+    for item in FAILURES:
+        annotate("error", "Windows token ACL check", item)
+    return code
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(entry())
