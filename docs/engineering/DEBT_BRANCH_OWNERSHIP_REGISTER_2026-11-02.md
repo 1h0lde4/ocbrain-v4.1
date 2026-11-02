@@ -3,6 +3,7 @@
 **Snapshot time:** 2026-11-02 (GitHub API snapshot)
 **Canonical baseline:** `main` @ `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (merge PR #106)
 **Inventory:** 111 remote branches; 19 open PRs; 3 open non-PR issues.
+**Inventory timing:** branch names and heads were read before the three documentation commits on this reconciliation branch; its inventory row records the branch's creation ref (`2491ae46`) rather than the later self-modifying tip. All other refs are the read-time branch heads.
 **Purpose:** one operational map of debt status, active review targets, preserved work and ownership gaps. This is a documentation/governance record, not implementation authorization.
 
 ## 1. Ownership rules
