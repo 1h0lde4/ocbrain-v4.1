@@ -6,7 +6,7 @@
 
 OCBrain is being built as a **cognitive operating system and kernel**, not as another chatbot, thin LLM wrapper, or standalone RAG framework. It coordinates capabilities, workflows, memory, model providers, and specialist workers through explicit contracts and governance. The user retains control of data, providers, permissions, and consequential actions.
 
-> **Engineering status snapshot — November 2, 2026.** The product baseline described here is \x60main\x60 at \x602491ae469edd6ef1267a14604c4f8f40d698f7ea\x60 (PR #106). This is a point-in-time status, not a release-readiness statement. Check the linked live registers before making implementation or merge decisions.
+> **Engineering status snapshot — November 2, 2026.** The product baseline described here is `main` at `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (PR #106). This is a point-in-time status, not a release-readiness statement. Check the linked live registers before making implementation or merge decisions.
 
 ---
 
@@ -29,10 +29,10 @@ OCBrain is an active engineering project. The cognitive front-end and substantia
 
 | Area | Current position on the November 2 baseline |
 |---|---|
-| Cognitive front-end | The K4.2 path is enabled by default in \x60config/settings.toml\x60. Intent interpretation, discovery, planning, compilation, and workflow execution are present. |
+| Cognitive front-end | The K4.2 path is enabled by default in `config/settings.toml`. Intent interpretation, discovery, planning, compilation, and workflow execution are present. |
 | Workflow and execution runtime | WorkflowRuntime and ExecutionRuntime are present. Failure propagation, cancellation semantics, identity, and recovery still have open work. |
 | Governance | GovernanceKernel has seven registered governors. Governance remains a design invariant; coverage of legacy and fallback paths must not be assumed from the K4.2 path alone. |
-| Capability system | CapabilityRegistry is metadata-centric. \x60LLM_COMPLETION\x60 is the only registered capability type in the current baseline; a complete multi-capability ecosystem is not yet delivered. |
+| Capability system | CapabilityRegistry is metadata-centric. `LLM_COMPLETION` is the only registered capability type in the current baseline; a complete multi-capability ecosystem is not yet delivered. |
 | Memory and retrieval | UnifiedMemory uses the L0–L4 model. Graph and hybrid retrieval components exist; memory durability, retrieval correctness, and lifecycle work remain tracked. |
 | Events and auditability | EventStream provides durable SQLite/WAL-backed events, while EventBus remains a separate in-process mechanism. They are not yet one unified audit system. |
 | C-MoE | Research and architecture direction only. No production C-MoE implementation is included on the current main baseline. |
@@ -65,22 +65,22 @@ This is why the project uses an explicit debt/branch ownership register. A branc
 
 The configured K4.2 request path is:
 
-\x60main.py\x60 → \x60Orchestrator.handle()\x60 → intent / goal and constraint handling → capability discovery → planning → plan compilation → \x60WorkflowRuntime\x60 → \x60ExecutionRuntime\x60 → \x60ExecutionContext\x60
+`main.py` → `Orchestrator.handle()` → intent / goal and constraint handling → capability discovery → planning → plan compilation → `WorkflowRuntime` → `ExecutionRuntime` → `ExecutionContext`
 
 The exact path depends on the runtime configuration and construction of the orchestrator. The older foundational dispatch path and compatibility components remain in the repository; they must not be treated as deleted or fully audited merely because the K4.2 path is enabled by default.
 
 | Subsystem | Role |
 |---|---|
-| \x60core/cognitive/\x60 | Intent, goal, constraint, discovery, and planning contracts that form the cognitive front-end. |
-| \x60core/workflow/\x60 | Workflow definitions and DAG orchestration. |
-| \x60core/runtime/\x60 | Execution lifecycle, contexts, supervision, cancellation, and runtime controls. |
-| \x60core/governance/\x60 | GovernanceKernel and its governors for bounded, policy-controlled action. |
-| \x60core/capabilities/\x60 | Capability metadata, adapter contracts, and execution integration. |
-| \x60core/memory/\x60 | UnifiedMemory, tiered memory, graph indexing, and retrieval. |
-| \x60core/events/\x60 and \x60core/event_bus.py\x60 | Durable EventStream and separate in-process event publication. |
-| \x60core/model_router.py\x60 and provider integrations | Model-completion routing and provider integration. |
-| \x60interface/\x60 | CLI and API entry points. |
-| \x60modules/\x60 | Earlier module architecture. Some paths remain live; do not remove them without call-site and behavior audits. |
+| `core/cognitive/` | Intent, goal, constraint, discovery, and planning contracts that form the cognitive front-end. |
+| `core/workflow/` | Workflow definitions and DAG orchestration. |
+| `core/runtime/` | Execution lifecycle, contexts, supervision, cancellation, and runtime controls. |
+| `core/governance/` | GovernanceKernel and its governors for bounded, policy-controlled action. |
+| `core/capabilities/` | Capability metadata, adapter contracts, and execution integration. |
+| `core/memory/` | UnifiedMemory, tiered memory, graph indexing, and retrieval. |
+| `core/events/` and `core/event_bus.py` | Durable EventStream and separate in-process event publication. |
+| `core/model_router.py` and provider integrations | Model-completion routing and provider integration. |
+| `interface/` | CLI and API entry points. |
+| `modules/` | Earlier module architecture. Some paths remain live; do not remove them without call-site and behavior audits. |
 
 The architectural direction is provider-independent. The current capability registration is much narrower than the long-term target; the table above describes existing subsystem boundaries, not a claim that every future capability, adapter, or governance property is already implemented.
 
@@ -144,7 +144,7 @@ C-MoE remains research/design work. It must not be represented as shipped capabi
 
 The Verification / Critic / Evidence system is a separate assurance workstream—not a C-MoE feature, a substitute for GovernanceKernel, or another name for evaluation. Its intended flow is:
 
-\x60ASSERTION → OBSERVATION → EVIDENCE → VERIFICATION → VERDICT → GOVERNANCE\x60
+`ASSERTION → OBSERVATION → EVIDENCE → VERIFICATION → VERDICT → GOVERNANCE`
 
 The target is deterministic-first verification with provenance, immutable evidence receipts, explicit assurance levels, and clear handling of FAILED, UNVERIFIABLE, and PASS. It should integrate with execution through explicit contracts while remaining independently testable. The current Phase C branch is not production integration.
 
@@ -168,31 +168,31 @@ The package declares Python **3.11 or newer**.
 
 Install the project and development/test dependencies:
 
-\x60\x60\x60bash
+```bash
 python -m venv .venv
 # Activate the virtual environment, then:
 python -m pip install -e ".[dev]"
-\x60\x60\x60
+```
 
 Optional extras are defined for training and voice features:
 
-\x60\x60\x60bash
+```bash
 python -m pip install -e ".[training]"
 python -m pip install -e ".[voice]"
-\x60\x60\x60
+```
 
 The package exposes two entry points:
 
-- \x60ocbrain\x60 — command-line interface.
-- \x60ocbrain-start\x60 — main service entry point.
+- `ocbrain` — command-line interface.
+- `ocbrain-start` — main service entry point.
 
-Review \x60config/settings.toml\x60 and the selected model/provider configuration before starting the service. OCBrain does not bundle a model server; local inference must be supplied by a configured local provider.
+Review `config/settings.toml` and the selected model/provider configuration before starting the service. OCBrain does not bundle a model server; local inference must be supplied by a configured local provider.
 
 Run the test suite with:
 
-\x60\x60\x60bash
+```bash
 pytest tests/ -q
-\x60\x60\x60
+```
 
 Some tests exercise model and embedding paths that may require model artifacts, provider configuration, or network access. Record the exact commit, environment, and raw test result when reporting failures. Do not classify an environment-dependent failure as a code defect—or as harmless—without reproducing and documenting its cause.
 
