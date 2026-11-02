@@ -97,21 +97,21 @@ The architectural direction is provider-independent. The current capability regi
 
 ## Adaptability: a cross-cutting property of OCBrain
 
-Adaptability is not only C-MoE's ability to select a different expert. It is a system-wide architectural property: OCBrain should adjust *how it works* to the task, the user's requested effort, the available machine and providers, current operational health, project context, and changing execution reality—without changing its constitutional rules or weakening its safety and correctness requirements.
+Adaptability is not only C-MoE's ability to select a different expert. It is a system-wide architectural property: OCBrain should adjust *how it works* to the user's task and preferences, the machine and providers actually available, operational health, project context, and changing execution reality—without changing its constitutional rules or weakening its safety and correctness requirements.
 
 The intended behavior is **controlled adaptation through explicit policy and replaceable components**, not hidden self-modification.
 
-### 1. Adapt to different machines and deployment environments
+### 1. Adapt to different machines, providers, and deployments
 
-OCBrain should not require one specific model, inference server, hardware configuration, or external AI account. Its stable kernel contracts should sit above replaceable adapters and capabilities. A deployment may use one local model on a modest machine, several local models on a stronger workstation, or optionally combine local resources with remote specialist providers.
+OCBrain should not require one specific model, inference server, hardware configuration, or external AI account. Stable kernel contracts sit above replaceable adapters and capabilities. A deployment should be able to use a local model on a modest machine, several local models on a stronger workstation, or optionally combine local resources with remote specialist providers.
 
-The architecture should discover and represent what is actually configured and available rather than assume that a declared capability is executable. Provider and capability state need to distinguish, for example, configured, available, healthy, rate-limited, degraded, offline, disabled, installed, enabled, unavailable, deprecated, and removed. Routing and execution should react to those observations: use an eligible alternative, reduce parallel work, queue, pause, or ask for user input when appropriate.
+The architecture distinguishes a capability being declared or installed from it being registered, enabled, healthy, and currently executable. Its target provider lifecycle distinguishes configured, available, healthy, rate-limited, degraded, offline, and disabled states; the target capability lifecycle distinguishes installed, available, enabled, disabled, unavailable, degraded, deprecated, and removed. Runtime selection should react to actual observations rather than assumptions: select an eligible alternative, reduce concurrency, wait, pause, or ask the user when no safe route remains.
 
-This is not a claim that OCBrain currently auto-detects every hardware configuration or controls every CPU/GPU resource. The canonical Workspace architecture explicitly treats CPU/GPU use as opportunistic or externally managed unless a lower-level execution backend can enforce it. The README therefore distinguishes resource targets from hard guarantees.
+This does **not** mean OCBrain currently auto-detects every hardware configuration or controls every CPU/GPU resource. The canonical Workspace architecture treats CPU/GPU use as opportunistic or externally managed unless a lower-level execution backend can enforce it. Hardware/resource availability may inform a policy; it must not be advertised as a hard guarantee where the runtime cannot enforce it.
 
 ### 2. Adapt computational effort to the user's intent and the task
 
-The studied Workspace architecture defines a Computational Level that is independent of any particular model name:
+The studied Workspace architecture defines a Computational Level independent of any particular model name:
 
 | Level | Intended behavior |
 |---|---|
@@ -120,9 +120,9 @@ The studied Workspace architecture defines a Computational Level that is indepen
 | **HIGH** | Prioritize quality and reliability. |
 | **MAX** | Use the maximum justified computation permitted by policy and available resources; never unlimited computation. |
 
-A separate Resource Policy Engine is intended to derive an effective per-task Resource Envelope from the requested level, task complexity and type, risk, available resources, provider/model availability, project and session policy, and Governance constraints. That policy can shape model preference, reasoning effort, eligible expert count, retrieval breadth, verification depth, retry/tool budgets, token and cost targets, parallelism, and runtime budgets.
+A separate **Resource Policy Engine** is intended to derive an effective per-task Resource Envelope from the requested level, task complexity and type, risk, available resources, provider/model availability, project and session policy, and Governance constraints. The resulting policy may shape model preference, provider-specific reasoning-effort hints, eligible expert count, retrieval breadth, verification depth, retry/tool budgets, token and cost targets, parallelism, and runtime budgets.
 
-**This resource-policy chain is designed to work without C-MoE.** C-MoE may later contribute task-complexity analysis or recommend a level, but it does not own the policy or enforcement boundary. That separation allows basic resource-aware behavior to exist before C-MoE and keeps the platform adaptable even when the cognitive runtime is absent or disabled.
+**This resource-policy chain is designed to work without C-MoE.** C-MoE may later contribute task-complexity analysis or recommend a level, but it does not own policy or enforcement. That separation allows resource-aware behavior to be developed independently and prevents the whole platform's adaptability from depending on the C-MoE milestone.
 
 ### 3. Adapt during execution, not only before it
 
@@ -130,40 +130,50 @@ The target lifecycle is:
 
 `User intent → task/context analysis → Resource Policy → governance-constrained effective envelope → runtime allocation → measured usage → logged adaptation`
 
-Runtime adaptation may escalate or de-escalate effort as new facts arrive. For example, a MAX request on a trivial task may use a MEDIUM-equivalent path; a HIGH request may receive additional justified effort when unexpected complexity appears; a safety-critical task may require a minimum verification depth even when the user prefers speed.
+The system should be able to revise its allocation as new facts arrive: for example, choose sequential rather than parallel work when resources are constrained, increase effort when unexpected complexity justifies it, or require a minimum verification level for high-risk work. The adaptation must be explainable and observable; the system should record why its effective policy differs from the requested preference.
 
 The precedence is non-negotiable:
 
 `System hard caps → Governance constraints → Project defaults → Session overrides → Task request → Runtime adaptation`
 
-User preferences matter, but cannot exceed system limits or override Governance. The system must explain why its effective level differs from the requested level and record adaptation decisions as observable events.
+User preferences matter, but cannot exceed system limits or override Governance. Resource scarcity and urgency may change the strategy, but must never silently lower the correctness or assurance criteria.
 
-### 4. Adapt strategy when resources or providers change
-
-Resource scarcity should change the strategy—not the acceptance criteria. OCBrain may use fewer experts, execute sequentially instead of in parallel, choose a cheaper eligible provider, wait for capacity, or escalate to the user. It must not silently accept a lower correctness or assurance standard because the machine is busy, a provider is offline, or a deadline is approaching.
+### 4. Adapt when resource availability or provider health changes
 
 The resource design distinguishes four enforcement classes:
 
-- **Hard ceiling:** OCBrain or its execution backend can detect and stop a violation (for example, tool-call, retry, parallelism, or watchdog-enforced duration limits).
-- **Target:** a goal that may overshoot, such as token or cost budgets under a provider call that cannot be reserved exactly.
+- **Hard ceiling:** OCBrain or its execution backend can detect and stop a violation, but only for limits that are actually wired to an enforcing mechanism.
+- **Target:** a goal that may overshoot, such as token or cost budgets when a provider call cannot be reserved exactly.
 - **Preference:** a provider hint, such as reasoning effort, that the provider may approximate or ignore.
 - **Derived parameter:** a tuning input such as retrieval breadth; it changes behavior but does not itself enforce a limit.
 
-This prevents misleading promises. In particular, reasoning-effort hints are provider-dependent; token and cost limits may have overshoot; and OCBrain cannot claim hard CPU/GPU enforcement unless the configured runtime actually supplies it.
+This prevents misleading promises. Reasoning-effort hints are provider-dependent; token and cost limits may have overshoot; CPU/GPU scheduling is not an OCBrain guarantee unless the configured execution backend enforces it.
 
 ### 5. Adapt to changing goals, context, and operational reality
 
 Adaptability also means responding correctly when the user changes a task, a project evolves, a capability becomes unavailable, or prior work is invalidated. The C-MoE design treats user task mutation as a typed change to the active goal, followed by dependency-aware impact analysis. Work may remain valid, be reusable, become stale, or require recomputation. The system should preserve useful work where justified, but never allow an older plan to outrank the user's latest authorized instruction.
 
-Project, session, discussion, and task context should remain scoped. Personalization and learned preferences may inform recommendations, but they do not become authority and cannot override permissions, governance, or hard resource limits.
+Project, session, discussion, and task context should remain scoped. Personalization and learned preferences may inform recommendations, but they do not become authority and cannot override permissions, Governance, or hard resource limits.
 
 Long-running work must eventually be able to suspend and resume with its identity, graph state, evidence, and budgets intact. On resumption, the system should re-check whether its prior plan, provider choice, evidence, and assumptions are still current rather than blindly replay a stale decision.
 
 ### 6. Adaptation must remain observable, bounded, and reversible
 
-The user and operator should be able to see the requested computational level, effective level, actual allocation, provider/expert choice, resource use, remaining budget, and reason for any escalation or de-escalation. Adaptation decisions need structured provenance and should be inspectable through Studio.
+The user and operator should be able to inspect the requested computational level, effective policy, actual allocation, provider/expert choice, resource use, remaining budget, and reason for any escalation or de-escalation. Adaptation decisions need structured provenance and should be available through Studio.
 
-Runtime adaptation is not permission for autonomous architecture changes. Changes to learned routing policy, capability definitions, memory promotion, skills, or the system's own behavior require validation, Governance approval, and rollback paths. The existing K4.2 Learning design's distinction between routine learning, stricter adaptation, and evolution gates remains important: improvements must earn promotion through evidence.
+Runtime adaptation is not permission for autonomous architecture changes. Changes to learned routing policy, capability definitions, memory promotion, skills, or the system's own behavior require validation, Governance approval, and rollback paths. Improvements must earn promotion through evidence rather than self-assertion.
+
+### What exists today versus the studied target
+
+Some lower-level adaptive mechanisms already exist on `main`:
+
+- `AdaptiveSemaphore` adjusts concurrency using observed latency with an EMA-smoothed additive-increase / multiplicative-decrease policy.
+- Provider integrations track failures and cooldown/availability, while model/runtime paths maintain provider/model throughput observations.
+- `ExecutionBudget` and watchdogs provide bounded time/deadline handling.
+
+These are useful foundations, but they are **not** the complete adaptive resource architecture. The November 2 baseline does not yet provide an integrated user-facing Computational Level selector, a wired Resource Policy Engine, effective Resource Envelope derivation, or complete token/cost/reasoning-effort/expert-count controls.
+
+There are `ComputationalLevel` and `ResourcePolicy` data definitions in `core/workspace/domain.py`, but the canonical [Workspace & UX/UI Architecture](docs/architecture/WORKSPACE_ARCHITECTURE.md) explicitly classifies that existing Workspace domain file as non-conformant, unwired, and untested, with a REWORK disposition. The presence of those definitions is therefore not evidence that the policy engine or adaptive Workspace flow is implemented. Treat the canonical architecture—not the incomplete candidate file—as the intended design.
 
 **In one sentence: OCBrain should adapt its strategy, expertise, and resource use to the user's task and the environment it actually has—while its governance, identity, auditability, and correctness floor remain stable.**
 
