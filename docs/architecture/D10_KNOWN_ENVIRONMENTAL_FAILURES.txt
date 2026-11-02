@@ -13,9 +13,18 @@
 # every other pytest exit code (2, 3, 4, 5, kills, crashes) fail the build
 # regardless of this list; they cannot be listed.
 #
-# Matching is by exact node ID. A node ID containing " - " cannot be
-# matched yet (the gate cuts a FAILED line at its first " - "; recorded as
-# residual R-1 of FZ-07 in KNOWN_ISSUES.md). Do not add such an entry.
+# Matching is by exact node ID. CI's gate runs in report mode (R-1): it
+# reads a structured pytest report (scripts/ci_gate_report.py), so a node
+# ID may contain " - " and is compared whole. In report mode a listed
+# failure is tolerated ONLY if, in addition, (a) the failure-signature
+# policy D10_KNOWN_ENVIRONMENTAL_FAILURE_SIGNATURE.json has status
+# ACCEPTED (a PROPOSED or REVOKED policy excuses nothing: listed failures
+# stay red and their exception chains are printed and uploaded), and (b)
+# the failure is in the test body and its exception chain matches an
+# approved class by exact exception type and message, with no denied type
+# or HTTP status. A malformed or hand-truncated entry fails the gate. The
+# legacy text-only mode (scripts/ci_test_gate.py without --report) still
+# cuts FAILED lines at the first " - "; do not use it for such entries.
 #
 # This exact 34-item set was independently, repeatedly reconfirmed
 # byte-for-byte identical across five separate checks in one session

@@ -16,6 +16,7 @@ The known-failure list itself is not touched or re-validated here.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import stat
 import subprocess
@@ -229,16 +230,83 @@ _NEEDS_BASH = pytest.mark.skipif(
 )
 
 
-def _job_is_red(tmp: Path, pytest_output: str, pytest_rc: int, run_step1: bool = True) -> bool:
+_POLICY_REL = "docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURE_SIGNATURE.json"
+_HF_CHAIN = [{"type": "builtins.ConnectionError", "mro": ["builtins.OSError", "builtins.Exception"],
+              "message": "Can't reach huggingface.co"}]
+
+
+def _synth_report(output: str, rc: int) -> dict | None:
+    """The schema-2 structured report the real plugin would write for a run that printed ``output``.
+
+    None where a real run would leave no report (no final summary line = killed or truncated;
+    INTERNALERROR).  One record set per counted test; failures carry a network-type chain.
+    The text summary is deliberately NOT forced to agree: a canned output whose FAILED lines
+    disagree with its summary yields a report that disagrees too, and the gate must go red.
+    """
+    sc = gate._summary_counts(output)
+    if sc is None or "INTERNALERROR" in output:
+        return None
+
+    def rec(nid, when, outcome, cat, chain=(), xf=False):
+        return {"nodeid": nid, "when": when, "outcome": outcome, "category": cat, "wasxfail": xf, "chain": list(chain)}
+
+    records: list[dict] = []
+    collected: list[str] = []
+
+    def test(nid, call_outcome, call_cat, chain=(), xf=False):
+        collected.append(nid)
+        records.extend([rec(nid, "setup", "passed", "phase_ok"),
+                        rec(nid, "call", call_outcome, call_cat, chain, xf),
+                        rec(nid, "teardown", "passed", "phase_ok")])
+
+    for i in range(sc["passed"]):
+        test(f"tests/t.py::p{i}", "passed", "passed")
+    for nid in sorted(gate.parse_failed_ids(output)):
+        test(nid, "failed", "failed", _HF_CHAIN)
+    for i in range(sc["skipped"]):
+        test(f"tests/t.py::s{i}", "skipped", "skipped")
+    for i in range(sc["xfailed"]):
+        test(f"tests/t.py::xf{i}", "skipped", "xfailed", xf=True)
+    for i in range(sc["xpassed"]):
+        test(f"tests/t.py::xp{i}", "passed", "xpassed", xf=True)
+    collecting = "ERROR collecting" in output
+    for i in range(0 if collecting else sc["errors"]):
+        nid = f"tests/e.py::e{i}"
+        collected.append(nid)
+        records.append(rec(nid, "setup", "failed", "error", _HF_CHAIN))
+    counts = dict.fromkeys(("passed", "failed", "errors", "skipped", "xfailed", "xpassed"), 0)
+    for r in records:
+        if r["category"] == "error":
+            counts["errors"] += 1
+        elif r["when"] == "call" and r["category"] in ("passed", "failed", "skipped", "xfailed", "xpassed"):
+            counts[{"passed": "passed", "failed": "failed", "skipped": "skipped",
+                    "xfailed": "xfailed", "xpassed": "xpassed"}[r["category"]]] += 1
+    return {"schema": 2, "complete": True, "plugin_fault": None, "exitstatus": rc, "collected": collected,
+            "counts": counts, "records": records, "collect_errors": ["tests/a.py"] if collecting else []}
+
+
+def _job_is_red(tmp: Path, pytest_output: str, pytest_rc: int, run_step1: bool = True,
+                real_policy: bool = False) -> bool:
     """Run the workflow's two real steps with a fake pytest; True if either step fails."""
     steps = _tests_job_steps()
     bindir = tmp / "bin"
     bindir.mkdir()
     shim = bindir / "pytest"
-    shim.write_text('#!/bin/bash\ncat "$FAKE_OUT"\nexit "$FAKE_RC"\n')
+    # R-1: the real workflow now passes --ci-gate-report=PATH; the fake pytest (the
+    # external boundary here) writes the structured report the real plugin would
+    # have written for this canned output, when it would have written one.
+    shim.write_text(
+        '#!/bin/bash\n'
+        'for a in "$@"; do case "$a" in --ci-gate-report=*) '
+        '[ -f "$FAKE_REPORT" ] && cp "$FAKE_REPORT" "${a#--ci-gate-report=}";; esac; done\n'
+        'cat "$FAKE_OUT"\nexit "$FAKE_RC"\n')
     shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
     (tmp / "fake_out.txt").write_bytes(pytest_output.encode())
+    report = _synth_report(pytest_output, pytest_rc)
+    if report is not None:
+        (tmp / "fake_report.json").write_text(json.dumps(report), encoding="utf-8")
     env = {
+        "FAKE_REPORT": str(tmp / "fake_report.json"),
         "PATH": f"{bindir}:/usr/bin:/bin:{Path(sys.executable).parent}",
         "FAKE_OUT": str(tmp / "fake_out.txt"),
         "FAKE_RC": str(pytest_rc),
@@ -246,10 +314,20 @@ def _job_is_red(tmp: Path, pytest_output: str, pytest_rc: int, run_step1: bool =
     }
     scratch = tmp / "scratch"
     scratch.mkdir()
+    test_policy = tmp / "policy_accepted_TEST_ONLY.json"
+    test_policy.write_text(json.dumps({
+        "schema": 2, "status": "ACCEPTED", "decision_ref": "TEST-ONLY (not an owner decision)",
+        "classes": [{"name": "t", "phase": "call",
+                     "match": {"exception_types": ["builtins.ConnectionError"], "message_contains": ["huggingface.co"]}}]}))
 
     def run(script: str) -> int:
         f = tmp / "step.sh"
-        f.write_text(script.replace("/tmp/", f"{scratch}/"), encoding="utf-8")  # relocate scratch paths only
+        text = script.replace("/tmp/", f"{scratch}/")  # relocate scratch paths only
+        if not real_policy:
+            # Substitute a TEST-ONLY ACCEPTED policy for the shipped PROPOSED one, so the existing
+            # wiring cases keep their meaning ("a listed, signature-matching failure is tolerated").
+            text = text.replace(_POLICY_REL, str(test_policy))
+        f.write_text(text, encoding="utf-8")
         # `bash -e` == GitHub's default shell for run: without `shell:` (no pipefail).
         return subprocess.run(["bash", "-e", str(f)], cwd=ROOT, env=env, capture_output=True, timeout=60).returncode
 
@@ -291,6 +369,15 @@ def test_workflow_listed_failure_is_tolerated_only_with_exit_code_1(tmp_path: Pa
 
 
 @_NEEDS_BASH
+@_NEEDS_BASH
+def test_workflow_with_the_shipped_proposed_policy_excuses_nothing(tmp_path: Path) -> None:
+    """Batch 1A: until the owner accepts a signature policy, listed failures stay red (diagnostic mode)."""
+    entry = next(iter(sorted(gate.parse_allowlist(ALLOWLIST_FILE.read_bytes().decode()))))
+    out = _failed(entry) + "1 failed, 1787 passed in 1.0s\n"
+    pol = gate.load_policy((ROOT / _POLICY_REL).read_text(encoding="utf-8"))
+    assert _job_is_red(tmp_path, out, 1, real_policy=True) is (pol["status"] != "ACCEPTED")
+
+
 def test_workflow_step_one_is_required(tmp_path: Path) -> None:
     # If the test step never ran there is no exit-code record: the gate must fail.
     assert _job_is_red(tmp_path, f"{OK_SUMMARY}\n", 0, run_step1=False) is True
