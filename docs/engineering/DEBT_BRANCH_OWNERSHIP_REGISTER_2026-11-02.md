@@ -69,7 +69,7 @@ These entries remain in the technical-debt register but do not have a current op
 All 20 listed PRs were open after PR #108 was created. Assignees were empty in GitHub for every PR. The 19 pre-existing PRs were checked first; #108 is this documentation reconciliation PR. Exact-head check states are included only where read in this pass; checks are not human review.
 
 | PR | Head / base | Current disposition | Owner / review |
-| #108 | `docs/debt-register-live-reconciliation-nov2026` → main | DRAFT documentation reconciliation; 5 commits ahead / 0 behind; three documentation files only; no product changes | Author `1h0lde4`; no assignee or independent review |
+| #108 | `docs/debt-register-live-reconciliation-nov2026` → main | DRAFT documentation reconciliation based on exact current main; three documentation files only; no product changes | Author `1h0lde4`; no assignee or independent review |
 |---|---|---|---|
 | #107 | `fix/ci-gate-r1a-hardening-oct2026` → main | DRAFT; diagnostic CI only; NOT FOR MERGE; original Batch 1 attestation NOT APPROVED | Author `1h0lde4`; no assignee or human review |
 | #103 | `architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026` → main | Architecture proposal, not a debt fix; 1 ahead / 37 behind | Author `1h0lde4`; no assignee |
