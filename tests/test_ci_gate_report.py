@@ -48,7 +48,10 @@ NET = 'raise ConnectionError("Can\'t reach huggingface.co")'
 
 
 def _env(**extra: str) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
+    # CI/BUILD_NUMBER are removed on purpose: pytest's running_on_ci() disables its terminal
+    # truncation when they are set (found on the first real CI run), which would make the
+    # text-output assertions below behave differently on GitHub Actions than locally.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_") and k not in ("CI", "BUILD_NUMBER")}
     env["PYTHONPATH"] = str(ROOT)
     env.update(extra)
     return env
