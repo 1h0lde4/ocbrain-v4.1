@@ -189,6 +189,21 @@ The target provider strategy is:
 
 The long-term ecosystem may include coding, browser research, data analysis, simulation, robotics or device control, and domain-specific experts. These should enter through versioned capabilities and adapters with explicit contracts, least privilege, sandboxing, and auditable outcomes. Multi-node execution, distributed cognition, resource economies, and cognitive marketplaces remain research directions—not prerequisites for the first C-MoE release.
 
+### Stage 5 — OCBrain Studio and the human operator plane
+
+OCBrain Studio should become the operator-facing control plane for long-running cognitive work—not a second workflow engine and not the source of truth for execution state.
+
+Its purpose is to make the live system understandable and governable:
+
+- Show the user's authorized goal, Planner strategy, current WorkGraph, dependencies, work-unit states, and task lineage.
+- Surface which experts were considered, why candidates were excluded or selected, what resources were consumed, and what the runtime proposes to do next.
+- Present structured outcomes, verification verdicts, evidence receipts, contradictions, and unresolved uncertainty.
+- Provide clear human controls to inspect, approve, pause, resume, cancel, supersede, or amend work, with the authority source recorded.
+- Display memory scope and provenance so users can see what knowledge influenced a plan and where promoted results will be stored.
+- Support replay and debugging from the same durable events and snapshots used by the runtime.
+
+Studio should consume the runtime's authoritative event and snapshot contracts. It must not invent a parallel execution state, silently rewrite goals, or hide the difference between a proposed action and an authorized one. The current event/snapshot work provides useful foundations, but the full Studio experience and its governance controls are not being claimed as complete here.
+
 ### Long-term ambition — an architecture that can support increasingly general intelligence
 
 The AGI ambition is the long horizon, not a claim about OCBrain today and not a currently authorized implementation milestone.
@@ -256,6 +271,13 @@ Use these records for different purposes:
 - [Known Issues](KNOWN_ISSUES.md) — debt, unresolved findings, and explicit deferrals.
 - [Debt / Branch Ownership Register](docs/engineering/DEBT_BRANCH_OWNERSHIP_REGISTER_2026-11-02.md) — the November 2 inventory of branches, open PRs, ownership, and per-workstream dispositions.
 - [Implementation Roadmap](IMPLEMENTATION_ROADMAP.md) — historical planning material that was last synchronized on September 13, 2026; reconcile it with the November 2 state before treating it as the live execution queue.
+- [Architecture Evolution Directive](docs/architecture/OCBrain%20Architecture%20Evolution%20Directive.md) — approved architectural direction and separation of cognitive-runtime stages.
+- [Kernel Completion Study](docs/studies/OCBRAIN_KERNEL_COMPLETION_STUDY.md) — research reconciliation and kernel-completion dependencies; not a freeze verdict by itself.
+- [C-MoE Cognitive Runtime Study](docs/studies/OCBRAIN_CMOE_COGNITIVE_RUNTIME_ARCHITECTURE_STUDY.md) — detailed post-freeze C-MoE design, boundaries, WorkGraph, expert model, and implementation sequencing.
+- [C-MoE Reality-Grounding Study](docs/studies/OCBRAIN_CMOE_REALITY_GROUNDING_SUBSTUDY.md) — conditional facts-only grounding and plan-feasibility design.
+- [Verification / Critic / Evidence Study](docs/studies/OCBRAIN_CMOE_VERIFICATION_ARCHITECTURE_STUDY.md) — distinct assurance architecture; research/contracts are not equivalent to production integration.
+- [C-MoE Adaptive Cognitive Scaling Study](docs/architecture/future_debt_study/OCBRAIN_CMOE_ADAPTIVE_COGNITIVE_SCALING_ARCHITECTURE_STUDY.md) — earlier research input to the reconciled C-MoE design.
+- [Future Research Vault](docs/architecture/FUTURE_RESEARCH_VAULT.md) — ideas that remain research until they pass the project's architecture and roadmap gates.
 - [Product Definition](PRODUCT.md) — product principles and target boundaries.
 
 A PR is a proposal until merged. A green CI run is evidence for the checks it actually ran, not proof that every requirement is satisfied. A debt is closed only when its acceptance criteria are met and the closure is recorded against the relevant merged baseline. Keep one canonical review target per work item; preserve competing branches until an explicit cleanup decision is made.
