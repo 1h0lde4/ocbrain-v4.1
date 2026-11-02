@@ -81,6 +81,13 @@ Design decisions the wiring batch must know
 * The refusals are picklable and copyable (``__reduce__``): the worker pool,
   the webhook process and the task runner are separate processes, so a refusal
   must survive crossing one.
+* ``reserve`` gives its slot back if its own log call raises. It cannot undo a
+  signal or a task cancellation that lands after the slot is taken and before
+  ``reserve`` returns: the caller never saw the slot, so it stays held and the
+  limit is lower for good, which is the refusing direction. B03 does not close
+  that window; it is for the wiring batch to decide how an interrupt there is
+  handled. While a failing log call is being unwound, a concurrent ``reserve``
+  can also be refused for the moment the slot is still counted.
 """
 from __future__ import annotations
 
@@ -407,8 +414,11 @@ class Ipv6Sources:
     readable, which is what makes the absence of ``ipv6`` beneath it mean
     something. ``ipv6_dir_present``: ``/proc/sys/net/ipv6`` exists.
     ``read_disable_ipv6(scope)``: the text of ``conf/<scope>/disable_ipv6``
-    for scope ``all`` or ``default``. Each may raise; any exception is read as
-    UNKNOWN, never as off. The two presence checks must return a real ``bool``
+    for scope ``all`` or ``default``. Each may raise; an ``Exception`` is read
+    as UNKNOWN, never as off. (A ``BaseException`` such as ``KeyboardInterrupt``
+    propagates, and so does a failure while rendering a hostile exception or
+    value, for instance a type whose name or ``repr`` raises: an exception
+    always, never a pass.) The two presence checks must return a real ``bool``
     and the read a ``str``: a value of any other type is a source that broke
     its contract, and is UNKNOWN too, whether or not it is falsy."""
 
@@ -477,7 +487,7 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
                 Ipv6State.UNKNOWN,
                 f"the ipv6 sysctl directory check returned a {type(ipv6_dir_present).__name__}, not a bool",
             )
-    except Exception as exc:  # noqa: BLE001 - fail closed: any failure of an injected source is UNKNOWN
+    except Exception as exc:  # noqa: BLE001 - fail closed: an Exception from an injected source is UNKNOWN
         return Ipv6Decision(
             Ipv6State.UNKNOWN,
             f"could not check for the ipv6 sysctl directory ({_describe_error(exc)})",
@@ -488,7 +498,7 @@ def evaluate_ipv6(sources: Ipv6Sources) -> Ipv6Decision:
     for scope in _IPV6_SCOPES:
         try:
             raw: object = sources.read_disable_ipv6(scope)
-        except Exception as exc:  # noqa: BLE001 - fail closed: any failure of an injected source is UNKNOWN
+        except Exception as exc:  # noqa: BLE001 - fail closed: an Exception from an injected source is UNKNOWN
             unknown.append(f"{scope}: unreadable ({_describe_error(exc)})")
             continue
         if not isinstance(raw, str):

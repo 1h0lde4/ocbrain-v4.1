@@ -1144,6 +1144,14 @@ def test_reservations_and_releases_are_logged(caplog: pytest.LogCaptureFixture) 
         "limit": 3,
         "in_use": 2,
     }
+    assert slot.owner == "a"
+    (released,) = _events(caplog, "sandbox_network_slot_released")
+    assert released.sandbox_network_event == {  # type: ignore[attr-defined]
+        "event": "sandbox_network_slot_released",
+        "owner": "a",
+        "limit": 3,
+        "in_use": 1,
+    }
 
 
 def test_every_guard_event_is_logged_under_the_one_documented_logger(
