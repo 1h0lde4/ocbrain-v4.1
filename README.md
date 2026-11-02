@@ -1,240 +1,218 @@
-<img width="1536" height="1024" alt="a5c8335f-e65d-4698-a789-4e1c05752f22" src="https://github.com/user-attachments/assets/2830440e-a250-45ee-95f6-095530b7ddd1" />
+<img width="1536" height="1024" alt="OCBrain" src="https://github.com/user-attachments/assets/2830440e-a250-45ee-95f6-095530b7ddd1" />
 
 # OCBrain
 
-**Overclocked Brain** — a local-first cognitive runtime that turns intent into governed, executable action.
+**Overclocked Brain** — a local-first, governed cognitive runtime for turning user intent into planned, observable, and controlled execution.
 
-This README reflects what is actually in the repository as of this reconciliation pass (Aug 2026). Where a claim can't be verified, it's marked as such rather than assumed. For day-to-day authoritative status, this project keeps three living documents ahead of the README — **`CURRENT_STATE.md`** (what's built), **`IMPLEMENTATION_ROADMAP.md`** (what's next), and **`KNOWN_ISSUES.md`** (what's broken or deferred) — this file is the entry point, not the deepest source of truth. See `PROJECT_INDEX.md` for the full document hierarchy and repository map.
+OCBrain is being built as a **cognitive operating system and kernel**, not as another chatbot, thin LLM wrapper, or standalone RAG framework. It coordinates capabilities, workflows, memory, model providers, and specialist workers through explicit contracts and governance. The user retains control of data, providers, permissions, and consequential actions.
+
+> **Engineering status snapshot — November 2, 2026.** The product baseline described here is \x60main\x60 at \x602491ae469edd6ef1267a14604c4f8f40d698f7ea\x60 (PR #106). This is a point-in-time status, not a release-readiness statement. Check the linked live registers before making implementation or merge decisions.
 
 ---
 
-## What OCBrain Is
+## What OCBrain is meant to become
 
-OCBrain is a kernel for turning a request into a plan, executing that plan through explicit, governed steps, and remembering the outcome — rather than routing a prompt straight to a model. Every persistent-memory mutation and every autonomous action is expected to pass through a governance layer before it happens, and the system is built to emit events for what it does rather than keep state only in memory.
+OCBrain's central responsibility is **coordination under governance**:
 
-It is not a finished product. It's an actively-developed runtime with a genuinely substantial, working kernel underneath it, an actively-developed cognitive layer on top, and a long list of explicitly-tracked future work ahead of it — see [Milestone Status](#milestone-status) below.
+- Understand intent and constraints before execution.
+- Discover and compose capabilities rather than hard-wire tasks to one model or provider.
+- Compile plans into explicit workflows and execute them through controlled runtimes.
+- Preserve meaningful state transitions, execution identity, provenance, and audit evidence.
+- Maintain durable, user-controlled memory.
+- Allow specialist workers and external tools to operate within explicit permission, resource, and isolation boundaries.
 
-## Current Development Status
+The kernel should own stable abstractions and policy boundaries. Adapters should own provider-specific integrations. Capabilities should perform work. Applications and workflows should compose capabilities without moving application-specific behavior into the kernel.
 
-| Area | Status |
+OCBrain is an active engineering project. The cognitive front-end and substantial runtime foundations exist, but the current kernel has unresolved freeze-blocking work. **Do not interpret this README, a green CI check, or an open implementation PR as evidence that the system is production-ready or that Kernel v1.0 has been formally frozen.**
+
+## Current development status
+
+| Area | Current position on the November 2 baseline |
 |---|---|
-| Kernel (K1 → K3.5.1) | Built. Not yet formally frozen — see [Kernel v1.0](#kernel-v10) below. |
-| K4.2 — Cognitive Front-End | **Complete.** Packets 01–09, plus H1 (frozen Aug 17, 2026) and H2 (closed Aug 22, 2026) hardening passes. |
-| Execution Reliability (watchdog/budget) | **Partial.** A same-day fix for a real production bug merged Aug 27, 2026. The larger proposed architecture behind it is research/design only — nothing beyond the bug fix is implemented. |
-| C-MoE (Cognitive Runtime) | **Research phase.** Papers and reference repositories are being studied; no implementation, no transition plan, no milestone number assigned yet. |
+| Cognitive front-end | The K4.2 path is enabled by default in \x60config/settings.toml\x60. Intent interpretation, discovery, planning, compilation, and workflow execution are present. |
+| Workflow and execution runtime | WorkflowRuntime and ExecutionRuntime are present. Failure propagation, cancellation semantics, identity, and recovery still have open work. |
+| Governance | GovernanceKernel has seven registered governors. Governance remains a design invariant; coverage of legacy and fallback paths must not be assumed from the K4.2 path alone. |
+| Capability system | CapabilityRegistry is metadata-centric. \x60LLM_COMPLETION\x60 is the only registered capability type in the current baseline; a complete multi-capability ecosystem is not yet delivered. |
+| Memory and retrieval | UnifiedMemory uses the L0–L4 model. Graph and hybrid retrieval components exist; memory durability, retrieval correctness, and lifecycle work remain tracked. |
+| Events and auditability | EventStream provides durable SQLite/WAL-backed events, while EventBus remains a separate in-process mechanism. They are not yet one unified audit system. |
+| C-MoE | Research and architecture direction only. No production C-MoE implementation is included on the current main baseline. |
+| Verification / Critic / Evidence | A separate workstream has unmerged Phase C contracts. It is not a production verification engine and is not part of C-MoE or the GovernanceKernel. |
+| Kernel v1.0 freeze | **Not freeze-authorized.** G4 remains OPEN / High / freeze-blocking; FZ-01, FZ-02 residuals, FZ-05, and FZ-06 remain open. |
 
-Independently verified this pass: `pytest tests/ -q` → **1331 passed, 34 failed**, out of 1365 collected. All 34 failures were traced to one shared cause — this sandbox has no route to `huggingface.co` to download the sentence-transformer embedding model a shared test fixture needs — which matches the "34 pre-existing environment-only failures" figure the project's own documents have reported consistently since at least July 2026. No unexpected failures were found.
+### What is fixed, and what remains open
 
----
+The current register distinguishes verified fixes from partial remediation and proposals:
 
-## Architecture Overview
+- FZ-03 scheduler containment and FZ-04 semaphore permit conservation are fixed and verified on main.
+- FZ-07's core CI-gate defect is fixed and verified; its R-1 matching edge case remains open. PR #107 is diagnostic-only and explicitly **NOT FOR MERGE**.
+- FZ-01's workflow/API failure channel is not implemented. A decision record in an unmerged PR is not an implementation.
+- FZ-02 has merged provider-failure, stalled/deadline, and router-cleanup work, but end-to-end cancellation and terminal outcome semantics remain open. PR #104 is router-resource cleanup, not workflow cancellation.
+- FZ-05 execution-registry growth and EventStream retention remain open.
+- FZ-06 / DEBT-030 execution identity across event, workflow, and capability boundaries remains open.
+- G4 / DEBT-042 remains a High, freeze-blocking workstream. D1–D11 remain open; no product implementation is authorized by the current handoff.
 
-Authority runs from principles down to code:
+Other important open areas include API authentication/authorization (DEBT-025), test/config isolation (DEBT-012), learning-boundary remediation (DEBT-014), Context authority boundaries (including CTX-AUTH-001b), and incomplete sandbox isolation. See the live register rather than relying on this abbreviated list.
 
-```
-OCBRAIN_KERNEL_CONSTITUTION.md          9 laws, 9 invariants — highest authority
-  └─ docs/architecture/KERNEL_ARCHITECTURE_v1.0.md   Frozen engineering spec
-       └─ docs/architecture/PROJECT_INSTRUCTIONS.md  Operational engineering rules
-            └─ ARCHITECTURE_CHANGELOG.md, ADRs        Historical decisions
-                 └─ CURRENT_STATE.md → IMPLEMENTATION_ROADMAP.md → KNOWN_ISSUES.md
-```
+### Repository coordination snapshot
 
-The kernel (runtime, workflow engine, capability registry, governance, memory, events) is meant to be stable and domain-agnostic. The Cognitive Front-End (K4.2) is built *on* the kernel, not *as* the kernel: intent interpretation → goal formation → constraint extraction → capability discovery → planning → plan compilation → validation, with reflection/evaluation/supervision workers wrapping the loop.
+The November 2 GitHub inventory recorded **111 remote branches, 20 open pull requests, and 3 open non-PR issues**. None of the 20 open PRs had a GitHub assignee recorded in that snapshot. PR authorship and last-commit authorship are provenance, not proof of implementation ownership. Many refs are preserved evidence, research, historical fixes, or competing candidates—not one coherent active implementation queue.
 
-## Runtime / Execution Flow
-
-**Correction (this pass):** an earlier version of this section described only the K4.2 path below, as though it were the whole flow. It isn't. `core/orchestrator.py`'s `Orchestrator.handle()` — the single method `main.py` and `interface/api.py` actually call for every request — is built on an older foundational pipeline (`core/parser.py`, `core/classifier.py`/`classifier_v3.py`, `core/decomposer.py`, `core/dispatcher.py`, `core/merger.py`, `core/module_registry.py`/`module_factory.py` dispatching into `modules/`) that none of this reconciliation's prior passes read or accounted for. It is **not** dead code — `Orchestrator.__init__` takes `modules` as a direct constructor argument from `main.py`. This project's own evidence-over-assumption principle means that pipeline needs its own dedicated audit before this README can describe it with the same confidence as the rest of this document. It is flagged here rather than silently left out. See [Known Limitations](#known-limitations).
-
-What can be said with the same confidence as the rest of this file, because it's a direct code fact, not an inference: `config/settings.toml` sets `[runtime] use_k42_frontend = true`, and `main.py` reads that value and passes it straight into `Orchestrator`'s constructor — so the K4.2 path below is the default for a request, not a fallback. Inside `Orchestrator.handle()`, this happens conditionally — reached "if `self._use_k42_frontend` and a `WorkflowRuntime` was supplied at construction" — which does mean the older pipeline is still live in the same method for whatever cases fall outside that condition; this pass did not determine exactly which requests those are.
-
-A request entering through `Orchestrator.handle()` with the K4.2 front-end enabled (`[runtime] use_k42_frontend` in `config/settings.toml`) follows:
-
-```
-interpret_request() → plan() → compile() → WorkflowRuntime.execute()
-```
-
-Every node execution is supervised by an `ExecutionWatchdog`/`ProgressMonitor` pair and every persistent memory mutation (`write`/`update`/`delete` on `UnifiedMemory`) calls `GovernanceKernel.evaluate_action()` first. When the condition above isn't met, `Orchestrator.handle()` falls back to its older built-in pipeline instead — not specifically a "`PlannerWorker` path," as a prior version of this file said; `PlannerWorker` (K2.2) is one worker that pipeline can dispatch to, not the whole mechanism. That fallback pipeline's own governance/observability posture has not been verified by this reconciliation.
-
-## Implemented Components
-
-| Component | Location | Status |
-|---|---|---|
-| GovernanceKernel + 5 governors | `core/governance/` | Live — evaluated on every action |
-| WorkflowRuntime (DAG engine) | `core/workflow/` | Live |
-| Capability Registry + Adapters | `core/capabilities/` | Live (Ollama, OpenAI-compatible, model-router adapters) |
-| UnifiedMemory (L0–L4) | `core/memory/unified_memory.py` | Live — SQLite + FTS5 + BM25 + embeddings + graph index |
-| GraphRAGPipeline | `core/memory/retrieval/graphrag/` | Live — canonical retrieval path |
-| Graph index (indexer, entity extraction, eligibility) | `core/memory/graph/` | Live and wired into `UnifiedMemory`'s write/update/delete path — see [Known Limitations](#known-limitations) on why this is easy to miss |
-| EventStream (durable) + EventBus (in-process) | `core/events/`, `core/event_bus.py` | Live — two mechanisms, not yet unified (`KNOWN_ISSUES.md` DEBT-004/005) |
-| Cognitive Front-End (K4.2.1–K4.2.7) | `core/cognitive/` | Live |
-| SupervisorWorker, ReflectionWorker, EvaluatorWorker | `core/workers/` | Live (built Packets 07/08, wired Aug 8, 2026) |
-| ExecutionWatchdog / ProgressMonitor | `core/runtime/watchdog.py`+`progress.py` (graph-aware) **and** `execution_watchdog.py`+`progress_monitor.py` (standalone) | Live, but two independent, unreconciled implementations — see DEBT-016 |
-| CLI / API interface | `interface/cli.py`, `interface/api.py` | Live (FastAPI) |
+This is why the project uses an explicit debt/branch ownership register. A branch, proposal, review report, or green check does not change the implementation state on main.
 
 ---
 
-## Milestone Status
+## Architecture and execution model
 
-### K4.2 — Cognitive Front-End
-**Status: Complete.** All 9 packets, plus hardening passes H1 (frozen Aug 17, 2026, independent 16-gate review) and H2 (closed Aug 22, 2026). Two items remain explicitly open, not silently dropped: DEBT-011 (an open-domain-vs-closed-enum contradiction between K4.2's `ContentDomain` and K4.1-L's `LearningCandidate`, deliberately left as a `[RECONCILE-PENDING]` marker) and DEBT-002 (a governance field, `delegating_worker_type`, that nothing currently populates).
+The configured K4.2 request path is:
 
-### K4.3 — Architecture-to-Implementation Transition
-**Status: Historical / already executed.** This is worth stating plainly because it does not mean what it's sometimes assumed to mean: **K4.3 is not C-MoE.** The document `docs/architecture/OCBRAIN_K4_3_IMPLEMENTATION_TRANSITION.md` is the planning artifact that broke the frozen K4.2 architecture into the nine packets above — its own validation checklist explicitly defers capability selection to "future C-MoE." A separate closeout report states its own scope as *"K4.2 finish-and-close — no K4.3, K4.4, or C-MoE work introduced,"* naming all three as distinct items, not synonyms. The transition document's own header still reads "Status: DRAFT — awaiting approval" (dated July 24, 2026) even though the work it planned shipped — that header is stale and should be updated to reflect that it was executed.
+\x60main.py\x60 → \x60Orchestrator.handle()\x60 → intent / goal and constraint handling → capability discovery → planning → plan compilation → \x60WorkflowRuntime\x60 → \x60ExecutionRuntime\x60 → \x60ExecutionContext\x60
 
-### C-MoE — Cognitive Runtime
-**Status: Research phase.** Per the maintainer, this is currently a literature- and repository-study effort, not implementation — consistent with what's on disk: `docs/architecture/future_debt_study/OCBRAIN_CMOE_ADAPTIVE_COGNITIVE_SCALING_ARCHITECTURE_STUDY.md` is an architecture study, not a build. It has no assigned milestone number yet; it's referred to by name or loosely as "K4.3+/C-MoE" (i.e., sometime after K4.3). Zero implementation exists.
+The exact path depends on the runtime configuration and construction of the orchestrator. The older foundational dispatch path and compatibility components remain in the repository; they must not be treated as deleted or fully audited merely because the K4.2 path is enabled by default.
 
-### Execution Reliability ("K4.4")
-**Status: Partial.** Two sessions independently built overlapping `ExecutionBudget`/`ExecutionWatchdog`/`ProgressMonitor` implementations on branch `feature/execution-progress-inspection`; the collision surfaced a real contract-mismatch bug (an edit-style request crashed because the graph-aware watchdog called the model-router-facing `ExecutionBudget`'s old constructor signature), fixed and merged Aug 27, 2026 (commit `7ca7f35`). The label "K4.4" is used inconsistently across the project's own documents: `IMPLEMENTATION_ROADMAP.md` explicitly calls it *"informally labeled... not an official roadmap number,"* while `KNOWN_ISSUES.md` uses "K4.4" more casually in its own sync log and a debt title. Neither is wrong exactly, but they disagree — worth the project settling on one convention. The larger proposed architecture behind this (`Operation`/`ExecutionAttempt`/`ExecutionSnapshot`, giving retries a stable identity) is fully researched and written up in `docs/reports/WATCHDOG_EVOLUTION_RESEARCH_AND_ARCHITECTURE_REPORT.md` — **status: proposed only, nothing beyond the bug fix is implemented** (DEBT-015). The two watchdog implementations also remain functionally separate, not unified (DEBT-016).
+| Subsystem | Role |
+|---|---|
+| \x60core/cognitive/\x60 | Intent, goal, constraint, discovery, and planning contracts that form the cognitive front-end. |
+| \x60core/workflow/\x60 | Workflow definitions and DAG orchestration. |
+| \x60core/runtime/\x60 | Execution lifecycle, contexts, supervision, cancellation, and runtime controls. |
+| \x60core/governance/\x60 | GovernanceKernel and its governors for bounded, policy-controlled action. |
+| \x60core/capabilities/\x60 | Capability metadata, adapter contracts, and execution integration. |
+| \x60core/memory/\x60 | UnifiedMemory, tiered memory, graph indexing, and retrieval. |
+| \x60core/events/\x60 and \x60core/event_bus.py\x60 | Durable EventStream and separate in-process event publication. |
+| \x60core/model_router.py\x60 and provider integrations | Model-completion routing and provider integration. |
+| \x60interface/\x60 | CLI and API entry points. |
+| \x60modules/\x60 | Earlier module architecture. Some paths remain live; do not remove them without call-site and behavior audits. |
 
-### Kernel v1.0
-**Status: Not frozen.** `docs/Bugs Hunt & fix reports/KERNEL_V1_0_PRE_FREEZE_DEBT_RECONCILIATION_AUDIT.md` identifies a minimum blocking-closure set of 2 items before freeze — a Kernel-Constitution-adjacent identity decision and a narrow authority conflict between a frozen ADR and existing code — both explicitly left open for the project owner to decide, per this project's own rule against silently resolving Constitution-adjacent questions.
+The architectural direction is provider-independent. The current capability registration is much narrower than the long-term target; the table above describes existing subsystem boundaries, not a claim that every future capability, adapter, or governance property is already implemented.
+
+## Long-term design principles
+
+1. **Local-first and user sovereignty.** Local inference, memory, and orchestration are the default operating posture. A local model provider must be usable without a paid hosted-LLM dependency. Cloud AI may be configured as an optional external provider or expert mesh; it must not become a prerequisite for the core runtime.
+2. **Provider independence.** The kernel should not be coupled to one model vendor or serving application. Ollama, llama.cpp-backed local servers, other compatible local endpoints, and optional hosted providers belong behind replaceable adapters. This does not require a dedicated llama.cpp subsystem.
+3. **Governance before capability.** New tools, workers, and execution powers must arrive with permission boundaries, budgets, isolation, observability, and approval behavior—not receive them as later hardening.
+4. **Explicit and replayable state.** Important transitions need stable identity, provenance, durable events, and recovery semantics. A model's self-report is not an audit record or proof of completion.
+5. **Deterministic orchestration, replaceable intelligence.** Model outputs may be probabilistic; scheduling, policy evaluation, state transitions, and terminal outcome handling must remain explicit and testable.
+6. **No uncontrolled self-modification.** Learning and improvement must be reviewable, bounded, reversible, and governed by the user.
 
 ---
 
-## What Is Not Yet Implemented
+## Future direction
 
-- **C-MoE** — capability selection/routing among multiple candidate adapters. Research only.
-- **CoderWorker, BrowserWorker** — declared as future cognitive workers, not built.
-- Several declared `CapabilityType` values have no registered adapter: `embedding`, `web_search`, `browser_automation`, `file_access`, `memory_search`, `graph_traversal`, `image_generation`, `tool_invocation`, `external_api`.
-- **Workflow checkpoint/resume** — `EventStream.create_checkpoint()` exists but `WorkflowRuntime` never calls it; a long-running workflow can't survive a process restart (DEBT-003).
-- **Budget enforcement, operationally** — `BudgetGovernor` correctly rejects when step/token counters exceed threshold, but no code anywhere currently increments those counters, so the reject branch is unreachable in practice today (DEBT-007). This is a governance mechanism that is contractually correct but not operationally active — worth flagging given how central governance is to this project's own stated priorities.
-- **Operation identity across retries** — a retried request is indistinguishable from a fresh one; researched and proposed (DEBT-015), not built.
+The sequence below describes the **intended engineering direction**, not a set of approved implementation tickets. Each work package still requires a current-main baseline, a named owner, explicit scope, independent evidence, and the relevant design decisions.
 
-## Legacy / Transitional Components
+### 1. Complete the kernel audit and establish a trustworthy freeze boundary
 
-`modules/` is explicitly labeled "Legacy expert modules" in `PROJECT_INDEX.md` — 13 files across `web_search`, `mock`, `system_ctrl`, `empty_test`, `knowledge`, `coding`, and a `_template`. "Legacy" here means architecturally superseded by the capability-adapter system, **not** unmaintained or dead: `modules/system_ctrl` received a real security fix (input validation on an `os.startfile()`/subprocess call path) as recently as this project's A6/A7 remediation. Treat it as legacy-but-live, not safe to delete without checking call sites first.
+Resolve the current freeze blockers and high-severity correctness gaps before expanding autonomy. This includes:
 
-## Technical Debt
+- Agreeing and implementing explicit workflow/API terminal-result and failure semantics.
+- Completing cancellation propagation across workers, workflows, providers, shutdown, and client disconnects.
+- Establishing joinable operation, attempt, workflow, and capability identities.
+- Resolving bounded lifecycle and retention for execution registries and durable events without weakening audit requirements.
+- Closing the G4 search-correctness workstream through the owner's decision and evidence gates.
+- Rechecking API authentication and authorization, sandbox boundaries, test isolation, and dependency/security decisions.
+- Running a fresh, immutable-baseline freeze audit. A freeze verdict must be based on the exact final main SHA and its evidence.
 
-Full register: `KNOWN_ISSUES.md`. Highlights:
+### 2. Strengthen execution reliability and recovery
 
-- Two independent `ExecutionWatchdog`/`ProgressMonitor` pairs coexist and will drift again if either is touched in isolation without reconciling the other (DEBT-016).
-- Three overlapping event mechanisms — `EventBus`, `EventStream`, `KnowledgeEvent` — record different facts about different concerns; no single unified audit trail yet (DEBT-004/005).
-- `AgentGovernor`'s delegation-permission check is dormant: `SupervisorWorker` exists but nothing populates the metadata field the check depends on (DEBT-002).
-- L2 semantic memory embeddings are volatile and recomputed on every restart (DEBT-006).
-- Running the full test suite currently rewrites two tracked config files in place as a side effect of a fixture that isn't isolated to a temp path (DEBT-012) — cosmetic (line-ending changes only), not data-lossy, but will keep surprising people until fixed.
+Build on the existing workflow and execution runtimes with coherent contracts for:
 
-## Repository Structure
+- Typed terminal outcomes, partial results, retries, deadlines, and cancellation.
+- Stable operation and attempt identity, idempotency, and side-effect tracking.
+- Durable checkpoint/resume and crash recovery, with clear event-retention and replay rules.
+- Measured resource budgets and enforceable limits—not counters that exist only as configuration.
+- Cross-process coordination where deployment topology requires it.
+- Sandboxed execution and least-privilege access for code, browser, filesystem, and external-service capabilities.
 
-Verified against the actual tree, not the aspirational one previously in this file:
+### 3. Develop the capability and provider layer
 
-```
-ocbrain/
-├── main.py                      # Composition root — asyncio entrypoint, all singletons wired here
-├── OCBRAIN_KERNEL_CONSTITUTION.md
-├── CURRENT_STATE.md / IMPLEMENTATION_ROADMAP.md / KNOWN_ISSUES.md / PROJECT_INDEX.md
-├── PRODUCT.md / README.md / CHANGELOG.md
-│
-├── core/
-│   ├── (flat files directly in core/, NOT individually audited by this reconciliation — see Known Limitations)
-│   │   ├── orchestrator.py          # Orchestrator.handle() — the real single entry point; built on the files below
-│   │   ├── orchestrator_v3.py, classifier.py, classifier_v3.py, parser.py, decomposer.py, dispatcher.py, merger.py
-│   │   ├── module_registry.py, module_factory.py    # loads/dispatches modules/ (see Legacy section)
-│   │   ├── brain_api.py, brain_export.py, brain_version.py
-│   │   ├── migrator.py, privacy.py, config.py, context.py
-│   ├── runtime/            # Execution runtime, working memory, cancellation
-│   ├── workflow/           # DAG engine (definition, instance, result)
-│   ├── capabilities/       # Registry, adapter runtime, concrete adapters
-│   ├── governance/         # GovernanceKernel + 5 governors
-│   ├── cognitive/          # K4.2 front-end: intent, planner, learning, etc. (flat modules, not subdirectories)
-│   ├── workers/            # Planner, Supervisor, Reflection, Evaluator, MemoryCurator
-│   ├── memory/
-│   │   ├── unified_memory.py
-│   │   ├── graph/          # Graph index: engine, indexer, entity extraction, eligibility
-│   │   ├── retrieval/      # Fusion façade, context builder, GraphRAG pipeline
-│   │   ├── backends/, consolidation/
-│   │   ├── cognitive_vault.py, mem_vault.py, hybrid_retrieval.py, dedup.py  # older memory stores — not yet audited;
-│   │   │                                                                    #   unified_memory.py has an explicit
-│   │   │                                                                    #   import_from_cognitive_vault() migration method
-│   ├── events/             # EventStream (durable)
-│   ├── event_bus.py        # EventBus (in-process, non-durable)
-│   ├── knowledge/, learning/, meta/, observability/, pipeline/, prompt/, skills/
-│   ├── web/, web_learning/ # Knowledge-acquisition path
-│   ├── dashboard/, shadow/
-│   ├── orchestrator.py, model_router.py, provider_mesh.py
-│
-├── interface/              # FastAPI (api.py) + CLI (cli.py) + tray/updater/voice
-├── modules/                # Legacy expert modules (see above)
-├── config/                 # settings.toml, models.toml, sources.toml
-├── docs/
-│   ├── architecture/       # Canonical specs, decisions/ (ADRs), future_debt_study/, archive/
-│   ├── reports/, Bugs Hunt & fix reports/
-├── tests/
-```
+Move from a narrow completion capability toward a provider-neutral capability system. The target is a kernel that resolves capability contracts and schedules work without owning vendor-specific implementation details.
 
-Note: `core/cognitive/` and `core/memory/graph/` exist on disk but were missing from `PROJECT_INDEX.md`'s own directory tree prior to this pass — corrected there as part of this reconciliation.
+The intended model-provider strategy is:
 
-## Installation / Setup
+- Local model execution remains a first-class, independently usable path.
+- Adapters can target Ollama, llama.cpp-backed servers, compatible local inference servers, and custom local providers.
+- OpenAI-, Anthropic-, or other hosted services may be optional adapters, never mandatory infrastructure.
+- Model choice and reasoning effort can be policy-controlled (for example, low, medium, and maximum) without leaking provider-specific assumptions into the kernel.
+- Capability selection, fallback, and multi-model coordination must be visible, budgeted, governed, and measured.
 
-Verified from `pyproject.toml` (requires Python ≥3.11):
+### 4. Advance C-MoE after the kernel boundary is stable
 
-```bash
-pip install -e .
-```
+C-MoE is the planned adaptive cognitive runtime above the kernel, not a replacement for it. Its longer-term responsibilities include selecting and coordinating candidate capabilities, adapters, and specialist workers according to task needs, quality, latency, resource budgets, and governance policy.
 
-Optional extras exist for `training` (LoRA fine-tuning: torch, trl, peft, bitsandbytes) and `voice` (whisper, pyttsx3, sounddevice) — install with `pip install -e ".[training]"` / `".[voice]"` if needed.
+C-MoE remains research/design work. It must not be represented as shipped capability, and it must not absorb kernel responsibilities or weaken the provider-independent contract.
 
-## Running OCBrain
+### 5. Build verification as a distinct assurance system
 
-Two real entry points are declared in `pyproject.toml`:
+The Verification / Critic / Evidence system is a separate assurance workstream—not a C-MoE feature, a substitute for GovernanceKernel, or another name for evaluation. Its intended flow is:
 
-```bash
-ocbrain          # → interface.cli:cli
-ocbrain-start    # → main:main (the FastAPI server + scheduler)
-```
+\x60ASSERTION → OBSERVATION → EVIDENCE → VERIFICATION → VERDICT → GOVERNANCE\x60
 
-Default configuration (`config/settings.toml`) points at a local Ollama instance (`http://localhost:11434`) — Ollama running locally is assumed, not bundled.
+The target is deterministic-first verification with provenance, immutable evidence receipts, explicit assurance levels, and clear handling of FAILED, UNVERIFIABLE, and PASS. It should integrate with execution through explicit contracts while remaining independently testable. The current Phase C branch is not production integration.
 
-## Running Tests
+### 6. Expand the cognitive and application ecosystem
 
-```bash
+Once the contracts and controls are proven, OCBrain can grow toward:
+
+- Specialist workers for coding, browser research, evaluation, reflection, and memory curation.
+- Versioned skills, tools, workflows, and adapters with explicit schemas and isolated execution.
+- Rich task observability, replay, and a Studio that represents live execution state rather than presenting a decorative workflow view.
+- Governed long-term learning and memory consolidation, preserving provenance and user control.
+- Multi-node or fleet execution only after identity, authorization, audit, quotas, and isolation work is complete.
+
+The guiding rule is that expansion follows trustworthiness: **new autonomy is earned through evidence, not assumed from model capability.**
+
+---
+
+## Installation and development
+
+The package declares Python **3.11 or newer**.
+
+Install the project and development/test dependencies:
+
+\x60\x60\x60bash
+python -m venv .venv
+# Activate the virtual environment, then:
+python -m pip install -e ".[dev]"
+\x60\x60\x60
+
+Optional extras are defined for training and voice features:
+
+\x60\x60\x60bash
+python -m pip install -e ".[training]"
+python -m pip install -e ".[voice]"
+\x60\x60\x60
+
+The package exposes two entry points:
+
+- \x60ocbrain\x60 — command-line interface.
+- \x60ocbrain-start\x60 — main service entry point.
+
+Review \x60config/settings.toml\x60 and the selected model/provider configuration before starting the service. OCBrain does not bundle a model server; local inference must be supplied by a configured local provider.
+
+Run the test suite with:
+
+\x60\x60\x60bash
 pytest tests/ -q
-```
+\x60\x60\x60
 
-1365 tests collected; 1331 pass in an offline sandbox. The remaining 34 require downloading a sentence-transformer embedding model from HuggingFace Hub and will fail without that network access — this is environment-dependent, not a code defect, and matches the count this project has tracked consistently since July 2026.
+Some tests exercise model and embedding paths that may require model artifacts, provider configuration, or network access. Record the exact commit, environment, and raw test result when reporting failures. Do not classify an environment-dependent failure as a code defect—or as harmless—without reproducing and documenting its cause.
 
-## Configuration
+## Engineering workflow and source of truth
 
-Three tracked TOML files in `config/`: `settings.toml` (runtime flags, e.g. `use_k42_frontend`), `models.toml`, `sources.toml`. Note: the full test suite currently has a side effect of rewriting `models.toml`/`sources.toml` in place (DEBT-012) — `git checkout -- config/models.toml config/sources.toml` afterward if you see a spurious diff. Two more config files exist and were not investigated this pass: `settings.yaml` and `user_prefs.yaml` — their relationship to the TOML files (superseded, complementary, or read by the un-audited orchestrator pipeline specifically) is unknown.
+Before changing code, inspect the exact live main SHA, relevant branches and PRs, current tests, and the known-issues register. Reconcile against code and evidence; do not let an old document override live behavior.
 
-## Development Workflow
+Use these records for different purposes:
 
-Governing rules live in `docs/architecture/PROJECT_INSTRUCTIONS.md` (a stub at the repository root points here). It is explicitly subordinate to the Kernel Constitution and `KERNEL_ARCHITECTURE_v1.0.md` — see `PROJECT_INDEX.md` for the full document authority order. Before starting new work, that project's own convention is: check `CURRENT_STATE.md` for what's built, `IMPLEMENTATION_ROADMAP.md` for what's next, and `KNOWN_ISSUES.md` for what's already known to be broken or deferred, before doing repository-wide exploration.
+- [Kernel Constitution](OCBRAIN_KERNEL_CONSTITUTION.md) — constitutional direction; its current status is **Draft, not Final**.
+- [Kernel Architecture v1.0](docs/architecture/KERNEL_ARCHITECTURE_v1.0.md) — kernel engineering specification. A specification baseline is not the same as approval to freeze the current implementation.
+- [Project Instructions](docs/architecture/PROJECT_INSTRUCTIONS.md) — operational engineering rules.
+- [Current State](CURRENT_STATE.md) — current implementation and merge-state snapshot.
+- [Known Issues](KNOWN_ISSUES.md) — debt, unresolved findings, and explicit deferrals.
+- [Debt / Branch Ownership Register](docs/engineering/DEBT_BRANCH_OWNERSHIP_REGISTER_2026-11-02.md) — the November 2 inventory of branches, open PRs, ownership, and per-workstream dispositions.
+- [Implementation Roadmap](IMPLEMENTATION_ROADMAP.md) — historical planning material that was last synchronized on September 13, 2026; reconcile it with the November 2 state before treating it as the live execution queue.
+- [Product Definition](PRODUCT.md) — product principles and target boundaries.
 
-## Known Limitations
+A PR is a proposal until merged. A green CI run is evidence for the checks it actually ran, not proof that every requirement is satisfied. A debt is closed only when its acceptance criteria are met and the closure is recorded against the relevant merged baseline. Keep one canonical review target per work item; preserve competing branches until an explicit cleanup decision is made.
 
-- **This reconciliation's biggest gap: an entire foundational request pipeline was found late and not fully audited.** Three prior passes of this documentation effort read `core/cognitive/`, `core/workflow/`, `core/governance/`, `core/capabilities/`, `core/workers/`, and `core/memory/unified_memory.py` in real depth, but used directory-only searches (`find core -maxdepth 2 -type d`) that never surfaced the ~16 files sitting directly in `core/` itself — `orchestrator.py` (the actual method every request goes through), `orchestrator_v3.py`, `classifier.py`, `classifier_v3.py`, `parser.py`, `decomposer.py`, `dispatcher.py`, `merger.py`, `module_registry.py`, `module_factory.py`, `brain_api.py`, `brain_export.py`, `brain_version.py`, `migrator.py`, `privacy.py`, `config.py`, `context.py` — nor the older memory stores (`cognitive_vault.py`, `mem_vault.py`, `hybrid_retrieval.py`, `dedup.py`) or `core/meta/`. These were confirmed live (imported directly by `main.py` and `interface/api.py`, not orphaned), and the K4.2 front-end is confirmed to be the default path (`use_k42_frontend = true`), but the fallback pipeline's own correctness, governance coverage, and relationship to `modules/` deserves the same file-by-file rigor the K-milestone system got, not the same-day patch this pass could give it. Treat everything in this README about `core/orchestrator.py` and its dependencies as provisional until that happens — everything else in this document was independently verified against source and a live test run.
+## License
 
-- **Version identifiers disagree.** `version.txt` says `2.1.1`; `pyproject.toml` says `2.0.0`; the current branch/export is named `v4.1`. Worth the project picking one canonical version and propagating it.
-- **Two parallel work-tracking conventions coexist.** Most status documentation uses the "K" milestone numbering (K1, K2.x, K3, K4.2.x...). Some real, live, well-integrated code — including the graph memory index — is instead attributed to an informal "Session N" numbering in code comments (Session 4 through at least Session 5.25) that isn't cross-referenced from `CURRENT_STATE.md`, `IMPLEMENTATION_ROADMAP.md`, or `KNOWN_ISSUES.md`. This is almost certainly why graph memory reads as more "hidden" than it is — it's live and tested (`tests/test_graph.py`, `test_graph_indexer.py`, `test_graphrag.py`), just tracked in a different system than the one the milestone docs use.
-- **`PROJECT_INDEX.md`'s own Report Chronology table admits a gap** since ~July 2026 (several K3/K4/K4.1/K4.2 reports aren't listed) — flagged in that file already, not fixed here as it's outside this pass's scope.
-- **This reconciliation pass had no git history** (the reviewed copy had no `.git`), so claims that ultimately trace back to a commit hash (e.g. `7ca7f35`, `a6b012e`) were verified against the source tree and test suite where possible, but not against `git log` directly.
-- The PROJECT_INSTRUCTIONS.md distributed outside this repository (e.g. pasted into a chat session) differs slightly from the in-repo copy at `docs/architecture/PROJECT_INSTRUCTIONS.md` — notably a precedence statement present in-repo but not in at least one external copy seen. Treat the in-repo copy as canonical.
-
-## Next Development Steps
-
-In the order the evidence actually supports:
-
-1. Close the 2 Kernel v1.0 pre-freeze blockers (owner decision required on both).
-2. Reconcile DEBT-011 (`ContentDomain` vs. `LearningCandidate`) before extending `ContentDomain` further.
-3. Decide the "K4.4" naming question (informal vs. official) so `IMPLEMENTATION_ROADMAP.md` and `KNOWN_ISSUES.md` stop disagreeing with each other.
-4. Continue C-MoE research; do not begin implementation or assign it a milestone number until a transition plan (a "K4.4→next" equivalent of the K4.3 document) exists and is approved.
-5. Only after the above: the Documentation Infrastructure Phase described in `PROJECT_INSTRUCTIONS.md` §18.5 (this pass covers much of its intent for `README.md`, `PROJECT_INDEX.md`, `KNOWN_ISSUES.md`; `ARCHITECTURE_DECISIONS.md` and `MEMORY_ARCHITECTURE.md` as unified files still don't exist — `docs/architecture/decisions/` + `ADR_INDEX.md` currently cover the former function in a different shape).
-
-## Architecture Principles
-
-From `docs/architecture/PROJECT_INSTRUCTIONS.md`, in priority order when they conflict:
-
-```
-Governance → Replayability → Isolation → Observability →
-Reliability → Determinism → Extensibility → Performance → UX
-```
-
-## Research / Future Directions
-
-`docs/architecture/future_debt_study/` contains architecture studies — not implementations — covering C-MoE-style adaptive cognitive scaling and durable-execution patterns (Temporal/LangGraph/Restate-inspired). These exist to inform future ADRs before any code is written, per this project's own Architecture Freeze Principle.
-
----
-
-*This file was rebuilt from repository evidence (source tree, test run, and the project's own status documents) rather than patched. Where a claim above conflicts with a newer commit, `CURRENT_STATE.md` wins — see `PROJECT_INDEX.md` for the full authority order.*
+OCBrain is distributed under the MIT license. See [LICENSE](LICENSE).
