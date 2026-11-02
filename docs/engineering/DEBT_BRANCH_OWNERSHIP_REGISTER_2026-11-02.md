@@ -2,14 +2,14 @@
 
 **Snapshot time:** 2026-11-02 (GitHub API snapshot)
 **Canonical baseline:** `main` @ `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (merge PR #106)
-**Inventory:** 111 remote branches; 19 open PRs; 3 open non-PR issues.
+**Inventory:** 111 remote branches; 20 open PRs (19 pre-existing plus this PR #108); 3 open non-PR issues.
 **Inventory timing:** branch names and heads were read before the three documentation commits on this reconciliation branch; its inventory row records the branch's creation ref (`2491ae46`) rather than the later self-modifying tip. All other refs are the read-time branch heads.
 **Purpose:** one operational map of debt status, active review targets, preserved work and ownership gaps. This is a documentation/governance record, not implementation authorization.
 
 ## 1. Ownership rules
 
 1. **Main is the only implementation baseline.** A branch, green CI run, PR description or local review report does not constitute merged product behavior.
-2. **PR author is provenance, not owner assignment.** GitHub showed zero assignees on all 19 open PRs in this snapshot. Most implementation PRs were authored by `1h0lde4`; that does not, by itself, assign implementation ownership.
+2. **PR author is provenance, not owner assignment.** GitHub showed zero assignees on all 20 open PRs in this snapshot. Most implementation PRs were authored by `1h0lde4`; that does not, by itself, assign implementation ownership.
 3. **No inference from branch names or last committers.** An unassigned branch remains UNASSIGNED until an explicit person is named in the PR/issue or this register.
 4. **One canonical implementation candidate per debt.** Parallel repair branches are preserved but cannot all be treated as active. Select one exact head, owner and review target before new work proceeds.
 5. **Decision owner and implementation owner are distinct.** The repository owner is the decision authority for owner-level design choices. Implementation ownership remains UNASSIGNED where no explicit assignment exists.
@@ -39,9 +39,10 @@
 
 ## 3. Open PR inventory and disposition
 
-All listed PRs were open at snapshot time. Assignees were empty in GitHub for every PR. Exact-head check states are included only where read in this pass; checks are not human review.
+All 20 listed PRs were open after PR #108 was created. Assignees were empty in GitHub for every PR. The 19 pre-existing PRs were checked first; #108 is this documentation reconciliation PR. Exact-head check states are included only where read in this pass; checks are not human review.
 
 | PR | Head / base | Current disposition | Owner / review |
+| #108 | `docs/debt-register-live-reconciliation-nov2026` → main | DRAFT documentation reconciliation; 5 commits ahead / 0 behind; three documentation files only; no product changes | Author `1h0lde4`; no assignee or independent review |
 |---|---|---|---|
 | #107 | `fix/ci-gate-r1a-hardening-oct2026` → main | DRAFT; diagnostic CI only; NOT FOR MERGE; original Batch 1 attestation NOT APPROVED | Author `1h0lde4`; no assignee or human review |
 | #103 | `architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026` → main | Architecture proposal, not a debt fix; 1 ahead / 37 behind | Author `1h0lde4`; no assignee |
