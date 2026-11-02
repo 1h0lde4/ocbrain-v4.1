@@ -172,6 +172,10 @@ The longer-term direction includes:
 - Adaptive Learning that can improve routing policies, memory organization, and strategy selection only through explicit validation and promotion gates.
 - Capability and skill evolution with versioning, provenance, review, rollback, and user approval where appropriate.
 - A user cognitive model that records confidence and provenance tiers rather than treating inferred preferences as explicit instructions.
+- An explicit **self-model** of OCBrain's own architecture, approved decisions, requirements, available capabilities, compatibility, operational health, and known limitations. This supports diagnostics and honest capability awareness; it is not a claim of consciousness or a source of authority.
+- **Decision Memory** that preserves the context, alternatives, selected decision, rationale, confidence, and timestamp separately from ordinary factual knowledge.
+- A grounded **world/state model** that represents observed entities, relationships, and changes with provenance, while distinguishing observations, hypotheses, decisions, and verified facts.
+- Passive detection of recurring workflow patterns and opportunities for improvement. The longer-term Fable/proactive-optimization direction should initially produce explainable suggestions; autonomous initiation of consequential work requires a separate governance design and explicit user control.
 
 The first C-MoE routing policy should use measured evidence with a controlled, reviewable policy—not online self-training or an opaque learned router. Learning new routing behavior is a distinct future capability. It should be introduced only after the evidence pipeline, evaluation criteria, promotion gates, and rollback behavior are proven.
 
@@ -217,6 +221,9 @@ The goal is not simply to make one language model larger, connect many models, o
 - **Reliable agency:** act through controlled permissions, recover from interruptions, respect user changes, and seek approval before consequential actions.
 - **Independent assurance:** verify important claims and outcomes with evidence rather than relying on the system's own confidence or self-report.
 - **Measured adaptation:** learn from outcomes through evaluated, reversible promotion—not uncontrolled self-modification.
+- **Metacognitive awareness:** maintain an evidence-backed account of its own capabilities, limitations, resource state, confidence, and operational health, so it can choose when to act, when to seek expertise, and when to abstain.
+- **World understanding:** build and update a grounded model of relevant environments and causal relationships from observations and verified memory, rather than treating retrieved text as unquestioned reality.
+- **Decision continuity:** remember why significant decisions were made, what alternatives were considered, what evidence supported them, and what later events should cause reconsideration.
 
 C-MoE is a central enabling layer in this direction because it coordinates *which expertise is used, when, and how the work adapts*. It is not AGI by itself, does not create missing expert capability, and cannot compensate for weak foundation models, poor tools, ungrounded memory, or absent verification. The broader system also needs robust planning, durable execution, memory, world/reality grounding, evaluation, learning, and alignment with the user's authorized goals.
 
