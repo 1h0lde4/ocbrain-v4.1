@@ -578,3 +578,52 @@ def test_matcher_only_matches_the_call_phase() -> None:
     assert gate._matches_class({"when": "call", "chain": chain}, pol) == "test_net"
     for when in ("setup", "teardown"):
         assert gate._matches_class({"when": when, "chain": chain}, pol) is None
+
+
+# ------------------------------------------------ CI annotations (diagnostics without log access)
+
+def _gate_env(tmp: Path, rc: int, out: str, rep: Path, allow: list[str], policy: Path, **env: str) -> str:
+    (tmp / "out.txt").write_text(out, encoding="utf-8")
+    (tmp / "rc.txt").write_text(f"{rc}\n", encoding="utf-8")
+    (tmp / "allow.txt").write_text("\n".join(allow) + "\n", encoding="utf-8")
+    base = {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS"}
+    p = subprocess.run([sys.executable, str(GATE), "--output", str(tmp / "out.txt"), "--exit-code-file", str(tmp / "rc.txt"),
+                        "--allowlist", str(tmp / "allow.txt"), "--report", str(rep), "--signature-policy", str(policy)],
+                       capture_output=True, text=True, env={**base, **env})
+    return p.stdout
+
+
+def test_annotations_only_in_github_actions_and_carry_reason_and_chain(tmp_path: Path) -> None:
+    rc, out, rep = run_pytest(tmp_path, {"test_t.py": LISTED_NET})
+    pol = write_policy(tmp_path, {**TEST_POLICY, "status": "PROPOSED", "decision_ref": None})
+    plain = _gate_env(tmp_path, rc, out, rep, ["test_t.py::test_env"], pol)
+    assert "::error" not in plain and "::warning" not in plain
+    gh = _gate_env(tmp_path, rc, out, rep, ["test_t.py::test_env"], pol, GITHUB_ACTIONS="true")
+    lines = [ln for ln in gh.splitlines() if ln.startswith("::")]
+    assert any(ln.startswith("::error title=R-1 test gate::") and "cannot excuse" in ln for ln in lines), gh
+    assert any(ln.startswith("::warning") and "builtins.ConnectionError" in ln and "huggingface.co" in ln for ln in lines), gh
+    assert len(lines) <= 10 and all("\n" not in ln for ln in lines)
+
+
+def test_annotations_cover_red_verdicts_without_failures_too(tmp_path: Path) -> None:
+    rc, out, rep = run_pytest(tmp_path, {"test_t.py": PASSING})
+    rep.write_text("{ not json")
+    gh = _gate_env(tmp_path, rc, out, rep, [], write_policy(tmp_path, TEST_POLICY), GITHUB_ACTIONS="true")
+    assert any(ln.startswith("::error") and "report missing or unreadable" in ln for ln in gh.splitlines()), gh
+
+
+def test_annotation_escaping_and_limit() -> None:
+    line = gate._annotation("error", "a,b:c", "x\ny%z\r")
+    assert line == "::error title=a%2Cb%3Ac::x%0Ay%25z%0D"
+    v = gate.Verdict(ok=False, reasons=[f"r{i}" for i in range(30)])
+    assert len(gate._github_annotations(v, None)) == 6
+
+
+def test_annotation_count_is_capped_with_many_failures(tmp_path: Path) -> None:
+    body = PASSING + "".join(f"def test_f{i}():\n    {NET}\n" for i in range(12))
+    rc, out, rep = run_pytest(tmp_path, {"test_t.py": body})
+    pol = write_policy(tmp_path, {**TEST_POLICY, "status": "PROPOSED", "decision_ref": None})
+    gh = _gate_env(tmp_path, rc, out, rep, [f"test_t.py::test_f{i}" for i in range(12)], pol, GITHUB_ACTIONS="true")
+    lines = [ln for ln in gh.splitlines() if ln.startswith(("::error", "::warning"))]
+    assert 6 <= len(lines) <= 10, len(lines)
+    assert sum(ln.startswith("::warning") for ln in lines) >= 1, "chains must still be shown after the reasons"

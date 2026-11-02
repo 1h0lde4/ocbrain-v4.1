@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -478,6 +479,31 @@ def _print_chains(report: object, ids: list[str]) -> None:
                 print(f"    {exc.get('type')}{extra}: {str(exc.get('message'))[:160]!r}")
 
 
+def _annotation(level: str, title: str, message: str) -> str:
+    """One GitHub workflow command line (escaped per the documented rules)."""
+    esc = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    t = title.replace("%", "%25").replace(",", "%2C").replace(":", "%3A").replace("\n", " ")
+    return f"::{level} title={t}::{esc[:900]}"
+
+
+def _github_annotations(v: Verdict, report: object, limit: int = 10) -> list[str]:
+    """Annotations (shown on the check run, readable through the API without log access) for a red
+    verdict: the failure reasons first, then the first exception of each failure's chain.  Only
+    already-computed, already-redacted data is used; this adds no authority and excuses nothing."""
+    out = [_annotation("error", "R-1 test gate", r) for r in v.reasons[:6]]
+    if isinstance(report, dict) and isinstance(report.get("records"), list):
+        for r in report["records"]:
+            if len(out) >= limit:
+                break
+            if (isinstance(r, dict) and r.get("nodeid") in v.new_failures and r.get("when") == "call"
+                    and isinstance(r.get("chain"), list) and r["chain"] and isinstance(r["chain"][0], dict)):
+                exc = r["chain"][0]
+                extra = "".join(f" {k}={exc[k]}" for k in ("errno", "http_status") if k in exc)
+                out.append(_annotation("warning", "R-1 chain " + str(r["nodeid"])[:60],
+                                       f"{r['nodeid']}: {exc.get('type')}{extra}: {str(exc.get('message'))[:200]}"))
+    return out
+
+
 def _read_text_raw(path: Path) -> str:
     """Read without newline translation (CR is preserved; see parse_allowlist)."""
     return path.read_bytes().decode("utf-8", errors="replace")
@@ -515,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
         output = ""
     exit_code = _read_exit_code(a.exit_code_file)
 
+    rep: object = None
     if a.report:
         try:
             policy = load_policy(_read_text_raw(a.signature_policy))
@@ -550,6 +577,9 @@ def main(argv: list[str] | None = None) -> int:
         for r in v.reasons:
             print(f"  - {r}")
         print("=" * 58)
+        if a.report and os.environ.get("GITHUB_ACTIONS") == "true":
+            for line in _github_annotations(v, rep):
+                print(line)
         return 1
     print("Test gate passed: no unlisted failures, no errors, exit code acceptable.")
     return 0
