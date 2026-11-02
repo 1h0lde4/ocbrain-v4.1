@@ -9,10 +9,13 @@ prove logic only, and everything POSIX proves nothing about NTFS.
 It uses stdlib + interface.auth only (no third-party install) and drives the real
 `icacls` and `whoami`.  What it establishes, and what it does not:
 
-  establishes  the ACL that `icacls` reports for a token file created by
-               load_or_create_token(), rotate_token() and the frozen-build default
-               path is exactly one entry, for the current user, not inherited; and a
-               deliberately loosened ACL (Everyone: read) is repaired on the next load.
+  establishes  that a token file created by load_or_create_token(), rotate_token() and the
+               frozen-build default path grants access to no principal other than the
+               current user plus SYSTEM, Administrators and OWNER RIGHTS (which a file
+               cannot be kept from; a first CI run showed a new file already carries
+               them as explicit entries), seen two ways (icacls display names and SDDL
+               SIDs); and that a deliberately loosened ACL (Everyone and Users: read) is
+               repaired on the next load.
   does NOT     attempt a read as a second user: the ACL listing is the evidence, not a
                cross-account access test.
 
@@ -60,41 +63,31 @@ def run(*args: str) -> str:
     return res.stdout
 
 
-def aces(path: Path) -> list[str]:
-    return [ln for ln in run("icacls", str(path)).splitlines() if ":(" in ln]
+BROAD_NAMES = {"everyone", "builtin\\users", "nt authority\\authenticated users",
+               "nt authority\\interactive", "nt authority\\network", "builtin\\guests"}
 
 
-def experiment() -> None:
-    """Observe how icacls really behaves, on scratch files, before the real checks run.
+def principals(path: Path) -> list[str]:
+    """Principals named in `icacls <file>` (display names: an English runner is assumed here)."""
+    out = []
+    for ln in run("icacls", str(path)).splitlines():
+        if ":(" in ln:
+            head = ln.split(":(")[0]
+            out.append(head[len(str(path)):].strip() if head.startswith(str(path)) else head.strip())
+    return out
 
-    Output only (annotated): which recipe leaves exactly one entry on this runner?
-    """
-    sid = run("whoami", "/user", "/fo", "csv", "/nh").strip().split('","')[-1].strip('"')
-    tmp = Path(tempfile.mkdtemp(prefix="ocb-acl-exp-"))
-    variants = {
-        "V0 untouched new file": [],
-        "V1 /inheritance:r alone": [["/inheritance:r"]],
-        "V2 /inheritance:r then /grant:r": [["/inheritance:r"], ["/grant:r", f"*{sid}:(F)"]],
-        "V3 one call: /inheritance:r /grant:r (the recipe in interface/auth.py)": [["/inheritance:r", "/grant:r", f"*{sid}:(F)"]],
-        "V4 /grant:r then /inheritance:r": [["/grant:r", f"*{sid}:(F)"], ["/inheritance:r"]],
-        "V5 /inheritance:r /grant:r then /remove:g SYSTEM,Administrators": [["/inheritance:r", "/grant:r", f"*{sid}:(F)"], ["/remove:g", "*S-1-5-18", "*S-1-5-32-544"]],
-    }
-    try:
-        for i, (name, steps) in enumerate(variants.items()):
-            f = tmp / f"v{i}"
-            f.write_text("x")
-            for step in steps:
-                res = subprocess.run(["icacls", str(f), *step], capture_output=True, text=True, timeout=30)
-                if res.returncode != 0:
-                    say(f"  [{name}] icacls {' '.join(step)} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()[:160]}")
-            lst = [ln.strip() for ln in run("icacls", str(f)).splitlines() if ":(" in ln]
-            say(f"EXPERIMENT {name}: {len(lst)} entries")
-            for ln in lst:
-                say("    " + ln.replace(str(f), "<file>"))
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    annotate("notice", "icacls experiment (how icacls really behaves on this runner)",
-             "\n".join(line for line in LOG if line.startswith(("EXPERIMENT", "    ", "  ["))))
+
+def private(path: Path, sid: str, label: str) -> None:
+    """Two independent views of the same file: names from the listing, SIDs from SDDL."""
+    names = [p.lower() for p in principals(path)]
+    broad = [n for n in names if n in BROAD_NAMES]
+    check(f"{label}: no broad principal in the icacls listing", not broad, f"listing={names} broad={broad}")
+    check(f"{label}: the current user is in the listing", any(os.environ.get("USERNAME", "").lower() in n for n in names), f"listing={names}")
+    from interface import auth
+    trustees = auth._sddl_trustees(auth._windows_acl_sddl(path))
+    allowed = {"SY", "BA", "OW", sid} | ({"LA"} if sid.endswith("-500") else set())
+    check(f"{label}: SDDL trustees are only SYSTEM/Administrators/OWNER RIGHTS/the user", set(trustees) <= allowed, f"trustees={trustees}")
+    check(f"{label}: SDDL contains the current user", bool(set(trustees) & {sid, "LA"}), f"trustees={trustees}")
 
 
 def main() -> int:
@@ -104,11 +97,10 @@ def main() -> int:
 
     from interface import auth
 
-    experiment()
-    say(f"python {sys.version.split()[0]} on {sys.platform}; cwd={os.getcwd()}")
+    say(f"python {sys.version.split()[0]} on {sys.platform}")
     me = run("whoami").strip()
-    say(f"current user: {me}")
-    say(f"whoami /user: {run('whoami', '/user', '/fo', 'csv', '/nh').strip()}")
+    sid = auth._windows_current_sid()
+    say(f"current user: {me}  sid: {sid}")
     work = Path(tempfile.mkdtemp(prefix="ocb-acl-"))
     try:
         # 1. a freshly created token file
@@ -116,27 +108,24 @@ def main() -> int:
         os.environ.pop(auth.ENV_TOKEN, None)
         os.environ[auth.ENV_TOKEN_FILE] = str(path)
         token = auth.load_or_create_token()
-        listing = run("icacls", str(path))
-        say("icacls listing of the new file:")
-        say(listing.strip())
-        entries = aces(path)
-        check("new file: exactly one access entry", len(entries) == 1, f"{len(entries)} entries")
-        check("new file: the entry is the current user", len(entries) == 1 and me.split("\\")[-1].lower() in entries[0].lower(), entries[0] if entries else "")
-        check("new file: nothing inherited", not any("(I)" in e for e in entries), "; ".join(entries))
-        check("new file: full control for the owner", len(entries) == 1 and "(F)" in entries[0])
+        say("icacls listing of the new file:\n" + run("icacls", str(path)).strip())
+        private(path, sid, "new file")
 
-        # 2. a loosened ACL is repaired on the next load, and the token is unchanged
-        run("icacls", str(path), "/grant", "*S-1-1-0:(R)")  # Everyone: read
-        check("precondition: the ACL really was loosened", len(aces(path)) >= 2, f"{len(aces(path))} entries")
+        # 2. a loosened ACL (Everyone + Users: read) is repaired on the next load; the token is unchanged
+        run("icacls", str(path), "/grant", "*S-1-1-0:(R)", "*S-1-5-32-545:(R)")
+        loosened = [p.lower() for p in principals(path)]
+        check("precondition: the ACL really was loosened (Everyone and Users present)",
+              "everyone" in loosened and "builtin\\users" in loosened, f"listing={loosened}")
         auth.reset_cache_for_tests()
         again = auth.load_or_create_token()
-        check("loosened ACL repaired on load", len(aces(path)) == 1, f"{len(aces(path))} entries")
+        say("after repair:\n" + run("icacls", str(path)).strip())
+        private(path, sid, "after repair")
         check("token unchanged by the repair", again == token)
 
-        # 3. rotation keeps the restriction
+        # 3. rotation keeps it private and leaves nothing behind
         new, _ = auth.rotate_token()
         check("rotation: new token differs", new != token)
-        check("rotation: file still owner-only", len(aces(path)) == 1, f"{len(aces(path))} entries")
+        private(path, sid, "after rotation")
         check("rotation: no temp files left", [p.name for p in work.iterdir()] == ["api_token"], str([p.name for p in work.iterdir()]))
 
         # 4. the frozen-build default location (per-user LOCALAPPDATA directory)
@@ -148,12 +137,12 @@ def main() -> int:
             check("frozen default path was free for the test", False, f"{frozen} already exists; not touching it")
         else:
             sys.frozen = True  # type: ignore[attr-defined]
+            created_dir = not frozen.parent.exists()
             try:
-                created_dir = not frozen.parent.exists()
                 auth.reset_cache_for_tests()
                 auth.load_or_create_token()
                 check("frozen default: file created", frozen.exists(), str(frozen))
-                check("frozen default: owner-only ACL", len(aces(frozen)) == 1, f"{len(aces(frozen))} entries")
+                private(frozen, sid, "frozen default")
             finally:
                 del sys.frozen  # type: ignore[attr-defined]
                 if frozen.exists():

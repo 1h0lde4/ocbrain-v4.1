@@ -42,10 +42,13 @@ import logging
 import ntpath
 import os
 import posixpath
+import re
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -187,25 +190,77 @@ def _windows_current_sid() -> str:
     return fields[-1]
 
 
-def _windows_ace_count(listing: str) -> int:
-    """Number of access-control entries in ``icacls <file>`` output."""
-    return sum(1 for line in listing.splitlines() if ":(" in line)
+# SDDL trustee codes that may appear in the token file's ACL.  SYSTEM, Administrators and
+# OWNER RIGHTS cannot be kept out of a file (administrators can take ownership), so they
+# are not "other principals"; the invariant is that nobody else is granted anything.
+_WINDOWS_ALWAYS_ALLOWED_TRUSTEES = frozenset({"SY", "BA", "OW"})
+_WINDOWS_TRUSTEE_NAMES = {
+    "WD": "Everyone", "BU": "BUILTIN\\Users", "AU": "Authenticated Users", "IU": "Interactive",
+    "AN": "Anonymous", "BG": "BUILTIN\\Guests", "S-1-5-32-546": "BUILTIN\\Guests", "NU": "Network",
+    "CO": "Creator Owner", "PU": "Power Users", "RC": "Restricted Code",
+}
+
+
+def _windows_acl_sddl(path: Path) -> str:
+    """The file's DACL as SDDL (SIDs, so independent of the Windows display language)."""
+    workdir = tempfile.mkdtemp(prefix="ocb-sddl-")
+    out = os.path.join(workdir, "acl.txt")
+    try:
+        res = _run_tool(["icacls", str(path), "/save", out])
+        if res.returncode != 0 or not os.path.exists(out):
+            raise AuthConfigError(f"could not read the ACL of {path} (icacls /save exit {res.returncode})")
+        raw = open(out, "rb").read()
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    for encoding in ("utf-16", "utf-8"):  # icacls writes UTF-16 with a BOM
+        try:
+            return raw.decode(encoding)
+        except UnicodeError:
+            continue
+    return raw.decode("latin-1")
+
+
+def _sddl_trustees(sddl: str) -> list[str]:
+    """Trustees of the *allow* entries in the DACL: ['SY', 'BA', 'S-1-5-21-...', ...]."""
+    dacl = re.search(r"D:[A-Z]*((?:\([^()]*\))+)", sddl)
+    if dacl is None:
+        raise AuthConfigError("could not parse the ACL of the token file (no DACL found)")
+    trustees = []
+    for ace in re.findall(r"\(([^()]*)\)", dacl.group(1)):
+        fields = ace.split(";")
+        if len(fields) >= 6 and fields[0] in ("A", "OA"):
+            trustees.append(fields[5])
+    return trustees
 
 
 def _restrict_to_owner_windows(path: Path) -> None:
-    """Owner-only ACL: drop inherited entries, grant the current user full control,
-    then verify that exactly one entry remains.  Raises AuthConfigError otherwise."""
+    """Grant the current user full control, drop inherited entries, then verify that no
+    OTHER principal (Everyone, Users, Authenticated Users, another account, ...) has access.
+
+    SYSTEM, Administrators and OWNER RIGHTS stay: they cannot be excluded in practice, and
+    on a freshly created file they are explicit entries that /inheritance:r does not touch.
+    Raises AuthConfigError if anything else remains.
+    """
     sid = _windows_current_sid()
-    res = _run_tool(["icacls", str(path), "/inheritance:r", "/grant:r", f"*{sid}:(F)"])
-    if res.returncode != 0:
-        raise AuthConfigError(f"could not restrict {path} to the current user (icacls exit {res.returncode})")
-    listing = _run_tool(["icacls", str(path)])
-    count = _windows_ace_count(listing.stdout)
-    if listing.returncode != 0 or count != 1:
-        shown = " | ".join(ln.strip() for ln in listing.stdout.splitlines() if ":(" in ln)[:600]
+    # /reset first: /grant:r only replaces the entry for the named SID, so an explicit entry for
+    # another principal (e.g. "Everyone: read" added later) would otherwise survive.  Then drop the
+    # inherited entries and grant the current user.
+    for step in (["/reset"], ["/inheritance:r"], ["/grant:r", f"*{sid}:(F)"]):
+        res = _run_tool(["icacls", str(path), *step])
+        if res.returncode != 0:
+            raise AuthConfigError(
+                f"could not restrict {path} to the current user (icacls {step[0]} exit {res.returncode})")
+    trustees = _sddl_trustees(_windows_acl_sddl(path))
+    allowed = set(_WINDOWS_ALWAYS_ALLOWED_TRUSTEES) | {sid}
+    if sid.endswith("-500"):  # SDDL prints the built-in Administrator account as "LA"
+        allowed.add("LA")
+    extra = sorted(set(trustees) - allowed)
+    if extra or not (set(trustees) & ({sid} | ({"LA"} if sid.endswith("-500") else set()))):
+        named = ", ".join(_WINDOWS_TRUSTEE_NAMES.get(t, t) for t in extra) or "none"
         raise AuthConfigError(
-            f"API token file {path} still has {count} access entries after restriction ({shown}); "
-            "delete it (a new owner-only file is created on the next start)."
+            f"API token file {path} is not private after restriction: other principals with access: {named}; "
+            f"current user present: {bool(set(trustees) & {sid, 'LA'})}. "
+            "Delete it (a new private file is created on the next start)."
         )
 
 

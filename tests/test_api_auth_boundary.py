@@ -806,27 +806,31 @@ class TestFrozenBuildTokenLocation:
 
 
 class TestWindowsAclLogic:
-    """Logic only, with a stubbed icacls.  The real ACL is validated by the Windows CI job
-    (scripts/check_token_acl_windows.py), not here: nothing in this class is Windows evidence."""
+    """Logic only, with stubbed icacls and a stubbed SDDL read.  The real ACL is validated by the
+    Windows CI job (scripts/check_token_acl_windows.py), not here: nothing in this class is Windows
+    evidence.  (That job is what showed that a new file on Windows already carries explicit SYSTEM,
+    Administrators and OWNER RIGHTS entries, so the invariant is "no OTHER principal", not "one entry".)"""
 
     SID = "S-1-5-21-111-222-333-1001"
+    ADMIN_SID = "S-1-5-21-111-222-333-500"
+    DEFAULT = "D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;OW)(A;;FA;;;{sid})"
 
     @pytest.fixture
     def win(self, monkeypatch, tmp_path):
         calls: list[list[str]] = []
-        state = {"aces": 1, "icacls_rc": 0, "whoami": f'"HOST\\\\user","{self.SID}"'}
+        state = {"sid": self.SID, "sddl": None, "icacls_rc": 0, "whoami": None}
 
         def fake(args):
             calls.append(list(args))
             if args[0] == "whoami":
-                return subprocess.CompletedProcess(args, 0, state["whoami"] + "\n", "")
-            if len(args) == 2:  # icacls <file>: listing
-                body = "".join(f"    HOST\\user:(F)\n" for _ in range(state["aces"]))
-                return subprocess.CompletedProcess(args, 0, f"{args[1]} {body.strip()}\n\nSuccessfully processed 1 files\n", "")
+                out = state["whoami"] if state["whoami"] is not None else f'"HOST\\\\user","{state["sid"]}"'
+                return subprocess.CompletedProcess(args, 0, out + "\n", "")
             return subprocess.CompletedProcess(args, state["icacls_rc"], "", "")
 
         monkeypatch.setattr(auth, "_IS_WINDOWS", True)
         monkeypatch.setattr(auth, "_run_tool", fake)
+        monkeypatch.setattr(auth, "_windows_acl_sddl",
+                            lambda path: state["sddl"] if state["sddl"] is not None else self.DEFAULT.format(sid=state["sid"]))
         monkeypatch.delenv(auth.ENV_TOKEN, raising=False)
         monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(tmp_path / "api_token"))
         return calls, state
@@ -834,26 +838,55 @@ class TestWindowsAclLogic:
     def test_new_file_is_restricted_to_the_current_sid(self, win):
         calls, _ = win
         auth.load_or_create_token()
-        grant = [c for c in calls if c[0] == "icacls" and "/grant:r" in c]
-        assert grant and grant[0][2:] == ["/inheritance:r", "/grant:r", f"*{self.SID}:(F)"]
+        steps = [c[2:] for c in calls if c[0] == "icacls" and c[2:3] != ["/save"]]
+        assert steps[:3] == [["/reset"], ["/inheritance:r"], ["/grant:r", f"*{self.SID}:(F)"]]
 
-    def test_existing_file_is_re_restricted_on_every_load(self, win, tmp_path):
+    def test_existing_file_is_re_restricted_on_every_load(self, win):
         calls, _ = win
         auth.load_or_create_token()
         n = sum(1 for c in calls if "/grant:r" in c)
         auth.load_or_create_token()
         assert sum(1 for c in calls if "/grant:r" in c) == n + 1
 
-    def test_leftover_extra_entries_fail_closed(self, win):
+    def test_the_default_windows_entries_are_accepted(self, win):
+        auth.load_or_create_token()   # SYSTEM, Administrators, OWNER RIGHTS and the user: what a real file has
+
+    @pytest.mark.parametrize("extra,named", [
+        ("WD", "Everyone"), ("BU", "BUILTIN\\Users"), ("AU", "Authenticated Users"), ("S-1-5-21-9-9-9-1002", "S-1-5-21-9-9-9-1002")])
+    def test_any_other_principal_fails_closed_and_is_named(self, win, extra, named):
         _, state = win
-        state["aces"] = 3
-        with pytest.raises(auth.AuthConfigError, match="3 access entries"):
+        state["sddl"] = self.DEFAULT.format(sid=self.SID) + f"(A;;0x1200a9;;;{extra})"
+        with pytest.raises(auth.AuthConfigError, match="other principals") as exc:
+            auth.load_or_create_token()
+        assert named in str(exc.value)
+
+    def test_deny_entries_do_not_count_as_access(self, win):
+        _, state = win
+        state["sddl"] = self.DEFAULT.format(sid=self.SID) + "(D;;FA;;;WD)"
+        auth.load_or_create_token()
+
+    def test_the_current_user_must_be_present(self, win):
+        _, state = win
+        state["sddl"] = "D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;OW)"
+        with pytest.raises(auth.AuthConfigError, match="current user present: False"):
+            auth.load_or_create_token()
+
+    def test_the_builtin_administrator_account_prints_as_LA(self, win):
+        _, state = win
+        state["sid"] = self.ADMIN_SID
+        state["sddl"] = "D:PAI(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;OW)(A;;FA;;;LA)"
+        auth.load_or_create_token()
+
+    def test_LA_is_not_accepted_for_an_ordinary_account(self, win):
+        _, state = win
+        state["sddl"] = self.DEFAULT.format(sid=self.SID) + "(A;;FA;;;LA)"
+        with pytest.raises(auth.AuthConfigError, match="other principals"):
             auth.load_or_create_token()
 
     def test_icacls_failure_fails_closed(self, win):
         _, state = win
         state["icacls_rc"] = 5
-        with pytest.raises(auth.AuthConfigError, match="icacls exit 5"):
+        with pytest.raises(auth.AuthConfigError, match="icacls /reset exit 5"):
             auth.load_or_create_token()
 
     def test_unparseable_whoami_fails_closed(self, win):
@@ -861,6 +894,16 @@ class TestWindowsAclLogic:
         state["whoami"] = "garbage"
         with pytest.raises(auth.AuthConfigError, match="SID"):
             auth.load_or_create_token()
+
+    def test_unparseable_acl_fails_closed(self, win):
+        _, state = win
+        state["sddl"] = "nothing useful here"
+        with pytest.raises(auth.AuthConfigError, match="DACL"):
+            auth.load_or_create_token()
+
+    def test_sddl_parsing_reads_only_allow_entries_and_the_dacl(self):
+        sddl = "name\nD:PAI(A;;FA;;;SY)(D;;FA;;;BU)(OA;;CC;;;S-1-5-21-1-2-3-1001)S:AI(AU;SA;FA;;;WD)\n"
+        assert auth._sddl_trustees(sddl) == ["SY", "S-1-5-21-1-2-3-1001"]
 
 
 class TestSymlinkedTokenFile:
