@@ -95,72 +95,119 @@ The architectural direction is provider-independent. The current capability regi
 
 ---
 
-## Future direction
+## Architecture evolution and long-term vision
 
-The sequence below describes the **intended engineering direction**, not a set of approved implementation tickets. Each work package still requires a current-main baseline, a named owner, explicit scope, independent evidence, and the relevant design decisions.
+The long-term direction is deliberately layered. OCBrain should become a dependable substrate for increasingly general cognitive systems, while preserving a small, stable, governed kernel. New intelligence belongs in replaceable capabilities, experts, and cognitive runtimes—not as uncontrolled complexity inside the kernel.
 
-### 1. Complete the kernel audit and establish a trustworthy freeze boundary
+The progression below is a strategic architecture direction, not an authorization to start every workstream. The current Constitution, Kernel freeze gates, approved ADRs, and owner decisions continue to control implementation.
 
-Resolve the current freeze blockers and high-severity correctness gaps before expanding autonomy. This includes:
+### Stage 0 — Complete and freeze the trustworthy kernel
 
-- Agreeing and implementing explicit workflow/API terminal-result and failure semantics.
-- Completing cancellation propagation across workers, workflows, providers, shutdown, and client disconnects.
-- Establishing joinable operation, attempt, workflow, and capability identities.
-- Resolving bounded lifecycle and retention for execution registries and durable events without weakening audit requirements.
-- Closing the G4 search-correctness workstream through the owner's decision and evidence gates.
-- Rechecking API authentication and authorization, sandbox boundaries, test isolation, and dependency/security decisions.
-- Running a fresh, immutable-baseline freeze audit. A freeze verdict must be based on the exact final main SHA and its evidence.
+This is the current priority. The kernel must become a dependable substrate before more autonomous cognitive machinery is layered on top of it.
 
-### 2. Strengthen execution reliability and recovery
+The critical work includes:
 
-Build on the existing workflow and execution runtimes with coherent contracts for:
+- Resolve the currently open freeze-blocking correctness and authority decisions, including G4 and the FZ-01/FZ-02/FZ-05/FZ-06 residuals.
+- Establish consistent terminal outcomes, typed failures, cancellation propagation, operation/attempt identity, idempotency, and durable recovery.
+- Close the execution-isolation, memory-authority, authentication/authorization, and bounded-resource gaps that would become more dangerous as autonomy grows.
+- Make events, state transitions, and execution lineage sufficiently durable and inspectable to explain what happened and why.
+- Perform a fresh freeze audit against one exact main SHA. A historical audit, an architecture document, or green CI alone is not a freeze verdict.
 
-- Typed terminal outcomes, partial results, retries, deadlines, and cancellation.
-- Stable operation and attempt identity, idempotency, and side-effect tracking.
-- Durable checkpoint/resume and crash recovery, with clear event-retention and replay rules.
-- Measured resource budgets and enforceable limits—not counters that exist only as configuration.
-- Cross-process coordination where deployment topology requires it.
-- Sandboxed execution and least-privilege access for code, browser, filesystem, and external-service capabilities.
+**Why this comes first:** C-MoE will multiply the number of decisions, experts, and execution paths the kernel has to govern. A weak execution substrate would turn greater cognitive capability into greater failure surface.
 
-### 3. Develop the capability and provider layer
+### Stage 1 — C-MoE: the adaptive cognitive runtime
 
-Move from a narrow completion capability toward a provider-neutral capability system. The target is a kernel that resolves capability contracts and schedules work without owning vendor-specific implementation details.
+C-MoE means **system-level Cognitive Mixture of Experts**. It is not neural-network MoE, and it is not merely a router that picks one LLM from a list.
 
-The intended model-provider strategy is:
+The central idea is that OCBrain should coordinate a pool of heterogeneous expertise. An expert may be an LLM-backed capability, a deterministic algorithm, a solver, a retrieval or search system, a specialist worker, a tool, or an external system behind an adapter. The kernel provides the contracts and governance; experts provide the expertise.
 
-- Local model execution remains a first-class, independently usable path.
-- Adapters can target Ollama, llama.cpp-backed servers, compatible local inference servers, and custom local providers.
-- OpenAI-, Anthropic-, or other hosted services may be optional adapters, never mandatory infrastructure.
-- Model choice and reasoning effort can be policy-controlled (for example, low, medium, and maximum) without leaking provider-specific assumptions into the kernel.
-- Capability selection, fallback, and multi-model coordination must be visible, budgeted, governed, and measured.
+C-MoE's north-star rule is:
 
-### 4. Advance C-MoE after the kernel boundary is stable
+> Optimize for successful realization of the currently authorized goal—not merely successful execution of the current plan.
 
-C-MoE is the planned adaptive cognitive runtime above the kernel, not a replacement for it. Its longer-term responsibilities include selecting and coordinating candidate capabilities, adapters, and specialist workers according to task needs, quality, latency, resource budgets, and governance policy.
+The boundaries matter:
 
-C-MoE remains research/design work. It must not be represented as shipped capability, and it must not absorb kernel responsibilities or weaken the provider-independent contract.
+| Component | Owns | Does not own |
+|---|---|---|
+| **Planner (K4.2)** | Interprets the goal and constraints; creates the initial strategy and `ExecutionPlan`. | Runtime expert selection after reality changes; execution mechanics. |
+| **C-MoE** | Selects and coordinates which eligible expert(s) should act now; interprets structured outcomes; adapts the live work graph; requests replanning or escalation. | Authorization, low-level execution mechanics, or proof that the goal is truly satisfied. |
+| **WorkGraph** | The live realization of the plan: work-unit state, dependencies, completed/pending/failed work, and graph lineage. | Independent decision authority. |
+| **ExecutionRuntime / WorkflowRuntime** | Performs the approved work and manages execution mechanics. | Deciding the cognitive next step. |
+| **GovernanceKernel** | Authorizes or rejects proposed actions, permissions, resource boundaries, and consequential changes. | Choosing the cognitive strategy. |
+| **Verification system** | Establishes whether evidence supports a claim that the requested outcome was achieved. | Planning or selecting experts. |
+| **Memory** | Stores scoped knowledge, outcomes, provenance, and approved result promotion. | Acting as hidden task state or an independent agent. |
 
-### 5. Build verification as a distinct assurance system
+The C-MoE design has several defining properties:
 
-The Verification / Critic / Evidence system is a separate assurance workstream—not a C-MoE feature, a substitute for GovernanceKernel, or another name for evaluation. Its intended flow is:
+1. **Heterogeneous expert selection.** Generate candidates, filter them through hard eligibility (permissions, contract compatibility, health), then rank viable candidates using measured signals such as specialization fit, verified performance, latency, cost, and availability. A model's narrative must never be the sole explanation for a routing decision.
+2. **Sparse, adaptive effort.** If exactly one expert is eligible, use the direct path; do not introduce a mandatory C-MoE hop for every trivial action. Invoke multiple or redundant experts only when the expected improvement in confidence or assurance justifies the resource cost.
+3. **Bounded escalation and honest abstention.** When confidence is inadequate, no expert is eligible, or required facts are missing, C-MoE must be able to abstain, request information, or escalate to the user rather than force a weak route.
+4. **Goal-preserving adaptation.** A failed step does not automatically mean the goal is unreachable. C-MoE interprets typed outcomes, updates the WorkGraph, and can request a new plan while preserving the authorized goal. Only the user can explicitly change the goal itself.
+5. **Reality-aware planning.** For requests where project state, prior work, or side effects matter, the studied design adds a conditional, read-only, facts-only `RealityBrief` before planning and a feasibility pass after planning. This must not become a second Planner or an uncontrolled Planner↔C-MoE dialogue.
+6. **User-scoped memory.** The design separates memory *tier* (L0–L4) from memory *scope*. Global user knowledge, project knowledge, discussion/task context, and reusable knowledge must not silently bleed into one another. Project and Discussion are application-level concepts over kernel scope primitives, not new kernel primitives.
+7. **Governed decisions with provenance.** C-MoE proposes routing, composition, replanning, suspension, and escalation; GovernanceKernel authorizes consequential actions. Structured routing/outcome events explain the decision without exposing private chain-of-thought.
+
+The researched MVP is intentionally single-node and narrow: prove a real dispatch path for at least two distinct capability types, a minimal Expert descriptor, a bounded work-unit state machine, a structured outcome contract, a feasibility check, and plan–reality feedback. Broader expert composition, disagreement handling, complete scoped-memory promotion, and distributed WorkGraphs are later extensions. C-MoE is **post-Kernel-v1.0-freeze**; it is not an official “K4.3” milestone and is not implemented on the current main baseline.
+
+### Stage 2 — Independent verification and assurance
+
+Verification is not C-MoE, not the EvaluatorWorker, and not the GovernanceKernel. It is a distinct assurance system that evaluates evidence about whether a requested state or outcome was actually achieved.
+
+The intended assurance chain is:
 
 `ASSERTION → OBSERVATION → EVIDENCE → VERIFICATION → VERDICT → GOVERNANCE`
 
-The target is deterministic-first verification with provenance, immutable evidence receipts, explicit assurance levels, and clear handling of FAILED, UNVERIFIABLE, and PASS. It should integrate with execution through explicit contracts while remaining independently testable. The current Phase C branch is not production integration.
+Its purpose is to distinguish a claim from an observed fact, evidence from an inference, and a successful-looking response from a verified outcome. It must support explicit assurance levels, provenance, immutable evidence receipts, contradiction handling, and honest states such as **PASS**, **FAILED**, and **UNVERIFIABLE**. A verifier crash or absence of evidence must never be silently converted into PASS.
 
-### 6. Expand the cognitive and application ecosystem
+C-MoE may request verification and consume its structured result, but it does not own the verifier's standards or verdict. The Verification / Critic / Evidence workstream has contracts on a separate unmerged branch; it is not production-integrated on main.
 
-Once the contracts and controls are proven, OCBrain can grow toward:
+### Stage 3 — Reflection, evaluation, and governed learning
 
-- Specialist workers for coding, browser research, evaluation, reflection, and memory curation.
-- Versioned skills, tools, workflows, and adapters with explicit schemas and isolated execution.
-- Rich task observability, replay, and a Studio that represents live execution state rather than presenting a decorative workflow view.
-- Governed long-term learning and memory consolidation, preserving provenance and user control.
-- Multi-node or fleet execution only after identity, authorization, audit, quotas, and isolation work is complete.
+Once execution and verification produce trustworthy data, OCBrain can improve how it works without silently changing its own rules.
 
-The guiding rule is that expansion follows trustworthiness: **new autonomy is earned through evidence, not assumed from model capability.**
+The longer-term direction includes:
 
----
+- Reflection over execution trajectories, failure causes, and successful strategies.
+- An Evaluation / Reliability Lab that measures repeatability, regressions, calibration, and task-level outcomes.
+- Adaptive Learning that can improve routing policies, memory organization, and strategy selection only through explicit validation and promotion gates.
+- Capability and skill evolution with versioning, provenance, review, rollback, and user approval where appropriate.
+- A user cognitive model that records confidence and provenance tiers rather than treating inferred preferences as explicit instructions.
+
+The first C-MoE routing policy should use measured evidence with a controlled, reviewable policy—not online self-training or an opaque learned router. Learning new routing behavior is a distinct future capability. It should be introduced only after the evidence pipeline, evaluation criteria, promotion gates, and rollback behavior are proven.
+
+### Stage 4 — Broader expert ecosystem and optional Expert Mesh
+
+OCBrain should be able to grow beyond one model and beyond one machine without making either complexity or cloud access mandatory.
+
+The target provider strategy is:
+
+- A usable **local LLM path is a first-class requirement**. Core operation must not depend on a paid external AI provider.
+- Ollama, llama.cpp-backed servers, other compatible local inference servers, and custom local runtimes should be replaceable provider adapters—not kernel dependencies.
+- Hosted OpenAI-, Anthropic-, or other providers may be configured as optional External AI Providers.
+- An optional **Expert Mesh** may expose remote specialist models, agents, or services as governed experts. It must remain optional; local-only operation must remain a valid deployment posture.
+- User-selectable effort levels—such as low, medium, and maximum—should influence resource allocation, expert breadth, parallelism, and verification depth under policy. They must not lower the correctness or safety floor for consequential work.
+
+The long-term ecosystem may include coding, browser research, data analysis, simulation, robotics or device control, and domain-specific experts. These should enter through versioned capabilities and adapters with explicit contracts, least privilege, sandboxing, and auditable outcomes. Multi-node execution, distributed cognition, resource economies, and cognitive marketplaces remain research directions—not prerequisites for the first C-MoE release.
+
+### Long-term ambition — an architecture that can support increasingly general intelligence
+
+The AGI ambition is the long horizon, not a claim about OCBrain today and not a currently authorized implementation milestone.
+
+The goal is not simply to make one language model larger, connect many models, or create a swarm of agents. It is to build a persistent, governed cognitive system that can generalize across domains by combining:
+
+- **General problem solving:** understand unfamiliar goals, decompose them, identify missing information, and construct strategies.
+- **Transferable expertise:** select and compose different kinds of experts, including deterministic tools and non-LLM systems, rather than assuming every problem is a text-generation problem.
+- **Continuity over time:** preserve authorized goals, projects, task lineage, and appropriately scoped memory across long-running work.
+- **Grounded interaction:** observe external state through tools and environments, distinguish knowledge from hypotheses, and update plans when reality differs.
+- **Reliable agency:** act through controlled permissions, recover from interruptions, respect user changes, and seek approval before consequential actions.
+- **Independent assurance:** verify important claims and outcomes with evidence rather than relying on the system's own confidence or self-report.
+- **Measured adaptation:** learn from outcomes through evaluated, reversible promotion—not uncontrolled self-modification.
+
+C-MoE is a central enabling layer in this direction because it coordinates *which expertise is used, when, and how the work adapts*. It is not AGI by itself, does not create missing expert capability, and cannot compensate for weak foundation models, poor tools, ungrounded memory, or absent verification. The broader system also needs robust planning, durable execution, memory, world/reality grounding, evaluation, learning, and alignment with the user's authorized goals.
+
+Progress toward AGI should therefore be judged by evidence of generalization to unfamiliar tasks and domains, sustained goal coherence over long horizons, calibrated uncertainty and abstention, reliable recovery, safe tool use, and measurable improvement without loss of user control. Passing a narrow benchmark, producing fluent answers, or coordinating multiple agents is not sufficient evidence. The project makes no claim of consciousness, sentience, or achieved AGI.
+
+This ambition does not override the Kernel Constitution or the Future Research Vault. An idea remains research until it has been investigated, architecturally reviewed, accepted through the appropriate ADR, placed on an approved roadmap, assigned an owner, and cleared by its dependencies. **The more general OCBrain becomes, the more important governance, verification, isolation, and user sovereignty become.**
 
 ## Installation and development
 
