@@ -37,7 +37,34 @@
 | Issue #70 | OPEN; sentence-transformers advisory exposure assessment | PR #32 is not a sufficient fix/decision | `1h0lde4` (issue assignee) | Complete compatibility/exposure study; advisory status remains open |
 | CTX-AUTH-001b / REM-004 | OPEN; separate authority-boundary decision after qualified CTX-AUTH-002 closure | Historical branches are preserved; no accepted active implementation PR | Decision owner: repository owner; implementation owner UNASSIGNED | Do not infer closure from PR #93/#106; separate owner decision required |
 
-## 3. Open PR inventory and disposition
+## 3. Other registered debts with no active remediation PR
+
+These entries remain in the technical-debt register but do not have a current open implementation PR mapped in this snapshot. Their inclusion here prevents "no PR" from being mistaken for "resolved". Unless an existing issue assignee is shown, implementation ownership is UNASSIGNED.
+
+| Debt | Live register position | Active PR / branch | Owner / next control |
+|---|---|---|---|
+| DEBT-002 | AgentGovernor delegation metadata remains dormant; no worker populates the delegation key | None | UNASSIGNED; low-priority architecture/worker contract |
+| DEBT-004 / DEBT-005 | KnowledgeEvent, EventStream and EventBus remain separate event mechanisms | None | UNASSIGNED; deferred architecture consolidation |
+| DEBT-006 | L2 vector embeddings are recomputed after restart | None | UNASSIGNED; no current remediation branch |
+| DEBT-007 | BudgetGovernor step/token counters are not accumulated from measured production usage | None | UNASSIGNED; do not conflate with Workflow ExecutionBudget |
+| DEBT-008 | EventStream checkpoint/replay/WAL behavior lacks dedicated tests | None | UNASSIGNED; test-only coverage work not assigned |
+| DEBT-010 | Config watcher can race test-time CONFIG_DIR patching | None | UNASSIGNED; pre-existing low/medium test isolation issue |
+| DEBT-011 | K4.2 ContentDomain versus K4.1-L open-domain LearningCandidate contradiction remains deferred | None | UNASSIGNED; reconciliation needed before affected Learning expansion |
+| DEBT-015 | Operation/ExecutionAttempt/ExecutionSnapshot/idempotency architecture is PROPOSED / DEFERRED / NON-BLOCKING; no speculative implementation approved | None | UNASSIGNED; revisit before side-effecting capabilities are registered |
+| DEBT-017 | Streaming path bypasses K4.2 cognitive pipeline; separately documented future architecture | None | UNASSIGNED; not a current K4.2 defect by register classification |
+| DEBT-019 / REM-002/003/004/006/008 | CTX-AUTH-001b remains OPEN; REM-004 authority taxonomy and related Context Compiler design are not closed; CTX-SCOPE-001 full adversarial/concurrency/lifecycle proof is incomplete; CTX-EXPORT-001 content/signature and replacement-safety residuals remain | No accepted current implementation PR | Decision owner: repository owner for architecture/freeze classification; implementation owner UNASSIGNED |
+| DEBT-024 | SupervisorWorker retry path remains deliberately deferred/unreachable on the orchestrator path; register says no code change is needed for current contract | None | No implementation action assigned; retain as a documented deferred capability |
+| DEBT-027 | Owner's REWORK disposition is closed, but the Workspace domain/persistence rework itself has not landed | None | UNASSIGNED; do not patch domain.py piecemeal or treat its current draft as authoritative |
+| DEBT-031 | Five Chroma fixture failures are still mislabeled as Hugging Face connectivity in the known-failure list | None | UNASSIGNED; documentation correction only, separate from FZ-07 gate fix |
+| DEBT-032 / issue #65 | The wider Chroma dependency contract/reproducibility debt remains OPEN although 0.5.3 is the current owner-selected pin | PR #33 is an incompatible automated bump, not an accepted fix | Issue #65 assigned to `1h0lde4`; compatibility study still required |
+| DEBT-033 | Main-branch protection / enforce_admins state has a documentary conflict; PR #87 says enforce_admins=true, but current API read was unavailable (403) | PR #87 is documentation-only and unmerged | UNASSIGNED for verification; maintainer must obtain a fresh authoritative branch-protection read |
+| DEBT-035 | Supply-chain hardening remains incomplete (pip-audit/OSV-equivalent CI scanning and release-environment approval controls) | None | UNASSIGNED; no active implementation PR |
+| DEBT-036 | SQLite EventStream write-lock contention lacks explicit bounded retry/backoff policy | None | UNASSIGNED; low-urgency hardening |
+| DEBT-039 / DEBT-040 / DEBT-041 | Sandbox cross-egress, host-local service reachability and Docker capability hardening remain OPEN; see the B03 limitation under PR #86 | PR #86 supplies inert guards only; study branches are not product integration | UNASSIGNED; requires selected network architecture and direct regression gates |
+
+**Resolved/deferred boundaries not reopened by this snapshot:** DEBT-029 and DEBT-044 remain resolved (#89/#95); DEBT-034, DEBT-037 and DEBT-038 have their recorded remediation on main; DEBT-003 crash/restart evidence is merged (#97); DEBT-024 is deliberately deferred rather than an unowned implementation task. CTX-AUTH-002 remains CLOSED (qualified) through #93/#106. CTX-AUTH-001b is not closed by any of those actions.
+
+## 4. Open PR inventory and disposition
 
 All 20 listed PRs were open after PR #108 was created. Assignees were empty in GitHub for every PR. The 19 pre-existing PRs were checked first; #108 is this documentation reconciliation PR. Exact-head check states are included only where read in this pass; checks are not human review.
 
@@ -64,7 +91,7 @@ All 20 listed PRs were open after PR #108 was created. Assignees were empty in G
 | #30 | Dependabot checkout 7.0.1 → main | Open automation PR on old base; reevaluate before merge | Dependabot bot; no human assignee |
 | #27 | Dependabot release-action 3.0.3 → main | Open automation PR on old base; reevaluate before merge | Dependabot bot; no human assignee |
 
-## 4. Open non-PR issues
+## 5. Open non-PR issues
 
 | Issue | Status | Assignment | Branch / PR relationship |
 |---|---|---|---|
@@ -72,7 +99,7 @@ All 20 listed PRs were open after PR #108 was created. Assignees were empty in G
 | #70 — sentence-transformers advisory | OPEN | `1h0lde4` | PR #32 does not close assessment |
 | #65 — Chroma dependency contract | OPEN | `1h0lde4` | PR #33 conflicts with 0.5.3 owner decision |
 
-## 5. Complete remote-branch inventory
+## 6. Complete remote-branch inventory
 
 Every branch returned by GitHub's two-page branch listing is included below. The owner field distinguishes a real GitHub assignee from authorship or mere retention. A retained ref is not an active task.
 
@@ -190,7 +217,7 @@ Every branch returned by GitHub's two-page branch listing is included below. The
 | `tools/live-check-repeat-runs` | `7044fdb2` | Merged through PR #61 into main; retained reference only. | UNASSIGNED / NOT RECORDED |
 | `wip/fz02-b2c-cancellation-checkpoint-oct2026` | `a83f3ac6` | Historical WIP checkpoint; PR #104's narrowed B2c implementation is merged; preserve, do not treat as current candidate. | UNASSIGNED / NOT RECORDED |
 
-## 6. Explicit non-decisions and safe next actions
+## 7. Explicit non-decisions and safe next actions
 
 - Do not merge PRs #94, #102, #91, #81, #86, #90 or #107 by inference from this register.
 - Do not close PRs or delete branches merely because they are stale, duplicated or superseded. Preserve refs until the repository owner explicitly authorizes cleanup.
