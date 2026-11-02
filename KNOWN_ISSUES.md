@@ -1,6 +1,8 @@
 # OCBrain — Known Issues & Technical Debt Register
 
-**Last synchronized:** Oct 31, 2026, CTX-AUTH-002 CLOSED (qualified) and ADR-KERNEL-08 IMPLEMENTED after PR #93 was promoted (merge `b742e4a`) and re-verified on `main` (suite 2176 / 1 xfailed / 8 environment failures, drift 30/0, mutation 43/43, CI green). CTX-AUTH-001b stays OPEN (a separate owner decision), DEBT-025 untouched; the DEBT-019 row's "outstanding" note is updated. Details: `CURRENT_STATE.md` and ADR-KERNEL-08 §8.2/§9.
+**Last synchronized:** November 2, 2026 — branch/PR/debt state reconciled against `main` `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (PR #106). The live snapshot and current open-work inventory are recorded in the section below and in `docs/engineering/DEBT_BRANCH_OWNERSHIP_REGISTER_2026-11-02.md`. Current status is based on `main`; unmerged PRs and branches are not counted as implemented.
+
+Prior sync **Last synchronized:** Oct 31, 2026, CTX-AUTH-002 CLOSED (qualified) and ADR-KERNEL-08 IMPLEMENTED after PR #93 was promoted (merge `b742e4a`) and re-verified on `main` (suite 2176 / 1 xfailed / 8 environment failures, drift 30/0, mutation 43/43, CI green). CTX-AUTH-001b stays OPEN (a separate owner decision), DEBT-025 untouched; the DEBT-019 row's "outstanding" note is updated. Details: `CURRENT_STATE.md` and ADR-KERNEL-08 §8.2/§9.
 
 **Last synchronized:** Oct 31, 2026, CTX-AUTH-002 / PR #93: ADR-KERNEL-08 §8.1 item 2 (real-model run) performed by the owner on `llama3`: ESCALATED 0 in 120 exposed adversarial trials; benign fallback to `novel` 33% (R3 measured). One model, one sample: evidence, not proof. Re-reconciled with `main` `ed3d141`. No debt status changes yet: CTX-AUTH-002 not closed until merged and re-verified on `main`; CTX-AUTH-001b OPEN; DEBT-025 untouched. Details: `CURRENT_STATE.md` and ADR-KERNEL-08 §8.2.
 
