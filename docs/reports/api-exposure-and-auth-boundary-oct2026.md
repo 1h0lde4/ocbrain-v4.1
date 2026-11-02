@@ -19,6 +19,11 @@ the fixes are below.
    an argument of the browser launcher process, readable by every local user (`/proc/<pid>/cmdline`, `ps`).
    Reproduced with an unprivileged uid; removed by A11.
 
+4. "The Windows ACL ends with exactly one entry." Written from Linux and wrong. The first real Windows run
+   (`token-acl-windows`, `windows-latest`) failed: a new file already carries explicit `SYSTEM`,
+   `BUILTIN\Administrators` and `OWNER RIGHTS` entries that `/inheritance:r` does not remove, and `/grant:r` alone
+   leaves other explicit entries in place. The invariant and the recipe were changed after seeing that (A12, E12).
+
 ## 1. Exposure, as established
 
 | # | Fact | Evidence | Status |
@@ -33,6 +38,7 @@ the fixes are below.
 | E8 | The `Host` header was not validated: `Host: evil.example:7437` got 200 for `/`, `/static/auth.js` and `/openapi.json`. | live request, pre-fix | VERIFIED (executed) |
 | E9 | In a PyInstaller `--onefile` build the default token path (`Path(__file__)/../data/api_token`) resolved inside the per-run `_MEI…` temp directory: a new token each start, invisible to a separate process. | throwaway Linux build, run twice | VERIFIED (executed, Linux only) |
 | E10 | In a packaged install the binary named `ocbrain` is the server (`main.py`), not the CLI; in a pip install `ocbrain` is the click CLI. | `install/build.py`, the deb/service file, `pyproject.toml` | VERIFIED (read) |
+| E12 | On Windows (`windows-latest`, built-in Administrator account, elevated): a freshly created file already has explicit `SYSTEM`, `Administrators` and `OWNER RIGHTS` entries, so no `icacls` recipe reaches "one entry" without removing principals that cannot be excluded in practice; `/inheritance:r` removes nothing from them; `/grant:r` leaves any other explicit entry (an added `Everyone` entry survived). `/reset` → `/inheritance:r` → `/grant:r` leaves only the user (SDDL prints this account as `LA`). | `token-acl-windows` job: icacls listing and SDDL, read from the check annotations | VERIFIED (executed on Windows, one runner) |
 | E11 | The CLI group's optional `QUERY` argument swallowed the first token under click 8.5: `ocbrain status` posted the text "status" to `/query`. Pre-existing on `main`. | pristine `main`, `CliRunner` | VERIFIED (executed) |
 
 ### Who can reach the port, and what the boundary changes
@@ -61,7 +67,7 @@ All IMPLEMENTED. "Owner ruling" is the state of the owner's own decision.
 | A9 | **`Host` allowlist in required mode:** `localhost`, `127.0.0.1`, `::1`, plus `OCBRAIN_API_ALLOWED_HOSTS` / `global.api_allowed_hosts` for a proxied deployment. Names only, port ignored. Checked before the public allowlist. Not applied under the explicit opt-out. | authorised plan |
 | A10 | **Token location and lifecycle:** frozen builds use a per-user directory (`%LOCALAPPDATA%\OCBrain`, `~/Library/Application Support/OCBrain`, `$XDG_DATA_HOME/ocbrain`); the file is re-checked on every request, so `ocbrain token --rotate` or deleting it revokes the old token without a restart. | authorised plan |
 | A11 | **The tray never puts the token on a command line.** The page asks once per tab; `ocbrain token --show` prints it. A one-time-code scheme was rejected: a local attacker could win the race to redeem it and obtain the full token. | authorised plan |
-| A12 | **Windows:** owner-only ACL set with `icacls` on create, load and rotate, verified to leave exactly one entry; validated by a Windows CI job (`scripts/check_token_acl_windows.py`), not by the stubbed unit tests. | authorised plan |
+| A12 | **Windows:** `icacls /reset`, `/inheritance:r`, `/grant:r *<SID>:(F)` on create, load and rotate, then the DACL is read as SDDL (SIDs, language-independent) and **no principal other than the current user, SYSTEM, Administrators and OWNER RIGHTS may have an allow entry**; anything else fails closed and names the principal. A loosened ACL (Everyone/Users added) is repaired on the next load. Validated by the `token-acl-windows` CI job (`scripts/check_token_acl_windows.py`), which checks each file two independent ways (icacls display names and SDDL SIDs); the unit tests stub `icacls` and prove logic only. | authorised plan |
 | A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `'unsafe-inline'` stays because the shipped pages use inline script and `onclick`. | authorised plan |
 | A14 | **`ocbrain token [--show|--rotate]`** in both entry points (the pip CLI, and `main.py` for packaged installs); the CLI group now runs a known subcommand before treating text as a query (E11). | authorised plan |
 
@@ -109,8 +115,10 @@ Token required (30): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 4. **The `Host` allowlist does not apply under the explicit opt-out.**
 5. **Whether a browser keeps the `#token=` URL in its history** is no longer relevant to the tray (it sends none),
    but a user can still paste a `#token=` fragment by hand; `auth.js` adopts it.
-6. **Windows evidence comes only from the CI job.** It lists ACL entries; it does not attempt a read as a second
-   account. macOS and a frozen build on Windows/macOS were not run.
+6. **Windows evidence comes only from the CI job, from one runner.** It ran as the built-in Administrator account
+   (elevated; SDDL `LA`) with English display names, and it lists ACL entries; it does not attempt a read as a second
+   account. Not tried: a standard (non-admin) user, a domain account, another display language, a file on a non-NTFS
+   volume. macOS and a frozen build on Windows/macOS were not run.
 7. **A real desktop launcher** (`xdg-open`, Chrome, Firefox, Safari) was not exercised; the no-token-on-a-command-line
    property is tested with a stand-in launcher plus a positive control that shows the detector sees a leak.
 8. **Multi-user hosts** were simulated with an unprivileged uid in one container.
