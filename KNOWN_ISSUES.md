@@ -30,7 +30,7 @@ Prior sync Sept 12, 2026, later same day, DEBT-022 resolved (`sandbox-fabric` co
 ---
 
 
-**Live reconciliation snapshot — 2026-11-02 (authoritative baseline: `main` `2491ae469edd6ef1267a14604c4f8f40d698f7ea`).** This snapshot supersedes the dated historical sync paragraphs below for current status. The historical entries remain as provenance, not as current work queues. Repository snapshot: 111 branches (including this reconciliation branch); 19 open pull requests; 3 open non-PR issues. The coordinated branch/PR/ownership ledger is `docs/engineering/DEBT_BRANCH_OWNERSHIP_REGISTER_2026-11-02.md`; the matching state sync is in `CURRENT_STATE.md`.
+**Live reconciliation snapshot — 2026-11-02 (authoritative baseline: `main` `2491ae469edd6ef1267a14604c4f8f40d698f7ea`).** This snapshot supersedes the dated historical sync paragraphs below for current status. The historical entries remain as provenance, not as current work queues. Repository snapshot: 111 branches (including this reconciliation branch); 20 open pull requests (19 pre-existing plus PR #108); 3 open non-PR issues. The coordinated branch/PR/ownership ledger is `docs/engineering/DEBT_BRANCH_OWNERSHIP_REGISTER_2026-11-02.md`; the matching state sync is in `CURRENT_STATE.md`.
 
 ## Live Repository Reconciliation — 2026-11-02
 
