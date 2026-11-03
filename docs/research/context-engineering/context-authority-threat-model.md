@@ -16,7 +16,7 @@ synthetic reproduction; real-world hostile exploitation NOT DEMONSTRATED)
 
 **Update (Oct 6 2026):** the CTX-AUTH-001b closure recorded elsewhere (ADR-KERNEL-06 §8, Sept 23) was REJECTED by finding CTX-AUTH-002 below. CTX-AUTH-001b is reopened; the text of this entry is left as history.
 
-**Update (Oct 31 2026):** the replacement for the rejected mechanism is now implemented on `main` (ADR-KERNEL-08, PR #93, merge `b742e4a`) and CTX-AUTH-002 is closed (qualified). CTX-AUTH-001b stays OPEN: ADR-KERNEL-08 §8.1 item 4 allows it to be reconsidered on that evidence, which is a separate owner decision that has not been made. The classification above is left as written for that decision.
+**Update (Nov 1 2026):** the replacement for the rejected mechanism is now implemented on `main` (ADR-KERNEL-08, PR #93, merge `b742e4a`) and CTX-AUTH-002 is closed (qualified). CTX-AUTH-001b stays OPEN: ADR-KERNEL-08 §8.1 item 4 allows it to be reconsidered on that evidence, which is a separate owner decision that has not been made. The classification above is left as written for that decision.
 
 **Affected component:** `core/cognitive/intent.py` —
 `generate_hypotheses()` / `_build_hypothesis_prompt()` /
@@ -241,14 +241,15 @@ elimination of all retrieved-content influence on output.
 **Status:** VERIFIED SECURITY FINDING — source-level, plus a synthetic
 reproduction run through the real `interpret_request` with only the model
 provider mocked. Real-model exploitation: NOT DEMONSTRATED. Reopens
-CTX-AUTH-001b. **CLOSED, qualified (Oct 31, 2026):** the replacement
+CTX-AUTH-001b. **CTX-AUTH-002 is CLOSED, qualified (Nov 1, 2026):** the replacement
 (`ADR-KERNEL-08`, APPROVED Oct 6, 2026 by Moncif) was promoted to `main` by PR #93
 (merge `b742e4a`) and re-verified there (ADR-KERNEL-08 §9), which were the two
 conditions this entry named. What is closed is the tested authority/escalation
 path: a model-authored hypothesis acquires no USER authority by citation,
 grounding, overlap or score, verified mechanically on the corpus and mutations
 tested, plus one real-model run (owner's machine, `llama3`, 120 exposed
-adversarial trials: ESCALATED 0, 2 advisory selections). **Not claimed:**
+adversarial trials: harness-defined ESCALATED 0, which is not a count of Plan Compiler
+`GovernanceVerdict.ESCALATE` verdicts; 2 advisory selections). **Not claimed:**
 "proved with a real LLM", that real hostile exploitation is impossible, or
 anything beyond one model, one sample and four payloads. The residual risks
 R1-R6 in ADR-KERNEL-08 §6 stand as recorded (R3 measured, not closed). This does
@@ -371,11 +372,17 @@ category, and count of `source == "explicit"` constraints from
   text or an EXPLICIT constraint. Two consumers of the label-derived fields
   remain: the planner hint keyed on `category == "novel"` and
   capability-discovery query text built from `semantic_description`.
+  *Clarification, Nov 2, 2026:* at `main` `2491ae4` both "consumers" are helper functions
+  (`build_planner_request()` and `build_capability_discovery_request()` in `planner.py`) that have **no
+  production call site** (tests only). The active `Orchestrator.handle()` path builds its `PlannerRequest`
+  directly. Active production impact of the category steering through them is therefore not demonstrated at
+  that revision; they remain a latent integration risk if wired in later. The finding above stands as
+  written for that reason. See ADR-KERNEL-08 §8.3.5.
 - Real-model behavior is unmeasured. Hostile exploitation through an actual
   model is not demonstrated; the structural weakness and the synthetic
   reproduction are.
   *Update, Oct 31, 2026:* a real-model run of the replacement (owner's machine, `llama3`, 120
-  exposed adversarial trials) measured ESCALATED 0 and 2 advisory selections. That is one model and one
+  exposed adversarial trials) measured harness-defined ESCALATED 0 (ADR-KERNEL-08 §8.3.4) and 2 advisory selections. That is one model and one
   sample: evidence, not proof, and real hostile exploitation is still not demonstrated either way.
   See ADR-KERNEL-08 §8.2.
 - `content_grounded` is a weak signal and must never become a gate again.
