@@ -54,6 +54,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping, MutableMapping, Optional
 
+from interface.headers import SECURITY_HEADERS
+
 log = logging.getLogger(__name__)
 
 MODE_REQUIRED = "required"
@@ -308,6 +310,21 @@ def read_token() -> Optional[str]:
         return None
 
 
+def _ensure_token_dir(path: Path) -> None:
+    """Create the token file's directory.
+
+    The frozen-build per-user default is created 0700, whichever of first start and
+    ``ocbrain token --rotate`` runs first.  A directory that already exists is never
+    chmod-ed, and a directory the user chose with OCBRAIN_API_TOKEN_FILE keeps the
+    default mode: this module only owns the location it picked itself.
+    """
+    default = default_token_path()
+    if default != DEFAULT_TOKEN_PATH and path == default:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+
 def _token_from_file(path: Path) -> str:
     if path.is_symlink() and not path.exists():
         raise AuthConfigError(f"API token file {path} is a dangling symlink.")
@@ -317,11 +334,7 @@ def _token_from_file(path: Path) -> str:
         _enforce_private_mode(path)
         return _validate_token(path.read_text(encoding="utf-8"), f"the token file {path}")
 
-    if default_token_path() != DEFAULT_TOKEN_PATH and path == default_token_path():
-        # frozen build: the per-user directory is private to the user
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    else:
-        path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_token_dir(path)
     token = secrets.token_urlsafe(32)
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -369,7 +382,7 @@ def rotate_token() -> tuple[str, Path]:
     path = token_path()
     if path.is_symlink():
         raise AuthConfigError(f"{path} is a symlink; rotate the token at its source.")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_token_dir(path)
     token = secrets.token_urlsafe(32)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -648,6 +661,9 @@ class ApiAuthMiddleware:
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode("ascii")),
             (b"cache-control", b"no-store"),
+            # This middleware is outermost, so a rejection never reaches SecurityHeadersMiddleware:
+            # add the same set here so 400/401/503 responses carry it too.
+            *SECURITY_HEADERS,
         ]
         if status == 401:
             headers.append((b"www-authenticate", b"Bearer"))

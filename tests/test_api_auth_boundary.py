@@ -794,6 +794,49 @@ class TestFrozenBuildTokenLocation:
         monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(tmp_path / "elsewhere"))
         assert auth.token_path() == tmp_path / "elsewhere"
 
+    @pytest.fixture
+    def frozen_linux(self, monkeypatch, tmp_path):
+        if not sys.platform.startswith("linux"):
+            pytest.skip("XDG layout")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delenv(auth.ENV_TOKEN_FILE, raising=False)
+        monkeypatch.delenv(auth.ENV_TOKEN, raising=False)
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        old = os.umask(0o022)       # the common default; the directory must be 0700 regardless
+        try:
+            yield tmp_path / "ocbrain"
+        finally:
+            os.umask(old)
+
+    def test_rotating_before_the_first_start_also_creates_a_private_directory(self, frozen_linux):
+        # `ocbrain token --rotate` on a fresh frozen install runs before any server start.
+        new, path = auth.rotate_token()
+        assert path == frozen_linux / "api_token"
+        assert stat.S_IMODE(frozen_linux.stat().st_mode) == 0o700
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert auth.load_or_create_token() == new                      # the first start then uses it
+        assert stat.S_IMODE(frozen_linux.stat().st_mode) == 0o700
+
+    def test_an_existing_directory_is_never_chmodded(self, frozen_linux):
+        frozen_linux.mkdir(mode=0o755)
+        os.chmod(frozen_linux, 0o755)
+        auth.rotate_token()
+        auth.load_or_create_token()
+        assert stat.S_IMODE(frozen_linux.stat().st_mode) == 0o755
+
+    def test_a_directory_chosen_with_the_override_keeps_the_default_mode(self, monkeypatch, tmp_path):
+        if not sys.platform.startswith("linux"):
+            pytest.skip("POSIX modes")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.delenv(auth.ENV_TOKEN, raising=False)
+        monkeypatch.setenv(auth.ENV_TOKEN_FILE, str(tmp_path / "mine" / "api_token"))
+        old = os.umask(0o022)
+        try:
+            auth.rotate_token()
+        finally:
+            os.umask(old)
+        assert stat.S_IMODE((tmp_path / "mine").stat().st_mode) == 0o755
+
     @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="XDG layout")
     def test_frozen_start_creates_a_private_directory_and_a_stable_token(self, monkeypatch, tmp_path):
         monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -969,6 +1012,29 @@ class TestSecurityHeaders:
     def test_the_policy_names_no_external_origin(self):
         from interface.headers import CONTENT_SECURITY_POLICY
         assert "http:" not in CONTENT_SECURITY_POLICY and "https:" not in CONTENT_SECURITY_POLICY and "*" not in CONTENT_SECURITY_POLICY
+
+    @pytest.mark.parametrize("label,headers,kw,expected", [
+        ("401 no token", [], {}, 401),
+        ("401 wrong token", [("Authorization", "Bearer " + WRONG)], {}, 401),
+        ("400 foreign Host", [], {"host": "evil.example"}, 400),
+        ("400 foreign Host, valid token", None, {"host": "evil.example"}, 400),
+    ])
+    def test_rejected_responses_carry_the_headers_too(self, required, label, headers, kw, expected):
+        # Authentication is the outermost layer, so a rejection never reaches SecurityHeadersMiddleware.
+        from interface.headers import CONTENT_SECURITY_POLICY
+        hdrs = bearer(TOKEN) if headers is None else headers
+        status, _, h = call(app, "GET", "/config", hdrs, **kw)
+        assert status == expected, label
+        assert h["content-security-policy"] == CONTENT_SECURITY_POLICY
+        assert h["x-content-type-options"] == "nosniff" and h["x-frame-options"] == "DENY"
+        assert h["referrer-policy"] == "no-referrer"
+
+    def test_a_misconfiguration_503_carries_the_headers_too(self, monkeypatch):
+        monkeypatch.delenv(auth.ENV_MODE, raising=False)
+        monkeypatch.setenv(auth.ENV_TOKEN, "short")
+        auth.reset_cache_for_tests()
+        status, _, h = call(app, "GET", "/config")
+        assert status == 503 and "content-security-policy" in h and h["x-frame-options"] == "DENY"
 
     def test_existing_headers_are_not_duplicated(self):
         from interface.headers import SecurityHeadersMiddleware
