@@ -136,3 +136,38 @@ staleness_decay = true
 max_kb_size_mb = 500
 confidence_boost = 0.1
 pin_to_external = false
+
+# ── Memory service (Rev 3, G4-FTS remediation) ───────────────────────────────
+# This block documents/plumbs the Amendment 1 runtime gate. The gate verdicts
+# themselves live in code (core/memory/sqlite_runtime.py); this file can only
+# EXTEND the trusted set of builds or acknowledge an unsupported runtime — it
+# can never turn a failing verdict into a passing one.
+[memory]
+# database = ".data/memory/unified.db"   # default; see core.config and the CLI
+#                                         # memory-* commands' --db option.
+# SQLite WAL runtime compatibility gate mode (Amendment 1):
+#   "enforce"     — the default and fail-closed: an affected SQLite runtime
+#                   (3.7.0 .. 3.51.3 without the fix, backport, or verified
+#                   vendor provenance) refuses memory-ready state at
+#                   construction.
+#   "acknowledge" — a deliberate, documented operator exception:
+#                   construction proceeds, but every readiness report
+#                   honestly states the runtime is not fully supported
+#                   (memory_ready=false). Acknowledgement NEVER changes the
+#                   verdict — do not treat it as an approval.
+# The environment variable OCBRAIN_MEMORY_RUNTIME_ACK overrides this value
+# (same two values); tests use it — see conftest.py.
+wal_gate_mode = "enforce"
+
+# Verified vendor-build provenance records (Amendment 1 §D). A record here
+# accepts ONE exact build, and only when EVERY field is filled: an incomplete
+# record fails closed (rejected_unproven_build). source_id must be the exact
+# sqlite_source_id() string of the shipped binary. Leave this table ABSENT
+# unless the deployment has actually verified the build — a blank template is
+# not evidence. Example shape (all four fields required):
+#
+# [[memory.wal_gate.approved_vendor_builds]]
+# source_id    = "2025-07-30 19:33:53 4d8a..."   # exact sqlite_source_id()
+# distribution = "ExampleOS sqlite 3.50.4-r1"    # who shipped this binary
+# evidence_url = "https://example.com/notes"     # where the fix is documented
+# verified_on  = "2026-01-15"                    # when WE verified it

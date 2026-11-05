@@ -7,6 +7,18 @@ to avoid event loop starvation (§5, Issue 9 pattern).
 
 Schema: knowledge_entries + knowledge_entries_fts (virtual, FTS5)
 FTS5 triggers keep the virtual table in sync automatically.
+
+Rev 3 (OCBrain G4-FTS remediation) construction contract — Amendment 2:
+  * Normal startup is VALIDATION-ONLY. The constructor never mutates a
+    pre-existing database and never runs a trigger migration or an FTS
+    rebuild; a legacy or unrecognized database refuses readiness and points
+    the operator at the dedicated maintenance command
+    (`ocbrain memory-migrate`).
+  * A fresh (absent) database is initialized to the canonical contract and
+    ows its own per-database migration ledger (Amendment 7).
+  * The SQLite WAL runtime compatibility gate (Amendment 1) is evaluated at
+    construction; unsupported runtimes cannot report full memory readiness
+    and are refused outright under the default `enforce` mode.
 """
 
 import asyncio
@@ -21,10 +33,63 @@ from typing import Any, Dict, List, Optional
 
 from core.memory.backends.base import StorageBackend
 from core.memory.knowledge_entry import KnowledgeEntry
+from core.memory.sqlite_contract import MemoryReadinessError
+from core.memory.sqlite_integrity import (
+    run_full_integrity_validation,
+    validate_readiness,
+    verify_content_row_identity,
+)
+from core.memory.sqlite_migration import (
+    initialize_schema,
+    inspect_migration_state,
+)
+from core.memory.sqlite_runtime import (
+    GATE_ACKNOWLEDGE,
+    GATE_ENFORCE,
+    GATE_ENV_VAR,
+    MemoryRuntimeCompatibilityError,
+    RuntimeDecision,
+    classify_wal_safety,
+    load_configured_vendor_provenance,
+    resolve_gate_mode,
+)
 
 logger = logging.getLogger("ocbrain.memory.backends.sqlite_storage")
 
 DEFAULT_DB_PATH = ".data/memory/unified.db"
+
+
+def _resolve_configured_gate_mode() -> str:
+    """
+    Gate-mode resolution for normal application startup (no explicit
+    `runtime_gate` constructor argument):
+
+      1. OCBRAIN_MEMORY_RUNTIME_ACK as documented — set to "acknowledge"
+         (explicit operator exception) or unset; any other value raises
+         through resolve_gate_mode.
+      2. config/settings.toml → [memory] wal_gate_mode — "enforce" (default)
+         or "acknowledge". An unrecognised value FAILS CLOSED to "enforce"
+         with a logged error (Amendment 1 §D: a typo must never silently
+         downgrade the gate).
+    """
+    env_value = os.environ.get(GATE_ENV_VAR)
+    if env_value not in (None, ""):
+        return resolve_gate_mode(env_value)
+    try:
+        from core.config import config as app_config
+    except Exception:
+        return GATE_ENFORCE
+    cfg_value = app_config.get("memory.wal_gate_mode")
+    if cfg_value in (None, ""):
+        return GATE_ENFORCE
+    try:
+        return resolve_gate_mode(str(cfg_value))
+    except ValueError:
+        logger.error(
+            "[Rev3 Amendment 1] settings.toml [memory] wal_gate_mode=%r is "
+            "not 'enforce' or 'acknowledge' — failing closed to 'enforce'.",
+            cfg_value)
+        return GATE_ENFORCE
 
 
 class SQLiteStorageBackend(StorageBackend):
@@ -39,11 +104,57 @@ class SQLiteStorageBackend(StorageBackend):
     - UPSERT on entry_id: idempotent write for migration safety
     """
 
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH,
+                 *, runtime_gate: Optional[str] = None):
+        """
+        Opens the database under the Rev 3 readiness contract.
+
+        Args:
+            db_path: the database file for this backend.
+            runtime_gate: "enforce" (default) refuses construction on an
+                affected SQLite runtime; "acknowledge" constructs but every
+                readiness report honestly reports the runtime as not fully
+                supported (never "full readiness" — Amendment 1 §D). When
+                None, the OCBRAIN_MEMORY_RUNTIME_ACK environment variable may
+                set "acknowledge" explicitly.
+        """
         self.db_path = str(Path(db_path).resolve())
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self._init_sync()
-        logger.info("SQLiteStorageBackend ready: %s", self.db_path)
+
+        # Amendment 1 — runtime compatibility gate (fail closed).
+        self.runtime_gate_mode = (
+            resolve_gate_mode(runtime_gate)
+            if runtime_gate is not None
+            else _resolve_configured_gate_mode()
+        )
+        self.runtime_verdict: RuntimeDecision = classify_wal_safety(
+            approved_vendor_builds=load_configured_vendor_provenance()
+        )
+        if not self.runtime_verdict.wal_safe:
+            finding = (
+                f"[Rev3 Amendment 1] SQLite runtime {self.runtime_verdict.inventory.get('sqlite_version_sql')} "
+                f"(source: {self.runtime_verdict.inventory.get('sqlite_source_id')}) "
+                f"is not safe for multi-connection WAL use: {self.runtime_verdict.reason}"
+            )
+            if self.runtime_gate_mode == GATE_ACKNOWLEDGE:
+                logger.warning(
+                    "%s | acknowledged: construction proceeds, readiness is "
+                    "NOT reported as full; remediation plan: %s",
+                    finding, self.runtime_verdict.remediation)
+            else:
+                logger.error("%s", finding)
+                raise MemoryRuntimeCompatibilityError(self.runtime_verdict)
+
+        # Amendment 2 — validation-only construction.
+        self.readiness_state: Dict[str, Any] = {}
+        self.last_full_validation: Optional[Dict[str, Any]] = None
+        self._init_or_validate_sync()
+        logger.info(
+            "SQLiteStorageBackend ready: %s (readiness=%s runtime=%s state=%s)",
+            self.db_path, self.readiness_state.get("status"),
+            self.runtime_verdict.decision,
+            self.readiness_state.get("migration_state"),
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=20.0)
@@ -53,99 +164,138 @@ class SQLiteStorageBackend(StorageBackend):
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _init_sync(self) -> None:
-        """Create schema. Called once at construction (not in event loop)."""
+    def _init_or_validate_sync(self) -> None:
+        """
+        Amendment 2 §B — normal application startup:
+          1. opens the configured database using the supported connection
+             configuration,
+          2. performs validation-only migration-state checks,
+          3. verifies the required schema and migration marker,
+          4. verifies runtime compatibility (done above),
+          5. refuses memory readiness when migration is missing, incompatible,
+             incomplete or unsupported.
+
+        A file with no application tables is *initialized* to the canonical
+        contract (with its own per-database migration ledger); anything that
+        already exists is never mutated here — legacy databases are handed to
+        the maintenance migration command instead of silently fixed.
+        """
         with closing(self._connect()) as conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS knowledge_entries (
-                    entry_id       TEXT PRIMARY KEY,
-                    layer          TEXT NOT NULL,
-                    content        TEXT NOT NULL,
-                    summary        TEXT NOT NULL DEFAULT '',
-                    importance     REAL NOT NULL DEFAULT 0.5,
-                    confidence     REAL NOT NULL DEFAULT 1.0,
-                    truth_status   TEXT NOT NULL DEFAULT 'unknown',
-                    trust_score    REAL NOT NULL DEFAULT 1.0,
-                    source         TEXT NOT NULL DEFAULT '',
-                    worker_id      TEXT NOT NULL DEFAULT '',
-                    workflow_id    TEXT NOT NULL DEFAULT '',
-                    derived_from   TEXT NOT NULL DEFAULT '[]',
-                    supports       TEXT NOT NULL DEFAULT '[]',
-                    contradicts    TEXT NOT NULL DEFAULT '[]',
-                    supersedes     TEXT NOT NULL DEFAULT '[]',
-                    graph_node_id  TEXT,
-                    tags           TEXT NOT NULL DEFAULT '[]',
-                    metadata       TEXT NOT NULL DEFAULT '{}',
-                    procedure_name TEXT,
-                    created_at     REAL NOT NULL,
-                    updated_at     REAL NOT NULL,
-                    accessed_at    REAL NOT NULL,
-                    access_count   INTEGER NOT NULL DEFAULT 0
-                );
+            state = inspect_migration_state(conn)
+            if state.state == "absent":
+                initialize_schema(conn)
+                state = inspect_migration_state(conn)
+            if state.state != "current":
+                raise MemoryReadinessError(
+                    {
+                        "kind": "memory_migration_state",
+                        "database": self.db_path,
+                        **state.finding,
+                    },
+                    state.remediation)
+            validation = validate_readiness(conn)
+            if not validation["passed"]:
+                raise MemoryReadinessError(
+                    {
+                        "kind": "memory_schema_validation",
+                        "database": self.db_path,
+                        "reason": "; ".join(
+                            f"{c['name']}: {c['detail']}"
+                            for c in validation["checks"]
+                            if c["status"] in ("fail", "error")),
+                        "checks": validation["checks"],
+                    },
+                    "run the dedicated maintenance operation in a maintenance "
+                    "window (stop all processes using this database first): "
+                    f"`ocbrain memory-migrate --db {self.db_path}`")
 
-                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_entries_fts
-                USING fts5(
-                    content,
-                    summary,
-                    tags,
-                    content='knowledge_entries',
-                    content_rowid='rowid'
-                );
+            runtime_ready = self.runtime_verdict.wal_safe
+            readiness_status = "ready" if runtime_ready else (
+                "ready_degraded_runtime_not_supported")
+            self.readiness_state = {
+                "status": readiness_status,
+                "memory_ready": bool(runtime_ready),
+                "database": self.db_path,
+                "migration_state": state.state,
+                "runtime_gate_mode": self.runtime_gate_mode,
+                "runtime": {
+                    "decision": self.runtime_verdict.decision,
+                    "wal_safe": self.runtime_verdict.wal_safe,
+                    "affected_by_wal_reset_bug":
+                        self.runtime_verdict.affected_by_wal_reset_bug,
+                    "full_wal_support": self.runtime_verdict.full_wal_support,
+                    "reason": self.runtime_verdict.reason,
+                    "remediation": self.runtime_verdict.remediation,
+                    "sqlite_version_sql":
+                        self.runtime_verdict.inventory.get("sqlite_version_sql"),
+                    "sqlite_source_id":
+                        self.runtime_verdict.inventory.get("sqlite_source_id"),
+                },
+                "validation_summary": validation["summary"],
+                "validation_cost_s": validation["total_cost_s"],
+                "verified_at": validation["verified_at"],
+                "validation_only_startup": True,
+            }
 
-                CREATE TRIGGER IF NOT EXISTS ke_ai AFTER INSERT ON knowledge_entries BEGIN
-                    INSERT INTO knowledge_entries_fts(rowid, content, summary, tags)
-                    VALUES (new.rowid, new.content, new.summary, new.tags);
-                END;
+    # ── Health / explicit verification (Amendment 3 §C) ──────────────────
 
-                CREATE TRIGGER IF NOT EXISTS ke_au AFTER UPDATE ON knowledge_entries BEGIN
-                    INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rowid, content, summary, tags)
-                    VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
-                    INSERT INTO knowledge_entries_fts(rowid, content, summary, tags)
-                    VALUES (new.rowid, new.content, new.summary, new.tags);
-                END;
+    def health_report(self) -> Dict[str, Any]:
+        """
+        Ordinary health heartbeat input: the readiness state recorded at
+        construction plus the last explicit full validation, if any.
 
-                CREATE TRIGGER IF NOT EXISTS ke_ad AFTER DELETE ON knowledge_entries BEGIN
-                    DELETE FROM knowledge_entries_fts WHERE rowid=old.rowid;
-                END;
+        Whole-database integrity validation is NOT run here (Amendment 3 §C:
+        per-heartbeat full validation is prohibited); use
+        verify_integrity_now() for an explicit verification and to measure
+        its cost.
+        """
+        report: Dict[str, Any] = {
+            "backend": "SQLiteStorageBackend",
+            "db_path": self.db_path,
+            "readiness": dict(self.readiness_state),
+        }
+        if self.last_full_validation is not None:
+            report["last_full_validation"] = {
+                k: v for k, v in self.last_full_validation.items()
+                if k != "finding_objects"
+            }
+        return report
 
-                CREATE INDEX IF NOT EXISTS idx_ke_layer
-                    ON knowledge_entries(layer);
-                CREATE INDEX IF NOT EXISTS idx_ke_importance
-                    ON knowledge_entries(importance DESC);
-                CREATE INDEX IF NOT EXISTS idx_ke_truth
-                    ON knowledge_entries(truth_status);
-                CREATE INDEX IF NOT EXISTS idx_ke_created
-                    ON knowledge_entries(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_ke_source
-                    ON knowledge_entries(source);
-                CREATE INDEX IF NOT EXISTS idx_ke_procedure
-                    ON knowledge_entries(procedure_name)
-                    WHERE procedure_name IS NOT NULL;
-            """)
-            # Migration (Session 4C hidden-issue fix): a database created before
-            # this fix has ke_au bound to the old, unsafe definition ("CREATE
-            # TRIGGER IF NOT EXISTS" left it untouched above). SQLite has no
-            # CREATE OR REPLACE TRIGGER, so detect + recreate explicitly.
-            # See SESSION4C_REPORT.md "Phase 2 Hidden Issue" for the full
-            # analysis of why the old trigger body was unsafe.
-            current_trigger_sql = conn.execute(
-                "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='ke_au'"
-            ).fetchone()
-            if current_trigger_sql and "'delete'" not in current_trigger_sql[0]:
-                conn.executescript("""
-                    DROP TRIGGER ke_au;
-                    CREATE TRIGGER ke_au AFTER UPDATE ON knowledge_entries BEGIN
-                        INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rowid, content, summary, tags)
-                        VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
-                        INSERT INTO knowledge_entries_fts(rowid, content, summary, tags)
-                        VALUES (new.rowid, new.content, new.summary, new.tags);
-                    END;
-                """)
-                logger.warning(
-                    "Migrated ke_au trigger to safe delete+insert FTS5 pattern "
-                    "(pre-existing database, Session 4C fix)."
-                )
-            conn.commit()
+    async def verify_integrity_now(
+        self,
+        retrieval_tokens: Optional[List[tuple]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Explicit (operator-requested) whole-database validation, with measured
+        cost. Runs structural, foreign-key, FTS and retrieval checks as
+        independent scoped findings and records the result on the instance.
+        """
+        tokens = retrieval_tokens or []
+
+        def _verify():
+            with closing(self._connect()) as conn:
+                result = run_full_integrity_validation(conn, retrieval_tokens=tokens)
+            identity = None
+            with closing(self._connect()) as conn:
+                identity = verify_content_row_identity(conn)
+            return {
+                "integrity": result,
+                "content_row_identity": {
+                    "passed": identity["passed"],
+                    "open_risk_classified": identity.get("open_risk_classified"),
+                    "checks": [f.as_dict() for f in identity["checks"]],
+                },
+            }
+
+        outcome = await self._run(_verify)
+        outcome["integrity"].pop("finding_objects", None)
+        self.last_full_validation = {
+            "verified_at": outcome["integrity"]["verified_at"],
+            "passed": outcome["integrity"]["passed"],
+            "total_cost_s": outcome["integrity"]["total_cost_s"],
+            "findings": outcome["integrity"]["findings"],
+        }
+        return outcome
 
     # ── Async helpers ─────────────────────────────────────────────────────
 
@@ -353,6 +503,7 @@ class SQLiteStorageBackend(StorageBackend):
             return {
                 "backend": "SQLiteStorageBackend",
                 "db_path": self.db_path,
+                "readiness_status": self.readiness_state.get("status"),
                 "total": total,
                 "by_layer": by_layer,
                 "by_truth_status": by_truth,

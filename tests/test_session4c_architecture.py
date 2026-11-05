@@ -46,6 +46,8 @@ from core.memory.unified_memory import UnifiedMemory
 from core.memory.backends.sqlite_storage import SQLiteStorageBackend
 from core.memory.backends.sqlite_archive import SQLiteArchiveBackend
 from core.memory.knowledge_entry import KnowledgeEntry
+from core.memory.sqlite_contract import CANONICAL_TRIGGER_DDL, MemoryReadinessError
+from core.memory.sqlite_migration import run_maintenance_migration
 from core.orchestrator import _interaction_id
 
 ORCHESTRATOR_SRC = Path(__file__).parent.parent / "core" / "orchestrator.py"
@@ -503,19 +505,30 @@ class TestPhase2HiddenIssueFTS5TriggerBug:
         assert len(final_hits) == 1
 
     def test_ke_au_trigger_uses_documented_delete_insert_pattern(self):
-        """Static confirmation of the actual fix, independent of runtime
-        behavior: the trigger source must use the FTS5 special 'delete'
-        command, not a raw UPDATE against the shadow table."""
-        src = inspect.getsource(SQLiteStorageBackend._init_sync)
-        assert "UPDATE knowledge_entries_fts\n" not in src.replace(" " * 20, "")
-        assert "'delete'" in src
-        assert src.count("INSERT INTO knowledge_entries_fts") >= 3  # ai trigger + au's 2 inserts
+        """Static confirmation of the fix, independent of runtime behavior —
+        Rev 3 retarget: the trigger source lives in the canonical contract
+        (`sqlite_contract.CANONICAL_TRIGGER_DDL`, single source of truth read
+        by the constructor, the maintenance runner and integrity validation.
+        The old per-backend `_init_sync` source no longer exists). The
+        canonical ke_au must use the FTS5 special 'delete' command, not a
+        raw UPDATE against the shadow table."""
+        au_source = CANONICAL_TRIGGER_DDL["ke_au"]
+        assert "UPDATE knowledge_entries_fts" not in au_source
+        assert "'delete'" in au_source
+        # The documented pattern is a delete command + one INSERT pair:
+        assert au_source.count("INSERT INTO knowledge_entries_fts") == 2
+        # And the whole canonical set stays registered with the same names:
+        assert set(CANONICAL_TRIGGER_DDL) == {"ke_ai", "ke_au", "ke_ad"}
 
     @pytest.mark.asyncio
-    async def test_existing_database_is_migrated_on_reopen(self, tmp_path):
-        """A database created before this fix must be transparently upgraded
-        the next time SQLiteStorageBackend opens it -- not just new
-        databases going forward."""
+    async def test_existing_database_is_migrated_via_maintenance_command(
+            self, tmp_path):
+        """A database created before this fix must be upgradeable to the
+        canonical contract — Rev 3 note: NOT any more through ordinary
+        startup. The constructor now REFUSES the legacy database
+        (validation-only, Amendment 2); the dedicated maintenance entry
+        point migrates it; only then does the backend open normally and
+        work."""
         import sqlite3
         db_path = tmp_path / "hidden_d" / "unified.db"
         db_path.parent.mkdir(parents=True)
@@ -556,9 +569,14 @@ class TestPhase2HiddenIssueFTS5TriggerBug:
         conn.commit()
         conn.close()
 
-        # Opening SQLiteStorageBackend against this pre-existing DB must
-        # detect and migrate the unsafe trigger automatically.
-        storage = SQLiteStorageBackend(str(db_path))
+        # Rev 3: ordinary construction must refuse the legacy database and
+        # must not silently migrate it (validation-only startup).
+        with pytest.raises(MemoryReadinessError):
+            SQLiteStorageBackend(str(db_path))
+
+        # The dedicated maintenance entry point migrates it:
+        report = run_maintenance_migration(str(db_path))
+        assert report.outcome == "migrated"
 
         conn = sqlite3.connect(str(db_path))
         trigger_sql = conn.execute(
@@ -568,6 +586,7 @@ class TestPhase2HiddenIssueFTS5TriggerBug:
         conn.close()
 
         # And it must actually work now -- not just look migrated.
+        storage = SQLiteStorageBackend(str(db_path))
         e1 = KnowledgeEntry(entry_id="x1", layer="l1", content="xqzMIGRATEDold",
                              importance=0.5, created_at=1.0, updated_at=1.0, accessed_at=1.0)
         await storage.write(e1)
@@ -645,12 +664,13 @@ class TestDeferredIssuesRationale:
         Engine which is not yet implemented. Adding metadata-aware retrieval
         now without the proper infrastructure would be premature complexity.
         The metadata field is persisted and will be available to v4.3.8."""
-        storage_src_path = (Path(__file__).parent.parent / "core" / "memory"
-                             / "backends" / "sqlite_storage.py")
-        src = storage_src_path.read_text()
+        # Rev 3: the FTS5 DDL lives in the canonical contract
+        # (`sqlite_contract.CANONICAL_FTS_DDL`), read by the storage
+        # backend's validation-only constructor.
+        from core.memory.sqlite_contract import CANONICAL_FTS_DDL
         # FTS5 virtual table indexes: content, summary, tags (not metadata)
-        assert "USING fts5(" in src
-        assert "content,\n                    summary,\n                    tags," in src
+        assert "USING fts5(" in CANONICAL_FTS_DDL
+        assert "metadata" not in CANONICAL_FTS_DDL
 
     def test_issue8_warning_logging_is_correct_for_current_phase(self):
         """Issue 8: warning-level logging for backend failures is correct
