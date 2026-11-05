@@ -19,6 +19,8 @@ from starlette.responses import JSONResponse
 
 from core.config import config
 from core.event_bus import bus
+from interface import auth as api_auth
+from interface.headers import SecurityHeadersMiddleware
 from core.orchestrator import Orchestrator
 from core.module_factory import create as factory_create
 
@@ -42,10 +44,15 @@ def _log_and_redact(context: str, error: Exception) -> str:
     return error_id
 
 
+# The interactive docs (/docs, /redoc) are disabled: they load third-party scripts
+# from a CDN into the same origin as the UI (and its sessionStorage token) and do
+# not work offline.  The schema is still served at /openapi.json, behind the token.
 app = FastAPI(
     title="OCBrain",
     version="2.1.0",
     description="OCBrain API — local self-learning AI assistant",
+    docs_url=None,
+    redoc_url=None,
 )
 
 # ── CSRF protection ───────────────────────────────────────────
@@ -85,6 +92,37 @@ class CSRFHeaderMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(CSRFHeaderMiddleware)
 
+# ── Authentication boundary (DEBT-025) ───────────────────────
+# Added AFTER the CSRF middleware so it is the OUTERMOST layer: an
+# unauthenticated request is rejected before CSRF, routing or any handler runs.
+# See interface/auth.py and docs/reports/api-exposure-and-auth-boundary-oct2026.md.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    api_auth.ApiAuthMiddleware,
+    settings_provider=lambda: api_auth.get_settings(config.get("global.api_auth")),
+    hosts_provider=lambda: api_auth.allowed_hosts(config.get("global.api_allowed_hosts")),
+)
+
+
+def _openapi_with_bearer() -> dict:
+    """Declare the bearer scheme so the docs UI's "Authorize" button works."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    schema = get_openapi(
+        title=app.title, version=app.version,
+        description=app.description, routes=app.routes,
+    )
+    schema.setdefault("components", {}).setdefault("securitySchemes", {})["bearerAuth"] = {
+        "type": "http", "scheme": "bearer",
+    }
+    schema["security"] = [{"bearerAuth": []}]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _openapi_with_bearer
+
 _orchestrator: Optional[Orchestrator] = None
 _scheduler    = None
 _orchestrator_ref: dict = {}
@@ -94,6 +132,12 @@ WEB_DIR = Path(__file__).parent / "web"
 
 def setup(orchestrator: Orchestrator, scheduler):
     global _orchestrator, _scheduler
+    # Fail fast and closed: resolve the API auth settings (creating the token
+    # file on first run) at startup rather than on the first request.
+    _auth = api_auth.get_settings(config.get("global.api_auth"))
+    if _auth.mode == api_auth.MODE_REQUIRED:
+        log.info("API authentication: bearer token required (token file: %s). "
+                 "Show the token with: ocbrain token --show", api_auth.token_path())
     _orchestrator = orchestrator
     _scheduler    = scheduler
     _orchestrator_ref["orchestrator"] = orchestrator
@@ -496,7 +540,8 @@ async def import_module(req: ImportRequest):
 async def debug():
     """
     Returns a full diagnostic snapshot — call this when something is broken.
-    Visit http://localhost:7437/debug in your browser.
+    Needs the API token (a plain browser tab cannot send it):
+        curl -H "Authorization: Bearer $(ocbrain token --show)" http://localhost:7437/debug
     """
     import httpx
     report = {}

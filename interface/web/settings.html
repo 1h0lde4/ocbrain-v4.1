@@ -64,6 +64,7 @@
 
 <div id="toast">Settings saved ✓</div>
 
+<script src="/static/auth.js"></script>
 <script>
 const API = '';
 let cfg = {};
@@ -138,7 +139,7 @@ function renderSection(title, defs) {
 
 async function load() {
   try {
-    const r = await fetch(`${API}/config`);
+    const r = await ocFetch(`${API}/config`);
     cfg = await r.json();
     const c = document.getElementById('settings-container');
     c.innerHTML =
@@ -188,7 +189,7 @@ async function saveAll() {
   });
 
   try {
-    await fetch(`${API}/config`, {
+    await ocFetch(`${API}/config`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify(updates),
@@ -205,7 +206,7 @@ async function saveAll() {
 
 async function wipePairs() {
   try {
-    await fetch(`${API}/config`, {
+    await ocFetch(`${API}/config`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-OCBrain-Local': '1' },
       body: JSON.stringify({ 'privacy.save_training_pairs': false }),

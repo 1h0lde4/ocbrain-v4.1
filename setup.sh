@@ -718,7 +718,7 @@ cat << 'DONE'
   ║     python main.py                                ║
   ║                                                   ║
   ║   Web UI:   http://localhost:7437                 ║
-  ║   API docs: http://localhost:7437/docs            ║
+  ║   Token:    ocbrain token --show                  ║
   ║                                                   ║
   ║   CLI: ocbrain "your question"                    ║
   ╚═══════════════════════════════════════════════════╝

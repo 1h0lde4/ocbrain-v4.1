@@ -244,13 +244,14 @@
   </div>
 </div>
 
+<script src="/static/auth.js"></script>
 <script>
 const API = '';
 
 // ── Status polling ────────────────────────────────────────────
 async function pollStatus() {
   try {
-    const r = await fetch(`${API}/status`);
+    const r = await ocFetch(`${API}/status`);
     const d = await readJsonResponse(r);
     const dot  = document.getElementById('status-dot');
     const txt  = document.getElementById('status-text');
@@ -292,10 +293,9 @@ function startInspection(executionId) {
   selectedNodeId = executionId;
   document.getElementById('thinking-control').classList.add('active');
   document.getElementById('thinking-label').textContent = 'Thinking...';
-  executionEvents = new EventSource(`${API}/executions/${encodeURIComponent(executionId)}/events`);
-  executionEvents.onmessage = async () => {
+  executionEvents = ocEventStream(`${API}/executions/${encodeURIComponent(executionId)}/events`, async () => {
     await refreshInspection();
-  };
+  });
   refreshInspection();
 }
 
@@ -307,7 +307,7 @@ function stopInspection() {
 async function refreshInspection() {
   if (!activeExecutionId) return;
   try {
-    const r = await fetch(`${API}/executions/${encodeURIComponent(activeExecutionId)}`);
+    const r = await ocFetch(`${API}/executions/${encodeURIComponent(activeExecutionId)}`);
     if (!r.ok) return;
     executionSnapshot = await readJsonResponse(r);
     renderInspection();
@@ -471,7 +471,7 @@ async function sendQuery() {
   startInspection(executionId);
 
   try {
-    const r = await fetch(`${API}/query`, {
+    const r = await ocFetch(`${API}/query`, {
       method: 'POST',
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ query, stream: true, execution_id: executionId }),
@@ -494,7 +494,7 @@ async function sendQuery() {
 // ── Modules ───────────────────────────────────────────────────
 async function loadModules() {
   try {
-    const r = await fetch(`${API}/modules`);
+    const r = await ocFetch(`${API}/modules`);
     const modules = await readJsonResponse(r);
     const grid = document.getElementById('module-grid');
     grid.innerHTML = '';
@@ -529,7 +529,7 @@ async function loadModules() {
 async function trainModule(name) {
   if (!confirm(`Trigger training for '${name}'?`)) return;
   try {
-    const r = await fetch(`${API}/train/${name}`, {method:'POST', headers: {'X-OCBrain-Local': '1'}});
+    const r = await ocFetch(`${API}/train/${name}`, {method:'POST', headers: {'X-OCBrain-Local': '1'}});
     const d = await readJsonResponse(r);
     alert(d.result);
   } catch (e) { alert(e.message); }
@@ -546,7 +546,7 @@ const SETTINGS_DEFS = [
 
 async function loadSettings() {
   try {
-    const r = await fetch(`${API}/config`);
+    const r = await ocFetch(`${API}/config`);
     const cfg = await readJsonResponse(r);
     const list = document.getElementById('settings-list');
     list.innerHTML = '';
@@ -573,7 +573,7 @@ async function toggleSetting(key, el) {
   el.classList.toggle('on');
   const val = el.classList.contains('on');
   try {
-    await fetch(`${API}/config`, {
+    await ocFetch(`${API}/config`, {
       method: 'PUT',
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ [key]: val }),
@@ -596,7 +596,7 @@ async function createModule() {
   const sources  = srcStr.split(',').map(s=>s.trim()).filter(Boolean);
   if (!name || !desc) { alert('Name and description are required.'); return; }
   try {
-    const r = await fetch(`${API}/modules/new`, {
+    const r = await ocFetch(`${API}/modules/new`, {
       method: 'POST',
       headers: {'Content-Type':'application/json', 'X-OCBrain-Local': '1'},
       body: JSON.stringify({ name, desc, model, keywords, sources }),
