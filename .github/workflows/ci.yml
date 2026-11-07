@@ -4,7 +4,10 @@ on:
   push:
     branches: [ main, 'h2/**', 'integration/**' ]
   pull_request:
-    branches: [ main ]
+    # `main`, plus the integration base that the sandbox-network-isolation PRs
+    # (B02, B03, ...) actually target.  Exact name on purpose: a wildcard would
+    # also trigger for PRs into every other workstream branch.
+    branches: [ main, 'sandbox-network-isolation/b01-base' ]
 
 permissions:
   contents: read
@@ -62,6 +65,16 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
+    env:
+      # The image the Docker-backed sandbox tests run their commands in
+      # (read by DockerBackend and by tests/core/sandbox/*; the code's own default is
+      # `alpine:3`).  It must contain python3: about 15 tests launch `python3`
+      # inside the container (see the "image must contain python3" note in
+      # tests/core/sandbox/test_network_isolation_contract.py), and a bare
+      # alpine:3 does not.  `python:3.12-alpine` is alpine with python3.  It is set
+      # here, once, for the preflight step and for pytest, so the two cannot
+      # diverge.  The digest actually used is recorded by the preflight step.
+      OCBRAIN_SANDBOX_DOCKER_IMAGE: python:3.12-alpine
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -77,6 +90,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Docker preflight and test-image provisioning
+        # Fail-closed prerequisite for the Docker-backed tests (scripts/ci_docker_preflight.py,
+        # unit-tested in tests/test_ci_docker_preflight.py): a reachable daemon, exactly
+        # this image reference provisioned in THIS job's daemon, resolved to a RepoDigest
+        # the way DockerBackend resolves it, and a container actually started from it
+        # with every executable the tests launch present.  Before this step the image
+        # was never provisioned and 75 tests failed with "no such object: alpine:3".
+        # No fallback image; no mocks; nothing is added to the known-failure list.
+        run: |
+          python3 scripts/ci_docker_preflight.py \
+            --image "$OCBRAIN_SANDBOX_DOCKER_IMAGE" \
+            --report /tmp/docker-preflight.json \
+            --require-executable python3 \
+            --require-executable sh \
+            --require-executable sleep \
+            --require-executable true \
+            --require-executable echo \
+            --require-executable printenv \
+            --require-executable yes \
+            --require-executable head \
+            --require-executable grep
+
+      - name: Upload Docker preflight report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docker-preflight
+          path: /tmp/docker-preflight.json
+          if-no-files-found: error
+
       - name: Run test suite
         # This step records pytest's REAL exit code and never fails by itself;
         # the gate step below decides. It must not discard the exit code (the
@@ -87,9 +130,13 @@ jobs:
         # The repository still has a documented set of known-failing tests
         # (docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt); the gate
         # tolerates ONLY those, only with pytest exit code 1.
+        #
+        # `-rs` adds the skip reasons to pytest's short summary so that every
+        # skip in a hosted run can be attributed (a skipped test is not a pass).
+        # It adds `SKIPPED [n] ...` lines only; the gate ignores them.
         run: |
           set +e
-          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest-output.txt
+          pytest tests/ -q --tb=short -rs 2>&1 | tee /tmp/pytest-output.txt
           echo "${PIPESTATUS[0]}" > /tmp/pytest-exit-code.txt
           exit 0
 
@@ -113,3 +160,56 @@ jobs:
             --output /tmp/pytest-output.txt \
             --exit-code-file /tmp/pytest-exit-code.txt \
             --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+
+  typecheck-b03:
+    # B03's acceptance includes a clean mypy run over its two files (reconciliation
+    # section 22).  Until this job existed that evidence was local only, never CI.
+    # Deliberately narrow: the two B03 files, not a repository-wide typing gate.
+    # Command and flags are the ones recorded as the evidence of record:
+    # MYPYPATH=. mypy [--strict] --explicit-package-bases --follow-imports=silent <files>.
+    # The toolchain is pinned to the version that evidence used (mypy 2.4.0); pytest is
+    # unpinned here exactly as requirements.txt leaves it, and its version is printed.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned mypy and pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy==2.4.0 "pytest>=8.0.0"
+
+      - name: mypy on the B03 files (default and --strict)
+        # Both runs always execute and both exit codes are kept; the step fails
+        # unless BOTH are 0.  The full output is uploaded as an artifact.
+        run: |
+          set +e
+          export MYPYPATH=.
+          FILES="core/sandbox/backends/_sandbox_network.py tests/core/sandbox/test_sandbox_network_guards.py"
+          {
+            python --version
+            mypy --version
+            pip list 2>/dev/null | grep -i -E '^(pytest|mypy) '
+            echo "files: $FILES"
+          } 2>&1 | tee /tmp/mypy-b03.txt
+          echo "== mypy (default) ==" | tee -a /tmp/mypy-b03.txt
+          mypy --explicit-package-bases --follow-imports=silent $FILES 2>&1 | tee -a /tmp/mypy-b03.txt
+          RC_DEFAULT=${PIPESTATUS[0]}
+          echo "== mypy --strict ==" | tee -a /tmp/mypy-b03.txt
+          mypy --strict --explicit-package-bases --follow-imports=silent $FILES 2>&1 | tee -a /tmp/mypy-b03.txt
+          RC_STRICT=${PIPESTATUS[0]}
+          echo "exit codes: default=$RC_DEFAULT strict=$RC_STRICT" | tee -a /tmp/mypy-b03.txt
+          [ "$RC_DEFAULT" = "0" ] && [ "$RC_STRICT" = "0" ]
+
+      - name: Upload mypy output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mypy-b03
+          path: /tmp/mypy-b03.txt
+          if-no-files-found: error
