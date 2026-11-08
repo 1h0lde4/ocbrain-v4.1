@@ -1,0 +1,46 @@
+# evidence-id: E03_rev2_rev3_doc_diffs
+# started-utc: 2026-10-24T16:00:34Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; X=$S/a5/ex_rev2; R=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness; echo "== blobs at 488129b8 (audit clone, read-only):"; for f in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py tests/test_session4c_architecture.py docs/architecture/PROJECT_INSTRUCTIONS.md; do echo "$f $(git --git-dir=$S/a4/repo_audit.git rev-parse 488129b8768a88a3d21dfd80b1f5407d50aba908:$f 2>&1)"; done; echo; echo "== LEDGER: REV2 (repo @51564e3) vs REV3 (repo @2dd2e7b): diffstat and hunk headers"; git show HEAD:docs/studies/g4-fts-errata-oct2026/decision_ledger_1d813bd_OPEN.md > $S/a5/out/ledger_rev2.md; git show $R:$D/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md > $S/a5/out/ledger_rev3.md; diff -u $S/a5/out/ledger_rev2.md $S/a5/out/ledger_rev3.md | grep -E "^(@@|\+\+\+|---)" ; echo "lines changed: $(diff $S/a5/out/ledger_rev2.md $S/a5/out/ledger_rev3.md | grep -c "^[<>]")"; echo "sections whose text differs (by ## heading containing a changed line):"; diff $S/a5/out/ledger_rev2.md $S/a5/out/ledger_rev3.md | grep -E "^[0-9,]+[acd]" ; echo; echo "== is the REV2 ledger inside the REV2 zip identical to the repo REV2 ledger?"; cmp $X/report/decision_ledger_1d813bd_OPEN.md $S/a5/out/ledger_rev2.md && echo identical; echo; echo "== FETCH QUOTATIONS: REV2-zip original vs REV3 header version:"; git show $R:$D/doc_fetch_quotations_as_returned_HEADER_REV2.md > $S/a5/out/fetch_rev3.md; wc -lc < $X/docs/doc_fetch_quotations_as_returned.md; wc -lc < $S/a5/out/fetch_rev3.md; diff $X/docs/doc_fetch_quotations_as_returned.md $S/a5/out/fetch_rev3.md | grep -E "^[0-9,]+[acd][0-9,]+$"; echo "lines only in REV3 header version (first 12, trimmed):"; diff $X/docs/doc_fetch_quotations_as_returned.md $S/a5/out/fetch_rev3.md | grep "^>" | head -12 | cut -c1-260; echo "lines removed from original (count): $(diff $X/docs/doc_fetch_quotations_as_returned.md $S/a5/out/fetch_rev3.md | grep -c "^<")"
+# ---- output ----
+== blobs at 488129b8 (audit clone, read-only):
+core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+tests/test_session4c_architecture.py 327c703c56465972674bf4cd8ce8348cb5b3c0ca
+docs/architecture/PROJECT_INSTRUCTIONS.md e2cf94704a742ff865221af9db5f0c2fca51f133
+
+== LEDGER: REV2 (repo @51564e3) vs REV3 (repo @2dd2e7b): diffstat and hunk headers
+--- /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/out/ledger_rev2.md	2026-10-24 16:00:34.610207534 +0000
++++ /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/out/ledger_rev3.md	2026-10-24 16:00:34.614207534 +0000
+@@ -27,11 +27,11 @@
+@@ -46,10 +46,11 @@
+@@ -87,4 +88,4 @@
+lines changed: 21
+sections whose text differs (by ## heading containing a changed line):
+30,34c30,34
+49,52c49,53
+90c91
+
+== is the REV2 ledger inside the REV2 zip identical to the repo REV2 ledger?
+identical
+
+== FETCH QUOTATIONS: REV2-zip original vs REV3 header version:
+  58 6611
+  59 7407
+1c1
+3c3
+5c5
+7c7,9
+58c60
+lines only in REV3 header version (first 12, trimmed):
+> # SQLite documentation wording — archive of fetch-tool output (not raw source text)
+> **Record type and authority.** This file preserves text returned by a summarising web-fetch tool on 2026-10-21. It is an archival record of that tool's response, **not a raw copy of the live SQLite pages and not an authority for current wording or section nu
+> **Subsequent verification for SQLite 3.45.1.** After this file was created, the quoted passages relied on by the packet were checked against raw HTML extracted from the SQLite 3.45.1 documentation package obtained from a signature-verified Ubuntu archive. Al
+> **Live-page limitation and section labels.** The audit shell could not read `sqlite.org` directly (HTTP 403 from the allow-list proxy). The only record of live-page text here is the fetch tool's response, copied into this file on 2026-10-21; that tool report
+> 
+> **Independent evidence boundary.** The behaviours described by these passages were separately checked against SQLite 3.45.1 source and the packaged runtime probes (`source_excerpts_raw.txt` and probe outputs). That does not validate untested SQLite versions,
+> `Doc/library/sqlite3.rst` at CPython tag `v3.12.3` (excerpts in `source_excerpts_raw.txt`): "The `executescript()` method implicitly commits any pending transaction before execution of the given SQL script, regardless of the value of `isolation_level`." and 
+lines removed from original (count): 5
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T16:00:34Z

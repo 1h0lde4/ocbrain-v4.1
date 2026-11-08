@@ -1,0 +1,46 @@
+# evidence-id: I80
+# started-utc: 2026-11-08T11:59:49Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum6.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final8/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_6_REVIEWER_LAUNCH_5_FINDINGS_ON_REV3_2026-11-08.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final8/g4_addendum_6_evidence_I76-I79.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_5_INDEPENDENT_REVIEW_BLOCKED_2026-11-07.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_addendum_5_delivery_all_files_2026-11-07.zip
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7]
+last non-empty line ok: True
+hardened status rules: conflicting matches: 0
+   PASS     Outcome of the fifth launch recorded with its report as left
+   BLOCKED  One independent-context review of revision 3 completed
+   PASS     Mechanism of F14 and F15 reproduced by the author on loopback
+   NOT RUN  The printed PASS of F14 reproduced by the author
+   FAIL     Revision 3 meets its own contract (no substantive finding)
+   PASS     No ref, commit, working file, pull request or remote changed
+   PASS     G4/freeze invariants
+   FAIL     Overall result (this addendum's scope)
+gates: ['PASS', 'BLOCKED', 'PASS', 'NOT RUN', 'FAIL', 'PASS', 'PASS'] | overall: ['FAIL'] | expected: FAIL
+ids cited: ['I51', 'I59', 'I60', 'I76', 'I77', 'I78', 'I79', 'I80'] | missing: []
+   addendum 5: e3dd62cf8d6c6cd714367315d078e53dbc0fae899172c566c4894a608f2a6908 cited: True
+   addendum 5 delivery zip: 4c27f3df727b7aec120dda822e624ba38c18e5467d50f8b8c4c0ce59cc67e099 cited: True
+   bundle 6: 2408280ca34eac9202ec04f29821035c1d9f7a0ea42a35afaace0b64ce6605b3 cited: True
+64-hex digests: 3 | not backed: []
+bundle integrity: OK | entries: 8
+manifest mismatches: []
+bundle block sha256: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53
+   claim FOUND  R1 `?@` accepted
+   claim FOUND  R1 `#@` accepted
+   claim FOUND  R1 `/@` rejected
+   claim FOUND  R1 `/x?@` rejected
+   claim FOUND  R2 connects to 127.0.0.1 port 1
+   claim FOUND  R3 3 lines with the query token
+   claim FOUND  R4 3 lines with the user-name token
+   claim FOUND  R5 git alone prints the user-name token
+   claim FOUND  control 0
+   claim FOUND  I78 first line IN PROGRESS
+   claim FOUND  I78 size 2367
+   claim FOUND  I78 states the reported PASS
+   claim FOUND  I78 states the secret output
+   claim FOUND  I76 429 five-hour limit
+   claim FOUND  I79 PR 90
+HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b | remote tip: ['d963daa502de4220411d0d0c2f19f67b3ec2682b'] | status lines: 0
+40-hex ids: ['d963daa502de4220411d0d0c2f19f67b3ec2682b']
+RESULT: ALL MECHANICAL CHECKS PASSED
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-08T11:59:50Z

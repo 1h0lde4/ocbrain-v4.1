@@ -1,0 +1,12 @@
+# evidence-id: I48_tool_versions_for_the_block_tests
+# started-utc: 2026-11-02T10:21:08Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: git --version; bash --version | head -1; uname -sr; python3 --version
+# ---- output ----
+git version 2.43.0
+GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+Linux 6.18.44-fc-v185
+Python 3.13.16
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:21:08Z

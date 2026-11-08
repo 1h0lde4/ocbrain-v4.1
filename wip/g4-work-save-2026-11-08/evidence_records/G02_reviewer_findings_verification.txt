@@ -1,0 +1,63 @@
+# evidence-id: G02_reviewer_findings_verification
+# started-utc: 2026-10-26T21:09:56Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness; P=docs/studies/g4-fts-errata-oct2026; PK=$P/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md;
+echo "== F1: checker flags in C04 (inputs)"; sed -n 4p $S/a5/evidence/C04_rerun_83_on_repo_packet.txt | grep -o -- "--[a-z-]* [^ ;]*" | grep -E "preserved|derivation|contract-compare|out|packet|worktree";
+echo "== F1: checker reads fts_migration_protocol_run{1,2}.json from --preserved (script line 185)"; sed -n 185p $S/a5/ex_rev2/scripts/rev2_numbers_check.py | cut -c1-200;
+echo "== F1: those files are NOT in the REV2 zip"; unzip -Z1 $S/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip | grep -c "fts_migration_protocol_run" ;
+echo "== F1: revision-1 zip and the two files (run in-place read; no extraction, nothing executed)"; Z=$S/b3_deliver/fts_decision_packet_evidence_1d813bd.zip; sha256sum $Z; stat -c "%s bytes" $Z;
+for r in 1 2; do echo "run$r in zip: $(unzip -p $Z out/fts_migration_protocol_run$r.json | sha256sum | cut -c1-64)  | on disk (a4/zx_fresh/out): $(sha256sum $S/a4/zx_fresh/out/fts_migration_protocol_run$r.json | cut -c1-64)"; done; sed -n 13,14p $S/a4/zx_fresh/MANIFEST.sha256;
+echo "== F2: packet line 130 and rank=1 on copies"; sed -n 130p $PK | cut -c1-260; grep -n -i "real database" $PK | cut -c1-160 | head -5;
+echo "== F5: fetch-header diff REV2-zip vs REV3 blob"; unzip -p $S/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip docs/doc_fetch_quotations_as_returned.md > $S/review_tmp_a/f2.md 2>/dev/null || { mkdir -p $S/review_tmp_a; unzip -p $S/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip docs/doc_fetch_quotations_as_returned.md > $S/review_tmp_a/f2.md; }; git show $R3:$D/doc_fetch_quotations_as_returned_HEADER_REV2.md > $S/review_tmp_a/f3.md; diff $S/review_tmp_a/f2.md $S/review_tmp_a/f3.md | grep -E "^[0-9]"; wc -l $S/review_tmp_a/f2.md $S/review_tmp_a/f3.md;
+echo "== F6: last byte of each REV3 file (\\n = trailing newline)"; for f in IMPLEMENTATION_ROADMAP.md $D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md $D/NEXT_SESSION_PROMPT_REV3.md $D/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md $D/doc_fetch_quotations_as_returned_HEADER_REV2.md $D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md; do printf "%s: " "$(basename $f)"; git show $R3:$f | tail -c1 | od -An -c; done;
+echo "== F7: F02 finish time"; grep finished-utc $S/a5/evidence/F02_final_repo_state.txt
+
+# ---- output ----
+== F1: checker flags in C04 (inputs)
+--out $X/out
+--packet $S/a5/pkt/$PK
+--worktree $WT
+--preserved $S/a4/zx_fresh/out
+--derivation $X/out/independent_derivation_preserved_run1.json
+--contract-compare $X/out/contract_rerun/compare_contract_rerun1_vs_run2_run3.json
+== F1: checker reads fts_migration_protocol_run{1,2}.json from --preserved (script line 185)
+pr = {r: json.load(open(os.path.join(A.preserved, f"fts_migration_protocol_run{r}.json")))["part5_rebuild_duration"] for r in (1, 2)}
+== F1: those files are NOT in the REV2 zip
+0
+== F1: revision-1 zip and the two files (run in-place read; no extraction, nothing executed)
+79c6146c609a76548260f261f05692d32bbd32f44694b430a096a48a079d2721  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/b3_deliver/fts_decision_packet_evidence_1d813bd.zip
+79260 bytes
+run1 in zip: c28b21e82e3a5c842cfa1f66632271a35aa1c60fcebd902c93bca316e149eff3  | on disk (a4/zx_fresh/out): c28b21e82e3a5c842cfa1f66632271a35aa1c60fcebd902c93bca316e149eff3
+run2 in zip: 24a5d07427422b4aeb5a2b8c35eea52cc728b546fb9f695e39271dcffa7ec831  | on disk (a4/zx_fresh/out): 24a5d07427422b4aeb5a2b8c35eea52cc728b546fb9f695e39271dcffa7ec831
+c28b21e82e3a5c842cfa1f66632271a35aa1c60fcebd902c93bca316e149eff3  out/fts_migration_protocol_run1.json
+24a5d07427422b4aeb5a2b8c35eea52cc728b546fb9f695e39271dcffa7ec831  out/fts_migration_protocol_run2.json
+== F2: packet line 130 and rank=1 on copies
+Procedures were applied to a byte copy of each of the 7 prepared fixtures. Workload W: update and delete every live row, then insert/upsert/delete rows reusing the fixture's tokens; measured after every operation against an index-independent reference.
+224:Real database sizes are UNKNOWN; all timings are container-specific.
+315:2. **Legacy fixtures (generated, disposable):** F1–F5c plus databases built from the historical schema of `81d3069`/`42818a7`; **and** histories produced 
+337:| G-5 | Real database sizes and startup budget | Lock hold 0.49–0.57 s at 50k rows here; extrapolated 20 s at ≈1.9 M rows; real sizes UNKNOWN. |
+351:| Real databases (size, legacy states, whether ghosts exist) | UNKNOWN; none examined |
+362:A read-only check the maintainer **may** run on a **copy** of a real database, inside a rolled-back transaction, to learn whether legacy ghosts exist: `INSE
+== F5: fetch-header diff REV2-zip vs REV3 blob
+bash: line 9: /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/review_tmp_a/f2.md: No such file or directory
+1c1
+3c3
+5c5
+7c7,9
+58c60
+   58 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/review_tmp_a/f2.md
+   59 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/review_tmp_a/f3.md
+  117 total
+== F6: last byte of each REV3 file (\n = trailing newline)
+IMPLEMENTATION_ROADMAP.md:   \n
+G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:   \n
+NEXT_SESSION_PROMPT_REV3.md:   \n
+decision_ledger_1d813bd_OPEN_D2_D5_REV2.md:    .
+doc_fetch_quotations_as_returned_HEADER_REV2.md:    .
+fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md:    .
+== F7: F02 finish time
+# finished-utc: 2026-10-25T00:12:23Z
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-26T21:09:57Z

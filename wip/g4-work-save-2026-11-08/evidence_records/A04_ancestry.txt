@@ -1,0 +1,25 @@
+# evidence-id: A04_ancestry
+# started-utc: 2026-10-24T15:56:59Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: M=refs/remotes/origin/main; A=refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026; B=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; for X in $A $B; do echo "== $X"; echo "tip: $(git rev-parse $X)"; echo "main...tip left/right (behind/ahead): $(git rev-list --left-right --count $M...$X)"; echo "merge-base with main: $(git merge-base $M $X 2>&1)"; echo "parent(s): $(git rev-list --parents -n1 $X)"; done; echo "== between the two branches (A...B): $(git rev-list --left-right --count $A...$B)"; echo "merge-base A,B: $(git merge-base $A $B 2>&1)"; echo "--- commits beyond main:"; git log --format="%H|%an|%cI|%s" $M..$A; git log --format="%H|%an|%cI|%s" $M..$B; echo "--- main tip: $(git log -1 --format="%H|%an|%cI|%s" $M)"
+# ---- output ----
+== refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026
+tip: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+main...tip left/right (behind/ahead): 0	2
+merge-base with main: f13bfdefcdd197ed1f966de0b1f93037a4168af4
+parent(s): 51564e34c18e5cc908cf517000ebc9bd41eaf194 eca2b96521fba8cf792ea16a58be997e4f949356
+== refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026
+tip: 2dd2e7bb05db949a6156266cfa3430c58de09922
+main...tip left/right (behind/ahead): 0	1
+merge-base with main: f13bfdefcdd197ed1f966de0b1f93037a4168af4
+parent(s): 2dd2e7bb05db949a6156266cfa3430c58de09922 f13bfdefcdd197ed1f966de0b1f93037a4168af4
+== between the two branches (A...B): 2	1
+merge-base A,B: f13bfdefcdd197ed1f966de0b1f93037a4168af4
+--- commits beyond main:
+51564e34c18e5cc908cf517000ebc9bd41eaf194|Claude|2026-10-24T01:28:46+00:00|docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+eca2b96521fba8cf792ea16a58be997e4f949356|Claude|2026-10-24T01:26:30+00:00|docs(g4): FTS correctness errata rev 2 (PROPOSED, documentation-only checkpoint)
+2dd2e7bb05db949a6156266cfa3430c58de09922|N4Z|2026-10-23T10:30:25+00:00|docs(g4): preserve REV3 FTS evidence handoff and next-session gate
+--- main tip: f13bfdefcdd197ed1f966de0b1f93037a4168af4|N4Z|2026-10-19T08:59:13+00:00|Merge pull request #82 from 1h0lde4/docs/adr-kernel-07-state-reconciliation-oct2026
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:56:59Z

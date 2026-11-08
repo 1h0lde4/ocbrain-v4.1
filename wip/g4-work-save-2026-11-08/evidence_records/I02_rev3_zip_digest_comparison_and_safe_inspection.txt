@@ -1,0 +1,46 @@
+# evidence-id: I02_rev3_zip_digest_comparison_and_safe_inspection
+# started-utc: 2026-10-29T08:37:20Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; Z="/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip";
+python3 -I - "$Z" <<PY
+import hashlib, sys
+A = "f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc"
+B = "f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc"
+h = hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()
+print("measured:", h)
+print("equals Value A:", h == A)
+print("equals Value B:", h == B)
+for name, v in (("A", A), ("B", B)):
+    d = [i for i in range(64) if h[i] != v[i]]
+    print(f"positions where measured differs from {name} (zero-based):", d)
+PY
+echo "== safe inspection (no extraction, nothing executed)"; python3 -I $S/a6_scripts/zip_safe_inspect.py "$Z"; echo "== unzip -t"; unzip -tq "$Z"; echo "unzip -t exit=$?"
+
+# ---- output ----
+measured: f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc
+equals Value A: False
+equals Value B: True
+positions where measured differs from A (zero-based): [23]
+positions where measured differs from B (zero-based): []
+== safe inspection (no extraction, nothing executed)
+entries (all): 87
+regular-looking files: 87 | directory entries: 0
+absolute / backslash / drive paths: []
+parent-traversal paths: []
+duplicate names: []
+case-collisions: []
+symlink entries: []
+special-mode entries: []
+encrypted entries: []
+total compressed: 241591 total uncompressed: 1272348 ratio: 5.27
+largest entry: out/fts_commit_boundary_run1.json 121672
+zip comment: b''
+top-level prefixes: ['MANIFEST.sha256', 'README.md', 'docs', 'inputs', 'out', 'report', 'scripts']
+testzip (first bad member or None): None
+== unzip -t
+No errors detected in compressed data of /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip.
+unzip -t exit=0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:37:20Z

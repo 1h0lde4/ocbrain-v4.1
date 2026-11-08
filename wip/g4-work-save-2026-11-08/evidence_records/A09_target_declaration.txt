@@ -1,0 +1,9 @@
+# evidence-id: A09_target_declaration (written before any possible write; declaration, not an observation)
+# declared-utc: 2026-10-24T15:58Z
+target branch (only branch that could ever be edited): docs/g4-fts-errata-handoff-oct2026 (local; remote tip identical)
+full starting commit: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+worktree at declaration: clean (A02: 0 changed/untracked paths, 0 stash entries)
+permitted repo file paths for category-1 edits: NONE pre-authorised. Candidate files are listed in the report; each edit must first pass Section 10 classification.
+outputs of this task (report, evidence, proposed diffs) are written OUTSIDE the repository, under the session scratchpad, and are not part of any commit.
+REV3 branch / PR #90: read-only; not a target. main: read-only.
+no commit, push, PR update, merge, reset, clean, stash, branch deletion or history rewrite will be performed.

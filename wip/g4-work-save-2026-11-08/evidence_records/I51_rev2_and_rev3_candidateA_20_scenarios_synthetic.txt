@@ -1,0 +1,30 @@
+# evidence-id: I51
+# started-utc: 2026-11-03T09:47:47Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/negative_tests_rev3.sh
+# ---- output ----
+scen  required rev2   rev3   first FAIL line of rev3
+s01   PASS     PASS   PASS   
+s02   PASS     PASS   PASS   
+s03   PASS     PASS   PASS   
+s04   FAIL     FAIL   FAIL   FAIL: 0cfeca8059bf752b7a1239b2ec3488c2e29778fa does not change handoff.md al
+s05   FAIL     FAIL   FAIL   FAIL: 623345e5c4dd69256018c9c5e4825d266f06516a does not change handoff.md al
+s06   FAIL     FAIL   FAIL   FAIL: the handoff commit is not an ancestor of the remote tip
+s07   FAIL     FAIL   FAIL   FAIL: live remote tip (2af5d47b30fdb4ca3108a0ed43591996e3281fd2) differs fro
+s08   FAIL     FAIL   FAIL   FAIL: b08c828659733bba3b5a234e57316c68042a5f9f is not a single-parent child 
+s09   FAIL     FAIL   FAIL   FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tre
+s10   FAIL     FAIL   FAIL   FAIL: the parents of the handoff commit are not exactly the transfer commit
+s11   FAIL     FAIL   FAIL   FAIL: fetch of the remote branch failed
+s12   FAIL     PASS * FAIL   FAIL: the remote branch moved during verification (now 6719f1f3a78587cdee9fa
+s13   FAIL     PASS * FAIL   FAIL: git ls-remote failed or did not return exactly one matching ref
+s14   FAIL     PASS * FAIL   FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tre
+s15   FAIL     FAIL   FAIL   FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tre
+s16   FAIL     PASS * FAIL   FAIL: origin (/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d
+s17   FAIL     PASS * FAIL   FAIL: the final git ls-remote failed or did not return exactly one matching 
+s18   FAIL     FAIL   FAIL   FAIL: git ls-remote failed or did not return exactly one matching ref
+s19   FAIL     PASS * FAIL   FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tre
+s20   FAIL     FAIL   FAIL   FAIL: fetch of the remote branch failed
+scenarios: 20; rev2: mismatches 6 (false PASS 6, false FAIL 0); rev3: mismatches 0 (false PASS 0, false FAIL 0)   [* = result differs from the required one]
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-03T09:47:58Z

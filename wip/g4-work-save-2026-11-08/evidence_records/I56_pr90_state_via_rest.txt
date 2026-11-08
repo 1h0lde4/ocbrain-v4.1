@@ -1,0 +1,12 @@
+# evidence-id: I56
+# started-utc: 2026-11-04T10:41:09Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq '"PR #90: state=\(.state) draft=\(.draft) head=\(.head.sha) commits=\(.commits) changed_files=\(.changed_files) base=\(.base.ref)"'; git ls-remote origin refs/heads/main | cut -f1; git status --porcelain | wc -l; git rev-parse HEAD
+# ---- output ----
+PR #90: state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7 base=main
+2491ae469edd6ef1267a14604c4f8f40d698f7ea
+0
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-04T10:41:10Z

@@ -1,0 +1,46 @@
+# evidence-id: I17_attached_review_cc2745a2_checks
+# started-utc: 2026-10-31T08:42:45Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness
+echo "== attachment file (for the record)"; sha256sum /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/cc2745a2-attachment.txt; wc -c /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/cc2745a2-attachment.txt
+CLAIM_VR=dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5
+echo "== where REV3 records the verification-report digest (REV3 branch tip)"; for f in $D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md $D/NEXT_SESSION_PROMPT_REV3.md $D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md; do git show $R3:$f | grep -n -o -E "dd77ace0[0-9a-f]*" | sed "s|^|$f: |"; done
+echo "== in-repo copy of the verification report"; git show $R3:$D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md > $S/a6/vr_repo_copy.md; wc -c $S/a6/vr_repo_copy.md; sha256sum $S/a6/vr_repo_copy.md; printf "last byte (hex): "; tail -c1 $S/a6/vr_repo_copy.md | xxd -p; echo "CR count: $(tr -cd "\r" < $S/a6/vr_repo_copy.md | wc -c)"
+cp $S/a6/vr_repo_copy.md $S/a6/vr_repo_copy_plus_LF.md; printf "\n" >> $S/a6/vr_repo_copy_plus_LF.md
+echo "== repo copy + one final LF"; wc -c $S/a6/vr_repo_copy_plus_LF.md; H=$(sha256sum $S/a6/vr_repo_copy_plus_LF.md | cut -d" " -f1); echo $H; echo "equals the attachment-claimed digest ($CLAIM_VR): $([ "$H" = "$CLAIM_VR" ] && echo YES || echo NO)"
+echo "== older handoff: full digest in my earlier evidence vs the attachment claim"; grep -r -h -o -E "da162e71[0-9a-f]{56}" $S/a5/evidence | sort -u; echo "claimed: da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d"
+echo "== does main carry Value A, the REV3 docs or handoff.md? (read-only API)"; R=1h0lde4/ocbrain-v4.1
+for p in IMPLEMENTATION_ROADMAP.md $D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md $D/NEXT_SESSION_PROMPT_REV3.md $D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md handoff.md; do printf "%s: " "$p"; gh api "repos/$R/contents/$p?ref=main" --jq ".sha" 2>&1 | head -1 | cut -c1-80; done
+echo "A occurrences in main IMPLEMENTATION_ROADMAP.md: $(gh api "repos/$R/contents/IMPLEMENTATION_ROADMAP.md?ref=main" --jq .content | base64 -d | grep -c f9ee626551e5175a7ba0893c336a)"
+echo "main tip: $(gh api repos/$R/git/ref/heads/main --jq .object.sha)"
+
+# ---- output ----
+== attachment file (for the record)
+d33f34430bed688e503ac95eab2f96922a7f4346429fe4a23c3b0f6404e597c5  /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/cc2745a2-attachment.txt
+8730 /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/cc2745a2-attachment.txt
+== where REV3 records the verification-report digest (REV3 branch tip)
+docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md: 23:dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5
+== in-repo copy of the verification report
+3045 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/vr_repo_copy.md
+1fc6999b126d943fff6a1bf40e8c69f47974cd6af5c07294a04ac17dd46153aa  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/vr_repo_copy.md
+last byte (hex): bash: line 6: xxd: command not found
+CR count: 0
+== repo copy + one final LF
+3046 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/vr_repo_copy_plus_LF.md
+dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5
+equals the attachment-claimed digest (dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5): YES
+== older handoff: full digest in my earlier evidence vs the attachment claim
+da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d
+claimed: da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d
+== does main carry Value A, the REV3 docs or handoff.md? (read-only API)
+IMPLEMENTATION_ROADMAP.md: 42bf96c745374f963dd27228df3014d7b43b68f0
+docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/c
+docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/c
+docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/c
+handoff.md: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/c
+A occurrences in main IMPLEMENTATION_ROADMAP.md: 0
+main tip: 16d663ac8449965f774033da46d5063506a772a7
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T08:42:47Z

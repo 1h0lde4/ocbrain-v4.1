@@ -1,0 +1,20 @@
+# evidence-id: D02_handoff_statements
+# started-utc: 2026-10-24T15:59:32Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; O=$S/a4/final/handoff.md; R=$S/a5/out/repo_handoff_at_51564e3.md; for f in "$O" "$R"; do echo "=============== $(basename $(dirname $f))/$(basename $f)"; grep -n -E "Transfer status|TRANSFER (READY|INCOMPLETE)|repository contains no work|forbids a branch|HANDOFF NOT COMMITTED|no branch, commit|Handoff version|Created at|first written|da162e71|rev3|REV3|2dd2e7|PR #90|N4Z" $f | cut -c1-330; done
+# ---- output ----
+=============== final/handoff.md
+5:- Handoff version: 1
+6:- Created at: 2026-10-23 (UTC)
+11:- Transfer status: **TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED** (by design: documentation-only deliverables delivered as a zip + sha256 and files; the task forbids a branch, commit-to-product, PR or push; see §19)
+498:**TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED**
+500:Reason: by design. The task is documentation-only and forbids a branch, commit, PR or push; the repository contains no work of this workstream. The deliverables exist only as files under the session scratch directory and as the delivered zip plus sha256 values; that is **non-repository state** the user must preserve (the pro
+=============== out/repo_handoff_at_51564e3.md
+5:- Handoff version: 1
+6:- Created at: 2026-10-24 (UTC); first written 2026-10-23 as a file-only handoff, updated here for the repository checkpoint
+12:- Transfer status: **TRANSFER READY** with documented, user-accepted non-repository state (see §19)
+530:**TRANSFER READY** — for a documentation-only transfer, with the non-repository state below documented and **explicitly accepted by the user**.
+539:If step 2 of §18 fails, treat the status as **TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED**.
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:59:32Z

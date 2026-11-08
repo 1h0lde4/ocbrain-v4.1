@@ -1,0 +1,41 @@
+# evidence-id: I21_preflight_before_execution
+# started-utc: 2026-10-31T15:15:53Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/preflight.sh
+# ---- output ----
+== local clone
+docs/g4-fts-errata-handoff-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194
+status lines: 0; stash: 0
+origin url (credentials masked): https://github.com/1h0lde4/ocbrain-v4.1
+git user: Claude <noreply@anthropic.com>
+== remote tips (git ls-remote, read-only)
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+16d663ac8449965f774033da46d5063506a772a7	refs/heads/main
+== ZIP re-measured at execution time
+254581
+f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc
+equals B: YES; equals A: NO
+== P1 against the live REV2 handoff.md
+P1 git apply --check exit 0
+ handoff.md |    5 +++++
+ 1 file changed, 5 insertions(+)
+== P1 factual anchors
+-- NEXT_SESSION_PROMPT_REV3.md line 12:
+2. The exact original full handoff attachment, handoff(1).md, SHA-256 da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d. Confirm the file hash. Do not substitute a line-ending-normalized copy: the embedded original task prompt was verified byte-
+-- continuation line 24:
+- Archival pre-REV3 handoff SHA-256: da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d
+-- quoted strings in the older handoff scratch copy (count):
+TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED: 2
+the repository contains no work of this workstream: 1
+older handoff lines: 502; level-2 headings: 19; repo handoff level-2 headings: 19
+-- REV3 tip commit date: 2026-10-23T10:30:25+00:00  sha 2dd2e7bb05db949a6156266cfa3430c58de09922
+== P3 against the live REV3 files (scratch copies from the REV3 tip)
+P3 git apply --check exit 0
+== is the erratum target path free on the REV3 branch?
+fatal: path 'docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md' does not exist in 'origin/docs/g4-fts-correctness-handoff-rev3-oct2026'
+(exit shows absence if non-zero)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T15:15:54Z

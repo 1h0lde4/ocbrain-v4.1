@@ -1,0 +1,25 @@
+# evidence-id: D01_handoff_hashes_and_diff
+# started-utc: 2026-10-24T15:59:32Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; O=$S/a4/final/handoff.md; git show HEAD:handoff.md > $S/a5/out/repo_handoff_at_51564e3.md; echo "== older handoff (scratch copy that was delivered via SendUserFile; user-side attachment handoff(1).md NOT available here):"; sha256sum $O; wc -lc < $O; echo "== repo handoff.md @ 51564e3 (git show):"; sha256sum $S/a5/out/repo_handoff_at_51564e3.md; wc -lc < $S/a5/out/repo_handoff_at_51564e3.md; echo "git blob: $(git rev-parse HEAD:handoff.md); working-tree file hash-object: $(git hash-object handoff.md)"; echo "== line endings (CR count):"; grep -c $(printf "\r") $O; grep -c $(printf "\r") $S/a5/out/repo_handoff_at_51564e3.md; echo "== the REV3-recorded hash for handoff(1).md is da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d:"; sha256sum $O | grep -c da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d | sed "s/^/matches scratch copy (1=yes): /"; echo "== diff stat older -> repo:"; diff <(cat $O) $S/a5/out/repo_handoff_at_51564e3.md | grep -c "^[<>]" | sed "s/^/changed lines (< or >): /"; diff $O $S/a5/out/repo_handoff_at_51564e3.md | grep -E "^[0-9,]+[acd][0-9,]+$" | wc -l | sed "s/^/hunks: /"; echo "== level-2 headings identical?"; diff <(grep -E "^## " $O) <(grep -E "^## " $S/a5/out/repo_handoff_at_51564e3.md) && echo identical
+# ---- output ----
+== older handoff (scratch copy that was delivered via SendUserFile; user-side attachment handoff(1).md NOT available here):
+da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/handoff.md
+  502 48655
+== repo handoff.md @ 51564e3 (git show):
+a41ca6101a7dfebc6bdb8d18b1abce7934a83b886ea0ce0d96f2dd739ef662df  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/out/repo_handoff_at_51564e3.md
+  541 55056
+git blob: 05296d7339e7565116156cecaf047961c51b75ea; working-tree file hash-object: 05296d7339e7565116156cecaf047961c51b75ea
+== line endings (CR count):
+0
+0
+== the REV3-recorded hash for handoff(1).md is da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d:
+matches scratch copy (1=yes): 1
+== diff stat older -> repo:
+changed lines (< or >): 87
+hunks: 13
+== level-2 headings identical?
+identical
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:59:32Z

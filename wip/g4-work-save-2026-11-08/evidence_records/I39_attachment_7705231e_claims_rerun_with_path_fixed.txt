@@ -1,0 +1,39 @@
+# evidence-id: I39_attachment_7705231e_claims_rerun_with_path_fixed
+# started-utc: 2026-11-02T10:03:41Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_attachment_7705231e.sh
+# ---- output ----
+== attachment claim 1: REV2 history is eca2b96 -> 51564e34 -> d963daa5 (parents, live remote branch)
+d963daa parent=51564e3 docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 
+51564e3 parent=eca2b96 docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+tip: d963daa502de4220411d0d0c2f19f67b3ec2682b
+live: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+== claim 2: section 18 step 2 text on the pushed branch (quoted from the file)
+509:  - *Effect on this file's own checks.* This entry was added after the handoff commit (`51564e34c18e5cc908cf517000ebc9bd41eaf194`). The branch therefore holds two commits after the transfer commit `eca2b96521fba8cf792ea16a58be997e4f949356`: `51564e34…`, then the commit that adds this entry. The "exactly one later commit" of §18 step 2 and the `git log --oneline -1 -- handoff.md` of §7 refer to `51564e34…`; 
+526:2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` and `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` (the branch must contain it; it should contain exactly one later commit, the handoff commit, whose parent is `eca2b96521fba8cf792ea16a58be997e4f949356`). If the branch tip is not the handoff commit or the handoff file is missing
+== claim 2b: section 7 lookup and the section-19 rule, run literally on the pushed branch
+git log --oneline -1 -- handoff.md  ->  d963daa docs(handoff): record provenance of the earlier handoff revision and the
+git log --diff-filter=A --oneline -- handoff.md  ->  51564e3 docs(handoff): G4 / FTS errata session handoff for fresh-session continu
+parent of the tip: 51564e34c18e5cc908cf517000ebc9bd41eaf194  (section 18 step 2 expects eca2b96521fba8cf792ea16a58be997e4f949356)
+545:If step 2 of §18 fails, treat the status as **TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED**.
+== does P1c (as built) change section 7 or section 18 text? (lines touched by the patch)
+2
+3:@@ -504,9 +504,9 @@
+section 18 step 2 line numbers in the file (P1c hunks must not include them):
+351:## 7. Git / Repository Checkpoint
+509:  - *Effect on this file's own checks.* This entry was added after the hando
+521:## 18. Resume Instructions
+526:2. Verify the transfer commit is present and unchanged: `git cat-file -t eca
+== claim 4: PR #90 against current main
+pr90: state=open draft=true base=f13bfdefcdd197ed1f966de0b1f93037a4168af4 head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7
+pr-branch vs main: status=diverged ahead_by=3 behind_by=96 merge_base=f13bfdefcdd197ed1f966de0b1f93037a4168af4
+main tip: 2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+files changed on main since the shared base f13bfde: 28
+PR #90 files: 7
+overlap count: 0
+== claim 5: DEBT-042 in KNOWN_ISSUES.md on main
+15:**Last synchronized:** Oct 14, 2026, ADR-KERNEL-07 (creative content-anchor detector, slice 1) workstream state recorded and two defects registered (documentation only; no code or contract change in this PR). **DEBT-042** (`_fts_escape()` leaves FTS5 query-
+68:| DEBT-042 | Memory | **`SqliteStorage._fts_escape()` leaves most FTS5 query-syntax characters unescaped, so L1 full-text search fails for ordinary punctuation (found during the ADR-KERNEL-07 live check; OPEN, reproduced, not fixed).** `core/memory/backends
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:03:45Z

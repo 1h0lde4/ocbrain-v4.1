@@ -1,0 +1,21 @@
+# evidence-id: I47_rev2_block_run_unmodified_on_real_remote_and_fresh_clone
+# started-utc: 2026-11-02T10:20:40Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/run_block_on_real_remote.sh
+# ---- output ----
+block sha256 (as extracted from the proposed patch): 014fad4792ab082448fc48f3328c49ceb67bf551261ac828cb4a81527336519f
+== 1. unmodified block, run in the working clone against the live remote branch (it only updates the remote-tracking ref)
+follow-up: d963daa502de4220411d0d0c2f19f67b3ec2682b docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how this entry affects the file's own checks (P1 + P1b)
+PASS: handoff commit 51564e34c18e5cc908cf517000ebc9bd41eaf194 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-parent child changing handoff.md alone
+exit: 0
+== 2. unmodified block, run in a fresh no-checkout clone of the remote (the attachment's condition for closing F7)
+clone source: https://github.com/1h0lde4/ocbrain-v4.1
+fresh clone from the remote: OK
+follow-up: d963daa502de4220411d0d0c2f19f67b3ec2682b docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how this entry affects the file's own checks (P1 + P1b)
+PASS: handoff commit 51564e34c18e5cc908cf517000ebc9bd41eaf194 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-parent child changing handoff.md alone
+exit: 0
+== state of the real clone afterwards
+HEAD d963daa502de4220411d0d0c2f19f67b3ec2682b; status lines 0; remote tip d963daa502de4220411d0d0c2f19f67b3ec2682b
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:20:44Z

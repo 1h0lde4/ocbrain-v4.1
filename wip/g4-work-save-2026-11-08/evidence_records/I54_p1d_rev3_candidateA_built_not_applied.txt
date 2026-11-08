@@ -1,0 +1,26 @@
+# evidence-id: I54
+# started-utc: 2026-11-03T09:49:17Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/build_p1d_rev3.sh
+# ---- output ----
+pushed tip == HEAD: yes (d963daa502de4220411d0d0c2f19f67b3ec2682b)
+P1d-rev3 git apply --check exit 0 on the pushed tree (not applied)
+46	5	handoff.md
+d07352beee3031b4dbf2f725be833896e9ad08c9205869a7027449c830cb7e10  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch
+proposed file: headings 19; lines 588; CR 0
+== byte identity of the embedded block with the tested block file
+extracted_from_patch.sh: BYTE-IDENTICAL to a7/verify_block_rev3.sh (cmp exit 0); sha256 4423b51291334af718e72f3fd41489473895e491b7eb016015e4a9608ac28b83; 38 lines
+extracted_from_proposed_file.sh: BYTE-IDENTICAL to a7/verify_block_rev3.sh (cmp exit 0); sha256 4423b51291334af718e72f3fd41489473895e491b7eb016015e4a9608ac28b83; 38 lines
+tested file sha256: 4423b51291334af718e72f3fd41489473895e491b7eb016015e4a9608ac28b83
+== the harness ran this text with only T=, H= and CANON= lines substituted:
+differing lines (expect 6 = 3 lines x 2 sides): 6
+< CANON=https://github.c
+< T=eca2b96521fba8cf792e
+< H=51564e34c18e5cc908cf
+== not applied: HEAD / status / remote tip
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+0
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-03T09:49:19Z

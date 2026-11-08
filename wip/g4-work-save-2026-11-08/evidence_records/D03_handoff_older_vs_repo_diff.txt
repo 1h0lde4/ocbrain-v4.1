@@ -1,0 +1,110 @@
+6c6
+< - Created at: 2026-10-23 (UTC)
+---
+> - Created at: 2026-10-24 (UTC); first written 2026-10-23 as a file-only handoff, updated here for the repository checkpoint
+11c11,12
+< - Transfer status: **TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED** (by design: documentation-only deliverables delivered as a zip + sha256 and files; the task forbids a branch, commit-to-product, PR or push; see §19)
+---
+> - Branch / checkpoint: `docs/g4-fts-errata-handoff-oct2026` (documentation-only; not merged; no PR); transfer commit `eca2b96521fba8cf792ea16a58be997e4f949356`
+> - Transfer status: **TRANSFER READY** with documented, user-accepted non-repository state (see §19)
+261c262,268
+< After the prompt above the user sent **no further instruction, correction or scope change**; only the single word "continue" (2026-10-20 13:38, 18:29, 21:33; 2026-10-21 09:06, 17:43; 2026-10-22 08:37, 14:16; 2026-10-23 00:03 UTC). Nothing supersedes or amends the prompt.
+---
+> After the prompt above the user sent **no further instruction, correction or scope change**; only the single word "continue" (2026-10-20 13:38, 18:29, 21:33; 2026-10-21 09:06, 17:43; 2026-10-22 08:37, 14:16; 2026-10-23 00:03 UTC). Nothing in those messages amends the prompt.
+> 
+> **Later instruction (2026-10-23 10:52 UTC): "update to repo, we'll continue in a fresh session".** This is the only later instruction that changes anything. Because the prompt (§2) said "Do not … push commits", the harness denied the first clone attempt and I asked which files and which branch.
+> - What to push: **"Handoff + 4 report docs (Recommended)"** — option text shown to the user: "handoff.md at the repo root, plus the packet, addendum, audit report and ledger under a docs folder. Text only, about 145 KB; the zip and probe outputs stay out of the repo."
+> - Which branch: **"New docs branch from main (Recommended)"** — option text: "docs/g4-fts-errata-handoff-oct2026, created from the current main tip; documentation files only", with my stated limits "push only: no PR, no merge, nothing touching main or any product file".
+> 
+> Effect: the prompt's no-push constraint is lifted **only** for this documentation-only checkpoint branch. Every other prompt constraint stays (no product change, no PR, no merge, no implementation authorisation, no choice among D1/D2/D3 or the ledger items).
+317c324,325
+< | C-1 | Constraints: no product-code change, no PR, no push, no branch, no implementation authorisation, originals byte-for-byte (§2, §9) | VERIFIED | read worktree clean at `1d813bd` before/after every probe run (`repo_unchanged: true`); originals never edited | |
+---
+> | C-1 | Constraints: no product-code change, no PR, no implementation authorisation, originals byte-for-byte (§2, §9); no push **except** the user-authorised documentation checkpoint branch (see §3) | VERIFIED | read worktree clean at `1d813bd` before/after every probe run (`repo_unchanged: tru
+> | T-1 | Update the repo so a fresh session can continue (user, 2026-10-23); scope and branch per §3 | VERIFIED for the transfer commit | `eca2b96521fba8cf792ea16a58be997e4f949356` pushed to `docs/g4-fts-errata-handoff-oct2026`; `git ls-remote` returned the same hash; handoff commit follows (§7) 
+345,355c353,365
+< - Primary repository: `1h0lde4/ocbrain-v4.1` (read only; product tree never modified)
+< - Remote: `https://github.com/1h0lde4/ocbrain-v4.1` (unauthenticated read access only)
+< - Branch: none created by this workstream
+< - Base branch: `main`; evidence tree = detached `1d813bdae320bf34110c29836c81dc901c601c9b`; tip observed 2026-10-20: `f13bfdefcdd197ed1f966de0b1f93037a4168af4` (30 commits after the baseline; `core/memory/backends/sqlite_storage.py`, `core/memory/knowledge_entry.py`, `tests/test_session4c_architec
+< - HEAD before handoff: read worktree `…/scratchpad/a4/wt_audit` = `1d813bd…`, `git status --porcelain` = 0 lines
+< - Transfer commit / Handoff commit / Parent of handoff commit: **none** (nothing in the repository to commit)
+< - Working tree status: clean (read-only worktree); no repository files changed
+< - Relevant untracked / ignored files: none in the repository; all work product is under the session scratch directory (§8)
+< - Submodules / nested repositories: none touched; `…/a4/repo_audit.git` is a local read-only audit clone with refs under `refs/audit/*`
+< - Remote push status: **not pushed — not authorised**
+< - Remote verification status: not applicable
+---
+> - Primary repository: `1h0lde4/ocbrain-v4.1`
+> - Remote: `https://github.com/1h0lde4/ocbrain-v4.1` (the session's attached-repository access was used; no credential from the user's preferences was used or recorded)
+> - Branch: `docs/g4-fts-errata-handoff-oct2026` (new; documentation-only; not merged; no PR opened)
+> - Base branch: `main` @ `f13bfdefcdd197ed1f966de0b1f93037a4168af4` (confirmed at clone time and again before the push; remote `main` re-read after the push and unchanged). The study's evidence baseline is `1d813bdae320bf34110c29836c81dc901c601c9b`; the branch is based on the main tip, **not** on t
+> - HEAD before the handoff commit: `eca2b96521fba8cf792ea16a58be997e4f949356`
+> - Transfer commit (the implementation checkpoint): `eca2b96521fba8cf792ea16a58be997e4f949356` — adds the four report documents under `docs/studies/g4-fts-errata-oct2026/`; pushed; `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` returned the same hash
+> - Handoff commit: the commit that adds this file (`git log --oneline -1 -- handoff.md` on the branch). Its own hash cannot be stored inside the file.
+> - Parent commit of the handoff commit: `eca2b96521fba8cf792ea16a58be997e4f949356`
+> - Working tree status at the transfer commit: clean
+> - Relevant untracked / ignored files: none
+> - Submodules / nested repositories: none touched
+> - Remote push status: transfer commit pushed (exit 0, new branch only). The handoff commit is pushed immediately after this file is written; the resuming session must verify it (§18).
+> - Remote verification status: transfer commit verified; `main` unchanged; handoff commit to be re-verified by the resuming session
+359c369,383
+< No product file was modified, added or deleted. Deliverables (all under `/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/`):
+---
+> No product file was modified, added or deleted.
+> 
+> **In the repository (branch `docs/g4-fts-errata-handoff-oct2026`):**
+> 
+> | Path | sha256 | Commit |
+> |---|---|---|
+> | `docs/studies/g4-fts-errata-oct2026/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md` | `db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2` | `eca2b96521fba8cf792ea16a58be997e4f949356` |
+> | `docs/studies/g4-fts-errata-oct2026/addendum_evidence_labels_REV2_PROPOSED.md` | `2cf514539e245e5941cda3b5a962f1f0d7b6478f723a9980c2f85c092c4fc920` | `eca2b96521fba8cf792ea16a58be997e4f949356` |
+> | `docs/studies/g4-fts-errata-oct2026/evidence_audit_report_1d813bd.md` | `2dc09f0d1d89d2613d1dd56d3e0a34753492319efd1018c7ef295b0faad028af` | `eca2b96521fba8cf792ea16a58be997e4f949356` |
+> | `docs/studies/g4-fts-errata-oct2026/decision_ledger_1d813bd_OPEN.md` | `ed188b17d1b9f328a9ffc6c048a74b18c67c50507c99c22b3edfbf5e221cf719` | `eca2b96521fba8cf792ea16a58be997e4f949356` |
+> | `handoff.md` (this file) | not stable (a file cannot contain its own hash) | handoff commit |
+> 
+> **NOT in the repository — by the user's choice (§3), non-repository state:** the evidence bundle `fts_decision_packet_errata_evidence_1d813bd.zip` (sha256 `e6910c0cc6eb1acefaaf369ce46599856a169228a3060b6492687c8fd70b9c3d`, 255,601 bytes, 86 manifest entries: README, manifest, probe scripts, pro
+> 
+> **Session-local provenance (ephemeral; not durable):** the deliverables were produced under `/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/`:
+376a401
+> - **Repository (documentation only):** commit `eca2b96521fba8cf792ea16a58be997e4f949356` adds four documents under `docs/studies/g4-fts-errata-oct2026/`; the handoff commit adds `handoff.md` at the repo root. No other file.
+431a457
+> | First clone of the repo (2026-10-24) | denied by the harness: the prompt said no push and the user's instruction named neither files nor branch | scope unspecified | asked; retried after the user's explicit answer (§3) |
+452c478
+< Python 3.12.3 (`python3.12 -I`), SQLite 3.45.1 (source id `2024-01-30 16:01:20 e876e51a…`), git 2.43.0, Ubuntu 24.04.5, Linux 6.18.x x86_64, 2 vCPU, 8 GB; `gpgv` with `/usr/share/keyrings/ubuntu-archive-keyring.gpg`; no network access from the shell to sqlite.org (HTTP 403). No secrets required 
+---
+> Python 3.12.3 (`python3.12 -I`), SQLite 3.45.1 (source id `2024-01-30 16:01:20 e876e51a…`), git 2.43.0, Ubuntu 24.04.5, Linux 6.18.x x86_64, 2 vCPU, 8 GB; `gpgv` with `/usr/share/keyrings/ubuntu-archive-keyring.gpg`; no network access from the shell to sqlite.org (HTTP 403). No secrets required 
+466a493
+> | The four committed documents cite bundle paths that are not in the repo | by the user's choice (§3) | re-supply the bundle when needed | ACCEPTED by the user (scope choice); doc cross-references unresolved inside the repo | yes |
+490,494c517,526
+< 1. Verify the deliverables, not the repository: `sha256sum` the zip against `e6910c0cc6eb1acefaaf369ce46599856a169228a3060b6492687c8fd70b9c3d`, extract into a new empty directory, `sha256sum -c MANIFEST.sha256` (86 entries).
+< 2. Confirm the baseline is still reachable (`git cat-file -t 1d813bdae320bf34110c29836c81dc901c601c9b`) and re-check whether `origin/main` has moved in `core/memory/backends/sqlite_storage.py`, `core/memory/knowledge_entry.py` or `tests/test_session4c_architecture.py` since `f13bfde` (those three 
+< 3. There is no repository checkpoint to restore; do not look for a branch or commit of this workstream.
+< 4. Do not reopen the settled items in §10 unless the reopen condition occurs; do not repeat the investigations in §11 unless the revisit trigger occurs.
+< 5. Begin from the first uncompleted next step in §17 (a maintainer decision).
+---
+> Follow `PROJECT_INSTRUCTIONS.md` §18.4.9. The handoff is a transfer record, not an authority.
+> 
+> 1. `git fetch origin`; check out `docs/g4-fts-errata-handoff-oct2026`; confirm `handoff.md` is at the repo root and read it completely.
+> 2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` and `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` (the branch must contain it; it should contain exactly one later commit, the handoff commit, whose parent is `
+> 3. Verify scope: `git diff --stat $(git merge-base origin/main HEAD) HEAD` must list only `handoff.md` and the four files under `docs/studies/g4-fts-errata-oct2026/`. Any other file is an unexpected change to investigate.
+> 4. Verify the four documents' sha256 against §8.
+> 5. Check whether `origin/main` has moved since `f13bfde…` in `core/memory/backends/sqlite_storage.py`, `core/memory/knowledge_entry.py` or `tests/test_session4c_architecture.py` (they were byte-identical to the evidence baseline when checked). If they changed, re-verify the "current tip" stateme
+> 6. Do not look for the evidence bundle in the repo; ask the user for it only if a check requires it (hash in §8).
+> 7. Do not reopen settled items (§10) or repeat investigations (§11) unless the stated condition occurs.
+> 8. Begin from the first uncompleted step in §17 (a maintainer decision). Nothing in this file authorises implementation, a PR, a merge, or any choice among the ledger items.
+498c530,537
+< **TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED**
+---
+> **TRANSFER READY** — for a documentation-only transfer, with the non-repository state below documented and **explicitly accepted by the user**.
+> 
+> Conditions of `PROJECT_INSTRUCTIONS.md` §18.4.8.9, as they apply:
+> - Original task preserved verbatim (§2); later instructions and the user's approvals recorded (§3); requirement, decision and investigation ledgers (§5, §10, §11); failed attempts (§12); verification evidence (§13); exact next action (§17, §18).
+> - Implementation checkpoint committed and pushed: `eca2b96521fba8cf792ea16a58be997e4f949356` on `docs/g4-fts-errata-handoff-oct2026`; remote hash verified equal; remote `main` verified unchanged.
+> - Handoff committed and pushed as the next commit on the same branch (its own hash cannot be recorded here; verification procedure in §18 step 2).
+> - Non-repository state: the evidence bundle and the verification report/log/script (§8). The user chose to keep them out of the repository when offered the alternative of pushing the full bundle (option text in §3). The documents' cross-references into the bundle therefore do not resolve in the 
+> - This is a checkpoint, not a completion claim: nothing is merged, ratified or accepted.
+500c539
+< Reason: by design. The task is documentation-only and forbids a branch, commit, PR or push; the repository contains no work of this workstream. The deliverables exist only as files under the session scratch directory and as the delivered zip plus sha256 values; that is **non-repository state** the
+---
+> If step 2 of §18 fails, treat the status as **TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED**.

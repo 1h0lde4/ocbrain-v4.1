@@ -1,0 +1,20 @@
+# evidence-id: B02_outputs_and_delivery_record
+# started-utc: 2026-10-24T15:57:56Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo "== /mnt/user-data/outputs (symlink target):"; ls -la /mnt/user-data/outputs/ 2>&1 | head -20; ls -la /mnt/attach/ 2>&1 | head; ls -la /mnt/attach/outputs 2>&1 | head -30; echo "== SendUserFile deliveries recorded in this session transcript (file paths only):"; grep -o -E "\"files\":\\[[^]]*\\]" /root/.claude/projects/-home-claude/d441201d-0373-573d-8f64-186072f858d3.jsonl 2>/dev/null | sort | uniq -c | cut -c1-400 | head -20
+# ---- output ----
+== /mnt/user-data/outputs (symlink target):
+total 4
+drwxr-xr-x 1 claude ubuntu    0 Oct 24 15:55 .
+drwxr-xr-x 3 root   root   4096 Oct 13 09:01 ..
+total 8
+drwxr-xr-x 3 root   root   4096 Oct 13 09:01 .
+drwxr-xr-x 6 root   root   4096 Oct 13 09:01 ..
+drwxr-xr-x 1 claude ubuntu    0 Oct 24 15:55 outputs
+total 4
+drwxr-xr-x 1 claude ubuntu    0 Oct 24 15:55 .
+drwxr-xr-x 3 root   root   4096 Oct 13 09:01 ..
+== SendUserFile deliveries recorded in this session transcript (file paths only):
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:57:56Z

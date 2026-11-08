@@ -1,0 +1,122 @@
+# evidence-id: E06_decisions_d7_and_overlap
+# started-utc: 2026-10-24T16:02:03Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D3=docs/reports/g4-fts-correctness; D2=docs/studies/g4-fts-errata-oct2026; echo "== D-1..D-11 status table rows, REV2 ledger (HEAD) vs REV3 ledger (REV3 tip):"; git show HEAD:$D2/decision_ledger_1d813bd_OPEN.md | grep -E "^\| D-[0-9]+ " | awk -F"|" "{print \"REV2\", \$2, \"|\", \$5}"; git show $R:$D3/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md | grep -E "^\| D-[0-9]+ " | awk -F"|" "{print \"REV3\", \$2, \"|\", \$5}"; echo; echo "== Recommendation lines per ledger (first 150 chars):"; for src in "HEAD:$D2/decision_ledger_1d813bd_OPEN.md" "$R:$D3/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md"; do echo "-- $src"; git show "$src" | grep -n -E "^## D-|^- \*\*Recommendation" | cut -c1-150; done; echo; echo "== D-7 evidence: was ANY real database examined? statements in REV2 docs (scope: 5 REV2 files) and REV3 docs (6 files):"; for f in handoff.md $D2/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md $D2/decision_ledger_1d813bd_OPEN.md $D2/evidence_audit_report_1d813bd.md; do git show HEAD:$f | grep -n -i -E "real.?(database|db)s?|production database|local copy|anonymi" | cut -c1-230 | sed "s#^#REV2 $(basename $f):#" | head -6; done; for f in G4_FTS_CORRECTNESS_CONTINUATION_REV3.md decision_ledger_1d813bd_OPEN_D2_D5_REV2.md NEXT_SESSION_PROMPT_REV3.md; do git show $R:$D3/$f | grep -n -i -E "real.?(database|db)s?|production database|local copy|anonymi" | cut -c1-230 | sed "s#^#REV3 $f:#" | head -4; done; echo; echo "== remote branch names suggesting DEBT-042 / FTS / I-3a / isolation / erasure work (92 heads scanned by NAME only; contents not inspected):"; git ls-remote --heads origin | sed "s#.*refs/heads/##" | grep -i -E "042|fts|escape|i-?3a|isolation|erasure|memory|sqlite" | head -20; echo "(end of list)"
+# ---- output ----
+== D-1..D-11 status table rows, REV2 ledger (HEAD) vs REV3 ledger (REV3 tip):
+REV2  D-1  |  **OPEN** 
+REV2  D-2  |  **OPEN** 
+REV2  D-3  |  **OPEN** 
+REV2  D-4  |  **OPEN** 
+REV2  D-5  |  **OPEN** 
+REV2  D-6  |  **OPEN** 
+REV2  D-7  |  **OPEN** 
+REV2  D-8  |  **OPEN** 
+REV2  D-9  |  **OPEN** 
+REV2  D-10  |  **OPEN** 
+REV2  D-11  |  **OPEN** 
+REV3  D-1  |  **OPEN** 
+REV3  D-2  |  **OPEN** 
+REV3  D-3  |  **OPEN** 
+REV3  D-4  |  **OPEN** 
+REV3  D-5  |  **OPEN** 
+REV3  D-6  |  **OPEN** 
+REV3  D-7  |  **OPEN** 
+REV3  D-8  |  **OPEN** 
+REV3  D-9  |  **OPEN** 
+REV3  D-10  |  **OPEN** 
+REV3  D-11  |  **OPEN** 
+
+== Recommendation lines per ledger (first 150 chars):
+-- HEAD:docs/studies/g4-fts-errata-oct2026/decision_ledger_1d813bd_OPEN.md
+23:## D-1 — Pull forward, keep at I-4, or defer
+26:- **Recommendation:** none. The evidence says the defect accumulates until the trigger is fixed; it cannot say whether that outranks isolation work
+29:## D-2 — Minimum supported SQLite version
+32:- **Recommendation:** none on the number. Whatever is declared must record `sqlite3.sqlite_version` and `sqlite_source_id()` as loaded by the appli
+36:## D-3 — RD-13: OBS-LC-1/2/3
+39:- **Recommendation:** none.
+42:## D-4 — Migration-state mechanism
+45:- **Recommendation (evidence-supported part only):** under **either** alternative, run `rank=1` verification (plus the independent reference) **ins
+48:## D-5 — Physical erasure stays separate (RD-10, DEL-1…4)
+51:- **Recommendation (evidence-supported):** keep physical erasure a separate requirement under RD-10; do **not** enable FTS5 secure-delete as a fix 
+54:## D-6 — Ratify the evidence labels and addendum rev 2
+57:- **Recommendation:** none beyond noting that (a) matches the written definition.
+60:## D-7 — Real-database fixtures (optional)
+63:- **Recommendation:** none; nothing in the packet depends on it, but G-5 (size and startup budget) cannot close without it.
+65:## D-8 — Owner of documentation corrections
+68:- **Recommendation:** none. **Still required:** an owner; no document is edited by this audit.
+70:## D-9 — Concurrency operating model (new)
+73:- **Recommendation:** none. Constraint supported by the evidence: whichever model is chosen, `database is locked` from the migration attempt must b
+76:## D-10 — Unrecognised, malformed or newer migration state (new)
+79:- **Recommendation:** none; the policy must be explicit and tested for every row of the state table (rev 2 §4.5).
+82:## D-11 — Owner and sequence for overlapping isolation work (new)
+85:- **Recommendation:** none. **Still required:** an owner and a sequence before any implementation planning.
+-- refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026:docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+23:## D-1 — Pull forward, keep at I-4, or defer
+26:- **Recommendation:** none. The evidence says the defect accumulates until the trigger is fixed; it cannot say whether that outranks isolation work
+29:## D-2 — Minimum supported SQLite version
+32:- **Recommendation:** none on the minimum version or library-distribution policy; the available evidence cannot choose either. For every supported 
+36:## D-3 — RD-13: OBS-LC-1/2/3
+39:- **Recommendation:** none.
+42:## D-4 — Migration-state mechanism
+45:- **Recommendation (evidence-supported part only):** under **either** alternative, run `rank=1` verification (plus the independent reference) **ins
+48:## D-5 — Physical erasure stays separate (RD-10, DEL-1…4)
+52:- **Recommendation (evidence-supported, not ratified):** keep physical erasure as a separate requirement under RD-10; do **not** enable FTS5 secure
+55:## D-6 — Ratify the evidence labels and addendum rev 2
+58:- **Recommendation:** none beyond noting that (a) matches the written definition.
+61:## D-7 — Real-database fixtures (optional)
+64:- **Recommendation:** none; nothing in the packet depends on it, but G-5 (size and startup budget) cannot close without it.
+66:## D-8 — Owner of documentation corrections
+69:- **Recommendation:** none. **Still required:** an owner; no document is edited by this audit.
+71:## D-9 — Concurrency operating model (new)
+74:- **Recommendation:** none. Constraint supported by the evidence: whichever model is chosen, `database is locked` from the migration attempt must b
+77:## D-10 — Unrecognised, malformed or newer migration state (new)
+80:- **Recommendation:** none; the policy must be explicit and tested for every row of the state table (rev 2 §4.5).
+83:## D-11 — Owner and sequence for overlapping isolation work (new)
+86:- **Recommendation:** none. **Still required:** an owner and a sequence before any implementation planning.
+
+== D-7 evidence: was ANY real database examined? statements in REV2 docs (scope: 5 REV2 files) and REV3 docs (6 files):
+REV2 handoff.md:347:**UNKNOWN / UNTESTED**: real databases (size, legacy state, whether ghosts exist); other SQLite versions, platforms, Python versions; constructor-path integration; four-process end-to-end; contender crash; mixed old/new code; 
+REV2 handoff.md:445:| Not investigated | real databases; other SQLite builds; power loss; four-process end-to-end; constructor-path behaviour under the change; live sqlite.org pages | — | — | maintainer supplies / authorises |
+REV2 handoff.md:488:| Real database sizes and legacy states (D-7, G-5) | extrapolated 20 s lock hold near 1.9 M rows (EXTRAPOLATED) | maintainer supplies copies or runs the read-only check | UNKNOWN | optional; G-5 cannot close without it |
+REV2 handoff.md:502:- Read-only check the maintainer **may** run on a **copy** of a real database, in a rolled-back transaction: `INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rank) VALUES('integrity-check', 1);` (an error = disagreeme
+REV2 handoff.md:509:2. **Maintainer (optional):** supply anonymised database copies or run the read-only `rank=1` check (D-7). Expected: ghost presence and sizes become known; G-5 can then close.
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:46:| Is the batch ready to implement? | No. Gates §10 are open (minimum SQLite version, marker choice, constructor integration, concurrency policy, real-DB size, RD-13/I-4, isolation-overlap owner). | BLOCKED on maintainer decisi
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:224:Real database sizes are UNKNOWN; all timings are container-specific.
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:315:2. **Legacy fixtures (generated, disposable):** F1–F5c plus databases built from the historical schema of `81d3069`/`42818a7`; **and** histories produced only through the product API on a fresh database (§4.2). Maintainer-s
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:337:| G-5 | Real database sizes and startup budget | Lock hold 0.49–0.57 s at 50k rows here; extrapolated 20 s at ≈1.9 M rows; real sizes UNKNOWN. |
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:351:| Real databases (size, legacy states, whether ghosts exist) | UNKNOWN; none examined |
+REV2 g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md:362:A read-only check the maintainer **may** run on a **copy** of a real database, inside a rolled-back transaction, to learn whether legacy ghosts exist: `INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rank) VALUES('int
+REV2 decision_ledger_1d813bd_OPEN.md:15:| D-7 | Supply real-database fixtures / run the read-only check (optional) | maintainer | **OPEN** |
+REV2 decision_ledger_1d813bd_OPEN.md:25:- **Evidence bearing:** the batch closes **no** G4 isolation requirement (INV-01…22 unchanged). The defect is **reachable through ordinary use of the unchanged product**: a fresh database driven only through `write`/`update`/
+REV2 decision_ledger_1d813bd_OPEN.md:60:## D-7 — Real-database fixtures (optional)
+REV2 decision_ledger_1d813bd_OPEN.md:61:- **Options:** supply anonymised copies; run the read-only check on a copy (inside a rolled-back transaction): `INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rank) VALUES('integrity-check', 1);` (an error means disag
+REV2 evidence_audit_report_1d813bd.md:133:| Real databases | **UNKNOWN** |
+REV2 evidence_audit_report_1d813bd.md:144:5. Real database sizes and legacy states unknown (G-5, D-7).
+REV3 G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:45:- Real database inventory, sizes, prevalence, power-loss behavior, contender crash, four-process end-to-end behavior and constructor-path migration remain UNKNOWN or UNTESTED. No FIXED PRODUCT evidence exists.
+REV3 G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:72:| D-7 | Real-database fixtures and coverage |
+REV3 G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:78:The ledger recommendation is limited to D-4 (rank=1 verification inside the transaction) and D-5 (keep physical erasure separate). Both remain OPEN. The implementation-planning blockers include D-2, D-4, D-9, D-10, D-11, constr
+REV3 decision_ledger_1d813bd_OPEN_D2_D5_REV2.md:15:| D-7 | Supply real-database fixtures / run the read-only check (optional) | maintainer | **OPEN** |
+REV3 decision_ledger_1d813bd_OPEN_D2_D5_REV2.md:25:- **Evidence bearing:** the batch closes **no** G4 isolation requirement (INV-01…22 unchanged). The defect is **reachable through ordinary use of the unchanged product**: a fresh database driven only through `write`/`update`/
+REV3 decision_ledger_1d813bd_OPEN_D2_D5_REV2.md:61:## D-7 — Real-database fixtures (optional)
+REV3 decision_ledger_1d813bd_OPEN_D2_D5_REV2.md:62:- **Options:** supply anonymised copies; run the read-only check on a copy (inside a rolled-back transaction): `INSERT INTO knowledge_entries_fts(knowledge_entries_fts, rank) VALUES('integrity-check', 1);` (an error means disag
+REV3 NEXT_SESSION_PROMPT_REV3.md:35:- D-7: real-database fixtures and coverage.
+REV3 NEXT_SESSION_PROMPT_REV3.md:50:- Real database prevalence/size, constructor migration integration, power loss, contender crash, four-process end-to-end and a multi-version SQLite matrix remain unknown or untested.
+
+== remote branch names suggesting DEBT-042 / FTS / I-3a / isolation / erasure work (92 heads scanned by NAME only; contents not inspected):
+docs/g4-fts-correctness-handoff-rev3-oct2026
+docs/g4-fts-errata-handoff-oct2026
+docs/network-isolation-spec-and-studies
+fix/debt-012-test-config-isolation-oct2026-16508008999830840178
+fix/debt-029-context-persistence-failure-isolation-oct2026-4372039021546723617
+handoff/sandbox-network-isolation-v4
+repair/debt-012-root-isolation-coherent-oct2026
+sandbox-network-isolation/b01-base
+sandbox-network-isolation/b01-contract-suite
+sandbox-network-isolation/b02-net-namespace-gate
+sandbox-network-isolation/b03-capacity-ipv6-guards
+spec/sandbox-network-isolation-master
+(end of list)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T16:02:03Z

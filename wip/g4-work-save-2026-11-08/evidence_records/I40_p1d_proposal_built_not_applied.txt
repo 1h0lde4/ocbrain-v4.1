@@ -1,0 +1,23 @@
+# evidence-id: I40_p1d_proposal_built_not_applied
+# started-utc: 2026-11-02T10:04:43Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/build_p1d.sh
+# ---- output ----
+P1d git apply --check exit 0 on the pushed tree (not applied)
+5	5	handoff.md
+1ee754eea65759cffca30af65dfb735079aefd2f133ba8fe09880eb19ee66442  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_handoff_section7_18_and_wording_PROPOSED.patch
+proposed file: headings 19; lines 547; CR 0
+== dry run of the commands the proposed step 2 would give, on the CURRENT remote branch (before any P1d)
+parent of handoff commit: eca2b96521fba8cf792ea16a58be997e4f949356  expected eca2b96521fba8cf792ea16a58be997e4f949356
+commits after the handoff commit:
+d963daa docs(handoff): record provenance of the earlier handoff revision and the parallel 
+paths changed after the handoff commit:
+handoff.md
+== a section 7 and step 2 check stays true if one more handoff.md-only commit is added: simulated on a temp ref (no push, no branch change)
+== not applied: HEAD / status / remote tip
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+600
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:04:44Z

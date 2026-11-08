@@ -1,0 +1,34 @@
+# evidence-id: I20_new_prs_and_path_overlap
+# started-utc: 2026-10-31T09:01:59Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/inventory2.sh
+# ---- output ----
+== PRs #100 and #101 (listed open on 2026-10-30, absent from the open list on 2026-10-31)
+#100 state=closed merged=false merged_at=null closed_at=2026-10-30T10:40:10Z base=main title=DEBT-014: harden DRIFT-10 governance boundary
+#101 state=closed merged=false merged_at=null closed_at=2026-10-30T10:40:16Z base=main title=DEBT-014 final deep-review hardening for DRIFT-10
+== new open PRs #102 and #103: title, author, created, files, FTS-relevant path match
+#102 open draft=false author=1h0lde4 created=2026-10-30T10:39:55Z head=fix/debt-014-consolidated-oct2026 title=DEBT-014: consolidate and harden DRIFT-10 Learning boundary
+files:
+KNOWN_ISSUES.md
+core/cognitive/learning.py
+scripts/check_drift.py
+tests/core/cognitive/test_learning.py
+tests/test_check_drift.py
+FTS-relevant match:
+(end)
+#103 open draft=false author=1h0lde4 created=2026-10-30T21:31:44Z head=architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026 title=[Proposal] OCBrain v2 unified cognitive runtime and roadmap
+files:
+docs/architecture/OCBRAIN_V2_UNIFIED_COGNITIVE_RUNTIME_ROADMAP.md
+FTS-relevant match:
+(end)
+== main tip now
+16d663ac8449965f774033da46d5063506a772a7
+== path overlap: main's changed paths since f13bfde vs the files of PR #90 / the REV2 branch
+main changed paths: 12; PR #90 files: 6; REV2 branch files: 5
+overlap main-changed vs PR #90 files:
+(end)
+overlap main-changed vs REV2 branch files:
+(end)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T09:02:04Z

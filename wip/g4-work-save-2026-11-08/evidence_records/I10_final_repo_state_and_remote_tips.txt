@@ -1,0 +1,32 @@
+# evidence-id: I10_final_repo_state_and_remote_tips
+# started-utc: 2026-10-30T08:50:49Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo "== branch/HEAD"; git rev-parse --abbrev-ref HEAD; git rev-parse HEAD; echo "== status (porcelain, incl. untracked)"; git status --porcelain=v1 --untracked-files=all | wc -l; git status --porcelain=v1 --untracked-files=all; echo "== diff (worktree, index)"; git diff --stat | wc -l; git diff --cached --stat | wc -l; echo "== stash"; git stash list | wc -l; echo "== remote tips (gh api, read-only)"; for b in main docs/g4-fts-errata-handoff-oct2026 docs/g4-fts-correctness-handoff-rev3-oct2026; do printf "%s  " "$b"; gh api "repos/1h0lde4/ocbrain-v4.1/git/ref/heads/$b" --jq ".object.sha" 2>&1; done; echo "== main tip commit date"; gh api repos/1h0lde4/ocbrain-v4.1/commits/main --jq "[.sha,.commit.committer.date,(.commit.message|split(\"\n\")[0])]|@tsv"; echo "== PR 90"; gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq "[.state,.draft,.head.sha,.base.sha,.mergeable_state,.updated_at]|@tsv"; echo "== ahead/behind REV3 branch vs main"; gh api repos/1h0lde4/ocbrain-v4.1/compare/main...docs/g4-fts-correctness-handoff-rev3-oct2026 --jq "[.status,.ahead_by,.behind_by]|@tsv"; echo "== FTS source blobs on main"; for p in core/memory/sqlite_storage.py core/memory/unified_memory.py core/memory/knowledge_entry.py; do printf "%s " "$p"; gh api "repos/1h0lde4/ocbrain-v4.1/contents/$p?ref=main" --jq ".sha" 2>&1 | head -1; done
+# ---- output ----
+== branch/HEAD
+docs/g4-fts-errata-handoff-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194
+== status (porcelain, incl. untracked)
+0
+== diff (worktree, index)
+0
+0
+== stash
+0
+== remote tips (gh api, read-only)
+main  16d663ac8449965f774033da46d5063506a772a7
+docs/g4-fts-errata-handoff-oct2026  51564e34c18e5cc908cf517000ebc9bd41eaf194
+docs/g4-fts-correctness-handoff-rev3-oct2026  2dd2e7bb05db949a6156266cfa3430c58de09922
+== main tip commit date
+16d663ac8449965f774033da46d5063506a772a7	2026-10-29T23:00:46Z	Merge pull request #97 from 1h0lde4/fix/debt-003-crash-restart-evidence-oct2026
+== PR 90
+open	true	2dd2e7bb05db949a6156266cfa3430c58de09922	f13bfdefcdd197ed1f966de0b1f93037a4168af4	unknown	2026-10-23T10:30:47Z
+== ahead/behind REV3 branch vs main
+diverged	1	59
+== FTS source blobs on main
+core/memory/sqlite_storage.py {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}gh: Not Found (HTTP 404)
+core/memory/unified_memory.py eb2bbe17f12889d8638512560226456a6d43c9bd
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T08:50:56Z

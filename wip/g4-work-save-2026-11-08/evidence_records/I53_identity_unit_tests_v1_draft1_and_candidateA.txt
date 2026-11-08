@@ -1,0 +1,42 @@
+# evidence-id: I53
+# started-utc: 2026-11-03T09:48:14Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/identity_unit_tests.sh
+# ---- output ----
+=== verify_block_rev3_draft1.sh
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             git@github.com:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             ssh://git@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=no  token-in-output=LEAKS-TOKEN ** differs **  https://x-access-token:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=no  token-in-output=LEAKS-TOKEN ** differs **  https://<dummy>@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1-fork
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  https://x-access-token:<dummy>@github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://evil.example/@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  https://<dummy>@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             git@evil.example:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1/
+  canonical-expected=no  got=no  token-in-output=none        ok             /srv/mirror/ocbrain-v4.1
+  cases: 15; differing from expectation: 4
+=== verify_block_rev3.sh
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             git@github.com:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             ssh://git@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             https://x-access-token:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://<dummy>@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1-fork
+  canonical-expected=no  got=no  token-in-output=none        ok             https://x-access-token:<dummy>@github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://evil.example/@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://<dummy>@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             git@evil.example:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1/
+  canonical-expected=no  got=no  token-in-output=none        ok             /srv/mirror/ocbrain-v4.1
+  cases: 15; differing from expectation: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-03T09:48:15Z

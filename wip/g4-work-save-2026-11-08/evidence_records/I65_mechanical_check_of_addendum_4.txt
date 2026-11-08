@@ -1,0 +1,73 @@
+# evidence-id: I65
+# started-utc: 2026-11-06T12:51:58Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum4.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final6/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final6/g4_attachment_af046c14_p1d_rev3_block_tests_evidence_I51-I64.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final6/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_rev2_handoff_section7_18_verification_block_PROPOSED.patch /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/af046c14-attachment.txt /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_1_P1_PUSHED_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_2_ATTACHED_REVIEW_AND_P1d_2026-11-02.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_3_SECOND_ATTACHED_REVIEW_AND_P1d_REV2_2026-11-02.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7, 8]
+last non-empty line ok: True
+   PASS     Attached review treated as unverified input; its verifiable claims checked
+   PASS     F9, F10, F11 reproduced against revision 2
+   PASS     Revision 3 block tested on positive and negative scenarios
+   PASS     Revision 3 patch built, applies, block byte-identical to the tested block
+   PASS     Unmodified block run on the real remote and negative controls
+   PASS     No ref, commit, working file, pull request or remote changed
+   PASS     G4/freeze invariants
+   PASS     Overall result (this addendum's scope)
+non-PASS gates: [] | overall: ['PASS']
+FAIL: missing NOT VERIFIED
+ids cited: ['I51', 'I53', 'I55', 'I56', 'I57', 'I58', 'I59', 'I60', 'I61', 'I62', 'I63', 'I64', 'I65', 'I66'] | missing files: []
+40-hex ids: 2 | unresolved: []
+64-hex digests: 11 | not backed: []
+   bundle: 7f3bc8f6fbc380448e827b550049db89559e83ad8a92ac3b4be6a1043b87ac36 cited: True
+   P1d rev3: 98468b11c2f88cfe6637f1a1f6ee88a089f60a3957a6cf6d1ea3d1522f7c2cb0 cited: True
+   attachment: 42396b9f8ddc9009ffa2cceec458b490317df0cf0ddffccad188199189792cc3 cited: True
+   addendum1: eba20d6661df735a75c273eb458519055f38b07f48b97b234287e6eece53d382 cited: True
+   addendum2: 4003be115020ec7c2e8269c954f82babf90696ed52fbe5875cf6dd141579d938 cited: True
+   addendum3: 50d9aa28b2ab748870d2c45a6836e1437b0ab2cea095386566861e01d50bd668 cited: True
+   report: 561f22648a36df52cf1cdc546f00cc37ed758f0098a12f93ede0ad77d3fb9050 cited: True
+abbreviated hex ids: ['d963daa5'] | not a prefix of any id seen: []
+bundle manifest entries: 25 | mismatches: 0 | unlisted: []
+scenarios in I60: 20 | in the addendum table: 20
+scenario rows identical to I60: True
+false PASS rev2: 6 rev3: 0
+hunks rev2/rev3: 3 3
+git apply --check rev3 exit: 0
+numstat: 46	5	handoff.md
+block sha256 from the rev3 patch: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53 | tested block in the bundle: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53 | lines: 38
+   claim FOUND  I51 candidate A: 20 scenarios, rev2 6 false PASS, rev3 0
+   claim FOUND  I60 final: 20 scenarios, rev2 6 false PASS, rev3 0
+   claim FOUND  I61 s12: rev2 one ls-remote call, tip advanced, change touches KNOWN_ISSUES.md
+   claim FOUND  I61 s12: rev3 two calls
+   claim FOUND  I61 s13 marker engaged
+   claim FOUND  I61 tree entries 120000 / 040000 / 100755
+   claim FOUND  I61 s15 rev2 failed only on path-list checks
+   claim FOUND  I53 draft 1: 15 cases, 4 differ
+   claim FOUND  I53 candidate A: 15 cases, 0 differ
+   claim FOUND  I59 candidate A unit: 20 cases, 5 differ, 5 leak
+   claim FOUND  I59 final unit: 20 cases, 0 differ, 0 leak
+   claim FOUND  I59 end to end: candidate A 2 of 3 leak
+   claim FOUND  I59 end to end: final 0 of 3 leak
+   claim FOUND  I62 apply-check, numstat 46 5, headings 19, CR 0
+   claim FOUND  I62 two cmp identities
+   claim FOUND  I62 patch sha
+   claim FOUND  I63 PASS in the working clone at 12:47:27Z
+   claim FOUND  I63 PASS in the fresh clone at 12:47:29Z
+   claim FOUND  I63 four controls exit 1, zero PASS lines
+   claim FOUND  I63 block sha equals tested file
+   claim FOUND  I57 first attempt 72 entries, second 41, no reports
+   claim FOUND  I58 candidate A and final hashes
+   claim FOUND  I56 PR #90 open draft 3 commits 7 files
+   claim FOUND  I64 PR #90 unchanged
+   claim FOUND  I64 state: HEAD = REV2 tip, status 0
+   claim FOUND  I64 versions
+   claim FOUND  I64 rev2 block hash and draft 1 hash
+   claim FOUND  I55 candidate A real remote PASS twice
+   claim FOUND  I54 candidate A patch sha
+I53 draft 1 token leaks: 4
+live REV2 tip: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+live REV3 tip: 9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+clone status lines: 0
+RESULT: FAILURES PRESENT
+# ---- end output ----
+# exit-status: 1
+# finished-utc: 2026-11-06T12:51:59Z

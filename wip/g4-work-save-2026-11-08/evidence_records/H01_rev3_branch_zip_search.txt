@@ -1,0 +1,42 @@
+# evidence-id: H01_rev3_branch_zip_search
+# started-utc: 2026-10-28T14:08:58Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+B=docs/g4-fts-correctness-handoff-rev3-oct2026; R=1h0lde4/ocbrain-v4.1;
+echo "== tip now (ls-remote)"; git ls-remote origin refs/heads/$B;
+echo "== branch API: tip sha, commit count vs main"; gh api repos/$R/branches/$B --jq "\"tip=\(.commit.sha) date=\(.commit.commit.committer.date) author=\(.commit.commit.author.name)\"";
+gh api repos/$R/compare/main...$B --jq "\"status=\(.status) ahead=\(.ahead_by) behind=\(.behind_by) files=\(.files|length)\"";
+echo "== recursive tree of the branch tip: count, truncated flag"; gh api "repos/$R/git/trees/$B?recursive=1" --jq "\"entries=\(.tree|length) truncated=\(.truncated)\"";
+echo "== any .zip / archive / REV3-named / D2_D5-named / size 254581 entries in the tree"; gh api "repos/$R/git/trees/$B?recursive=1" --jq ".tree[] | select(.type==\"blob\") | select((.path|test(\"\\\\.(zip|tar|tgz|gz|7z|rar|bz2|xz)$\";\"i\")) or (.path|test(\"REV3|D2_D5|FETCH_HEADER\";\"i\")) or (.size==254581)) | \"\(.size)  \(.sha)  \(.path)\"";
+echo "(end of matches)";
+echo "== git attributes / LFS pointers"; gh api "repos/$R/git/trees/$B?recursive=1" --jq ".tree[] | select(.path|test(\"(^|/)\\\\.gitattributes$|\\\\.lfsconfig\")) | .path"; echo "(end)";
+echo "== all non-code blobs under docs/reports/ and root *.md added vs main (compare files)"; gh api repos/$R/compare/main...$B --jq ".files[] | \"\(.status) \(.additions)+/\(.deletions)- \(.filename)\"";
+
+# ---- output ----
+== tip now (ls-remote)
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+== branch API: tip sha, commit count vs main
+tip=2dd2e7bb05db949a6156266cfa3430c58de09922 date=2026-10-23T10:30:25Z author=N4Z
+status=diverged ahead=1 behind=51 files=6
+== recursive tree of the branch tip: count, truncated flag
+entries=634 truncated=false
+== any .zip / archive / REV3-named / D2_D5-named / size 254581 entries in the tree
+9138  f2725b85329846b17f319eb1e8cdf3594156ff42  docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+6869  ae828cb1223cb90d05cc4ae44f2934901a59ddaa  docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+14351  92a380920c6b301014aa87834332420c5a515c3a  docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+3045  23ce21a7c1b171ebba44087d5e579881a9007cd0  docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+21632  c378715fcd3519899470183c900c008bdd1dc301  docs/studies/evidence/live-check-draft-plan-batch-20261012T121543Z.zip
+(end of matches)
+== git attributes / LFS pointers
+.gitattributes
+(end)
+== all non-code blobs under docs/reports/ and root *.md added vs main (compare files)
+modified 1+/0- IMPLEMENTATION_ROADMAP.md
+added 90+/0- docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+added 66+/0- docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+added 91+/0- docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+added 60+/0- docs/reports/g4-fts-correctness/doc_fetch_quotations_as_returned_HEADER_REV2.md
+added 29+/0- docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-28T14:09:05Z

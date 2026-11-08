@@ -1,0 +1,18 @@
+# evidence-id: C05_rerun_from_non_archive_source
+# started-utc: 2026-10-24T16:03:35Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; X=$S/a5/ex_rev2; B=$S/a4/b4; WT=$S/a4/wt_audit; PK=g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md; echo "NOTE: C04 ran the checker copy extracted from the REV2 zip (my own archive, hash-matched). The task text says not to execute anything extracted from an archive; this step repeats the run using the pre-packaging source copy instead."; echo "script (pre-packaging source): $(sha256sum $B/scripts/rev2_numbers_check.py | cut -c1-64)"; echo "script (extracted from zip):   $(sha256sum $X/scripts/rev2_numbers_check.py | cut -c1-64)"; echo "-- data inputs identical between pre-packaging b4/ tree and extraction? (diff -rq on out/ and report/):"; diff -rq $B/out $X/out | head -5; echo "(diff exit=$? ; no lines above = identical)"; cd $S/a5/run && python3.12 -I $B/scripts/rev2_numbers_check.py $S/a5/out/rev2_numbers_check_task5_nonarchive.json --out $B/out --packet $S/a5/pkt/$PK --worktree $WT --preserved $S/a4/zx_fresh/out --derivation $B/out/independent_derivation_preserved_run1.json --contract-compare $B/out/contract_rerun/compare_contract_rerun1_vs_run2_run3.json; echo "checker exit=$?"; sha256sum $S/a5/out/rev2_numbers_check_task5_nonarchive.json | cut -c1-64; cmp $S/a5/out/rev2_numbers_check_task5_nonarchive.json $S/a5/out/rev2_numbers_check_task5.json && echo "byte-identical to C04 result"; echo "worktree after: $(git -C $WT rev-parse HEAD) changes=$(git -C $WT status --porcelain | wc -l)"
+# ---- output ----
+NOTE: C04 ran the checker copy extracted from the REV2 zip (my own archive, hash-matched). The task text says not to execute anything extracted from an archive; this step repeats the run using the pre-packaging source copy instead.
+script (pre-packaging source): 730ae766abe0bb9c1712e15d732c0f97c126efa0cad4274d167618da3a53a315
+script (extracted from zip):   730ae766abe0bb9c1712e15d732c0f97c126efa0cad4274d167618da3a53a315
+-- data inputs identical between pre-packaging b4/ tree and extraction? (diff -rq on out/ and report/):
+(diff exit=0 ; no lines above = identical)
+83/83 checks passed
+checker exit=0
+ae12c539ee7296595d535c01e4ae50c7337981d720b24082ee58522537d9f257
+byte-identical to C04 result
+worktree after: 1d813bdae320bf34110c29836c81dc901c601c9b changes=0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T16:03:36Z

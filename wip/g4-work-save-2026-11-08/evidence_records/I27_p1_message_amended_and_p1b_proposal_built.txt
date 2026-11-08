@@ -1,0 +1,47 @@
+# evidence-id: I27_p1_message_amended_and_p1b_proposal_built
+# started-utc: 2026-11-01T14:13:23Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; cd /home/claude/ocbrain-v4.1
+echo "branch $(git rev-parse --abbrev-ref HEAD) tip before amend $(git rev-parse HEAD); status lines $(git status --porcelain | wc -l)"
+TREE_BEFORE=$(git rev-parse HEAD^{tree}); git commit -q --amend -F $S/a6/msgs/p1_commit_v2.txt; echo "amended -> $(git rev-parse HEAD) parent $(git rev-parse HEAD^); tree unchanged: $([ "$TREE_BEFORE" = "$(git rev-parse HEAD^{tree})" ] && echo YES || echo NO)"
+git log -1 --format="%an <%ae>%n%s"; git show --stat --format= HEAD
+echo "remote REV2 tip (unpushed local commit above it): $(git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026 | cut -c1-40)"
+echo "== build the P1b proposal (NOT applied to the branch): consistency sentence + clearer wording of one clause"
+W=$S/a6/p1b_work; rm -rf $W; mkdir -p $W/orig $W/new; git show HEAD:handoff.md > $W/orig/handoff.md
+python3 -I - <<PY
+W="$W"
+t=open(W+"/orig/handoff.md",encoding="utf-8").read()
+old="That set was not reviewed in the session that wrote this file. This file does not select it, supersede it or depend on it."
+new="That set was not reviewed in the session that first wrote this file; a later audit session compared it with this REV2 set (evidence outside this repository). This file does not select it, supersede it or depend on it."
+assert t.count(old)==1; t=t.replace(old,new)
+anchor="  - *Not decided by this entry:*"
+assert t.count(anchor)==1
+add="  - *Effect on this file's own checks.* This entry was added after the handoff commit (\`51564e34c18e5cc908cf517000ebc9bd41eaf194\`). The branch therefore holds two commits after the transfer commit \`eca2b96521fba8cf792ea16a58be997e4f949356\`: \`51564e34…\`, then the commit that adds this entry. The \"exactly one later commit\" of §18 step 2 and the \`git log --oneline -1 -- handoff.md\` of §7 refer to \`51564e34…\`; a branch tip that differs from it only for this reason does not make the transfer INCOMPLETE.\n"
+t=t.replace(anchor,add+anchor)
+open(W+"/new/handoff.md","w",encoding="utf-8").write(t)
+PY
+( cd $W && diff -u --label a/handoff.md --label b/handoff.md orig/handoff.md new/handoff.md > $S/a5/proposed_diffs/P1b_handoff_consistency_sentence_PROPOSED.patch ); 
+P=$S/a5/proposed_diffs/P1b_handoff_consistency_sentence_PROPOSED.patch; echo "P1b: $(wc -l < $P) lines; sha256 $(sha256sum $P | cut -d" " -f1)"; git apply --check --stat $P && echo "P1b git apply --check (against the live handoff.md in the clone) exit 0"; git status --porcelain | wc -l
+echo "-- P1b added/removed lines (truncated):"; grep -E "^[+-][^+-]" $P | cut -c1-260
+
+# ---- output ----
+branch docs/g4-fts-errata-handoff-oct2026 tip before amend 2a557ed019039c654d70b7e421bc88bb8b1fa2b5; status lines 0
+amended -> f3995bdc9c484bb43119440603c6cbe1aa70fb03 parent 51564e34c18e5cc908cf517000ebc9bd41eaf194; tree unchanged: YES
+Claude <noreply@anthropic.com>
+docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft (P1)
+ handoff.md | 5 +++++
+ 1 file changed, 5 insertions(+)
+remote REV2 tip (unpushed local commit above it): 51564e34c18e5cc908cf517000ebc9bd41eaf194
+== build the P1b proposal (NOT applied to the branch): consistency sentence + clearer wording of one clause
+P1b: 12 lines; sha256 47493c785d3df459365d0991f63dca0f04c1c1d1af2fd562b4907bf3629727fe
+ handoff.md |    3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+P1b git apply --check (against the live handoff.md in the clone) exit 0
+0
+-- P1b added/removed lines (truncated):
+-  - *Parallel draft.* Branch `docs/g4-fts-correctness-handoff-rev3-oct2026` (commit `2dd2e7bb05db949a6156266cfa3430c58de09922`, committed 2026-10-23T10:30:25Z) and draft PR #90 hold a separate REV3 documentation set, created before this checkpoint. That set w
++  - *Parallel draft.* Branch `docs/g4-fts-correctness-handoff-rev3-oct2026` (commit `2dd2e7bb05db949a6156266cfa3430c58de09922`, committed 2026-10-23T10:30:25Z) and draft PR #90 hold a separate REV3 documentation set, created before this checkpoint. That set w
++  - *Effect on this file's own checks.* This entry was added after the handoff commit (`51564e34c18e5cc908cf517000ebc9bd41eaf194`). The branch therefore holds two commits after the transfer commit `eca2b96521fba8cf792ea16a58be997e4f949356`: `51564e34…`, the
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T14:13:24Z

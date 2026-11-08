@@ -1,0 +1,28 @@
+# evidence-id: I12_new_prs_100_101_path_scan
+# started-utc: 2026-10-30T08:51:16Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=1h0lde4/ocbrain-v4.1; for n in 100 101; do echo "== PR $n"; gh api "repos/$R/pulls/$n" --jq "[.title,.state,.draft,.head.ref,.created_at]|@tsv"; echo "files:"; gh api "repos/$R/pulls/$n/files" --paginate --jq ".[].filename" | sort -u; echo "(end)"; echo "FTS-relevant match:"; gh api "repos/$R/pulls/$n/files" --paginate --jq ".[].filename" | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/" ; echo "(end)"; done
+# ---- output ----
+== PR 100
+DEBT-014: harden DRIFT-10 governance boundary	open	false	fix/debt-014-final-review-handoff-oct2026	2026-10-29T14:41:25Z
+files:
+core/cognitive/learning.py
+scripts/check_drift.py
+tests/core/cognitive/test_learning.py
+tests/test_check_drift.py
+(end)
+FTS-relevant match:
+(end)
+== PR 101
+DEBT-014 final deep-review hardening for DRIFT-10	open	false	fix/debt-014-final-deep-review-oct2026	2026-10-29T15:01:33Z
+files:
+core/cognitive/learning.py
+scripts/check_drift.py
+tests/core/cognitive/test_learning.py
+tests/test_check_drift.py
+(end)
+FTS-relevant match:
+(end)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T08:51:19Z

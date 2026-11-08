@@ -1,0 +1,41 @@
+# evidence-id: I13_p3_preamble_and_apply_recheck
+# started-utc: 2026-10-30T08:52:43Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; P=$S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch; BODY=$S/a6/p3_body.patch
+echo "P3 sha256 BEFORE preamble (as checked in I09 and by the reviewer): $(sha256sum $P | cut -d" " -f1)"
+cp $P $BODY
+{
+printf "%s\n" "P3 - PROPOSED. NOT APPLIED. NOT AUTHORIZED. Digest-only correction: 3 files, 3 one-line hunks, one character each."
+printf "%s\n" "CONDITION: apply only together with P2 (DIGEST_DISCREPANCY_ERRATUM_REV3.md) or with a commit message or erratum that records:"
+printf "%s\n" "  original claim - Value A f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc at the three locations being corrected;"
+printf "%s\n" "  verified observation - the supplied REV3 ZIP (254,581 bytes) measures f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc (Value B);"
+printf "%s\n" "  affected file/revision - REV3 branch docs/g4-fts-correctness-handoff-rev3-oct2026, tip 2dd2e7bb05db949a6156266cfa3430c58de09922;"
+printf "%s\n" "  reason - the strings differ only at zero-based offset 23 (one-based 24); A is a transcription error if the measured file is the artifact REV3 describes."
+printf "%s\n" "Applied alone it would silently replace every occurrence of Value A, which the task forbids."
+printf "%s\n" "Lines above the first file header are ignored by git apply."
+printf "\n"
+cat $BODY
+} > $P
+echo "P3 sha256 AFTER preamble: $(sha256sum $P | cut -d" " -f1)"
+echo "-- diff body unchanged (bytes after the preamble equal the earlier patch): $(tail -c $(stat -c %s $BODY) $P | cmp - $BODY && echo yes)"
+rm -rf $S/a6/p3_apply2 && mkdir -p $S/a6/p3_apply2 && cp -r $S/a6/p3_work/orig/. $S/a6/p3_apply2/
+( cd $S/a6/p3_apply2 && git apply --check $P; echo "git apply --check exit: $?" ; git apply $P; echo "git apply exit: $?"; for f in IMPLEMENTATION_ROADMAP.md docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md; do cmp $f $S/a6/p3_work/new/$f && echo "identical to intended: $f"; done )
+A=f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc
+echo "-- Value A occurrences after apply (expect 0): $(cat $S/a6/p3_apply2/IMPLEMENTATION_ROADMAP.md $S/a6/p3_apply2/docs/reports/g4-fts-correctness/*.md | grep -o $A | wc -l)"
+echo "-- real repo untouched: $(git -C /home/claude/ocbrain-v4.1 status --porcelain | wc -l)"
+
+# ---- output ----
+P3 sha256 BEFORE preamble (as checked in I09 and by the reviewer): d70f712ef71bba3ffc219c8bef588f4e25c2a7f003e5ffa4f9532265fd5d72a7
+P3 sha256 AFTER preamble: 9a27fcf2d5801e802dca7e818a917404c4fd4185c395afa1f0ca30483cafcc60
+-- diff body unchanged (bytes after the preamble equal the earlier patch): yes
+git apply --check exit: 0
+git apply exit: 0
+identical to intended: IMPLEMENTATION_ROADMAP.md
+identical to intended: docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+identical to intended: docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+-- Value A occurrences after apply (expect 0): 0
+-- real repo untouched: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T08:52:43Z

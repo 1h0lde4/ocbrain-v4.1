@@ -1,0 +1,41 @@
+# evidence-id: A06_open_prs
+# started-utc: 2026-10-24T15:57:11Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo "--- all open PRs: number | draft | head ref | head sha | base"; gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq ".[]|[.number,(if .draft then \"draft\" else \"ready\" end),.head.ref,.head.sha,.base.ref]|join(\" | \")"; echo "--- per-PR files matching FTS/memory/erasure paths or G4/FTS docs (pattern: sqlite_storage|unified_memory|knowledge_entry|core/memory/|g4-fts|IMPLEMENTATION_ROADMAP|KNOWN_ISSUES|CURRENT_STATE|handoff):"; for n in $(gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq ".[].number"); do gh api repos/1h0lde4/ocbrain-v4.1/pulls/$n/files --paginate --jq ".[].filename" 2>/dev/null | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/|g4-fts|IMPLEMENTATION_ROADMAP|KNOWN_ISSUES|CURRENT_STATE|handoff" | sed "s/^/PR #$n: /"; done; echo "(scan complete)"
+# ---- output ----
+--- all open PRs: number | draft | head ref | head sha | base
+91 | ready | fix/debt-012-test-config-isolation-oct2026-16508008999830840178 | 68cc469a900adf6c00026c1b8c17f6ec52be00a9 | main
+90 | draft | docs/g4-fts-correctness-handoff-rev3-oct2026 | 2dd2e7bb05db949a6156266cfa3430c58de09922 | main
+89 | ready | fix/debt-029-context-persistence-failure-isolation-oct2026-4372039021546723617 | 676f97ab06c0ab1ed8a23080bdcee333f303e52f | main
+88 | ready | docs/response-path-disposition-c-plus-oct2026 | e634c4105c15c9023cface41ac0d628369f40d68 | main
+87 | ready | docs/register-debt033-debt030-oct2026 | 917bb37395ba3f80589a3b4fe20e72901dfd2d07 | main
+86 | ready | sandbox-network-isolation/b03-capacity-ipv6-guards | 664330927ad43f31f67fbddf8ae5a35e561a8685 | sandbox-network-isolation/b01-base
+83 | ready | docs/fz-freeze-decision-register-oct2026 | dda84f294d4cb0429e82e740ab43252529a7a86a | main
+81 | ready | fix/debt-028-workflow-runtime-concurrency-lock-3172688588772460252 | 647b63e734792b8375c0f96593407ee651af5840 | main
+79 | ready | security/privacy-wipe-containment-oct2026 | bcbe574d7632f8e49cbd1d2fb4ebdd086e1acf93 | main
+77 | ready | dependabot/github_actions/actions/upload-artifact-7.0.2 | 53a6e821e837563fcff9422f9812859225762d22 | main
+76 | ready | dependabot/github_actions/actions/download-artifact-8.0.2 | 1291f992c641da78c065877c742bcd4b084f55e1 | main
+33 | ready | dependabot/pip/chromadb-1.5.9 | c0da559bf8fee28c1ea77cf621f6cd2761036340 | main
+32 | ready | dependabot/pip/sentence-transformers-gte-3.0.0-and-lt-7.0 | 0c5817d2cf1e00366b243ba9342dc01e1acb6d75 | main
+30 | ready | dependabot/github_actions/actions/checkout-7.0.1 | fe93a400d964a988d7ba747389f1cd2d79333b6f | main
+29 | ready | dependabot/github_actions/actions/setup-python-7.0.0 | 4cd2f349c616bcc7297bb16bea1ef72df172fa73 | main
+27 | ready | dependabot/github_actions/softprops/action-gh-release-3.0.3 | bfa83b44728df0b561eb76eed2ac93fb4c62188c | main
+--- per-PR files matching FTS/memory/erasure paths or G4/FTS docs (pattern: sqlite_storage|unified_memory|knowledge_entry|core/memory/|g4-fts|IMPLEMENTATION_ROADMAP|KNOWN_ISSUES|CURRENT_STATE|handoff):
+PR #91: KNOWN_ISSUES.md
+PR #90: IMPLEMENTATION_ROADMAP.md
+PR #90: docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+PR #90: docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+PR #90: docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+PR #90: docs/reports/g4-fts-correctness/doc_fetch_quotations_as_returned_HEADER_REV2.md
+PR #90: docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+PR #89: KNOWN_ISSUES.md
+PR #88: CURRENT_STATE.md
+PR #88: KNOWN_ISSUES.md
+PR #87: KNOWN_ISSUES.md
+PR #83: KNOWN_ISSUES.md
+PR #81: KNOWN_ISSUES.md
+PR #79: KNOWN_ISSUES.md
+(scan complete)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:57:20Z

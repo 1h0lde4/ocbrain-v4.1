@@ -1,0 +1,65 @@
+# evidence-id: I24_p3_conditionally_applied_and_committed_locally_on_rev3
+# started-utc: 2026-10-31T15:17:48Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; cd /home/claude/wt_rev3
+A=f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc; B=f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc
+Z=/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
+echo "== conditions"
+echo "C1 HEAD is the P2 erratum commit: $(git log -1 --format=%s | cut -c1-70) [$(git rev-parse --short HEAD)]; file present: $(test -f docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md && echo yes || echo NO)"
+H=$(sha256sum $Z | cut -d" " -f1); echo "C2 ZIP re-measured now: $H -> equals B: $([ "$H" = "$B" ] && echo YES || echo NO)"
+git apply --check $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch && echo "C3 git apply --check exit 0 on the live files"
+echo "C4 tree clean before: $(git status --porcelain | wc -l) lines"
+echo "== apply"; sha256sum $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch; git apply $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch && echo "applied (exit 0)"
+git diff --stat; git diff --numstat
+echo "== each changed line differs by exactly one character (offset 23 of the digest)"
+python3 -I - <<PY
+import subprocess
+files=["IMPLEMENTATION_ROADMAP.md","docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md","docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md"]
+A="$A"; B="$B"
+for f in files:
+    old=subprocess.run(["git","show","HEAD:"+f],capture_output=True,text=True).stdout
+    new=open(f,encoding="utf-8").read()
+    ol,nl=old.split("\n"),new.split("\n")
+    diffs=[i for i,(x,y) in enumerate(zip(ol,nl)) if x!=y]
+    chars=sum(1 for x,y in zip(old,new) if x!=y)
+    print(f, "| lines equal count:", len(ol)==len(nl), "| differing lines:", [d+1 for d in diffs], "| differing chars:", chars, "| A in old:", old.count(A), "A in new:", new.count(A), "B in new:", new.count(B))
+PY
+echo "== A still preserved in the erratum: $(grep -c f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md) line(s); A in the verification report (must stay 0): $(grep -c $A docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md)"
+git diff --check && echo "git diff --check clean"
+git add IMPLEMENTATION_ROADMAP.md docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md && git commit -q -F $S/a6/msgs/p3_commit.txt && echo committed
+echo "after: $(git rev-parse HEAD); parent: $(git rev-parse HEAD^)"; git log --format="%h %an %s" -3 | cut -c1-150; echo "status lines: $(git status --porcelain --untracked-files=all | wc -l)"
+echo "== branch vs origin tip"; git rev-list --left-right --count origin/docs/g4-fts-correctness-handoff-rev3-oct2026...HEAD
+
+# ---- output ----
+== conditions
+C1 HEAD is the P2 erratum commit: docs(g4): record the REV3 archive digest discrepancy and its measureme [fc7f8a8]; file present: yes
+C2 ZIP re-measured now: f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc -> equals B: YES
+C3 git apply --check exit 0 on the live files
+C4 tree clean before: 0 lines
+== apply
+9a27fcf2d5801e802dca7e818a917404c4fd4185c395afa1f0ca30483cafcc60  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch
+applied (exit 0)
+ IMPLEMENTATION_ROADMAP.md                                               | 2 +-
+ docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md | 2 +-
+ docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md             | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+1	1	IMPLEMENTATION_ROADMAP.md
+1	1	docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+1	1	docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+== each changed line differs by exactly one character (offset 23 of the digest)
+IMPLEMENTATION_ROADMAP.md | lines equal count: True | differing lines: [2] | differing chars: 1 | A in old: 1 A in new: 0 B in new: 1
+docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md | lines equal count: True | differing lines: [16] | differing chars: 1 | A in old: 1 A in new: 0 B in new: 1
+docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md | lines equal count: True | differing lines: [16] | differing chars: 1 | A in old: 1 A in new: 0 B in new: 1
+== A still preserved in the erratum: 1 line(s); A in the verification report (must stay 0): 0
+git diff --check clean
+committed
+after: 44569055df1a2d87e504ae2898f1c17cb50d0a6e; parent: fc7f8a84f6d6702021e71ad0021f87e3dcbe648c
+4456905 Claude docs(g4): correct the REV3 archive SHA-256 from Value A to Value B at three locations (P3)
+fc7f8a8 Claude docs(g4): record the REV3 archive digest discrepancy and its measurement (P2 erratum)
+2dd2e7b N4Z docs(g4): preserve REV3 FTS evidence handoff and next-session gate
+status lines: 0
+== branch vs origin tip
+0	2
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T15:17:48Z

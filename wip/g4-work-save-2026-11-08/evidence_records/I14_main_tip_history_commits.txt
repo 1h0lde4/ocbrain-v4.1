@@ -1,0 +1,16 @@
+# evidence-id: I14_main_tip_history_commits
+# started-utc: 2026-10-30T13:59:21Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=1h0lde4/ocbrain-v4.1; for s in f13bfdefcdd197ed1f966de0b1f93037a4168af4 6e411877e426646f3c40892c75f407991b4d235b 7bb0ce2fd4b9557e56258f66d9f3e6b0e7bdca68 16d663ac8449965f774033da46d5063506a772a7; do gh api "repos/$R/commits/$s" --jq "[.sha,.commit.committer.date,(.commit.message|split(\"\n\")[0]),(.parents|map(.sha[0:8])|join(\",\"))]|@tsv" 2>&1 | head -1; done; echo "== is each an ancestor of main (compare status)"; for s in f13bfdefcdd197ed1f966de0b1f93037a4168af4 6e411877e426646f3c40892c75f407991b4d235b 7bb0ce2fd4b9557e56258f66d9f3e6b0e7bdca68; do printf "%s " ${s:0:8}; gh api "repos/$R/compare/$s...16d663ac8449965f774033da46d5063506a772a7" --jq "[.status,.ahead_by,.behind_by]|@tsv"; done
+# ---- output ----
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	2026-10-19T08:59:13Z	Merge pull request #82 from 1h0lde4/docs/adr-kernel-07-state-reconciliation-oct2026	ef426e9d,6ce4e837
+6e411877e426646f3c40892c75f407991b4d235b	2026-10-28T10:24:19Z	Merge pull request #89 from 1h0lde4/fix/debt-029-context-persistence-failure-isolation-oct2026-4372039021546723617	f13bfdef,36b3f01e
+7bb0ce2fd4b9557e56258f66d9f3e6b0e7bdca68	2026-10-29T10:50:01Z	Merge pull request #96 from 1h0lde4/docs/debt-044-resolution-oct2026	4a4783c4,c228f169
+16d663ac8449965f774033da46d5063506a772a7	2026-10-29T23:00:46Z	Merge pull request #97 from 1h0lde4/fix/debt-003-crash-restart-evidence-oct2026	7bb0ce2f,e721960e
+== is each an ancestor of main (compare status)
+f13bfdef ahead	59	0
+6e411877 ahead	8	0
+7bb0ce2f ahead	3	0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T13:59:27Z

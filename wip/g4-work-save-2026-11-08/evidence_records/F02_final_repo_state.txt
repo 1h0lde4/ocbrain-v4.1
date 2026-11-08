@@ -1,0 +1,48 @@
+# evidence-id: F02_final_repo_state
+# started-utc: 2026-10-25T00:12:22Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+echo "branch: $(git rev-parse --abbrev-ref HEAD)"; echo "HEAD: $(git rev-parse HEAD)";
+echo "--- status --porcelain=v1 --ignored (expect empty)"; git status --porcelain=v1 --ignored;
+echo "--- diff (worktree) stat (expect empty)"; git diff --stat; echo "--- diff --cached --stat (expect empty)"; git diff --cached --stat;
+echo "--- stash count"; git stash list | wc -l;
+echo "--- reflog last 5"; git reflog -5;
+echo "--- local refs"; git for-each-ref --format="%(refname) %(objectname)";
+echo "--- remote tips (read-only ls-remote)"; git ls-remote origin refs/heads/main refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026 2>&1;
+echo "--- P1 applies cleanly (check only, no write)"; git apply --check /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1_handoff_provenance_note.patch && echo "P1 apply-check OK (exit 0)";
+echo "--- handoff.md sha256"; sha256sum handoff.md;
+echo "--- packet sha256"; sha256sum docs/studies/g4-fts-errata-oct2026/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md
+
+# ---- output ----
+branch: docs/g4-fts-errata-handoff-oct2026
+HEAD: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+--- status --porcelain=v1 --ignored (expect empty)
+--- diff (worktree) stat (expect empty)
+--- diff --cached --stat (expect empty)
+--- stash count
+0
+--- reflog last 5
+51564e3 HEAD@{0}: commit: docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+eca2b96 HEAD@{1}: commit: docs(g4): FTS correctness errata rev 2 (PROPOSED, documentation-only checkpoint)
+f13bfde HEAD@{2}: checkout: moving from main to docs/g4-fts-errata-handoff-oct2026
+f13bfde HEAD@{3}: clone: from https://github.com/1h0lde4/ocbrain-v4.1
+--- local refs
+refs/heads/docs/g4-fts-errata-handoff-oct2026 51564e34c18e5cc908cf517000ebc9bd41eaf194
+refs/heads/main f13bfdefcdd197ed1f966de0b1f93037a4168af4
+refs/remotes/origin/HEAD f13bfdefcdd197ed1f966de0b1f93037a4168af4
+refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026 2dd2e7bb05db949a6156266cfa3430c58de09922
+refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 51564e34c18e5cc908cf517000ebc9bd41eaf194
+refs/remotes/origin/main f13bfdefcdd197ed1f966de0b1f93037a4168af4
+--- remote tips (read-only ls-remote)
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	refs/heads/main
+--- P1 applies cleanly (check only, no write)
+P1 apply-check OK (exit 0)
+--- handoff.md sha256
+a41ca6101a7dfebc6bdb8d18b1abce7934a83b886ea0ce0d96f2dd739ef662df  handoff.md
+--- packet sha256
+db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  docs/studies/g4-fts-errata-oct2026/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-25T00:12:23Z

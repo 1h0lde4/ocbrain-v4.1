@@ -1,0 +1,21 @@
+# evidence-id: I71
+# started-utc: 2026-11-07T01:43:50Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq '"PR #90: state=\(.state) draft=\(.draft) head=\(.head.sha) commits=\(.commits) changed_files=\(.changed_files) base=\(.base.ref)"'; for r in docs/g4-fts-errata-handoff-oct2026 docs/g4-fts-correctness-handoff-rev3-oct2026 main; do echo "remote $r: $(git ls-remote origin refs/heads/$r | cut -f1)"; done; echo "working clone HEAD: $(git rev-parse HEAD); status lines: $(git status --porcelain | wc -l)"; echo '-- sha256'; cd /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; sha256sum deliver_a5/final6/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md deliver_a5/g4_addendum_4_delivery_all_files_2026-11-06.zip deliver_a5/final7/g4_rev3_independent_review_package.zip deliver_a5/final7/check_addendum4_v2.py deliver_a5/final7/check_status_mutations.py a6_scripts/check_review_package.sh a6_scripts/check_addendum4.py
+# ---- output ----
+PR #90: state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7 base=main
+remote docs/g4-fts-errata-handoff-oct2026: d963daa502de4220411d0d0c2f19f67b3ec2682b
+remote docs/g4-fts-correctness-handoff-rev3-oct2026: 9407db5a01acea9684f158caa8107fb71611a102
+remote main: 2491ae469edd6ef1267a14604c4f8f40d698f7ea
+working clone HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b; status lines: 0
+-- sha256
+d619b7c87b4b3d242adc6922bbaa9fb770ad7025196db5b45a162c476fa637f8  deliver_a5/final6/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md
+162b4238c6d2437ee8a4cef95fb1f2a8296116c4dc832e7bb7c664fda34822ef  deliver_a5/g4_addendum_4_delivery_all_files_2026-11-06.zip
+391eb0a06784153af4591d6bbfdc0af87edce0f17dd2e2aae0a7593794ce2286  deliver_a5/final7/g4_rev3_independent_review_package.zip
+ede89e49a7129d762941c8f8d6008caec1a7a8b1ec3d2011c67410467019954c  deliver_a5/final7/check_addendum4_v2.py
+cd2224fadf5f074f37baf33723ac8302235881a884f2921cfc0f3f28e4fbc5b8  deliver_a5/final7/check_status_mutations.py
+cca9c0ec5f906c4812a0f9ca0fda34b08fd79178d766914cb616e8daa0430549  a6_scripts/check_review_package.sh
+60d59bf53f63a39d6a37081b3d8b9e13fd0abe2ea32ced15ced5f63b6953a308  a6_scripts/check_addendum4.py
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-07T01:43:51Z

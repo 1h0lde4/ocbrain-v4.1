@@ -1,0 +1,17 @@
+# evidence-id: A01_baseline
+# started-utc: 2026-10-24T15:56:45Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: date -u +"%Y-%m-%dT%H:%M:%SZ"; TZ=Africa/Casablanca date +"%Y-%m-%d %H:%M:%S %Z %z"; echo "root: $(git rev-parse --show-toplevel)"; echo "origin: $(git remote get-url origin | sed -E "s#//[^@/]*@#//<redacted>@#")"; echo "branch: $(git branch --show-current)"; echo "HEAD: $(git rev-parse HEAD)"; echo "shallow: $(git rev-parse --is-shallow-repository)"; echo "user: $(git config user.name) <$(git config user.email)>"; echo "stash entries: $(git stash list | wc -l)"
+# ---- output ----
+2026-10-24T15:56:45Z
+2026-10-24 15:56:45 +00 +0000
+root: /home/claude/ocbrain-v4.1
+origin: https://github.com/1h0lde4/ocbrain-v4.1
+branch: docs/g4-fts-errata-handoff-oct2026
+HEAD: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+shallow: true
+user: Claude <noreply@anthropic.com>
+stash entries: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:56:45Z

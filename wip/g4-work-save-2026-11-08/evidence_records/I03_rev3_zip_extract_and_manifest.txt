@@ -1,0 +1,33 @@
+# evidence-id: I03_rev3_zip_extract_and_manifest
+# started-utc: 2026-10-29T08:37:33Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; Z="/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip"; X=$S/a6/ex_rev3;
+[ -e "$X" ] && { echo "refusing: $X exists"; exit 9; }; mkdir -p $S/a6 && mkdir "$X" && unzip -q -d "$X" "$Z"; echo "unzip exit=$?";
+echo "files extracted: $(find $X -type f | wc -l); non-regular: $(find $X ! -type f ! -type d | wc -l); symlinks: $(find $X -type l | wc -l)";
+echo "-- MANIFEST.sha256: line count and format"; wc -l $X/MANIFEST.sha256; head -3 $X/MANIFEST.sha256;
+echo "-- sha256sum -c (run with cwd = extraction dir; reads files only)"; (cd "$X" && sha256sum -c MANIFEST.sha256 > $S/a5/out/rev3_manifest_check.txt 2>&1; echo "exit=$?"; echo "OK lines: $(grep -c ": OK$" $S/a5/out/rev3_manifest_check.txt)"; echo "FAILED/other lines: $(grep -vc ": OK$" $S/a5/out/rev3_manifest_check.txt)"; grep -v ": OK$" $S/a5/out/rev3_manifest_check.txt | head);
+echo "-- files present but not listed in the manifest (excluding the manifest itself)"; (cd "$X" && find . -type f ! -name MANIFEST.sha256 | sed "s|^\./||" | sort > $S/a5/out/rev3_f_in_extraction.txt; awk "{print \$2}" MANIFEST.sha256 | sed "s|^\*||" | sort > $S/a5/out/rev3_f_in_manifest.txt); comm -23 $S/a5/out/rev3_f_in_extraction.txt $S/a5/out/rev3_f_in_manifest.txt; echo "(end unlisted)";
+echo "-- listed in manifest but missing from extraction"; comm -13 $S/a5/out/rev3_f_in_extraction.txt $S/a5/out/rev3_f_in_manifest.txt; echo "(end missing)";
+echo "counts: extracted(non-manifest)=$(wc -l < $S/a5/out/rev3_f_in_extraction.txt) manifest-entries=$(wc -l < $S/a5/out/rev3_f_in_manifest.txt)"
+
+# ---- output ----
+unzip exit=0
+files extracted: 87; non-regular: 0; symlinks: 0
+-- MANIFEST.sha256: line count and format
+86 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/ex_rev3/MANIFEST.sha256
+d086f95648a0ec9404bb8bbdfe49e54510f6788262b7acd8b961b0f2ed046cf6  README.md
+f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc  docs/doc_fetch_quotations_as_returned.md
+066d80ab57dcc19c49141eabe13fb2fe3c5d9a4eefbbe691f7fb40d84b70fd8a  docs/raw_html_excerpts_sqlite3-doc_3.45.1-1ubuntu2.8.txt
+-- sha256sum -c (run with cwd = extraction dir; reads files only)
+exit=0
+OK lines: 86
+FAILED/other lines: 0
+-- files present but not listed in the manifest (excluding the manifest itself)
+(end unlisted)
+-- listed in manifest but missing from extraction
+(end missing)
+counts: extracted(non-manifest)=86 manifest-entries=86
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:37:33Z

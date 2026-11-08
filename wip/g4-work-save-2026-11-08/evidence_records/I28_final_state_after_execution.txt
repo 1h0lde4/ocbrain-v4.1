@@ -1,0 +1,62 @@
+# evidence-id: I28_final_state_after_execution
+# started-utc: 2026-11-01T14:14:03Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/final_state.sh
+# ---- output ----
+== local refs
+docs/g4-fts-correctness-handoff-rev3-oct2026 9407db5a01acea9684f158caa8107fb71611a102
+docs/g4-fts-errata-handoff-oct2026 f3995bdc9c484bb43119440603c6cbe1aa70fb03
+main f13bfdefcdd197ed1f966de0b1f93037a4168af4
+wip-backup-rev2-local-2a557ed 2a557ed019039c654d70b7e421bc88bb8b1fa2b5
+wip-backup-rev3-local-4456905 44569055df1a2d87e504ae2898f1c17cb50d0a6e
+== local worktrees
+/home/claude/ocbrain-v4.1  f3995bd [docs/g4-fts-errata-handoff-oct2026]
+/home/claude/wt_rev3       9407db5 [docs/g4-fts-correctness-handoff-rev3-oct2026]
+== local status (clone / worktree): 0 / 0; stash entries: 0
+== remote tips (git ls-remote)
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+== REV2 branch: local tip vs remote
+ahead of remote tip: 1 (unpushed); remote tip is the pre-existing 51564e34: YES
+== commits made (final shas), with files and numstat
+-- f3995bdc9c484bb43119440603c6cbe1aa70fb03
+   parent 51564e3 | Claude | 2026-11-01T14:13:23+00:00 | docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft (P1)
+   5	0	handoff.md
+-- 9bb2443b6eb03ae296f24dfc45b4bbab706c9c54
+   parent 2dd2e7b | Claude | 2026-11-01T14:12:28+00:00 | docs(g4): record the REV3 archive digest discrepancy and its measurement (P2 erratum)
+   54	0	docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md
+-- 9407db5a01acea9684f158caa8107fb71611a102
+   parent 9bb2443 | Claude | 2026-11-01T14:12:28+00:00 | docs(g4): correct the REV3 archive SHA-256 from Value A to Value B at three locations (P3)
+   1	1	IMPLEMENTATION_ROADMAP.md
+   1	1	docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+   1	1	docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+== cumulative change on the REV3 branch relative to the pre-push tip 2dd2e7bb
+ IMPLEMENTATION_ROADMAP.md                          |  2 +-
+ .../DIGEST_DISCREPANCY_ERRATUM_REV3.md             | 54 ++++++++++++++++++++++
+ .../G4_FTS_CORRECTNESS_CONTINUATION_REV3.md        |  2 +-
+ .../g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md |  2 +-
+ 4 files changed, 57 insertions(+), 3 deletions(-)
+== remote REV3 tip equals local: YES
+== PR #90 now
+state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 base=f13bfdefcdd197ed1f966de0b1f93037a4168af4 commits=3 changed_files=7 mergeable_state=behind updated=2026-11-01T14:12:52Z
+== REV3 branch vs current main
+status=diverged ahead_by=3 behind_by=96 merge_base=f13bfdefcdd197ed1f966de0b1f93037a4168af4
+== main now, FTS source blobs, FTS-relevant changed paths since f13bfde
+main tip 2491ae469edd6ef1267a14604c4f8f40d698f7ea
+core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+core/memory/unified_memory.py eb2bbe17f12889d8638512560226456a6d43c9bd
+changed paths on main since f13bfde matching FTS patterns:
+(end)
+overlap of main-changed paths with PR #90 files:
+(end)
+== format-patch of the three final commits (for the evidence bundle)
+9777 0001-docs-g4-record-the-REV3-archive-digest-discrepancy-a.patch
+5325 0001-docs-handoff-record-provenance-of-the-earlier-handof.patch
+30560 0002-docs-g4-correct-the-REV3-archive-SHA-256-from-Value-.patch
+== erratum file at the remote tip
+10c76dca183b6fb2e555f9f1dbd0a51c9dd1952e377baa410433478ee002a9a0  -
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T14:14:08Z

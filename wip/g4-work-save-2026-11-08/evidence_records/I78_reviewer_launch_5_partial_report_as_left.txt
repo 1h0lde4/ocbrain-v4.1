@@ -1,0 +1,26 @@
+# evidence-id: I78
+# started-utc: 2026-11-08T11:58:21Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: ls -la --time-style=full-iso /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md; sha256sum /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md; wc -c /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md; head -1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md; echo ----; cat /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md
+# ---- output ----
+-rw-r--r-- 1 root root 2367 2026-11-07 22:31:42.346993805 +0000 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md
+fae71061060ba77202bf2a18e65e0a0e695e728c6d2a656fa7980832a0f9ebd5  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md
+2367 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5/REPORT.md
+STATUS: IN PROGRESS
+----
+STATUS: IN PROGRESS
+
+# Running report (reviewer: independent, fresh context)
+- Package sha256 verified = 391eb0a0...2ce2286 (expected). SHA256SUMS.txt all OK.
+- G1: block extracted from patch (python -I) is byte-identical to rev3/verify_block_rev3.sh (sha256 e1ccd6a7...d53).
+- G2: patch applies cleanly (git apply --check --whitespace=error) to base/handoff.md in scratch repo.
+- G3: 3 hunks only: @@-359 (sec7 Handoff commit line), @@-507,3 (sec16 3 bullets), @@-526 (step 2). No other change.
+
+## Findings so far (raw notes)
+- A(i)-(vi): rev2 gives FALSE PASS in all six (A(v) n/a); rev3 FAILs all six. (tested with local bare origin + wrapper git)
+- B (string-level, network-blocked wrapper): rev3 identity check ACCEPTS `https://evil.example?@github.com/1h0lde4/ocbrain-v4.1`, `https://evil.example#@github.com/...`, `https://evil.example\@github.com/...`, `https://evil.example%2f@github.com/...` (authority is cut at first '/' only, not at '?', '#'). Need to show git really connects to evil.example for the ?/# forms (-> false PASS) -- in progress.
+- **B REPRODUCED FALSE PASS (rev3)**: origin = `https://127.0.0.1:18443?@github.com/1h0lde4/ocbrain-v4.1` (loopback TLS server emulating attacker host, git-http-backend, identical history + 1 follow-up; only T= and H= lines substituted, CANON line REAL/unchanged; GIT_SSL_CAINFO set to my self-signed cert). rev3 printed `PASS at ...` rc=0; server log shows all git requests went to 127.0.0.1:18443; git's own stderr printed `From https://github.com/1h0lde4/ocbrain-v4.1`. Cause: `auth=${rest%%/*}` cuts authority only at '/', not '?' or '#'; `${auth##*@}` then takes the text after the '@' inside the query/fragment as host.
+- **E REPRODUCED SECRET OUTPUT (rev3)**: loopback TLS server on 127.0.0.1:443 (cert for github.com, GIT_SSL_CAINFO, http.curloptResolve github.com:443:127.0.0.1, answers 401). origin=`https://DUMMYTOKEN@github.com/1h0lde4/ocbrain-v4.1` (passes identity check). Block output (git's own stderr) contains 3x `fatal: could not read Password for 'https://DUMMYTOKEN@github.com': terminal prompts disabled`. Also non-canonical origins with token in path/query/fragment: `fatal: unable to access 'https://127.0.0.1:1/org/repo?token=DUMMYTOKEN/'` x3, and local path origins print the path; the FAIL text claims "the configured URL is not printed". user:TOKEN@ forms and ssh forms were clean.
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-08T11:58:21Z

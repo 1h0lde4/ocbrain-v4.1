@@ -1,0 +1,35 @@
+# evidence-id: I11_main_moved_again_fts_blobs_and_changed_paths
+# started-utc: 2026-10-30T08:51:07Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=1h0lde4/ocbrain-v4.1; echo "== FTS source blobs on main now (earlier: ed0cbae6 / 0d5e0716 / eb2bbe17)"; for p in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py core/memory/unified_memory.py; do gh api "repos/$R/contents/$p?ref=main" --jq "\"\(.path) \(.sha)\"" 2>&1 | head -1; done; echo "== compare f13bfde...main"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --jq "[.status,.ahead_by,.behind_by,.total_commits]|@tsv"; echo "== changed files f13bfde...main (paginated)"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --paginate --jq ".files[].filename" | sort -u; echo "(end)"; echo "== any FTS-relevant path among them"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --paginate --jq ".files[].filename" | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/" | sort -u; echo "(end)"; echo "== open PRs now"; gh api "repos/$R/pulls?state=open&per_page=100" --jq "[.[].number]|sort|reverse|join(\",\")"; echo "== DEBT-042 row on main"; gh api "repos/$R/contents/KNOWN_ISSUES.md?ref=main" --jq ".content" | base64 -d | grep -n -E "DEBT-042" | cut -c1-200
+# ---- output ----
+== FTS source blobs on main now (earlier: ed0cbae6 / 0d5e0716 / eb2bbe17)
+core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+core/memory/unified_memory.py eb2bbe17f12889d8638512560226456a6d43c9bd
+== compare f13bfde...main
+ahead	59	0	59
+== changed files f13bfde...main (paginated)
+KNOWN_ISSUES.md
+core/context.py
+core/merger.py
+core/orchestrator.py
+core/workers/planner.py
+interface/api.py
+tests/_crash_restart_child.py
+tests/test_debt_029_post_dispatch_merge_isolation.py
+tests/test_debt_044_context_persistence.py
+tests/test_workflow_crash_restart_subprocess.py
+tests/test_workflow_failure_disclosure.py
+tests/test_workflow_runtime.py
+(end)
+== any FTS-relevant path among them
+(end)
+== open PRs now
+101,100,94,93,92,91,90,88,87,86,83,81,79,77,76,33,32,30,27
+== DEBT-042 row on main
+9:**Last synchronized:** Oct 14, 2026, ADR-KERNEL-07 (creative content-anchor detector, slice 1) workstream state recorded and two defects registered (documentation only; no code or contract change in
+62:| DEBT-042 | Memory | **`SqliteStorage._fts_escape()` leaves most FTS5 query-syntax characters unescaped, so L1 full-text search fails for ordinary punctuation (found during the ADR-KERNEL-07 live 
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T08:51:11Z

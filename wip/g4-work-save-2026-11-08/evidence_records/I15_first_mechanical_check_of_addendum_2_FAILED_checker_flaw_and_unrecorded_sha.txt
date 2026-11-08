@@ -1,0 +1,40 @@
+# evidence-id: I14_final_mechanical_check_of_addendum_2
+# started-utc: 2026-10-30T13:59:01Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; D=$S/deliver_a5; python3 -I $S/a6_scripts/check_addendum2.py $D/ADDENDUM_2_2026-10-29_REV3_ZIP_authentication.md $S/a5/evidence /home/claude/ocbrain-v4.1 $S/a5/OCBRAIN_G4_FTS_AUTHENTICATION_RECONCILIATION_REPORT.md $D/ADDENDUM_2026-10-28_REV3_branch_ZIP_search.md $D/g4_rev3_zip_authentication_evidence_I01-I13.zip $D/final/P2_digest_discrepancy_erratum_COMPLETED_PROPOSED.md $D/final/P3_rev3_digest_value_A_to_B.patch $S/a5/proposed_diffs/P1_handoff_provenance_note.patch 2>&1 | cut -c1-330
+# ---- output ----
+placeholders: checked
+level-2 headings: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+last non-empty line ok: True
+gate rows: 15
+   PASS     Live repository and PR inventory
+   PASS     Target and scope
+   PASS     Original ZIP authentication
+   PASS     Archive integrity and contents
+   PASS     Transcription-check identity
+   PASS     REV2/REV3 comparison
+   PASS     Handoff provenance
+   PASS     Document-authority analysis
+   PASS     D-1 through D-11 preservation
+   PASS     Product and debt boundaries
+   PASS     Edits, if any
+   PASS     Final diff and links
+   PASS     Independent review
+   PASS     G4/freeze invariants
+   PASS     Overall result
+non-PASS gates: [] | overall: ['PASS']
+ids cited: 36 | missing files: ['F10', 'F11']
+FAIL: cited evidence id without file
+40-hex ids: 6 | unresolved (not a repo object, not in evidence text): ['7bb0ce2fd4b9557e56258f66d9f3e6b0e7bdca68']
+FAIL: unresolved 40-hex ids
+64-hex digests: 12 | not in evidence text or deliverable hashes: []
+   report: a331f6b2b242b2c031b7a84c66ef178d64b940df228545483ed15a0e8abc8318  cited in addendum: True
+   addendum1: cb4cd825b2046c68403a25874da7d203d171e922559392075d2af0aa903f76b6  cited in addendum: True
+   bundle: a7b6996f36379b6718e3b80fbcb963945c8d83e59222dfe5a73d4b24db615afc  cited in addendum: True
+   P2: 0c9fa6362e6a3ae57534f2df6e7d4bae6f45dbf8ba1fa89ed51023b3a38c71f7  cited in addendum: True
+   P3: 9a27fcf2d5801e802dca7e818a917404c4fd4185c395afa1f0ca30483cafcc60  cited in addendum: True
+abbreviated hex ids: 13 | not a prefix of any digest seen: []
+RESULT: FAILURES PRESENT
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-30T13:59:02Z

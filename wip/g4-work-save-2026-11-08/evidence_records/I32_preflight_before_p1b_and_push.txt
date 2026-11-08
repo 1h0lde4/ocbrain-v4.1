@@ -1,0 +1,29 @@
+# evidence-id: I32_preflight_before_p1b_and_push
+# started-utc: 2026-11-01T23:47:30Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/preflight_p1b.sh
+# ---- output ----
+== branch / HEAD / status
+docs/g4-fts-errata-handoff-oct2026
+f3995bdc9c484bb43119440603c6cbe1aa70fb03
+0
+0
+== remote tip of the REV2 branch (live)
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+== local is exactly one commit ahead of the remote tip and its parent is the remote tip
+51564e34c18e5cc908cf517000ebc9bd41eaf194
+f3995bd docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft (P1)
+== commits after the transfer commit eca2b96 (before)
+2
+== P1b apply check on the current tree
+P1b git apply --check exit 0
+47493c785d3df459365d0991f63dca0f04c1c1d1af2fd562b4907bf3629727fe  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1b_handoff_consistency_sentence_PROPOSED.patch
+== REV3 branch remote tip unchanged
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+== main tip
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+== backup of the P1 commit before any amend
+f3995bdc9c484bb43119440603c6cbe1aa70fb03
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T23:47:31Z

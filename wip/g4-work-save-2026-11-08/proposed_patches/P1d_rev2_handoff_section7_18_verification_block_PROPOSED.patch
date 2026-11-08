@@ -1,0 +1,61 @@
+--- a/handoff.md
++++ b/handoff.md
+@@ -356,7 +356,7 @@
+ - Base branch: `main` @ `f13bfdefcdd197ed1f966de0b1f93037a4168af4` (confirmed at clone time and again before the push; remote `main` re-read after the push and unchanged). The study's evidence baseline is `1d813bdae320bf34110c29836c81dc901c601c9b`; the branch is based on the main tip, **not** on the baseline.
+ - HEAD before the handoff commit: `eca2b96521fba8cf792ea16a58be997e4f949356`
+ - Transfer commit (the implementation checkpoint): `eca2b96521fba8cf792ea16a58be997e4f949356` — adds the four report documents under `docs/studies/g4-fts-errata-oct2026/`; pushed; `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` returned the same hash
+-- Handoff commit: the commit that adds this file (`git log --oneline -1 -- handoff.md` on the branch). Its own hash cannot be stored inside the file.
++- Handoff commit: `51564e34c18e5cc908cf517000ebc9bd41eaf194` (parent `eca2b96521fba8cf792ea16a58be997e4f949356`), the commit that adds this file. Find it with `git log --diff-filter=A --format='%H %P %s' -- handoff.md` on the branch (expected: that hash, then the transfer commit as its only parent). When this file was first written its own hash could not be stored inside it. A later documentation-only commit added the entry in section 16 ("Related documents and earlier revision"); `git log --oneline -1 -- handoff.md` therefore returns that later commit, not the handoff commit.
+ - Parent commit of the handoff commit: `eca2b96521fba8cf792ea16a58be997e4f949356`
+ - Working tree status at the transfer commit: clean
+ - Relevant untracked / ignored files: none
+@@ -504,9 +504,9 @@
+ - Cautions: the harness tree digest is worktree-path dependent; default `git log -- path` hides two commits of `sqlite_storage.py`; the file is CRLF; probe artefacts are not product code.
+ - **Related documents and earlier revision (provenance only; no authority is conferred or changed by this entry).**
+   - *Earlier revision of this handoff.* A first version of this file was written on 2026-10-23 as a file-only handoff and delivered as a file. Its sha256 is `da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d` (502 lines; the same 19 level-2 headings as this file), as computed from the session scratch copy and as recorded in the REV3 branch (`docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md` line 24; `NEXT_SESSION_PROMPT_REV3.md` line 12, where it is called `handoff(1).md`). Whether the user-side attachment is byte-identical to that scratch copy has not been independently established.
+-  - *Limited supersession, transfer-status statements only.* The earlier revision states "TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED" (its metadata line and §19) and "the repository contains no work of this workstream" (its §19); its §7 records no branch, no transfer commit and no push; its §18 step 3 tells a resumer not to look for a branch or commit. Those statements described the state before this branch existed. For *repository state* they are replaced by §7, §18 and §19 of this file. Nothing else in the earlier revision is replaced: its verbatim original prompt, ledgers, investigation record, failed attempts and verification evidence remain a valid historical record.
+-  - *Parallel draft.* Branch `docs/g4-fts-correctness-handoff-rev3-oct2026` (commit `2dd2e7bb05db949a6156266cfa3430c58de09922`, committed 2026-10-23T10:30:25Z) and draft PR #90 hold a separate REV3 documentation set, created before this checkpoint. That set was not reviewed in the session that first wrote this file; a later audit session compared it with this REV2 set (evidence outside this repository). This file does not select it, supersede it or depend on it.
+-  - *Effect on this file's own checks.* This entry was added after the handoff commit (`51564e34c18e5cc908cf517000ebc9bd41eaf194`). The branch therefore holds two commits after the transfer commit `eca2b96521fba8cf792ea16a58be997e4f949356`: `51564e34…`, then the commit that adds this entry. The "exactly one later commit" of §18 step 2 and the `git log --oneline -1 -- handoff.md` of §7 refer to `51564e34…`; a branch tip that differs from it only for this reason does not make the transfer INCOMPLETE.
++  - *Limited supersession, transfer-status statements only.* The earlier revision states "TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED" (its metadata line and §19) and "the repository contains no work of this workstream" (its §19); its §7 records no branch, no transfer commit and no push; its §18 step 3 tells a resumer not to look for a branch or commit. Those statements described the state before this branch existed. For *repository state* they are replaced by §7, §18 and §19 of this file. Nothing else in the earlier revision is replaced: its verbatim original prompt, ledgers, investigation record, failed attempts and verification evidence remain as a historical record, not endorsed or re-verified by this entry.
++  - *Parallel draft.* Branch `docs/g4-fts-correctness-handoff-rev3-oct2026` (commit `2dd2e7bb05db949a6156266cfa3430c58de09922`, committed 2026-10-23T10:30:25Z, the branch tip when this entry was prepared on 2026-10-31; the branch may have moved since) and draft PR #90 hold a separate REV3 documentation set, created before this checkpoint. That set is not mentioned in, and was not reviewed for, this file as committed at `51564e34…`; a later audit session compared it with this REV2 set (evidence outside this repository). This file does not select it, supersede it or depend on it.
++  - *Effect on this file's own checks.* This entry was added after the handoff commit (`51564e34c18e5cc908cf517000ebc9bd41eaf194`). This entry, and the corrections to section 7 and to step 2 of section 18 that accompany it, were added in later documentation-only commits. Section 7 and step 2 now identify the handoff commit by hash and check the later commits one by one (each must be a single-parent child of the previous one that changes `handoff.md` alone); they no longer depend on the number of commits after the transfer commit or on the path-filtered `git log`.
+   - *Not decided by this entry:* which document is the entry point for a future session; the authority of either ledger; any of D-1…D-11; G4–G8 status; freeze readiness; any implementation.
+ 
+ ## 17. Next Steps
+@@ -523,7 +523,35 @@
+ Follow `PROJECT_INSTRUCTIONS.md` §18.4.9. The handoff is a transfer record, not an authority.
+ 
+ 1. `git fetch origin`; check out `docs/g4-fts-errata-handoff-oct2026`; confirm `handoff.md` is at the repo root and read it completely.
+-2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` and `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` (the branch must contain it; it should contain exactly one later commit, the handoff commit, whose parent is `eca2b96521fba8cf792ea16a58be997e4f949356`). If the branch tip is not the handoff commit or the handoff file is missing on the remote, **the transfer is INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED**: say so before doing anything else.
++2. Verify the checkpoint against the **remote** branch, not against local objects. Run the block below as a script (`bash verify.sh`) from a clone of the repository. It fetches the branch and compares the fetched tip with the live remote; checks that `handoff.md` is in the remote tree; checks that the transfer commit and the handoff commit are ancestors of the remote tip and that the handoff commit's parent is exactly the transfer commit; and checks, commit by commit, that every later commit is a single-parent child of the previous one that changes `handoff.md` alone. It must print `PASS`. Any `FAIL` line, or no `PASS`, means **the transfer is INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED**: say so before doing anything else. Each follow-up commit it lists is a documentation-only change to `handoff.md`; report them.
++
++   ```bash
++   # Verify the REV2 checkpoint against the REMOTE branch. Run as a script (bash verify.sh) from a clone of the repository.
++   BR=docs/g4-fts-errata-handoff-oct2026
++   T=eca2b96521fba8cf792ea16a58be997e4f949356   # transfer commit
++   H=51564e34c18e5cc908cf517000ebc9bd41eaf194   # handoff commit
++   fail=0; bad() { echo "FAIL: $*"; fail=1; }
++   git fetch origin "+refs/heads/$BR:refs/remotes/origin/$BR" || bad "fetch of the remote branch failed"
++   LIVE=$(git ls-remote origin "refs/heads/$BR" | cut -f1)
++   TIP=$(git rev-parse --verify -q "refs/remotes/origin/$BR") || bad "no fetched remote-tracking ref"
++   [ -n "$LIVE" ] || bad "the remote branch does not exist"
++   [ "$LIVE" = "$TIP" ] || bad "live remote tip ($LIVE) differs from the fetched tip ($TIP)"
++   git cat-file -e "$TIP:handoff.md" 2>/dev/null || bad "handoff.md is not in the remote tree"
++   git merge-base --is-ancestor "$T" "$TIP" || bad "the transfer commit is not an ancestor of the remote tip"
++   git merge-base --is-ancestor "$H" "$TIP" || bad "the handoff commit is not an ancestor of the remote tip"
++   [ "$(git show -s --format=%P "$H")" = "$T" ] || bad "the parents of the handoff commit are not exactly the transfer commit"
++   [ "$(git log --diff-filter=A --format='%H %P' "$TIP" -- handoff.md)" = "$H $T" ] || bad "handoff.md was not added by the handoff commit"
++   prev=$H
++   for c in $(git rev-list --reverse --topo-order "$H..$TIP"); do
++     [ "$(git show -s --format=%P "$c")" = "$prev" ] || bad "$c is not a single-parent child of $prev"
++     [ "$(git diff-tree --no-commit-id --name-only -r "$prev" "$c")" = "handoff.md" ] || bad "$c does not change handoff.md alone"
++     echo "follow-up: $(git log -1 --format='%H %s' "$c")"
++     prev=$c
++   done
++   [ "$prev" = "$TIP" ] || bad "the follow-up sequence does not end at the remote tip"
++   [ "$fail" = 0 ] && { echo "PASS: handoff commit $H on $BR; $(git rev-list --count "$H..$TIP") follow-up(s), each a single-parent child changing handoff.md alone"; exit 0; }
++   echo "TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED"; exit 1
++   ```
+ 3. Verify scope: `git diff --stat $(git merge-base origin/main HEAD) HEAD` must list only `handoff.md` and the four files under `docs/studies/g4-fts-errata-oct2026/`. Any other file is an unexpected change to investigate.
+ 4. Verify the four documents' sha256 against §8.
+ 5. Check whether `origin/main` has moved since `f13bfde…` in `core/memory/backends/sqlite_storage.py`, `core/memory/knowledge_entry.py` or `tests/test_session4c_architecture.py` (they were byte-identical to the evidence baseline when checked). If they changed, re-verify the "current tip" statements in packet §3 before relying on them.

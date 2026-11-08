@@ -1,0 +1,13 @@
+# evidence-id: E07_embedded_prompt_fidelity
+# started-utc: 2026-10-25T00:07:30Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: U=/root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/c017d8ee-attachment.txt; ls -la $U; echo -n 'original prompt attachment sha256: '; sha256sum < $U | cut -c1-64; echo '(handoff/earlier report recorded: f7949f94cddfa85643e6401bcfb8535b68fa64c53ed5f54c1c7c3579231bb65d)'; python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/prompt_fidelity.py $U /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/handoff.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/out/repo_handoff_at_51564e3.md
+# ---- output ----
+-rw------- 1 root root 15404 Oct 18 10:35 /root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/c017d8ee-attachment.txt
+original prompt attachment sha256: f7949f94cddfa85643e6401bcfb8535b68fa64c53ed5f54c1c7c3579231bb65d
+(handoff/earlier report recorded: f7949f94cddfa85643e6401bcfb8535b68fa64c53ed5f54c1c7c3579231bb65d)
+older handoff da162e71: section 2 = 15632 bytes; original prompt (15404 bytes) occurs verbatim inside it: True; after stripping the prompt's own trailing newlines: True
+repo handoff a41ca610: section 2 = 15632 bytes; original prompt (15404 bytes) occurs verbatim inside it: True; after stripping the prompt's own trailing newlines: True
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-25T00:07:30Z

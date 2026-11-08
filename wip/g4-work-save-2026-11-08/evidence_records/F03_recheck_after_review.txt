@@ -1,0 +1,68 @@
+# evidence-id: F03_recheck_after_review
+# started-utc: 2026-10-26T21:09:18Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+echo "branch: $(git rev-parse --abbrev-ref HEAD)  HEAD: $(git rev-parse HEAD)";
+echo "--- status --porcelain --ignored (expect empty)"; git status --porcelain=v1 --ignored; echo "--- diff, cached diff (expect empty)"; git diff --stat; git diff --cached --stat; echo "stash: $(git stash list | wc -l)";
+echo "--- remote tips"; git ls-remote origin refs/heads/main refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026;
+echo "--- open PRs now"; gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq "[.[].number]|sort|reverse|join(\",\")";
+echo "--- PR 90"; gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq "\"state=\(.state) draft=\(.draft) head=\(.head.sha) updated=\(.updated_at) commits=\(.commits) files=\(.changed_files)\"";
+echo "--- PR 29"; gh api repos/1h0lde4/ocbrain-v4.1/pulls/29 --jq "\"state=\(.state) merged=\(.merged) closed_at=\(.closed_at)\"";
+echo "--- PR 92"; gh api repos/1h0lde4/ocbrain-v4.1/pulls/92 --jq "\"state=\(.state) draft=\(.draft) created=\(.created_at) title=\(.title)\""; gh api repos/1h0lde4/ocbrain-v4.1/pulls/92/files --jq "[.[].filename]|join(\",\")";
+echo "--- path scan of every open PR for FTS source / core/memory (pattern: sqlite_storage|unified_memory|knowledge_entry|core/memory/)";
+for n in $(gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq ".[].number"); do h=$(gh api "repos/1h0lde4/ocbrain-v4.1/pulls/$n/files?per_page=100" --jq ".[].filename" | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/" | tr "\n" " "); echo "#$n files-matching: ${h:-none}"; done;
+echo "--- tracking files touched per PR (KNOWN_ISSUES|CURRENT_STATE|IMPLEMENTATION_ROADMAP)";
+for n in $(gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq ".[].number"); do h=$(gh api "repos/1h0lde4/ocbrain-v4.1/pulls/$n/files?per_page=100" --jq ".[].filename" | grep -E "^(KNOWN_ISSUES|CURRENT_STATE|IMPLEMENTATION_ROADMAP)\.md$" | tr "\n" " "); [ -n "$h" ] && echo "#$n: $h"; done; echo "(end)";
+echo "--- P1 apply-check (no write)"; git apply --check /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1_handoff_provenance_note.patch && echo "P1 apply-check OK"; grep -c "^+" /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1_handoff_provenance_note.patch
+
+# ---- output ----
+branch: docs/g4-fts-errata-handoff-oct2026  HEAD: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+--- status --porcelain --ignored (expect empty)
+--- diff, cached diff (expect empty)
+stash: 0
+--- remote tips
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	refs/heads/main
+--- open PRs now
+92,91,90,89,88,87,86,83,81,79,77,76,33,32,30,27
+--- PR 90
+state=open draft=true head=2dd2e7bb05db949a6156266cfa3430c58de09922 updated=2026-10-23T10:30:47Z commits=1 files=6
+--- PR 29
+state=closed merged=false closed_at=2026-10-25T22:23:05Z
+--- PR 92
+state=open draft=false created=2026-10-25T22:22:57Z title=build(deps): bump actions/setup-python from 5.6.0 to 7.1.0
+.github/workflows/ci.yml,.github/workflows/release.yml
+--- path scan of every open PR for FTS source / core/memory (pattern: sqlite_storage|unified_memory|knowledge_entry|core/memory/)
+#92 files-matching: none
+#91 files-matching: none
+#90 files-matching: none
+#89 files-matching: none
+#88 files-matching: none
+#87 files-matching: none
+#86 files-matching: none
+#83 files-matching: none
+#81 files-matching: none
+#79 files-matching: none
+#77 files-matching: none
+#76 files-matching: none
+#33 files-matching: none
+#32 files-matching: none
+#30 files-matching: none
+#27 files-matching: none
+--- tracking files touched per PR (KNOWN_ISSUES|CURRENT_STATE|IMPLEMENTATION_ROADMAP)
+#91: KNOWN_ISSUES.md 
+#90: IMPLEMENTATION_ROADMAP.md 
+#89: KNOWN_ISSUES.md 
+#88: CURRENT_STATE.md KNOWN_ISSUES.md 
+#87: KNOWN_ISSUES.md 
+#83: KNOWN_ISSUES.md 
+#81: KNOWN_ISSUES.md 
+#79: KNOWN_ISSUES.md 
+(end)
+--- P1 apply-check (no write)
+P1 apply-check OK
+6
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-26T21:09:41Z

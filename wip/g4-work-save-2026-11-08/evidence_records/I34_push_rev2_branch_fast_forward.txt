@@ -1,0 +1,34 @@
+# evidence-id: I34_push_rev2_branch_fast_forward
+# started-utc: 2026-11-01T23:47:58Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/push_rev2.sh
+# ---- output ----
+== just before the push: remote tip (live) and fast-forward test
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+remote tip is an ancestor of HEAD: fast-forward YES
+== push (no force flag)
+remote: 
+remote: GitHub found 7 vulnerabilities on 1h0lde4/ocbrain-v4.1's default branch (3 critical, 4 high). To find out more, visit:        
+remote:      https://github.com/1h0lde4/ocbrain-v4.1/security/dependabot        
+remote: 
+To https://github.com/1h0lde4/ocbrain-v4.1
+   51564e3..d963daa  docs/g4-fts-errata-handoff-oct2026 -> docs/g4-fts-errata-handoff-oct2026
+push exit: 0
+== verify: remote tip equals local HEAD
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+From https://github.com/1h0lde4/ocbrain-v4.1
+ * branch            docs/g4-fts-errata-handoff-oct2026 -> FETCH_HEAD
+== remote handoff.md equals local handoff.md (blob)
+05296d7339e7565116156cecaf047961c51b75ea
+f3434b71516445856e106b5e12d48801b643d057
+== remote history after the transfer commit
+51564e34c18e5cc908cf517000ebc9bd41eaf194 docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+== other refs untouched: REV3 branch, main
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+== no PR was opened for the REV2 branch (read-only API)
+0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T23:48:03Z

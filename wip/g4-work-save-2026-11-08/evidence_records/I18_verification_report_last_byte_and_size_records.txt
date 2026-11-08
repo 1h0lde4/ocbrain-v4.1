@@ -1,0 +1,25 @@
+# evidence-id: I18_verification_report_last_byte_and_size_records
+# started-utc: 2026-10-31T08:43:13Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness
+echo "== last byte of the in-repo verification report copy (od), and of copy+LF"; tail -c1 $S/a6/vr_repo_copy.md | od -An -tx1; tail -c1 $S/a6/vr_repo_copy_plus_LF.md | od -An -tx1
+echo "== does any REV3 document record a size of 3,046 / 3046 for the verification report?"; for f in $(git ls-tree -r --name-only $R3 -- $D | grep -E "REV3|REV2|HEADER"); do git show $R3:$f | grep -n -E "3,046|3046" | sed "s|^|$f: |"; done; echo "(end)"
+echo "== sizes of the REV3 docs that line 21-23 of the continuation talk about"; git show $R3:$D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md | sed -n 19,24p | cut -c1-260
+
+# ---- output ----
+== last byte of the in-repo verification report copy (od), and of copy+LF
+ 2e
+ 0a
+== does any REV3 document record a size of 3,046 / 3046 for the verification report?
+(end)
+== sizes of the REV3 docs that line 21-23 of the continuation talk about
+- Final packet-text SHA-256: db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2
+- Final transcription checker: 83/83 against that packet text. This is a transcription/self-consistency gate, not independent correctness proof. Revision-1 independent derivation remains 385/387 because the 50k-row duration is 0.410–0.501 s, not a single 0.4
+- Revised D-2/D-5 ledger SHA-256: f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16
+- Revised fetch-quotation header SHA-256: f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc
+- Fresh-extraction verification report SHA-256: dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5
+- Archival pre-REV3 handoff SHA-256: da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T08:43:13Z

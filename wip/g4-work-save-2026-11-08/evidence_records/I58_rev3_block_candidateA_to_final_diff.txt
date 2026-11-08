@@ -1,0 +1,16 @@
+# evidence-id: I58
+# started-utc: 2026-11-05T17:57:51Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: diff /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3_candidateA.sh /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3.sh; echo "diff exit (1 = differences, expected): $?"; sha256sum /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3_candidateA.sh /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3.sh; wc -l /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3.sh
+# ---- output ----
+16c16
+< [ "${URL%.git}" = "$CANON" ] || bad "origin ($URL) is not the canonical repository ($CANON)"
+---
+> [ "${URL%.git}" = "$CANON" ] || bad "origin is not the canonical repository ($CANON); the configured URL is not printed because it may carry credentials"
+diff exit (1 = differences, expected): 1
+4423b51291334af718e72f3fd41489473895e491b7eb016015e4a9608ac28b83  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3_candidateA.sh
+e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3.sh
+38 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/verify_block_rev3.sh
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-05T17:57:51Z

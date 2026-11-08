@@ -1,0 +1,26 @@
+# evidence-id: B03_delivery_record
+# started-utc: 2026-10-24T15:58:04Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: T=/root/.claude/projects/-home-claude/d441201d-0373-573d-8f64-186072f858d3.jsonl; ls -la $T; echo "SendUserFile mentions: $(grep -c SendUserFile $T)"; python3 -I - <<PY
+import json,sys
+T="/root/.claude/projects/-home-claude/d441201d-0373-573d-8f64-186072f858d3.jsonl"
+n=0
+for line in open(T,encoding="utf-8",errors="replace"):
+    try: o=json.loads(line)
+    except Exception: continue
+    msg=o.get("message") or {}
+    c=msg.get("content")
+    if not isinstance(c,list): continue
+    for b in c:
+        if isinstance(b,dict) and b.get("type")=="tool_use" and b.get("name")=="SendUserFile":
+            n+=1
+            print(o.get("timestamp"), json.dumps(b.get("input",{}).get("files")), "| caption:", (b.get("input",{}).get("caption") or "")[:120])
+print("SendUserFile tool_use calls found:", n)
+PY
+# ---- output ----
+-rw------- 1 root root 1571988 Oct 24 15:58 /root/.claude/projects/-home-claude/d441201d-0373-573d-8f64-186072f858d3.jsonl
+SendUserFile mentions: 6
+SendUserFile tool_use calls found: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:58:04Z

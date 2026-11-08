@@ -1,0 +1,34 @@
+# evidence-id: I63
+# started-utc: 2026-11-06T12:47:26Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/run_block_rev3_on_real_remote.sh
+# ---- output ----
+block sha256: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53  (tested file: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53)
+== A. working clone, block unmodified; origin = https://github.com/1h0lde4/ocbrain-v4.1
+follow-up: d963daa502de4220411d0d0c2f19f67b3ec2682b docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how this entry affects the file's own checks (P1 + P1b)
+PASS at 2026-11-06T12:47:27Z: remote tip d963daa502de4220411d0d0c2f19f67b3ec2682b; handoff commit 51564e34c18e5cc908cf517000ebc9bd41eaf194 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-parent child changing handoff.md alone
+exit status: 0
+== B. fresh clone of the canonical URL (no checkout), block unmodified
+clone exit status: 0
+origin = https://github.com/1h0lde4/ocbrain-v4.1; branches fetched: 114
+follow-up: d963daa502de4220411d0d0c2f19f67b3ec2682b docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how this entry affects the file's own checks (P1 + P1b)
+PASS at 2026-11-06T12:47:29Z: remote tip d963daa502de4220411d0d0c2f19f67b3ec2682b; handoff commit 51564e34c18e5cc908cf517000ebc9bd41eaf194 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-parent child changing handoff.md alone
+exit status: 0
+== C. negative controls on the real remote (modified COPIES of the block, run in the fresh clone; expected: FAIL, exit 1)
+C1 H set to the REV2 tip           exit 1; first FAIL: FAIL: the parents of the handoff commit are not exactly the transfer commit
+   PASS lines printed: 0
+C2 T set to the REV3 tip           exit 1; first FAIL: FAIL: the transfer commit is not an ancestor of the remote tip
+   PASS lines printed: 0
+C3 branch name does not exist      exit 1; first FAIL: FAIL: fetch of the remote branch failed
+   PASS lines printed: 0
+C4 canonical URL set to a fork name exit 1; first FAIL: FAIL: origin is not the canonical repository (https://github.com/1h0lde4/ocbrain-v4.1-fork); the configured UR
+   PASS lines printed: 0
+== D. state after: nothing changed
+working clone HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b; status lines: 0
+remote REV2 tip : d963daa502de4220411d0d0c2f19f67b3ec2682b
+remote REV3 tip : 9407db5a01acea9684f158caa8107fb71611a102
+remote main     : 2491ae469edd6ef1267a14604c4f8f40d698f7ea
+HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API (gh api repos/{owner}/{repo}/...). For review threads, auto-merge, and draft/ready-for-review use the CCR routes on api.github.com: GET /repos/{owner}/{repo}/pulls/{n}/ccr/review_threads, POST /repos/{owner}/{repo}/pulls/{n}/ccr/comments/{comment_id}/resolve (or /unresolve), PUT or DELETE /repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge, POST /repos/{owner}/{repo}/pulls/{n}/ccr/ready_for_review, POST /repos/{owner}/{repo}/pulls/{n}/ccr/convert_to_draft. (https://api.github.com/graphql)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-06T12:47:35Z

@@ -1,0 +1,11 @@
+# evidence-id: I68
+# started-utc: 2026-11-07T01:42:41Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo 'reviewer launches 3 and 4 (after the pasted decision text): terminated by the plan usage limit (HTTP 429) within minutes; listing only, no leftover treated as a finding'; for d in review3c review3d; do if [ -d /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/$d ]; then echo "== $d: exists; entries=$(ls /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/$d | wc -l); REPORT.md present: $([ -f /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/$d/REPORT.md ] && echo yes || echo no)"; else echo "== $d: directory does not exist (reviewer produced nothing)"; fi; done
+# ---- output ----
+reviewer launches 3 and 4 (after the pasted decision text): terminated by the plan usage limit (HTTP 429) within minutes; listing only, no leftover treated as a finding
+== review3c: exists; entries=3; REPORT.md present: no
+== review3d: exists; entries=1; REPORT.md present: yes
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-07T01:42:41Z

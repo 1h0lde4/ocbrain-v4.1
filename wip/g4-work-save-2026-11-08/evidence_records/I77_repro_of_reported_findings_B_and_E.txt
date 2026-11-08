@@ -1,0 +1,39 @@
+# evidence-id: I77
+# started-utc: 2026-11-08T11:57:29Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/repro_rev3_reported_findings.sh
+# ---- output ----
+block sha256: e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53
+
+== R1: the block's own identity line (line 15), applied verbatim to look-alike URLs ==
+https://127.0.0.1:18443?@github.com/1h0lde4/ocbrain-v4.1       -> ACCEPTED as canonical (https://github.com/1h0lde4/ocbrain-v4.1)
+https://evil.example#@github.com/1h0lde4/ocbrain-v4.1          -> ACCEPTED as canonical (https://github.com/1h0lde4/ocbrain-v4.1)
+https://evil.example/@github.com/1h0lde4/ocbrain-v4.1          -> rejected   (https://evil.example/@github.com/1h0lde4/ocbrain-v4.1)
+https://evil.example/x?@github.com/1h0lde4/ocbrain-v4.1        -> rejected   (https://evil.example/x?@github.com/1h0lde4/ocbrain-v4.1)
+https://github.com/1h0lde4/ocbrain-v4.1                        -> ACCEPTED as canonical (https://github.com/1h0lde4/ocbrain-v4.1)
+
+== R2: which host does git/libcurl contact for the '?@' form (dead loopback port, no proxy) ==
+11:57:29.691733 http.c:845              == Info:   Trying 127.0.0.1:1...
+11:57:29.691908 http.c:845              == Info: Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+fatal: unable to access 'https://github.com/1h0lde4/ocbrain-v4.1/': Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+
+== R3: block run end to end; dummy token in a query string, dead loopback port ==
+block exit: 1
+lines containing DUMMYTOKENQ: 3
+fatal: unable to access 'https://127.0.0.1:1/org/repo?token=DUMMYTOKENQ/': Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+fatal: unable to access 'https://127.0.0.1:1/org/repo?token=DUMMYTOKENQ/': Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+control (token string absent from output): 0
+
+== R4: block run end to end; token as the user name, local server answering 401 ==
+block exit: 1
+lines containing DUMMYTOKENU: 3
+fatal: could not read Password for 'http://DUMMYTOKENU@127.0.0.1:18401': terminal prompts disabled
+fatal: could not read Password for 'http://DUMMYTOKENU@127.0.0.1:18401': terminal prompts disabled
+
+== R5: git alone, same local 401 server, canonical-style username-only URL form ==
+fatal: could not read Password for 'http://DUMMYTOKENU@127.0.0.1:18402': terminal prompts disabled
+
+scratch removed
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-08T11:57:31Z

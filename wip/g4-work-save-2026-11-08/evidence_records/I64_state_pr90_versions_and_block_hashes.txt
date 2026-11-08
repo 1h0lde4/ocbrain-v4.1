@@ -1,0 +1,24 @@
+# evidence-id: I64
+# started-utc: 2026-11-06T12:48:44Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq '"PR #90: state=\(.state) draft=\(.draft) head=\(.head.sha) commits=\(.commits) changed_files=\(.changed_files) base=\(.base.ref)"'; for r in docs/g4-fts-errata-handoff-oct2026 docs/g4-fts-correctness-handoff-rev3-oct2026 main; do echo "remote $r: $(git ls-remote origin refs/heads/$r | cut -f1)"; done; echo "working clone HEAD: $(git rev-parse HEAD); status lines: $(git status --porcelain | wc -l)"; git --version; bash --version | head -1; python3 --version; echo '-- sha256 of every block and patch version'; cd /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; sha256sum a7/verify_block.sh a7/verify_block_rev3_draft1.sh a7/verify_block_rev3_candidateA.sh a7/verify_block_rev3.sh a5/proposed_diffs/P1d_rev2_handoff_section7_18_verification_block_PROPOSED.patch a5/proposed_diffs/superseded/P1d_rev3_candidateA_SUPERSEDED_do_not_apply.patch a5/proposed_diffs/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch
+# ---- output ----
+PR #90: state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7 base=main
+remote docs/g4-fts-errata-handoff-oct2026: d963daa502de4220411d0d0c2f19f67b3ec2682b
+remote docs/g4-fts-correctness-handoff-rev3-oct2026: 9407db5a01acea9684f158caa8107fb71611a102
+remote main: 2491ae469edd6ef1267a14604c4f8f40d698f7ea
+working clone HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b; status lines: 0
+git version 2.43.0
+GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)
+Python 3.13.16
+-- sha256 of every block and patch version
+014fad4792ab082448fc48f3328c49ceb67bf551261ac828cb4a81527336519f  a7/verify_block.sh
+80f6c77b80ca88a33f3a56e29af928f46998450434a87c56df6e0bfbb22a2055  a7/verify_block_rev3_draft1.sh
+4423b51291334af718e72f3fd41489473895e491b7eb016015e4a9608ac28b83  a7/verify_block_rev3_candidateA.sh
+e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53  a7/verify_block_rev3.sh
+b058780be6e388409c1cad12df6facf4606ebcd371fdd05e0c2c336a0c535003  a5/proposed_diffs/P1d_rev2_handoff_section7_18_verification_block_PROPOSED.patch
+d07352beee3031b4dbf2f725be833896e9ad08c9205869a7027449c830cb7e10  a5/proposed_diffs/superseded/P1d_rev3_candidateA_SUPERSEDED_do_not_apply.patch
+98468b11c2f88cfe6637f1a1f6ee88a089f60a3957a6cf6d1ea3d1522f7c2cb0  a5/proposed_diffs/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-06T12:48:47Z

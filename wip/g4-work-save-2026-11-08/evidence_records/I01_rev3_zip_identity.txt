@@ -1,0 +1,32 @@
+# evidence-id: I01_rev3_zip_identity
+# started-utc: 2026-10-29T08:37:06Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+Z="/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip";
+ls -l --time-style=full-iso "$Z"; stat -c "size=%s bytes  mode=%a  mtime=%y" "$Z"; file "$Z";
+echo "-- expected size per REV3 records: 254581 bytes"; echo "-- measured sha256:"; sha256sum "$Z";
+echo "-- other files in the same attachments directory"; ls -la --time-style=full-iso /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/ | tail -12;
+echo "-- is it a symlink / hardlink count"; stat -c "links=%h type=%F" "$Z"; readlink -f "$Z"
+
+# ---- output ----
+-rw------- 1 root root 254581 2026-10-29 08:36:47.954501255 +0000 /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
+size=254581 bytes  mode=600  mtime=2026-10-29 08:36:47.954501255 +0000
+/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip: Zip archive data, at least v2.0 to extract, compression method=deflate
+-- expected size per REV3 records: 254581 bytes
+-- measured sha256:
+f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc  /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
+-- other files in the same attachments directory
+total 332
+drwx------ 2 root root   4096 2026-10-29 08:36:47.954501255 +0000 .
+drwx------ 3 root root   4096 2026-10-29 08:36:31.642500671 +0000 ..
+-rw------- 1 root root   4225 2026-10-24 12:38:01.412449941 +0000 6fc67af1-attachment.txt
+-rw------- 1 root root  33716 2026-10-24 15:55:39.914190017 +0000 76f58f1e-attachment.txt
+-rw------- 1 root root  14410 2026-10-24 07:50:34.512345885 +0000 7af26dc9-attachment.txt
+-rw------- 1 root root 254581 2026-10-29 08:36:47.954501255 +0000 b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
+-rw------- 1 root root   9182 2026-10-24 15:00:37.968513136 +0000 fba8a2e6-attachment.txt
+-- is it a symlink / hardlink count
+links=1 type=regular file
+/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/b5f4720b-fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:37:06Z

@@ -1,0 +1,19 @@
+# evidence-id: I36_p1c_proposal_built_from_post_push_review
+# started-utc: 2026-11-01T23:51:16Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/build_p1c.sh
+# ---- output ----
+== P1c: lines changed (all inside the entry added by P1/P1b)
+6
+P1c git apply --check exit 0 on the pushed tree
+3	3	handoff.md
+3dabe97140b9b39f576592cea99bc8397406884055227de7cf97498eab279d5d  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1c_handoff_review_wording_PROPOSED.patch
+== not applied: working tree status / HEAD / remote tip
+0
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+== CR check of the proposed file
+0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T23:51:17Z

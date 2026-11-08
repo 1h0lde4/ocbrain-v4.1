@@ -1,0 +1,62 @@
+# evidence-id: F04_final_consistency_check
+# started-utc: 2026-10-27T12:11:01Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/check_final.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/OCBRAIN_G4_FTS_AUTHENTICATION_RECONCILIATION_REPORT.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/wt_audit;
+echo '--- repository state'; echo "HEAD: $(git rev-parse HEAD)"; echo "branch: $(git rev-parse --abbrev-ref HEAD)"; echo "status lines (expect 0): $(git status --porcelain=v1 --ignored | wc -l)"; echo "diff lines (expect 0): $(git diff | wc -l) cached: $(git diff --cached | wc -l) stash: $(git stash list | wc -l)"; git ls-remote origin refs/heads/main refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026; echo '--- P1 apply-check'; git apply --check /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1_handoff_provenance_note.patch && echo 'P1 apply-check OK'
+
+# ---- output ----
+placeholders: checked
+level-2 headings: 13
+   ## 1. Executive disposition
+   ## 2. Live-state baseline [OBSERVED]
+   ## 3. Evidence register
+   ## 4. Archive authentication — the REV3 ZIP
+   ## 5. Archive and transcription verification
+   ## 6. Handoff provenance
+   ## 7. REV2 and REV3 compared, document by document
+   ## 8. Authority matrix [RECOMMENDATION — not an authorization]
+   ## 9. Decision-preservation audit
+   ## 10. Change record
+   ## 11. Independent review
+   ## 12. Acceptance-gate matrix
+   ## 13. Remaining blockers and exact next actions
+last non-empty line: G4 OPEN · High · freeze-blocking. G5–G8 HELD. Freeze readiness NOT DECLARED.
+gate rows: 15
+   PASS     Live repository and PR inventory
+   PASS     Target and scope
+   BLOCKED  Original ZIP authentication
+   BLOCKED  Archive integrity and contents
+   PASS     Transcription-check identity
+   PASS     REV2/REV3 comparison
+   PASS     Handoff provenance
+   PASS     Document-authority analysis
+   PASS     D-1 through D-11 preservation
+   PASS     Product and debt boundaries
+   PASS     Edits, if any
+   PASS     Final diff and links
+   PASS     Independent review
+   PASS     G4/freeze invariants
+   BLOCKED  Overall result
+non-PASS gates: ['Original ZIP authentication', 'Archive integrity and contents'] | overall: ['BLOCKED']
+evidence files: 35 | ids cited in report: 35
+cited but no file: []
+file but not cited: []
+40-hex ids: 11
+unresolved in repo/audit worktree: []
+64-hex digests: 18
+64-hex not found in any evidence file text: []
+RESULT: ALL MECHANICAL CHECKS PASSED
+--- repository state
+HEAD: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+branch: docs/g4-fts-errata-handoff-oct2026
+status lines (expect 0): 0
+diff lines (expect 0): 0 cached: 0 stash: 0
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	refs/heads/main
+--- P1 apply-check
+P1 apply-check OK
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-27T12:11:03Z

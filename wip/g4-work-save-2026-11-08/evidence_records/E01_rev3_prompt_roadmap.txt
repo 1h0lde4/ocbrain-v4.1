@@ -1,0 +1,95 @@
+# evidence-id: E01_rev3_prompt_roadmap
+# started-utc: 2026-10-24T15:59:50Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness; echo "=== blob ids on REV3 tip:"; for f in IMPLEMENTATION_ROADMAP.md $D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md $D/NEXT_SESSION_PROMPT_REV3.md $D/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md $D/doc_fetch_quotations_as_returned_HEADER_REV2.md $D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md; do echo "$(git rev-parse $R:$f)  $(git show $R:$f | sha256sum | cut -c1-16)…  $f"; done; echo; echo "=== IMPLEMENTATION_ROADMAP.md change vs main (unified diff, line 2 only):"; git diff refs/remotes/origin/main $R -- IMPLEMENTATION_ROADMAP.md | cut -c1-1500; echo; echo "=== NEXT_SESSION_PROMPT_REV3.md (full, line-numbered):"; git show $R:$D/NEXT_SESSION_PROMPT_REV3.md | cat -n
+# ---- output ----
+=== blob ids on REV3 tip:
+8630559a43a64dfe6ba456a5a7796bf8bf3f33ab  96a2c0e4e4165e57…  IMPLEMENTATION_ROADMAP.md
+f2725b85329846b17f319eb1e8cdf3594156ff42  d821c218afbde5a8…  docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+ae828cb1223cb90d05cc4ae44f2934901a59ddaa  5495ca46b1115e17…  docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+92a380920c6b301014aa87834332420c5a515c3a  9508f1ab630f48ae…  docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+dfee80ff350a7561177864765b809986e80bf90c  3ddeba44ca5bce17…  docs/reports/g4-fts-correctness/doc_fetch_quotations_as_returned_HEADER_REV2.md
+23ce21a7c1b171ebba44087d5e579881a9007cd0  1fc6999b126d943f…  docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+
+=== IMPLEMENTATION_ROADMAP.md change vs main (unified diff, line 2 only):
+diff --git a/IMPLEMENTATION_ROADMAP.md b/IMPLEMENTATION_ROADMAP.md
+index 42bf96c..8630559 100644
+--- a/IMPLEMENTATION_ROADMAP.md
++++ b/IMPLEMENTATION_ROADMAP.md
+@@ -1,4 +1,5 @@
+ # OCBrain — Implementation Roadmap
++**Last synchronized:** Oct 23, 2026 — G4 FTS correctness / migration-safety evidence audit advanced to a REV3 documentation checkpoint; no implementation batch is cleared. The evidence packet is preserved outside Git at SHA-256 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc (254,581 bytes; 86 manifest entries validated). Begin the next session with the G4 REV3 continuation and owner decision pack for D-1…D-11. Minimum planning gates include D-2 (SQLite floor/acquisition), D-4/D-10 (migration-state and malformed/newer-state policy), D-9 (concurrency model), D-11 (overlap ownership/sequence), and constructor integration. Do not change roadmap ordering for other phases; do not infer acceptance or implementation authorization. G4 remains OPEN · High · freeze-blocking; G5–G8 HELD; freeze readiness NOT DECLARED. See docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md.
+ 
+ **Last synchronized:** Sept 13, 2026, DEBT-023 resolved (`sandbox-fabric` commit `1b61b69` — see the Sandbox/Execution Fabric section below, updated in place). Prior sync Sept 12, 2026, later same day, DEBT-022 resolved (`sandbox-fabric` commit `dacc769` — see the Sandbox/Execution Fabric section below, updated in place). Prior sync Sept 12, 2026, Sandbox/Execution Fabric Phase 1 started (`sandbox-fabric` branch, commit `1ec6b7c` — see the new section below, and `CURRENT_STATE.md`/`KNOWN_ISSUES.md` for full detail). Isolated from every phase below; no Verification/C-MoE/Kernel roadmap item touched or re-sequenced. Prior sync Sept 6, 2026, DEBT-020 fix (Kernel v1.0 freeze blocker, per Moncif's explicit decision) -- `docs/architecture/decisions/ADR_KERNEL_04_FALSE_COMPLETION_FIX.md`. Remediated to the three approved points only; resumability, generalized coverage infrastructure, continuous verification, and the Verification/Critic/Evidence branch explicitly excluded. Next per Moncif's stated sequence: fresh freeze audit, then debt/register reconciliation, then freeze decision, then the Hail-Mary reliability campaign. 1,406 passed / 39 failed. Prior sync Sept 6, 2026, Kernel v1.0 freeze audit -- `docs/studies/OCBRAIN_KERNEL_V1_FREEZE_AUDIT_SEPT_2026.md`. Verdict: NOT_FREEZE_READY, pending Moncif's classification of DEBT-020 (false completion) as a blocker or explicitly-deferred fast-follow -- the only open question; everything else this audit checked is resolved or confir
+ **Authority:** This is the living roadmap. The roadmap in `docs/architecture/KERNEL_ARCHITECTURE_v1.0.md` §23 is frozen and reflects the plan as it existed at architecture freeze; this document reflects actual completion.
+
+=== NEXT_SESSION_PROMPT_REV3.md (full, line-numbered):
+     1	# Fresh-session prompt — OCBrain G4 FTS correctness / migration-safety blockers
+     2	
+     3	**Task date:** 2026-10-23  
+     4	**Repository:** 1h0lde4/ocbrain-v4.1  
+     5	**Scope:** evidence-first decision preparation. No implementation is authorized.
+     6	
+     7	## Mandatory inputs
+     8	
+     9	Read, in this order:
+    10	
+    11	1. docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+    12	2. The exact original full handoff attachment, handoff(1).md, SHA-256 da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d. Confirm the file hash. Do not substitute a line-ending-normalized copy: the embedded original task prompt was verified byte-identical and must remain so. The prior handoff's transfer-status paragraph is historical; the REV3 continuation records the later user-directed documentation checkpoint.
+    13	3. docs/reports/g4-fts-correctness/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md
+    14	4. docs/reports/g4-fts-correctness/doc_fetch_quotations_as_returned_HEADER_REV2.md
+    15	5. docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+    16	6. The exact externally preserved ZIP fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip uploaded by the user to this session. Verify SHA-256 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc and size 254,581 bytes. If it is not attached or does not match, stop evidence-dependent claims and report the precise blocker. Do not fabricate/reconstruct raw outputs.
+    17	
+    18	## First actions: establish live state, do not assume carried claims
+    19	
+    20	- Discover current origin/main / GitHub default-branch tip and repository working state. Never assume the old baseline 1d813bdae320bf34110c29836c81dc901c601c9b, later ref 488129b8768a88a3d21dfd80b1f5407d50aba908, or snapshot f13bfdefcdd197ed1f966de0b1f93037a4168af4 is still the current tip.
+    21	- Re-check the current blob/content for core/memory/backends/sqlite_storage.py, core/memory/knowledge_entry.py, tests/test_session4c_architecture.py, and check current KNOWN_ISSUES.md, CURRENT_STATE.md, IMPLEMENTATION_ROADMAP.md, and all open PRs/branches that touch the FTS or overlapping context/isolation work.
+    22	- Verify archive paths before extracting into a fresh empty directory and run sha256sum -c MANIFEST.sha256. Keep the ZIP and raw outputs immutable. Distinguish historical baseline, negative-control diagnostics, protocol-feasibility probes, and fixed-product evidence; the last category is still UNEXERCISED.
+    23	- Do not rerun all probes by habit. Follow the original handoff's explicit revisit triggers; prefer reuse of preserved outputs and live current source.
+    24	
+    25	## Deliverable: owner decision pack for D-1…D-11
+    26	
+    27	For every decision, provide (a) exact question, (b) alternatives that are actually available, (c) evidence for and against each alternative, (d) consequences/dependencies, (e) recommendation and confidence, (f) what evidence would invalidate the recommendation, and (g) the exact wording needed for the maintainer's ledger/ADR entry. Mark every recommendation PROPOSED. Do not record or imply that the user accepted a choice.
+    28	
+    29	- D-1: pull the FTS batch forward, keep it at I-4, or defer.
+    30	- D-2: minimum SQLite version(s) and SQLite acquisition/runtime policy.
+    31	- D-3: RD-13 classification of OBS-LC-1/2/3.
+    32	- D-4: migration-state mechanism and verification.
+    33	- D-5: whether physical erasure stays separate from FTS correctness remediation.
+    34	- D-6: evidence-label ratification.
+    35	- D-7: real-database fixtures and coverage.
+    36	- D-8: owner for documentation corrections.
+    37	- D-9: concurrency operating model, including busy-timeout exhaustion.
+    38	- D-10: handling of unrecognised, malformed, or newer migration state.
+    39	- D-11: owner and sequence for I-3a/I-4 and DEBT-042 overlap in sqlite_storage.py.
+    40	
+    41	At minimum, carry forward these constraints:
+    42	- FTS-A2 stale-posting state was observed through the unchanged API in 3/3 fresh-database histories from the first delete; the unchanged constructor repaired none of the 7 prepared fixtures.
+    43	- rank=1 FTS5 integrity verification catches external-content table/index disagreement in the tested build. Ordinary integrity-check and PRAGMA integrity_check are not substitutes.
+    44	- executescript() can commit a pending transaction first under the tested Python 3.12.3 / connection mode; migration statements must be explicitly ordered inside the intended transaction.
+    45	- Marker-only and trigger-body-only migration-state checks are insufficient in the observed stranded state. D-4's in-transaction rank=1 check is a recommendation, not an accepted decision.
+    46	- Atomicity evidence is limited: 0 mixed states in 300 observations, but only 2/250 kills landed in the ambiguous commit window. Concurrency was 15/15 one-migrator races, with a waiting contender timing out after 20.05 s. Do not generalise these disposable-database results to production.
+    47	- Only SQLite 3.45.1 / Python 3.12.3 were tested. The FTS5 secure-delete option's 3.42.0 introduction does not by itself set the product's minimum version; its integrity-check anomaly remains unexplained.
+    48	- D-5's recommendation is to keep physical erasure separate; that does not satisfy RD-10 / DEL-1…4, and VACUUM is not an erasure guarantee.
+    49	- The rev-2 transcription checker passed 83/83 on final packet text SHA db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2. Do not claim the checker was re-run in the REV3 packaging pass. The fresh extraction report says 86/86 manifest entries passed.
+    50	- Real database prevalence/size, constructor migration integration, power loss, contender crash, four-process end-to-end and a multi-version SQLite matrix remain unknown or untested.
+    51	
+    52	## Governance and out-of-scope constraints
+    53	
+    54	- Do not modify product code or tests, ci.yml, environmental allowlists, xfails, runtime contracts or migration code.
+    55	- Do not create an implementation branch, start a migration implementation, change freeze state, or mark any decision ACCEPTED.
+    56	- Do not merge this documentation PR or silently decide D-1…D-11. The current task is analysis and a recommendation pack for the maintainer.
+    57	- Preserve raw evidence, original inputs, original handoff and the REV3 ZIP byte-for-byte.
+    58	- Before ending, report exact refs and hashes, artifacts inspected, checks actually run, checks not run, residual uncertainty, and one next action for the maintainer.
+    59	
+    60	## Acceptance criteria
+    61	
+    62	1. The packet hash and all 86 manifest entries are independently validated from the attached ZIP.
+    63	2. Current main and open overlapping work are freshly checked; stale refs are clearly marked as historical.
+    64	3. Each D-1…D-11 has one internally consistent recommendation with evidence, dependencies and explicit unresolved owner decisions.
+    65	4. Recommendation language never becomes acceptance language. G4 remains OPEN · High · freeze-blocking; G5–G8 remain HELD; freeze readiness remains NOT DECLARED.
+    66	5. No product implementation or test changes occur.
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:59:50Z

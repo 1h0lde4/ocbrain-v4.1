@@ -1,0 +1,40 @@
+# evidence-id: I26_push_rev3_branch_fast_forward
+# started-utc: 2026-11-01T14:12:48Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: cd /home/claude/wt_rev3; B3=docs/g4-fts-correctness-handoff-rev3-oct2026
+echo "local tip: $(git rev-parse HEAD)"; echo "== remote tips before"; git ls-remote origin refs/heads/$B3 refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/main
+echo "== dry run"; git push --dry-run origin $B3 2>&1 | tail -4
+echo "== push (no force)"; git push origin $B3 2>&1 | tail -6
+echo "== remote tips after"; git ls-remote origin refs/heads/$B3 refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/main
+echo "== verify via API: tip, ahead/behind vs previous tip, PR #90 head and file count"; R=1h0lde4/ocbrain-v4.1
+gh api repos/$R/git/ref/heads/$B3 --jq .object.sha
+gh api "repos/$R/compare/2dd2e7bb05db949a6156266cfa3430c58de09922...$B3" --jq "\"status=\(.status) ahead_by=\(.ahead_by) behind_by=\(.behind_by)\""
+gh api repos/$R/pulls/90 --jq "\"PR90 state=\(.state) draft=\(.draft) head=\(.head.sha) commits=\(.commits) changed_files=\(.changed_files) mergeable_state=\(.mergeable_state)\""
+
+# ---- output ----
+local tip: 9407db5a01acea9684f158caa8107fb71611a102
+== remote tips before
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+== dry run
+To https://github.com/1h0lde4/ocbrain-v4.1
+   2dd2e7b..9407db5  docs/g4-fts-correctness-handoff-rev3-oct2026 -> docs/g4-fts-correctness-handoff-rev3-oct2026
+== push (no force)
+remote: 
+remote: GitHub found 7 vulnerabilities on 1h0lde4/ocbrain-v4.1's default branch (3 critical, 4 high). To find out more, visit:        
+remote:      https://github.com/1h0lde4/ocbrain-v4.1/security/dependabot        
+remote: 
+To https://github.com/1h0lde4/ocbrain-v4.1
+   2dd2e7b..9407db5  docs/g4-fts-correctness-handoff-rev3-oct2026 -> docs/g4-fts-correctness-handoff-rev3-oct2026
+== remote tips after
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+== verify via API: tip, ahead/behind vs previous tip, PR #90 head and file count
+9407db5a01acea9684f158caa8107fb71611a102
+status=ahead ahead_by=2 behind_by=0
+PR90 state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7 mergeable_state=unknown
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T14:12:54Z

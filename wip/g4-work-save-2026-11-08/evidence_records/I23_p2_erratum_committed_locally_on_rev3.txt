@@ -1,0 +1,49 @@
+# evidence-id: I23_p2_erratum_committed_locally_on_rev3
+# started-utc: 2026-10-31T15:17:29Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; cd /home/claude/wt_rev3
+echo "worktree: $(git rev-parse --abbrev-ref HEAD) $(git rev-parse HEAD)"
+F=docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md
+echo "== new file"; wc -lc $F; echo "CR: $(tr -cd "\r" < $F | wc -c)"; sha256sum $F
+echo "== anchors cited in the erratum, re-read from this branch"
+echo "-- verification report line 18:"; sed -n 18p docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md | cut -c1-200
+echo "-- continuation line 11 / 21 / 22:"; for n in 11 21 22; do sed -n ${n}p docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md | cut -c1-200; done
+echo "== value counts in the erratum: A=$(grep -o f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc $F | wc -l) B=$(grep -o f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc $F | wc -l)"
+git diff --check -- $F && echo "git diff --check (untracked, n/a)"; git add $F && git diff --cached --check && echo "cached diff --check clean"; git diff --cached --stat
+git commit -q -F $S/a6/msgs/p2_commit.txt && echo committed
+echo "after: $(git rev-parse HEAD); parent: $(git rev-parse HEAD^)"; git show --stat --format="%an <%ae>%n%s" HEAD | head -6; echo "status lines: $(git status --porcelain --untracked-files=all | wc -l)"
+
+# ---- output ----
+worktree: docs/g4-fts-correctness-handoff-rev3-oct2026 2dd2e7bb05db949a6156266cfa3430c58de09922
+== new file
+  54 7169 docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md
+CR: 0
+bdcdc9811fbc4c16425d6b7fd0974193e1fbd046dc8d6c931d86dc853ef68bac  docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md
+== anchors cited in the erratum, re-read from this branch
+-- verification report line 18:
+9. Confirmed that, relative to the original extracted archive, exactly three inner-bundle files changed: `MANIFEST.sha256`, `report/decision_ledger_1d813bd_OPEN.md`, and `docs/doc_fetch_quotations_as_
+-- continuation line 11 / 21 / 22:
+The evidence ZIP remains outside Git, as required by the original evidence-preservation note. Upload the exact ZIP to the next session before relying on any raw output.
+- Revised D-2/D-5 ledger SHA-256: f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16
+- Revised fetch-quotation header SHA-256: f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc
+== value counts in the erratum: A=1 B=2
+git diff --check (untracked, n/a)
+docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md:3: trailing whitespace.
++**Record date:** 2026-10-31 UTC  
+docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md:4: trailing whitespace.
++**Workstream:** G4 FTS correctness and migration safety; evidence audit and decision preparation  
+docs/reports/g4-fts-correctness/DIGEST_DISCREPANCY_ERRATUM_REV3.md:5: trailing whitespace.
++**Status:** RECORDED — documentation-only erratum. It changes no evidence content, no D-1…D-11 item, no G4–G8 status, no freeze status and no choice of next-session entry point. G4 remains OPEN · High · freeze-blocking; G5–G8 HELD; freeze readiness NOT DECLARED; no implementation is authorized by this record.  
+ .../DIGEST_DISCREPANCY_ERRATUM_REV3.md             | 54 ++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+committed
+after: fc7f8a84f6d6702021e71ad0021f87e3dcbe648c; parent: 2dd2e7bb05db949a6156266cfa3430c58de09922
+Claude <noreply@anthropic.com>
+docs(g4): record the REV3 archive digest discrepancy and its measurement (P2 erratum)
+
+ .../DIGEST_DISCREPANCY_ERRATUM_REV3.md             | 54 ++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+status lines: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-31T15:17:29Z

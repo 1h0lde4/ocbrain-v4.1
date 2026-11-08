@@ -1,0 +1,31 @@
+# evidence-id: I33_p1b_applied_and_folded_into_p1_locally
+# started-utc: 2026-11-01T23:47:48Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/apply_p1b_amend.sh
+# ---- output ----
+P1b applied (exit 0)
+git diff --check clean
+amended -> d963daa502de4220411d0d0c2f19f67b3ec2682b parent 51564e34c18e5cc908cf517000ebc9bd41eaf194
+== diff of the final commit against the remote tip (must be handoff.md only, +6/-0)
+6	0	handoff.md
+ 1 file changed, 6 insertions(+)
+== handoff.md after: level-2 headings / lines / CR / trailing-whitespace check
+headings: 19; lines: 547; CR: 0
+== commits after the transfer commit eca2b96 now
+2
+d963daa Claude <noreply@anthropic.com> docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how this 
+51564e3 Claude <noreply@anthropic.com> docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+== the added lines (full text, for the record)
++- **Related documents and earlier revision (provenance only; no authority is conferred or changed by this entry).**
++  - *Earlier revision of this handoff.* A first version of this file was written on 2026-10-23 as a file-only handoff and delivered as a file. Its sha256 is `da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d` (502 lines; the same 19 level-2 headings as this file), as computed from the session scratch copy and as recorded in the REV3 branch (`docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md` line 24; `NEXT_SESSION_PROMPT_REV3.md` line 12, where it is called `handoff(1).md`). Whether the user-side attachment is byte-identical to that scratch copy has not been independently established.
++  - *Limited supersession, transfer-status statements only.* The earlier revision states "TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED" (its metadata line and §19) and "the repository contains no work of this workstream" (its §19); its §7 records no branch, no transfer commit and no push; its §18 step 3 tells a resumer not to look for a branch or commit. Those statements described the state before this branch existed. For *repository state* they are replaced by §7, §18 and §19 of this file. Nothing else in the earlier revision is replaced: its verbatim original prompt, ledgers, investigation record, failed attempts and verification evidence remain a valid historical record.
++  - *Parallel draft.* Branch `docs/g4-fts-correctness-handoff-rev3-oct2026` (commit `2dd2e7bb05db949a6156266cfa3430c58de09922`, committed 2026-10-23T10:30:25Z) and draft PR #90 hold a separate REV3 documentation set, created before this checkpoint. That set was not reviewed in the session that first wrote this file; a later audit session compared it with this REV2 set (evidence outside this repository). This file does not select it, supersede it or depend on it.
++  - *Effect on this file's own checks.* This entry was added after the handoff commit (`51564e34c18e5cc908cf517000ebc9bd41eaf194`). The branch therefore holds two commits after the transfer commit `eca2b96521fba8cf792ea16a58be997e4f949356`: `51564e34…`, then the commit that adds this entry. The "exactly one later commit" of §18 step 2 and the `git log --oneline -1 -- handoff.md` of §7 refer to `51564e34…`; a branch tip that differs from it only for this reason does not make the transfer INCOMPLETE.
++  - *Not decided by this entry:* which document is the entry point for a future session; the authority of either ledger; any of D-1…D-11; G4–G8 status; freeze readiness; any implementation.
+== tree compare with the P1+P1b expectation: commit tree equals the backup commit's tree except handoff.md only
+handoff.md
+== status
+0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T23:47:48Z

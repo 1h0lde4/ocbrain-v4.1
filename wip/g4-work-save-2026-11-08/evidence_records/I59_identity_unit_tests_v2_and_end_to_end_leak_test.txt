@@ -1,0 +1,67 @@
+# evidence-id: I59
+# started-utc: 2026-11-05T17:58:18Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/identity_unit_tests_v2.sh
+# ---- output ----
+##### Part 1: identity lines extracted from each block file
+=== verify_block_rev3_candidateA.sh
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             git@github.com:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             ssh://git@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             https://x-access-token:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://<dummy>@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1-fork
+  canonical-expected=no  got=no  token-in-output=none        ok             https://x-access-token:<dummy>@github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://evil.example/@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://<dummy>@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             git@evil.example:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1/
+  canonical-expected=no  got=no  token-in-output=none        ok             /srv/mirror/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  ssh://user:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  ssh://<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  http://<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  git+ssh://git:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=LEAKS-TOKEN ** differs **  https://github.com/1h0lde4/ocbrain-v4.1?token=<dummy>
+  cases: 20; differing from expectation: 5; cases whose output contained the dummy token: 5
+=== verify_block_rev3.sh
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             git@github.com:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             ssh://git@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=yes got=yes token-in-output=none        ok             https://x-access-token:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=yes got=yes token-in-output=none        ok             https://<dummy>@github.com/1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1-fork
+  canonical-expected=no  got=no  token-in-output=none        ok             https://x-access-token:<dummy>@github.com/someone-else/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://evil.example/@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://<dummy>@evil.example/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             git@evil.example:1h0lde4/ocbrain-v4.1.git
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1/
+  canonical-expected=no  got=no  token-in-output=none        ok             /srv/mirror/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             ssh://user:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             ssh://<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             http://<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             git+ssh://git:<dummy>@github.com/1h0lde4/ocbrain-v4.1
+  canonical-expected=no  got=no  token-in-output=none        ok             https://github.com/1h0lde4/ocbrain-v4.1?token=<dummy>
+  cases: 20; differing from expectation: 0; cases whose output contained the dummy token: 0
+
+##### Part 2: whole block end to end, dead loopback ports, proxies disabled; all stdout+stderr searched for the dummy token
+=== verify_block_rev3_candidateA.sh
+  origin form https  exit=1 PASS-lines=0 token-in-output=none
+  origin form http   exit=1 PASS-lines=0 token-in-output=LEAKS-TOKEN
+      leaked line: FAIL: origin (http://<dummy>@127.0.0.1:1/1h0lde4/ocbrain-v4.1) is not the canonical repository (https://github.com/1h0lde4/ocbrain-v4.1)
+  origin form ssh    exit=1 PASS-lines=0 token-in-output=LEAKS-TOKEN
+      leaked line: FAIL: origin (ssh://user:<dummy>@127.0.0.1:1/1h0lde4/ocbrain-v4.1) is not the canonical repository (https://github.com/1h0lde4/ocbrain-v4.1)
+  end-to-end runs: 3; runs whose output contained the dummy token: 2
+=== verify_block_rev3.sh
+  origin form https  exit=1 PASS-lines=0 token-in-output=none
+  origin form http   exit=1 PASS-lines=0 token-in-output=none
+  origin form ssh    exit=1 PASS-lines=0 token-in-output=none
+  end-to-end runs: 3; runs whose output contained the dummy token: 0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-05T17:58:19Z

@@ -1,0 +1,20 @@
+# evidence-id: I69
+# started-utc: 2026-11-07T01:42:41Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_status_mutations.py
+# ---- output ----
+mutant                                               v1        v2         first v2 FAIL line
+M0 control: unchanged                                ACCEPTED  ACCEPTED   
+M1 sentence 'G4 is now CLOSED.'                      ACCEPTED * REJECTED   FAIL: v2: conflicting status text (a G4 status other than OPEN): ...'sion item.\n\nUpdate: G4 is now
+M2 second, conflicting governing line                ACCEPTED * REJECTED   FAIL: v2: the governing-status line must occur exactly once (found 2)
+M3 last line replaced by a conflicting sentence      REJECTED  REJECTED   FAIL: final line
+M4 governing line duplicated exactly                 ACCEPTED * REJECTED   FAIL: v2: the governing-status line must occur exactly once (found 2)
+M5 sentence 'Freeze readiness DECLARED.'             ACCEPTED * REJECTED   FAIL: v2: conflicting status text (freeze readiness declared): ...' no decision item.\n\nFreeze read
+M6 ambiguous 'G4 OPEN or CLOSED, pending a decision.' ACCEPTED * REJECTED   FAIL: v2: conflicting status text (a G4 status other than OPEN): ...' no decision item.\n\nG4 OPEN o
+M7 gate status word 'PARTIAL'                        REJECTED  REJECTED   FAIL: status word not allowed
+M8 sentence 'G5–G8 RELEASED.'                        ACCEPTED * REJECTED   FAIL: v2: conflicting status text (a G5-G8 status other than HELD): ...' no decision item.\n\nG5–G8 
+M9 sentence 'Implementation is authorized.'          ACCEPTED * REJECTED   FAIL: v2: conflicting status text (implementation authorized): ...' no decision item.\n\nImplementat
+mutants that must be rejected: 9; rejected by v1: 2; rejected by v2: 9   [* = wrong outcome]
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-07T01:42:58Z

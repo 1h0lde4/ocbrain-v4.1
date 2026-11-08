@@ -1,0 +1,24 @@
+# evidence-id: I07_rev3_archive_rawdocs_passage_check
+# started-utc: 2026-10-29T08:39:25Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/passage_check.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/ex_rev3/docs/raw_html_excerpts_sqlite3-doc_3.45.1-1ubuntu2.8.txt; echo '--- archive own result file (hash + summary line)'; sha256sum /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/ex_rev3/out/rawdocs/rawdocs_check_run3.json | cut -c1-64; python3 -I -c "import json,sys; d=json.load(open(sys.argv[1])); print({k:(v if not isinstance(v,(list,dict)) else type(v).__name__+str(len(v))) for k,v in d.items()})" /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/ex_rev3/out/rawdocs/rawdocs_check_run3.json
+# ---- output ----
+FOUND   4.4.3 external content: user responsibility
+FOUND   4.4.3 external content: AFTER DELETE trigger uses 'delete'
+FOUND   6.x delete cmd: availability
+FOUND   6.x delete cmd: values must match
+FOUND   6.x delete cmd: mismatch consequence
+FOUND   6.6 integrity-check: rank=1 compares
+FOUND   6.6 integrity-check: failure code
+MISSING 6.11 rebuild
+FOUND   6.12 secure-delete: version gate
+FOUND   6.12 secure-delete: default
+MISSING VACUUM: rowids
+9/11 expected fragments found in the excerpts text
+excerpt file size: 12326 chars; normalised text: 10008 chars
+--- archive own result file (hash + summary line)
+e3bfab407c46b8b6b0ff7904962007c4c48d7f19a026d0a668966549454e598a
+{'files': 'dict2', 'checks': 'list11', 'vacuum_into_mentions_rowid': False, 'vacuum_page_rowid_sentences': 'list1', 'fts5_html_version_hint': 'list1'}
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:39:25Z

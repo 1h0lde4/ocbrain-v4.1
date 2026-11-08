@@ -1,0 +1,42 @@
+# evidence-id: I70
+# started-utc: 2026-11-07T01:43:41Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_review_package.sh
+# ---- output ----
+integrity: OK
+entries: 8
+  ./README_FIRST_REVIEW_BRIEF.md: OK
+  ./base/handoff.md: OK
+  ./optional_item_I/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md: OK
+  ./optional_item_I/check_addendum4.py: OK
+  ./rev2/verify_block.sh: OK
+  ./rev3/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch: OK
+  ./rev3/verify_block_rev3.sh: OK
+== package files equal the delivered files
+block == delivered block (sha256 e1ccd6a7e5b1b70f7c9b9055e77e8b4c60648d88f6b7aea402e10e55d2604d53)
+patch == delivered patch
+rev2 block == the revision 2 block of Addendum 3
+git apply --check exit 0 on base/handoff.md in a scratch repository (not applied)
+base/handoff.md == handoff.md of the pushed REV2 tip: yes
+== independence: the brief must not carry the author's results
+  brief contains '20 of 20':                0
+  brief contains 'I60':                     0
+  brief contains 'I61':                     0
+  brief contains 'I59':                     0
+  brief contains 'e1ccd6a7':                0
+  brief contains 'false PASS of revision 2': 0
+  brief contains 'mismatches':              0
+  files outside optional_item_I that mention results (grep 'I6[0-9]\|20 of 20'): 0
+== secrets scan (ghp_, github_pat_, gho_, 'Bearer ', 'password='): 0 hits
+== files in the package:
+review_package/README_FIRST_REVIEW_BRIEF.md
+review_package/SHA256SUMS.txt
+review_package/base/handoff.md
+review_package/optional_item_I/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md
+review_package/optional_item_I/check_addendum4.py
+review_package/rev2/verify_block.sh
+review_package/rev3/P1d_rev3_handoff_section7_18_verification_block_PROPOSED.patch
+review_package/rev3/verify_block_rev3.sh
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-07T01:43:41Z

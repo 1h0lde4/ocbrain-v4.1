@@ -1,0 +1,56 @@
+# evidence-id: H02_main_moved_recheck
+# started-utc: 2026-10-28T14:09:24Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+R=1h0lde4/ocbrain-v4.1; B=docs/g4-fts-correctness-handoff-rev3-oct2026; REV2=docs/g4-fts-errata-handoff-oct2026;
+echo "== .gitattributes on REV3 tip (LFS filters?)"; gh api "repos/$R/contents/.gitattributes?ref=$B" --jq ".content" | base64 -d | head -20; echo "(lfs lines: $(gh api "repos/$R/contents/.gitattributes?ref=$B" --jq ".content" | base64 -d | grep -ci lfs))";
+echo "== the one .zip in the REV3 tree: also on main? (blob sha on main)"; gh api "repos/$R/contents/docs/studies/evidence/live-check-draft-plan-batch-20261012T121543Z.zip?ref=main" --jq "\"main: size=\(.size) sha=\(.sha)\"" 2>&1 | head -2;
+echo "== tips now"; git ls-remote origin refs/heads/main refs/heads/$REV2 refs/heads/$B;
+echo "== recorded earlier: main f13bfdefcdd197ed1f966de0b1f93037a4168af4; REV2 51564e3; REV3 2dd2e7b";
+echo "== main: commits since f13bfde (count, first/last)"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --jq "\"status=\(.status) ahead=\(.ahead_by) files_changed=\(.files|length) (api file list may cap at 300)\""; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --jq "[.commits[]|\"\(.sha[0:12]) \(.commit.committer.date) \(.commit.message|split(\"\\n\")[0]|.[0:90])\"]|(.[0:6]+[\"...\"]+.[-4:])[]";
+echo "== FTS source files on main now vs earlier blobs (ed0cbae6 / 0d5e0716 / eb2bbe17)"; for p in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py core/memory/unified_memory.py; do gh api "repos/$R/contents/$p?ref=main" --jq "\"\(.path) \(.sha)\"" 2>&1 | head -1; done;
+echo "== did any of the 51 commits touch those paths? (files in compare matching)"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --paginate --jq ".files[].filename" | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/|KNOWN_ISSUES|CURRENT_STATE|IMPLEMENTATION_ROADMAP" | sort -u; echo "(end)";
+echo "== KNOWN_ISSUES.md on main now: DEBT-042 / FTS lines"; gh api "repos/$R/contents/KNOWN_ISSUES.md?ref=main" --jq ".content" | base64 -d | grep -n -E "DEBT-042|stale.posting|ke_ad" | cut -c1-200;
+echo "== open PRs now"; gh api "repos/$R/pulls?state=open&per_page=100" --jq "[.[].number]|sort|reverse|join(\",\")"; gh api repos/$R/pulls/90 --jq "\"PR90 state=\(.state) draft=\(.draft) head=\(.head.sha[0:12]) base_sha=\(.base.sha[0:12]) updated=\(.updated_at) mergeable_state=\(.mergeable_state)\"";
+
+# ---- output ----
+== .gitattributes on REV3 tip (LFS filters?)
+# Auto detect text files and perform LF normalization
+* text=auto
+(lfs lines: 0)
+== the one .zip in the REV3 tree: also on main? (blob sha on main)
+main: size=21632 sha=c378715fcd3519899470183c900c008bdd1dc301
+== tips now
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+6e411877e426646f3c40892c75f407991b4d235b	refs/heads/main
+== recorded earlier: main f13bfdefcdd197ed1f966de0b1f93037a4168af4; REV2 51564e3; REV3 2dd2e7b
+== main: commits since f13bfde (count, first/last)
+status=ahead ahead=51 files_changed=7 (api file list may cap at 300)
+2c5113fbcda8 2026-10-21T12:57:55Z fix(debt-029): context persistence failure isolation & transaction safety
+cc773ca7cd64 2026-10-21T14:28:33Z fix(debt-029): fail closed after SQLite rollback failure
+d021537fc422 2026-10-21T14:29:01Z fix(debt-029): narrow planner persistence exception boundary
+52add12a264a 2026-10-21T14:29:18Z fix(debt-029): log contained streaming context save failures safely
+0e22be90ae8c 2026-10-21T14:29:59Z test(debt-029): preserve disclosure tests with genuine pipeline failures
+b938fcddee60 2026-10-21T14:33:46Z test(debt-029): prove transaction rollback, scope, and real retry behavior
+...
+676f97ab06c0 2026-10-21T16:34:00Z docs(debt-029): reconcile impact and disposition with remediation
+de9b2221f45c 2026-10-27T07:21:16Z docs(register): resolve the DEBT-029 identifier collision; record this work as DEBT-044
+36b3f01eca75 2026-10-28T10:20:33Z docs(orchestrator): restore the "6b. Persist interaction to UnifiedMemory" comment
+6e411877e426 2026-10-28T10:24:19Z Merge pull request #89 from 1h0lde4/fix/debt-029-context-persistence-failure-isolation-oct
+== FTS source files on main now vs earlier blobs (ed0cbae6 / 0d5e0716 / eb2bbe17)
+core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+core/memory/unified_memory.py eb2bbe17f12889d8638512560226456a6d43c9bd
+== did any of the 51 commits touch those paths? (files in compare matching)
+KNOWN_ISSUES.md
+(end)
+== KNOWN_ISSUES.md on main now: DEBT-042 / FTS lines
+3:**Last synchronized:** Oct 14, 2026, ADR-KERNEL-07 (creative content-anchor detector, slice 1) workstream state recorded and two defects registered (documentation only; no code or contract change in
+56:| DEBT-042 | Memory | **`SqliteStorage._fts_escape()` leaves most FTS5 query-syntax characters unescaped, so L1 full-text search fails for ordinary punctuation (found during the ADR-KERNEL-07 live 
+== open PRs now
+94,93,92,91,90,88,87,86,83,81,79,77,76,33,32,30,27
+PR90 state=open draft=true head=2dd2e7bb05db base_sha=f13bfdefcdd1 updated=2026-10-23T10:30:47Z mergeable_state=behind
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-28T14:09:31Z

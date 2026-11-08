@@ -1,0 +1,39 @@
+# evidence-id: I05_inner_files_vs_repo_copies
+# started-utc: 2026-10-29T08:38:06Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; X3=$S/a6/ex_rev3; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness; G=/home/claude/ocbrain-v4.1; T=$S/a6/tmp_cmp; mkdir -p $T;
+git -C $G show $R3:$D/decision_ledger_1d813bd_OPEN_D2_D5_REV2.md > $T/ledger_repo.md; git -C $G show $R3:$D/doc_fetch_quotations_as_returned_HEADER_REV2.md > $T/fetch_repo.md;
+for pair in "report/decision_ledger_1d813bd_OPEN.md:ledger_repo.md" "docs/doc_fetch_quotations_as_returned.md:fetch_repo.md"; do inner=${pair%%:*}; repo=${pair##*:};
+ echo "== $inner  vs  repo copy $repo";
+ echo "inner: bytes=$(stat -c %s $X3/$inner) CR=$(tr -cd "\r" < $X3/$inner | wc -c) lines(nl)=$(wc -l < $X3/$inner) last-byte=$(tail -c1 $X3/$inner | od -An -c | tr -d " ")";
+ echo "repo : bytes=$(stat -c %s $T/$repo) CR=$(tr -cd "\r" < $T/$repo | wc -c) lines(nl)=$(wc -l < $T/$repo) last-byte=$(tail -c1 $T/$repo | od -An -c | tr -d " ")";
+ echo "byte-identical: $(cmp -s $X3/$inner $T/$repo && echo yes || echo no)";
+ echo "identical after stripping CR and trailing newlines: $( [ "$(tr -d "\r" < $X3/$inner | sed -e :a -e "/^\n*\$/{\$d;N;ba" -e "}")" = "$(tr -d "\r" < $T/$repo | sed -e :a -e "/^\n*\$/{\$d;N;ba" -e "}")" ] && echo yes || echo no)";
+ echo "diff -q ignoring trailing whitespace at EOF: $(diff <(tr -d "\r" < $X3/$inner) <(tr -d "\r" < $T/$repo) | head -3 | tr "\n" "|")";
+done;
+echo "== the verification report (not in the zip): its repo copy sha vs REV3-recorded external hash dd77ace0…"; git -C $G show $R3:$D/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md | sha256sum | cut -c1-16; git -C $G show $R3:$D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md | sed -n 23p | cut -c1-120;
+echo "== is the verification report inside the archive?"; (cd $X3 && find . -iname "*verification*" -o -iname "*fresh_extraction*" | head); echo "(end)"
+
+# ---- output ----
+== report/decision_ledger_1d813bd_OPEN.md  vs  repo copy ledger_repo.md
+inner: bytes=14352 CR=0 lines(nl)=91 last-byte=\n
+repo : bytes=14351 CR=0 lines(nl)=90 last-byte=.
+byte-identical: no
+identical after stripping CR and trailing newlines: yes
+diff -q ignoring trailing whitespace at EOF: 91c91|< No decision above is made; no status of G4–G8 changes; no implementation, branch, PR or push is authorised; the ADR-KERNEL-07 D-4 xfail, `ci.yml` and the allowlist are untouched.|---|
+== docs/doc_fetch_quotations_as_returned.md  vs  repo copy fetch_repo.md
+inner: bytes=7408 CR=0 lines(nl)=60 last-byte=\n
+repo : bytes=7407 CR=0 lines(nl)=59 last-byte=.
+byte-identical: no
+identical after stripping CR and trailing newlines: yes
+diff -q ignoring trailing whitespace at EOF: 60c60|< `Doc/library/sqlite3.rst` at CPython tag `v3.12.3` (excerpts in `source_excerpts_raw.txt`): "The `executescript()` method implicitly commits any pending transaction before execution of the given SQL script, regardless of the value of `isolation_level`." and "`sqlite3` used to implicitly commit an open transaction before DDL statements. This is no longer the case." (3.6). The `Cursor.executescript` entry additionally says the implicit `COMMIT` happens "If the autocommit is `LEGACY_TRANSACTION_CONTROL` and there is a pending transaction"; the probe observed that with `autocommit=False` `executescript` did **not** commit (T7), so the two sentences are consistent with the observed behaviour only when read together with the mode.|---|
+== the verification report (not in the zip): its repo copy sha vs REV3-recorded external hash dd77ace0…
+1fc6999b126d943f
+- Fresh-extraction verification report SHA-256: dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5
+== is the verification report inside the archive?
+./docs/raw_sqlite_docs_verification.md
+(end)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:38:07Z

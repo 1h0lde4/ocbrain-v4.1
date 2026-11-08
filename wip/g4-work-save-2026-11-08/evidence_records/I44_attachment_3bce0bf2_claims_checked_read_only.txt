@@ -1,0 +1,43 @@
+# evidence-id: I44_attachment_3bce0bf2_claims_checked_read_only
+# started-utc: 2026-11-02T10:18:46Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_attachment_3bce0bf2.sh
+# ---- output ----
+== claim: P1d proves ancestry only with 'git rev-parse H^' and 'git cat-file -t T' (local-object checks)
+P1d added/removed lines mentioning the checks:
+29:-2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` a
+30:+2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` a
+merge-base/is-ancestor occurrences in P1d: 1   diff-tree occurrences: 0
+== claim: P1d verifies scope only by one cumulative 'git diff --name-only H tip'
+git diff --name-only 51564e34c18e5cc908cf517000ebc9bd41eaf194 origin/docs/g4-fts-errata-handoff-oct2026
+== claim: P1d's step 2 never compares the fetched ref with the live remote, nor tests the remote tree for handoff.md
+cat-file -e occurrences: 0; 'live' occurrences in added lines: 0
+== claim: section 7 should print full SHA and parent (P1d used --oneline)
+git log --diff-filter=A --oneline -- handoff.md
+== claim: REV3 reached 9407db5a through P3, committed November 1
+9407db5a01acea9684f158caa8107fb71611a102 committer-date=2026-11-01T14:12:28+00:00 subject=docs(g4): correct the REV3 archive SHA-256 from Value A to Value B at 
+== the attachment's labels F3-F5 versus mine (Addendum 1 table)
+44:| F1 | MINOR | Run literally, the `git log --oneline -1 -- handoff.md` of the file's section 7 now prints `d963daa…`, not `51564e34…`; the new 
+45:| F2 | NIT | "The branch therefore holds two commits" goes stale if the branch grows; the exemption is self-certifying | **OPEN** — fix in P1c |
+46:| F3 | NIT | "not reviewed in the session that first wrote this file" is trivially true (the first version predates the REV3 set by about ten hours
+47:| F4 | NIT | the pinned commit `2dd2e7bb…` is no longer the REV3 tip (`9407db5a…`) | **OPEN** — fix in P1c |
+48:| F5 | NIT | "remain a valid historical record" can read as endorsement of the earlier ledgers | **OPEN** — fix in P1c |
+49:| F6 | NIT | the author date is carried from the first P1 commit | not changed; metadata only |
+== index incident: what is recorded about the state BEFORE the stray read-tree
+last recorded clean statuses (I35, I36):
+== local status: 0 changed, stash: 0
+== not applied: working tree status / HEAD / remote tip
+0
+# started-utc: 2026-11-01T23:51:16Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# started-utc: 2026-11-02T10:04:43Z  (tz of user: Africa/Casablanca, UTC+00:00)
+commands between I36 and the stray command that can write the index: none recorded as such. Recorded steps in between: I37 (python read-only), I38/I39 (git fetch of remote-tracking refs, gh api), I40 apply --check/--numstat (no index write).
+== what the post-repair state proves: the working tree equals HEAD
+tracked files in HEAD: 556; status lines: 0; 'git diff HEAD --stat' lines: 0; staged-vs-HEAD lines: 0
+pre-repair counts in I41 (from the evidence file):
+== before repair: staged-deletion lines and untracked/modified lines
+     44 ??
+    556 D 
+HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b  (unchanged by the stray command: a commit-level read-only fact)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:18:46Z

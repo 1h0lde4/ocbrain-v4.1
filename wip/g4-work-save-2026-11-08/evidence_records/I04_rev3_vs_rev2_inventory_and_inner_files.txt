@@ -1,0 +1,42 @@
+# evidence-id: I04_rev3_vs_rev2_inventory_and_inner_files
+# started-utc: 2026-10-29T08:37:46Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; X3=$S/a6/ex_rev3; X2=$S/a5/ex_rev2; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness;
+echo "== REV2 manifest vs REV3 manifest (entries that differ)"; diff <(sort -k2 $X2/MANIFEST.sha256) <(sort -k2 $X3/MANIFEST.sha256) | grep -E "^[<>]" | awk "{print \$1, substr(\$2,1,16)\"…\", \$3}";
+echo "== names only in one of the two archives"; diff <(cd $X2 && find . -type f | sort) <(cd $X3 && find . -type f | sort) && echo "(identical file name sets: 87 = 87)";
+echo "== byte-compare every file name present in both (list differing)"; (cd $X3 && find . -type f | sort | while read f; do cmp -s "$X2/$f" "$X3/$f" || echo "DIFFERS: $f"; done); echo "(end)";
+echo "== key hashes inside the REV3 archive"; (cd $X3 && sha256sum report/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md report/evidence_audit_report_1d813bd.md report/decision_ledger_1d813bd_OPEN.md docs/doc_fetch_quotations_as_returned.md out/rev2_numbers_check_run4.json scripts/rev2_numbers_check.py 2>&1 | cut -c1-120);
+echo "== repo packet at 51564e3 and audit report (sha256)"; git -C /home/claude/ocbrain-v4.1 show 51564e34c18e5cc908cf517000ebc9bd41eaf194:docs/studies/g4-fts-errata-oct2026/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md | sha256sum; git -C /home/claude/ocbrain-v4.1 show 51564e34c18e5cc908cf517000ebc9bd41eaf194:docs/studies/g4-fts-errata-oct2026/evidence_audit_report_1d813bd.md | sha256sum;
+echo "== hashes REV3 recorded for the externally preserved disk files (grep in REV3 docs)"; git -C /home/claude/ocbrain-v4.1 grep -n -E "f6dda8a2|f9abc199|dd77ace0" $R3 -- $D | cut -c1-230
+
+# ---- output ----
+== REV2 manifest vs REV3 manifest (entries that differ)
+< 7d5a05a18647f361… docs/doc_fetch_quotations_as_returned.md
+> f9abc19929958da8… docs/doc_fetch_quotations_as_returned.md
+< ed188b17d1b9f328… report/decision_ledger_1d813bd_OPEN.md
+> f6dda8a2515b4e91… report/decision_ledger_1d813bd_OPEN.md
+== names only in one of the two archives
+(identical file name sets: 87 = 87)
+== byte-compare every file name present in both (list differing)
+DIFFERS: ./MANIFEST.sha256
+DIFFERS: ./docs/doc_fetch_quotations_as_returned.md
+DIFFERS: ./report/decision_ledger_1d813bd_OPEN.md
+(end)
+== key hashes inside the REV3 archive
+db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  report/g4_fts_correctness_batch_decision_packet_1d813b
+2dc09f0d1d89d2613d1dd56d3e0a34753492319efd1018c7ef295b0faad028af  report/evidence_audit_report_1d813bd.md
+f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16  report/decision_ledger_1d813bd_OPEN.md
+f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc  docs/doc_fetch_quotations_as_returned.md
+ae12c539ee7296595d535c01e4ae50c7337981d720b24082ee58522537d9f257  out/rev2_numbers_check_run4.json
+730ae766abe0bb9c1712e15d732c0f97c126efa0cad4274d167618da3a53a315  scripts/rev2_numbers_check.py
+== repo packet at 51564e3 and audit report (sha256)
+db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  -
+2dc09f0d1d89d2613d1dd56d3e0a34753492319efd1018c7ef295b0faad028af  -
+== hashes REV3 recorded for the externally preserved disk files (grep in REV3 docs)
+origin/docs/g4-fts-correctness-handoff-rev3-oct2026:docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:21:- Revised D-2/D-5 ledger SHA-256: f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16
+origin/docs/g4-fts-correctness-handoff-rev3-oct2026:docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:22:- Revised fetch-quotation header SHA-256: f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75
+origin/docs/g4-fts-correctness-handoff-rev3-oct2026:docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:23:- Fresh-extraction verification report SHA-256: dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f1
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:37:46Z

@@ -1,0 +1,39 @@
+# evidence-id: I61
+# started-utc: 2026-11-05T17:58:44Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/check_harness_mechanisms.sh
+# ---- output ----
+== rev2
+s12 ls-remote calls=1 remote tip now == advance commit: yes; advance commit touches: KNOWN_ISSUES.md ; first line of out: PASS: handoff commit 71ded6c7a13a9767dc2502c5e57a3afde54ab6a1 on docs/g4-fts-errata-handof
+s07 remote tip now == advance commit: yes
+s13 ls-remote calls=1; marker lsr_fail_all present: yes
+s17 ls-remote calls=1; marker lsr_fail_second present: yes
+s14 remote tree entry for handoff.md: 120000 blob 
+s15 remote tree entry for handoff.md: 040000 tree ; first FAIL: FAIL: handoff.md was not added by the handoff commit
+s19 remote tree entry for handoff.md: 100755 blob 
+s16 clone origin == fork: yes; fork refs equal canonical: yes
+s18 refs on remote matching the branch name: 2
+s20 real branch present on remote: no; refs: 1
+== rev3
+s12 ls-remote calls=2 remote tip now == advance commit: yes; advance commit touches: KNOWN_ISSUES.md ; first line of out: FAIL: the remote branch moved during verification (now 47f3e28039138da31e3b330ff3314d5061a
+s07 remote tip now == advance commit: yes
+s13 ls-remote calls=2; marker lsr_fail_all present: yes
+s17 ls-remote calls=2; marker lsr_fail_second present: yes
+s14 remote tree entry for handoff.md: 120000 blob 
+s15 remote tree entry for handoff.md: 040000 tree ; first FAIL: FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tree
+s19 remote tree entry for handoff.md: 100755 blob 
+s16 clone origin == fork: yes; fork refs equal canonical: yes
+s18 refs on remote matching the branch name: 2
+s20 real branch present on remote: no; refs: 1
+== rev2 s15 (why it already failed):
+FAIL: handoff.md was not added by the handoff commit
+FAIL: da00f4b117fec5afded67d701cb36e27d1796aab does not change handoff.md alone
+== rev2 s13 output:
+PASS: handoff commit 71ded6c7a13a9767dc2502c5e57a3afde54ab6a1 on docs/g4-fts-errata-handoff-oct2026; 0 follow-up(s), each a single-parent ch
+== rev3 s12 output:
+follow-up: 622dbc82be772836328ec5bbc4d51e32d5ab940d follow-up
+FAIL: the remote branch moved during verification (now 47f3e28039138da31e3b330ff3314d5061ab7609)
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-05T17:58:44Z

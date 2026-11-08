@@ -1,0 +1,20 @@
+# evidence-id: A08_fts_source_history
+# started-utc: 2026-10-24T15:57:30Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: M=refs/remotes/origin/main; for f in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py core/memory/unified_memory.py; do echo "== $f blob@main: $(git rev-parse $M:$f 2>&1)"; git log -3 --format="  %h %cI %an %s" $M -- $f | cut -c1-160; done; echo "(clone is shallow=$(git rev-parse --is-shallow-repository); history before the shallow boundary is not visible)"; echo "--- are the three blobs identical at REV3 branch and REV2 branch?"; for R in refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026 refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026; do for f in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py; do echo "$R $f $(git rev-parse $R:$f)"; done; done
+# ---- output ----
+== core/memory/backends/sqlite_storage.py blob@main: ed0cbae6b54d157a2afb22e391c56da20acc118a
+  f13bfde 2026-10-19T08:59:13+00:00 N4Z Merge pull request #82 from 1h0lde4/docs/adr-kernel-07-state-reconciliation-oct2026
+== core/memory/knowledge_entry.py blob@main: 0d5e07163acd8e152c312dbbb233e3bcb1094965
+  f13bfde 2026-10-19T08:59:13+00:00 N4Z Merge pull request #82 from 1h0lde4/docs/adr-kernel-07-state-reconciliation-oct2026
+== core/memory/unified_memory.py blob@main: eb2bbe17f12889d8638512560226456a6d43c9bd
+  f13bfde 2026-10-19T08:59:13+00:00 N4Z Merge pull request #82 from 1h0lde4/docs/adr-kernel-07-state-reconciliation-oct2026
+(clone is shallow=true; history before the shallow boundary is not visible)
+--- are the three blobs identical at REV3 branch and REV2 branch?
+refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026 core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026 core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:57:30Z

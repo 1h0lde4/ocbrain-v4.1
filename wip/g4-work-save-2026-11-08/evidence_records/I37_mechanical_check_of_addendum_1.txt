@@ -1,0 +1,50 @@
+# evidence-id: I37_mechanical_check_of_addendum_1
+# started-utc: 2026-11-02T09:55:50Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum1.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_1_P1_PUSHED_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_p1_p1b_push_and_report_checks_evidence_I29-I36.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1c_handoff_review_wording_PROPOSED.patch /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final2/CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/ADDENDUM_3_2026-10-31_attached_review_cc2745a2.md
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7, 8]
+section references: [1, 2, 3, 4, 5, 6, 7] (some name the report's sections)
+last non-empty line ok: True
+   PASS     Authorization for the P1 plus P1b push
+   PASS     Pre-flight before applying P1b and pushing
+   PASS     P1b applied and folded into P1 (local)
+   PASS     P1 pushed and remote verified
+   PASS     Independent review of the pushed commit
+   PASS     Changes limited to authorized scope
+   PASS     G4/freeze invariants
+   PASS     Overall result (P1, P2, P3 execution)
+non-PASS gates: [] | overall: ['PASS']
+ids cited: ['I29', 'I31', 'I32', 'I33', 'I34', 'I35', 'I36', 'I37'] | missing files: []
+40-hex ids: 6 | unresolved: []
+64-hex digests: 4 | not backed: []
+   bundle: 34953430085df836553e77f487dcb07343200b60dbc53e306a36994347779a65 cited: True
+   P1c: 3dabe97140b9b39f576592cea99bc8397406884055227de7cf97498eab279d5d cited: True
+   report: 561f22648a36df52cf1cdc546f00cc37ed758f0098a12f93ede0ad77d3fb9050 cited: True
+abbreviated hex ids: 5 | not a prefix of any id seen: []
+bundle manifest entries: 20 | mismatches: 0 | unlisted files: []
+   claim FOUND  I32 P1b apply-check exit 0
+   claim FOUND  I32 live remote tip 51564e34 before
+   claim FOUND  I32 backup branch made
+   claim FOUND  I33 amended to d963daa with parent 51564e34
+   claim FOUND  I33 numstat 6 0 handoff.md
+   claim FOUND  I33 19 headings 547 lines CR 0
+   claim FOUND  I33 diff --check clean and two commits after eca2b96
+   claim FOUND  I34 fast-forward and push exit 0
+   claim FOUND  I34 flawed block: stale blob mismatch present
+   claim FOUND  I34 flawed block: no 'origin/... == HEAD: YES' line
+   claim FOUND  I34 no PR for REV2 branch (0)
+   claim FOUND  I35 tip == HEAD YES
+   claim FOUND  I35 three equal blobs
+   claim FOUND  I35 two commits, parent 51564e34, handoff.md only
+   claim FOUND  I35 REV3 tip and main unchanged, 0 remote backups
+   claim FOUND  I35 PR #90 unchanged
+   claim FOUND  I35 clean tree, stash 0
+   claim FOUND  I36 P1c apply-check exit 0, 3/3 lines, not applied
+   claim FOUND  I34 vulnerabilities notice 7 (3 critical, 4 high)
+live commit dates: 2026-10-31T15:16:16+00:00|2026-11-01T23:47:48+00:00
+live remote tip: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+RESULT: ALL MECHANICAL CHECKS PASSED
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T09:55:51Z

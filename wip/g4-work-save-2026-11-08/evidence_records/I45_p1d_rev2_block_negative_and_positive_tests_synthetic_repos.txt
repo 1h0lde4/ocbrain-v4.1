@@ -1,0 +1,21 @@
+# evidence-id: I45_p1d_rev2_block_negative_and_positive_tests_synthetic_repos
+# started-utc: 2026-11-02T10:19:46Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/negative_tests.sh
+# ---- output ----
+scenario                                     expected got    P1d-orig first FAIL line / note
+s01_original_transfer_and_handoff            PASS     PASS   FAIL      ok 
+s02_one_later_handoff_only_commit            PASS     PASS   PASS      ok 
+s03_three_later_handoff_only_commits         PASS     PASS   PASS      ok 
+s04_later_commit_changes_another_file        FAIL     FAIL   FAIL     FAIL: be7a213d1712257cb8ddfaee8a414e8cc5c75f29 does not change ok 
+s05_other_file_changed_then_reverted         FAIL     FAIL   PASS     FAIL: 12a15f3a8f9a36c9faeffdc0a6f7d5f9b8f88424 does not change ok [P1d as delivered would give a false PASS]
+s06_handoff_commit_local_not_ancestor        FAIL     FAIL   PASS     FAIL: the handoff commit is not an ancestor of the remote tip ok [P1d as delivered would give a false PASS]
+s07_remote_moves_after_fetch                 FAIL     FAIL   PASS     FAIL: live remote tip (4a21800d89e10d2f3607851908a6925bfa0c4dc ok [P1d as delivered would give a false PASS]
+s08_merge_commit_in_sequence                 FAIL     FAIL   PASS     FAIL: 68fc5b71a20074676cdf4845f5187a8e215c992b is not a single ok [P1d as delivered would give a false PASS]
+s09_handoff_file_missing_from_tree           FAIL     FAIL   PASS     FAIL: handoff.md is not in the remote tree ok [P1d as delivered would give a false PASS]
+s10_wrong_expected_parent_of_handoff         FAIL     FAIL   FAIL     FAIL: the parents of the handoff commit are not exactly the tr ok 
+s11_remote_branch_missing                    FAIL     FAIL   FAIL     FAIL: fetch of the remote branch failed ok 
+scenarios: 11; mismatches with expectation: 0; scenarios where P1d as delivered would give a false PASS: 5
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:19:49Z

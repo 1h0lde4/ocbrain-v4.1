@@ -1,0 +1,21 @@
+# evidence-id: A03_remote_tips
+# started-utc: 2026-10-24T15:56:58Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: git fetch -q origin +refs/heads/main:refs/remotes/origin/main +refs/heads/docs/g4-fts-errata-handoff-oct2026:refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 +refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026:refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; echo "fetch exit: $?"; echo "--- ls-remote (all heads matching main|docs/g4):"; git ls-remote --heads origin | grep -E "refs/heads/(main|docs/g4)"; echo "--- total remote heads: $(git ls-remote --heads origin | wc -l)"; echo "--- local refs:"; git for-each-ref --format="%(refname) %(objectname)" refs/heads refs/remotes
+# ---- output ----
+fetch exit: 0
+--- ls-remote (all heads matching main|docs/g4):
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	refs/heads/main
+--- total remote heads: 92
+--- local refs:
+refs/heads/docs/g4-fts-errata-handoff-oct2026 51564e34c18e5cc908cf517000ebc9bd41eaf194
+refs/heads/main f13bfdefcdd197ed1f966de0b1f93037a4168af4
+refs/remotes/origin/HEAD f13bfdefcdd197ed1f966de0b1f93037a4168af4
+refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026 2dd2e7bb05db949a6156266cfa3430c58de09922
+refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 51564e34c18e5cc908cf517000ebc9bd41eaf194
+refs/remotes/origin/main f13bfdefcdd197ed1f966de0b1f93037a4168af4
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:56:59Z

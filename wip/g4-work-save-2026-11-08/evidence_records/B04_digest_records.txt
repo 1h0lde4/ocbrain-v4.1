@@ -1,0 +1,45 @@
+# evidence-id: B04_digest_records
+# started-utc: 2026-10-24T15:58:16Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: R=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; echo "tip: $(git rev-parse $R)"; echo "--- every line on the REV3 branch containing the prefix f9ee6265 (path:line: text, trimmed):"; git grep -n "f9ee6265" $R | sed "s#^$R:##" | cut -c1-330; echo; echo "--- same on REV2 branch and main (expect none):"; git grep -c "f9ee6265" refs/remotes/origin/docs/g4-fts-errata-handoff-oct2026 refs/remotes/origin/main; echo "(exit $?)"; echo "--- byte size claims near the digest:"; git grep -n -E "254,?581" $R | sed "s#^$R:##" | cut -c1-200; echo "--- programmatic comparison of the 64-char strings as stored in the blobs:"; python3 -I - <<PY
+import re,subprocess
+R="refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026"
+files=["IMPLEMENTATION_ROADMAP.md","docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md","docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md","docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md"]
+vals={}
+for f in files:
+    b=subprocess.run(["git","show",f"{R}:{f}"],capture_output=True,check=True).stdout.decode("utf-8")
+    for m in re.finditer(r"f9ee6265[0-9a-f]*",b):
+        vals.setdefault(m.group(0),[]).append(f)
+for v,fs in vals.items():
+    print(len(v),v); [print("    in",x) for x in fs]
+ks=list(vals)
+if len(ks)==2 and all(len(k)==64 for k in ks):
+    a,b=ks
+    print("differing zero-based offsets:",[(i,a[i],b[i]) for i in range(64) if a[i]!=b[i]])
+PY
+# ---- output ----
+tip: 2dd2e7bb05db949a6156266cfa3430c58de09922
+--- every line on the REV3 branch containing the prefix f9ee6265 (path:line: text, trimmed):
+IMPLEMENTATION_ROADMAP.md:2:**Last synchronized:** Oct 23, 2026 — G4 FTS correctness / migration-safety evidence audit advanced to a REV3 documentation checkpoint; no implementation batch is cleared. The evidence packet is preserved outside Git at SHA-256 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc (254,58
+docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:16:- SHA-256: f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc
+docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md:16:6. The exact externally preserved ZIP fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip uploaded by the user to this session. Verify SHA-256 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc and size 254,581 bytes. If it is not at
+docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md:4:**SHA-256:** `f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc`  
+
+--- same on REV2 branch and main (expect none):
+(exit 1)
+--- byte size claims near the digest:
+IMPLEMENTATION_ROADMAP.md:2:**Last synchronized:** Oct 23, 2026 — G4 FTS correctness / migration-safety evidence audit advanced to a REV3 documentation checkpoint; no implementation batch is cleared
+docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:17:- Size: 254,581 bytes
+docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md:16:6. The exact externally preserved ZIP fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip uploaded by the user to thi
+docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md:5:**Size:** 254,581 bytes  
+--- programmatic comparison of the 64-char strings as stored in the blobs:
+64 f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc
+    in IMPLEMENTATION_ROADMAP.md
+    in docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+    in docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+64 f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc
+    in docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md
+differing zero-based offsets: [(23, 'c', 'f')]
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:58:16Z

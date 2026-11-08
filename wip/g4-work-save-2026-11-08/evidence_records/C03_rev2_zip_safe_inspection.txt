@@ -1,0 +1,30 @@
+# evidence-id: C03_rev2_zip_safe_inspection
+# started-utc: 2026-10-24T15:59:07Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; Z=$S/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip; X=$S/a5/ex_rev2; test ! -e $X || { echo "refusing: $X exists"; exit 2; }; echo "-- zip hash:"; sha256sum $Z; echo "-- entries listed (count) / absolute-or-dotdot paths / duplicate names / symlink-or-special entries:"; unzip -Z1 $Z | wc -l; unzip -Z1 $Z | grep -c -E "(^/|\.\.)"; unzip -Z1 $Z | sort | uniq -d | wc -l; unzip -Z -s $Z | awk "{print substr(\$1,1,1)}" | sort | uniq -c; echo "-- case-collision check (names equal ignoring case but not exactly):"; unzip -Z1 $Z | tr "[:upper:]" "[:lower:]" | sort | uniq -d | wc -l; echo "-- integrity test:"; unzip -tq $Z; echo "-- extract into new empty dir (no execution of contents):"; mkdir -p $X && ( cd $X && unzip -q $Z; echo "unzip exit=$?" ); find $X -type f | wc -l; echo "-- manifest:"; ( cd $X && sha256sum -c MANIFEST.sha256 > $S/a5/out/rev2_manifest_check.txt 2>&1; echo "sha256sum -c exit=$?" ); grep -c ": OK\$" $S/a5/out/rev2_manifest_check.txt; grep -v ": OK\$" $S/a5/out/rev2_manifest_check.txt | head -3; echo "-- unlisted / missing:"; ( cd $X && find . -type f ! -name MANIFEST.sha256 | sed "s|^\./||" | LC_ALL=C sort > $S/a5/out/f_in_extraction.txt; awk "{print \$2}" MANIFEST.sha256 | LC_ALL=C sort > $S/a5/out/f_in_manifest.txt ); diff $S/a5/out/f_in_extraction.txt $S/a5/out/f_in_manifest.txt && echo "no unlisted, no missing"
+# ---- output ----
+-- zip hash:
+e6910c0cc6eb1acefaaf369ce46599856a169228a3060b6492687c8fd70b9c3d  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip
+-- entries listed (count) / absolute-or-dotdot paths / duplicate names / symlink-or-special entries:
+87
+0
+0
+     87 -
+      1 8
+      1 A
+      1 Z
+-- case-collision check (names equal ignoring case but not exactly):
+0
+-- integrity test:
+No errors detected in compressed data of /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip.
+-- extract into new empty dir (no execution of contents):
+unzip exit=0
+87
+-- manifest:
+sha256sum -c exit=0
+86
+-- unlisted / missing:
+no unlisted, no missing
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:59:07Z

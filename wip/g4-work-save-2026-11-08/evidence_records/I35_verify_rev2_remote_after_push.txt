@@ -1,0 +1,37 @@
+# evidence-id: I35_verify_rev2_remote_after_push
+# started-utc: 2026-11-01T23:48:14Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/verify_rev2_remote.sh
+# ---- output ----
+== fetch the remote branch into a verification ref (explicit refspec)
+From https://github.com/1h0lde4/ocbrain-v4.1
+   51564e3..d963daa  docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026
+remote-tracking tip: d963daa502de4220411d0d0c2f19f67b3ec2682b
+local HEAD:          d963daa502de4220411d0d0c2f19f67b3ec2682b
+origin/docs/g4-fts-errata-handoff-oct2026 == HEAD: YES
+== live ls-remote again
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+== handoff.md blob on the remote tip vs local HEAD vs working file
+remote: f3434b71516445856e106b5e12d48801b643d057
+local:  f3434b71516445856e106b5e12d48801b643d057
+work:   f3434b71516445856e106b5e12d48801b643d057
+== history after the transfer commit eca2b96 on the remote branch
+d963daa502de4220411d0d0c2f19f67b3ec2682b Claude docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say 
+51564e34c18e5cc908cf517000ebc9bd41eaf194 Claude docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+count: 2
+== the new remote tip's parent is the old tip; only handoff.md changed
+51564e34c18e5cc908cf517000ebc9bd41eaf194
+M	handoff.md
+== remote handoff.md: the new entry is present once, and the two checks it qualifies are still present
+1
+2
+== all four other refs: REV3 tip and main unchanged, backup branches are local only
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+0
+== local status: 0 changed, stash: 0
+== PR #90 head still the REV3 tip
+state=open draft=true head=9407db5a01acea9684f158caa8107fb71611a102 commits=3 changed_files=7
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-01T23:48:16Z

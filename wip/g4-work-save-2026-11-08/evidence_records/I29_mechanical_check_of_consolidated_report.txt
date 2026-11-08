@@ -1,0 +1,53 @@
+# evidence-id: I29_mechanical_check_of_consolidated_report
+# started-utc: 2026-11-01T14:19:19Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_consolidated.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_p1_p2_p3_execution_evidence_I17-I28.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1b_handoff_consistency_sentence_PROPOSED.patch /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/ADDENDUM_3_2026-10-31_attached_review_cc2745a2.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/ADDENDUM_2_2026-10-29_REV3_ZIP_authentication.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/erratum_final_copy.md
+# ---- output ----
+placeholders: checked
+level-2 headings: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+section references: [1, 2, 4, 5, 6, 7, 8, 18, 19] | missing targets: [18, 19]
+FAIL: reference to a section that does not exist (for this report)
+last non-empty line ok: True
+gate rows: 12
+   PASS     Authorization and scope
+   PASS     Pre-flight verification
+   PASS     P2 executed on REV3
+   PASS     P3 conditionally executed on REV3
+   PASS     REV3 remote checkpoint verified
+   PASS     P1 applied (local commit)
+   BLOCKED  P1 pushed and remote verified
+   PASS     Commit contents match their messages and the evidence
+   PASS     Independent review
+   PASS     Changes limited to authorized scope
+   PASS     G4/freeze invariants
+   BLOCKED  Overall result
+non-PASS gates: ['P1 pushed and remote verified'] | overall: ['BLOCKED']
+ids cited: 12 | missing files: []
+40-hex ids: 9 | unresolved (not a repo object, not in evidence text): []
+64-hex digests: 8 | not in evidence text or deliverable hashes: []
+   bundle: b54635048ca9489f86564ccbd4d4cec341baabcc1ea97af64f3b89991ba59715  cited in report: True
+   P1b: 47493c785d3df459365d0991f63dca0f04c1c1d1af2fd562b4907bf3629727fe  cited in report: True
+abbreviated hex ids: 9 | not a prefix of any id seen: ['0893c336', '0893f336']
+FAIL: abbreviated id with no source: ['0893c336', '0893f336']
+   claim FOUND  +57/−3 lines on REV3 (I28)
+   claim FOUND  erratum 54 lines (I28)
+   claim FOUND  3 ahead / 96 behind (I28)
+   claim FOUND  PR #90 open draft 3 commits 7 files behind (I28)
+   claim FOUND  stash 0 and clean 0/0 (I28)
+   claim FOUND  REV2 remote tip unchanged, P1 one ahead (I28)
+   claim FOUND  no FTS-pattern paths and no overlap (I28)
+   claim FOUND  P1 +5 lines, 19 headings, CR 0 (I22)
+   claim FOUND  P1 apply-check exit 0 and P3 apply-check exit 0 (I21)
+   claim FOUND  ZIP 254581 bytes = B before execution (I21)
+   claim FOUND  P3 3 files 3 insertions 3 deletions (I24)
+   claim FOUND  P3 conditions C2-C4 (I24)
+   claim FOUND  P3 A count 1 -> 0 in each of three files (I24)
+   claim FOUND  rebuild changed only the erratum, 6/6 lines (I25)
+   claim FOUND  P1 amend left the tree unchanged (I27)
+   claim FOUND  push notice 7 vulnerabilities (3 critical, 4 high) (I26)
+   claim FOUND  I28 time 14:14Z
+   claim FOUND  I21 time 15:15Z
+RESULT: FAILURES PRESENT
+# ---- end output ----
+# exit-status: 1
+# finished-utc: 2026-11-01T14:19:19Z

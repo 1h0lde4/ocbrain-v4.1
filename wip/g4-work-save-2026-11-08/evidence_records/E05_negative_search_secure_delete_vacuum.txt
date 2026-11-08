@@ -1,0 +1,45 @@
+# evidence-id: E05_negative_search_secure_delete_vacuum
+# started-utc: 2026-10-24T16:01:06Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: M=refs/remotes/origin/main; echo "SCOPE: all tracked files at origin/main ($(git rev-parse $M | cut -c1-12)); file count $(git ls-tree -r --name-only $M | wc -l). Patterns case-insensitive. Exclusions: none by path; results split by area."; for pat in "secure.?delete" "PRAGMA +secure" ; do echo; echo "== pattern: $pat"; echo "-- *.py / *.toml / *.cfg / *.ini / *.yml / *.yaml / *.json / *.sh (runtime, config, CI):"; git grep -n -i -E "$pat" $M -- "*.py" "*.toml" "*.cfg" "*.ini" "*.yml" "*.yaml" "*.json" "*.sh" | sed "s#^$M:##" | cut -c1-200 | head -10; echo "(hits: $(git grep -c -i -E "$pat" $M -- "*.py" "*.toml" "*.cfg" "*.ini" "*.yml" "*.yaml" "*.json" "*.sh" | wc -l) files)"; echo "-- docs (*.md), file names only:"; git grep -l -i -E "$pat" $M -- "*.md" | sed "s#^$M:##" | head -8; done; echo; echo "== what PRAGMAs / VACUUM does product code set or run? (*.py at main)"; git grep -n -i -E "PRAGMA +[a-z_]+|\\bVACUUM\\b" $M -- "*.py" ":!tests/*" | sed "s#^$M:##" | cut -c1-170 | head -24; echo; echo "== FTS5 special commands used by product code (rebuild / integrity-check / delete / optimize), excluding tests:"; git grep -n -i -E "\\x27(rebuild|integrity-check|optimize|secure-delete|delete-all)\\x27|, *rank\\)|VALUES *\\(.(delete|rebuild)" $M -- "*.py" ":!tests/*" | sed "s#^$M:##" | cut -c1-200 | head -12; echo "(none above = none found within this scope)"
+# ---- output ----
+SCOPE: all tracked files at origin/main (f13bfdefcdd1); file count 551. Patterns case-insensitive. Exclusions: none by path; results split by area.
+
+== pattern: secure.?delete
+-- *.py / *.toml / *.cfg / *.ini / *.yml / *.yaml / *.json / *.sh (runtime, config, CI):
+(hits: 0 files)
+-- docs (*.md), file names only:
+
+== pattern: PRAGMA +secure
+-- *.py / *.toml / *.cfg / *.ini / *.yml / *.yaml / *.json / *.sh (runtime, config, CI):
+(hits: 0 files)
+-- docs (*.md), file names only:
+
+== what PRAGMAs / VACUUM does product code set or run? (*.py at main)
+core/context.py:37:        self._conn.execute("PRAGMA journal_mode=WAL")
+core/context.py:38:        self._conn.execute("PRAGMA synchronous=NORMAL")
+core/context.py:39:        self._conn.execute("PRAGMA cache_size=10000")
+core/context.py:40:        self._conn.execute("PRAGMA temp_store=MEMORY")
+core/context.py:114:            existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(turns)").fetchall()}
+core/events/event_stream.py:179:            conn.execute("PRAGMA journal_mode=WAL")
+core/memory/backends/sqlite_archive.py:55:        conn.execute("PRAGMA journal_mode=WAL")
+core/memory/backends/sqlite_archive.py:56:        conn.execute("PRAGMA synchronous=NORMAL")
+core/memory/backends/sqlite_storage.py:50:        conn.execute("PRAGMA journal_mode=WAL")
+core/memory/backends/sqlite_storage.py:51:        conn.execute("PRAGMA synchronous=NORMAL")
+core/memory/backends/sqlite_storage.py:52:        conn.execute("PRAGMA foreign_keys=ON")
+core/memory/graph/graph_engine.py:51:      - Foreign keys: NOT enforced at the SQLite level (PRAGMA foreign_keys is
+core/memory/graph/graph_engine.py:81:            conn.execute("PRAGMA journal_mode=WAL")
+core/memory/graph/graph_engine.py:82:            conn.execute("PRAGMA synchronous=NORMAL")
+core/runtime/state.py:61:            conn.execute("PRAGMA journal_mode=WAL")
+core/runtime/state.py:62:            conn.execute("PRAGMA synchronous=NORMAL")
+core/runtime/state.py:116:                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+core/runtime/state.py:117:                    conn.execute("PRAGMA journal_mode=DELETE")
+core/runtime/state.py:236:            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+== FTS5 special commands used by product code (rebuild / integrity-check / delete / optimize), excluding tests:
+core/memory/backends/sqlite_storage.py:102:                    VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+core/memory/backends/sqlite_storage.py:139:                        VALUES ('delete', old.rowid, old.content, old.summary, old.tags);
+(none above = none found within this scope)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T16:01:06Z

@@ -1,0 +1,2 @@
+# Preserve the saved files byte for byte (some evidence records contain CRLF); no line-ending conversion.
+* -text

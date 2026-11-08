@@ -1,0 +1,28 @@
+# evidence-id: I42_p1d_simulated_on_dangling_commit_no_refs_changed
+# started-utc: 2026-11-02T10:05:12Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/simulate_p1d.sh
+# ---- output ----
+== patch unchanged since I40 and still applies to the pushed tree
+1ee754eea65759cffca30af65dfb735079aefd2f133ba8fe09880eb19ee66442  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_handoff_section7_18_and_wording_PROPOSED.patch
+P1d git apply --check exit 0
+== simulate: a dangling commit = pushed tip + P1d, built with a temporary index file (no ref, no real index, no working-tree change)
+SIM commit (dangling, unreferenced): 8c15739ad3e3792008b5bb0fd795e17a09889b62
+== the proposed step 2 commands, run on the simulated tip
+handoff commit parent: eca2b96521fba8cf792ea16a58be997e4f949356  expected eca2b96521fba8cf792ea16a58be997e4f949356: OK
+handoff commit is an ancestor of the simulated tip: YES
+commits after the handoff commit:
+8c15739 simulation only, not a branch
+d963daa docs(handoff): record provenance of the earlier handoff revision and the
+paths changed after the handoff commit (must be only handoff.md):
+handoff.md
+section 7 lookup by hash: 51564e3 docs(handoff): G4 / FTS errata session handoff for f
+simulated tip differs from the pushed tip in: handoff.md
+== the proposed text of section 7 and step 2 as they would read
+359:- Handoff commit: `51564e34c18e5cc908cf517000ebc9bd41eaf194`, the commit that adds this file (find it with `git log --diff-filter=A --oneline -- handoff.md` on the branch). When this file was first written its own hash could not be stored inside it. A later documentation-only commit added the entry in section 16 ("Related documents and earlier revision"); `git log --oneline -1 -- handoff.md` therefore returns that later commit, not the handoff commit.
+526:2. Verify the transfer commit is present and unchanged: `git cat-file -t eca2b96521fba8cf792ea16a58be997e4f949356` and `git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026` (the branch must contain it). Then verify the handoff commit `51564e34c18e5cc908cf517000ebc9bd41eaf194`: it must be on the branch and its parent must be `eca2b96521fba8cf792ea16a58be997e4f949356` (`git rev-parse 51564e34c18e5cc908cf517000ebc9bd41eaf194^`). Commits after it are documentation-only follow-ups: list them with `git log --oneline 51564e34c18e5cc908cf517000ebc9bd41eaf194..origin/docs/g4-fts-errata-handoff-oct2026`, and `git diff --name-only 51564e34c18e5cc908cf517000ebc9bd41eaf194 origin/docs/
+== nothing real changed
+real status lines: 0; HEAD d963daa502de4220411d0d0c2f19f67b3ec2682b; remote tip d963daa502de4220411d0d0c2f19f67b3ec2682b
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:05:13Z

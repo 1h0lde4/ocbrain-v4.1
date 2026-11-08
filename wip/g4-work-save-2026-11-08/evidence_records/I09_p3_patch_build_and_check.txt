@@ -1,0 +1,35 @@
+# evidence-id: I09_p3_patch_build_and_check
+# started-utc: 2026-10-29T08:40:25Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; G=/home/claude/ocbrain-v4.1; R3=origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness;
+A=f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc; B=f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc;
+W=$S/a6/p3_work; rm -rf $W; mkdir -p $W/orig/$D $W/new/$D;
+FILES="IMPLEMENTATION_ROADMAP.md $D/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md $D/NEXT_SESSION_PROMPT_REV3.md";
+for f in $FILES; do git -C $G show $R3:$f > $W/orig/$f; n=$(grep -o "$A" $W/orig/$f | wc -l); echo "occurrences of Value A in $f: $n"; sed "s/$A/$B/g" $W/orig/$f > $W/new/$f; done;
+echo "-- Value A anywhere in the corrected copies (expect 0): $(grep -c "$A" $W/new/IMPLEMENTATION_ROADMAP.md $W/new/$D/*.md | tr "\n" " ")";
+( cd $W && for f in $FILES; do diff -u --label "a/$f" --label "b/$f" orig/$f new/$f; done > $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch ); echo "patch lines: $(wc -l < $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch)"; grep -c "^@@" $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch | sed "s/^/hunks: /"; grep -E "^[-+][^-+]" $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch | cut -c1-60;
+echo "-- apply-check in a scratch dir that holds the ORIGINAL files (not a repository; nothing in the real repo touched)"; rm -rf $S/a6/p3_apply && mkdir -p $S/a6/p3_apply && cp -r $W/orig/. $S/a6/p3_apply/ && ( cd $S/a6/p3_apply && git apply --check $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch && echo "P3 apply-check OK (exit 0)" && git apply $S/a5/proposed_diffs/P3_rev3_digest_value_A_to_B.patch && for f in $FILES; do cmp -s $f $W/new/$f && echo "result identical to intended: $f"; done );
+echo "-- the real repo is untouched:"; git -C $G status --porcelain | wc -l
+
+# ---- output ----
+occurrences of Value A in IMPLEMENTATION_ROADMAP.md: 1
+occurrences of Value A in docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md: 1
+occurrences of Value A in docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md: 1
+-- Value A anywhere in the corrected copies (expect 0): /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/p3_work/new/IMPLEMENTATION_ROADMAP.md:0 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/p3_work/new/docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md:0 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6/p3_work/new/docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md:0 
+patch lines: 31
+hunks: 3
+-**Last synchronized:** Oct 23, 2026 — G4 FTS correctness 
++**Last synchronized:** Oct 23, 2026 — G4 FTS correctness 
+-6. The exact externally preserved ZIP fts_decision_packet_e
++6. The exact externally preserved ZIP fts_decision_packet_e
+-- apply-check in a scratch dir that holds the ORIGINAL files (not a repository; nothing in the real repo touched)
+P3 apply-check OK (exit 0)
+result identical to intended: IMPLEMENTATION_ROADMAP.md
+result identical to intended: docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md
+result identical to intended: docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md
+-- the real repo is untouched:
+0
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-29T08:40:25Z

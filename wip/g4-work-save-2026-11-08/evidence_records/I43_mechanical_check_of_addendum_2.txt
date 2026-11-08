@@ -1,0 +1,50 @@
+# evidence-id: I43_mechanical_check_of_addendum_2
+# started-utc: 2026-11-02T10:07:13Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum2.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_2_ATTACHED_REVIEW_AND_P1d_2026-11-02.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_attachment_7705231e_check_and_p1d_evidence_I38-I42.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_handoff_section7_18_and_wording_PROPOSED.patch /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1c_handoff_review_wording_PROPOSED.patch /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/7705231e-attachment.txt /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final3/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_1_P1_PUSHED_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final2/CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7]
+section references: [1, 3, 5, 7]
+last non-empty line ok: True
+   PASS     Attached review treated as unverified input; its verifiable claims checked
+   PASS     No ref, commit, working file or remote changed
+   PASS     P1d proposal built, applies, simulated
+   PASS     Own errors disclosed and kept
+   PASS     G4/freeze invariants
+   PASS     Overall result (this addendum's scope)
+non-PASS gates: [] | overall: ['PASS']
+ids cited: ['I38', 'I39', 'I40', 'I41', 'I42', 'I43'] | missing files: []
+40-hex ids: 6 | unresolved: []
+64-hex digests: 5 | not backed: []
+   bundle: 713a138c45928a994deb119ca7798d19fa8c6297fb513b0f347aea12057970a6 cited: True
+   P1d: 1ee754eea65759cffca30af65dfb735079aefd2f133ba8fe09880eb19ee66442 cited: True
+   attachment: 809667f2dcefa5239a01da82a2d87f8f24a3e3dcb5e2e421148f3006c60326cf cited: True
+   addendum1: eba20d6661df735a75c273eb458519055f38b07f48b97b234287e6eece53d382 cited: True
+   report: 561f22648a36df52cf1cdc546f00cc37ed758f0098a12f93ede0ad77d3fb9050 cited: True
+attachment bytes: 12463
+abbreviated hex ids: 2 | not a prefix of any id seen: []
+bundle manifest entries: 13 | mismatches: 0 | unlisted: []
+   claim FOUND  I39 history: tip parent 51564e3, handoff commit parent eca2b96
+   claim FOUND  I39 step 2 text line 526 and rule line 545
+   claim FOUND  I39 literal section-7 lookup prints d963daa, diff-filter=A prints 51564e3
+   claim FOUND  I39 tip parent 51564e34 vs expected eca2b96
+   claim FOUND  I39 P1c has a single hunk @@ -504,9 +504,9
+   claim FOUND  I39 PR #90 3/96, 7 files
+   claim FOUND  I39 PR #90 commits=3 changed_files=7
+   claim FOUND  I39 28 files on main, 7 PR files, overlap 0
+   claim FOUND  I39 DEBT-042 lines 15 and 68, OPEN
+   claim FOUND  I38 first run: paths unset (No such file)
+   claim FOUND  I40 apply-check exit 0, numstat 5 5
+   claim FOUND  I40 19 headings 547 lines CR 0
+   claim FOUND  I40 stray status count 600
+   claim FOUND  I41 index restored, 0 lines, 0 missing, blobs equal
+   claim FOUND  I42 simulation commit 8c15739a and checks
+   claim FOUND  I42 hash lookup returns 51564e3
+   claim FOUND  I42 nothing real changed
+line 359 starts: - Handoff commit: th | line 526 starts: 2. Verify the transfer commit  | line 545 starts: If step 2 of §18 fails, treat 
+entry lines 505 - 510 | P1c changed old lines: [507, 508, 509]
+live REV2 tip: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+RESULT: ALL MECHANICAL CHECKS PASSED
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:07:14Z

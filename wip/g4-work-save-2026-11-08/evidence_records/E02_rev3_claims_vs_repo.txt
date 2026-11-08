@@ -1,0 +1,30 @@
+# evidence-id: E02_rev3_claims_vs_repo
+# started-utc: 2026-10-24T16:00:20Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; R=refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026; D=docs/reports/g4-fts-correctness; echo "== REV3-recorded hashes vs sha256 of the in-repo copies (REV3 says in-repo copies are LF-normalised and differ from the disk files):"; for p in "decision_ledger_1d813bd_OPEN_D2_D5_REV2.md f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16" "doc_fetch_quotations_as_returned_HEADER_REV2.md f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc" "fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5"; do set -- $p; H=$(git show $R:$D/$1 | sha256sum | cut -d" " -f1); CR=$(git show $R:$D/$1 | grep -c $(printf "\r")); echo "$1: repo-copy sha256=$H  CR-lines=$CR  recorded=$2  equal=$([ "$H" = "$2" ] && echo yes || echo no)"; done; echo; echo "== source blob claims (REV3 continuation section 5) vs origin/main now:"; for p in "core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a" "core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965" "tests/test_session4c_architecture.py 327c703c56465972674bf4cd8ce8348cb5b3c0ca" "docs/architecture/PROJECT_INSTRUCTIONS.md e2cf94704a742ff865221af9db5f0c2fca51f133"; do set -- $p; N=$(git rev-parse refs/remotes/origin/main:$1 2>&1); echo "$1 main=$N claimed=$2 equal=$([ "$N" = "$2" ] && echo yes || echo no)"; done; echo; echo "== same blobs at the study baseline 1d813bd (audit worktree, read-only):"; for f in core/memory/backends/sqlite_storage.py core/memory/knowledge_entry.py tests/test_session4c_architecture.py docs/architecture/PROJECT_INSTRUCTIONS.md; do echo "$f $(git -C $S/a4/wt_audit rev-parse 1d813bdae320bf34110c29836c81dc901c601c9b:$f 2>&1)"; done; echo; echo "== is the claimed later reference 488129b8768a88a3d21dfd80b1f5407d50aba908 present in any local clone?"; git cat-file -t 488129b8768a88a3d21dfd80b1f5407d50aba908 2>&1 | head -1; git -C $S/a4/wt_audit cat-file -t 488129b8768a88a3d21dfd80b1f5407d50aba908 2>&1 | head -1; ls -d $S/a4/repo_audit.git 2>/dev/null && git --git-dir=$S/a4/repo_audit.git cat-file -t 488129b8768a88a3d21dfd80b1f5407d50aba908 2>&1 | head -1
+# ---- output ----
+== REV3-recorded hashes vs sha256 of the in-repo copies (REV3 says in-repo copies are LF-normalised and differ from the disk files):
+decision_ledger_1d813bd_OPEN_D2_D5_REV2.md: repo-copy sha256=9508f1ab630f48ae6935644f7d156ba1049bd85b84ea332a7c037d5c446252a2  CR-lines=0  recorded=f6dda8a2515b4e9117906e3982cd0dcc6f338c84318ab62d1e2970c9d6c12c16  equal=no
+doc_fetch_quotations_as_returned_HEADER_REV2.md: repo-copy sha256=3ddeba44ca5bce17364c9dc4b17923e08106a213b08992c9d3a80906fa5889e0  CR-lines=0  recorded=f9abc19929958da8d4fda8b9235447860956d4f38dc3e3290f02dd0531b75ecc  equal=no
+fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md: repo-copy sha256=1fc6999b126d943fff6a1bf40e8c69f47974cd6af5c07294a04ac17dd46153aa  CR-lines=0  recorded=dd77ace0e170c3367a8423d775a9fd091e4bfa8a813f1a4a6c366f107b15ecb5  equal=no
+
+== source blob claims (REV3 continuation section 5) vs origin/main now:
+core/memory/backends/sqlite_storage.py main=ed0cbae6b54d157a2afb22e391c56da20acc118a claimed=ed0cbae6b54d157a2afb22e391c56da20acc118a equal=yes
+core/memory/knowledge_entry.py main=0d5e07163acd8e152c312dbbb233e3bcb1094965 claimed=0d5e07163acd8e152c312dbbb233e3bcb1094965 equal=yes
+tests/test_session4c_architecture.py main=327c703c56465972674bf4cd8ce8348cb5b3c0ca claimed=327c703c56465972674bf4cd8ce8348cb5b3c0ca equal=yes
+docs/architecture/PROJECT_INSTRUCTIONS.md main=e2cf94704a742ff865221af9db5f0c2fca51f133 claimed=e2cf94704a742ff865221af9db5f0c2fca51f133 equal=yes
+
+== same blobs at the study baseline 1d813bd (audit worktree, read-only):
+core/memory/backends/sqlite_storage.py ed0cbae6b54d157a2afb22e391c56da20acc118a
+core/memory/knowledge_entry.py 0d5e07163acd8e152c312dbbb233e3bcb1094965
+tests/test_session4c_architecture.py 327c703c56465972674bf4cd8ce8348cb5b3c0ca
+docs/architecture/PROJECT_INSTRUCTIONS.md e2cf94704a742ff865221af9db5f0c2fca51f133
+
+== is the claimed later reference 488129b8768a88a3d21dfd80b1f5407d50aba908 present in any local clone?
+fatal: git cat-file: could not get object info
+commit
+/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/repo_audit.git
+commit
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T16:00:20Z

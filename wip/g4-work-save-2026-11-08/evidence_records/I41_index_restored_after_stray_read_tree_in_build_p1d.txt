@@ -1,0 +1,20 @@
+# evidence-id: I41_index_restored_after_stray_read_tree_in_build_p1d
+# started-utc: 2026-11-02T10:04:56Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: bash /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/repair_index.sh
+# ---- output ----
+== before repair: staged-deletion lines and untracked/modified lines
+     44 ??
+    556 D 
+HEAD: d963daa502de4220411d0d0c2f19f67b3ec2682b  (unchanged by the stray command: a commit-level read-only fact)
+== restore the index from HEAD (does not touch the working tree or any commit)
+read-tree HEAD exit 0
+== after repair
+status lines: 0
+tracked files missing from the working tree: 0
+handoff.md blob (work vs HEAD): f3434b71516445856e106b5e12d48801b643d057 f3434b71516445856e106b5e12d48801b643d057
+remote tip: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+branch: docs/g4-fts-errata-handoff-oct2026
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-02T10:04:57Z

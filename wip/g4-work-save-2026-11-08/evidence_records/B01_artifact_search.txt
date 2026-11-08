@@ -1,0 +1,89 @@
+# evidence-id: B01_artifact_search
+# started-utc: 2026-10-24T15:57:43Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo "== candidate ZIPs/handoffs by name and by size, searched roots: / (xdev), excluding /proc /sys /usr /lib /opt /var/lib /snap"; find / -xdev \( -path /proc -o -path /sys -o -path /usr -o -path /lib -o -path /opt -o -path /var/lib -o -path /snap \) -prune -o -type f \( -iname "*REV3*" -o -iname "*D2_D5*" -o -iname "*FETCH_HEADER*" -o -iname "handoff*" -o -size 254581c \) -print 2>/dev/null | head -40; echo "== all .zip files outside system dirs:"; find / -xdev \( -path /proc -o -path /sys -o -path /usr -o -path /lib -o -path /opt -o -path /var/lib -o -path /snap \) -prune -o -type f -iname "*.zip" -printf "%s %p\n" 2>/dev/null | head -40; echo "== user attachment/upload dirs:"; ls -la /mnt/user-data/ /mnt/user-data/attachments/* /mnt/user-data/uploads 2>&1 | head -40; ls -la /root/.claude/uploads/ /root/.claude/uploads/*/ 2>&1 | head -30
+# ---- output ----
+== candidate ZIPs/handoffs by name and by size, searched roots: / (xdev), excluding /proc /sys /usr /lib /opt /var/lib /snap
+/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/handoff.md
+/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/rev3_ledger.md
+/home/claude/ocbrain-v4.1/.git/refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026
+/home/claude/ocbrain-v4.1/.git/logs/refs/remotes/origin/docs/g4-fts-correctness-handoff-rev3-oct2026
+/home/claude/ocbrain-v4.1/handoff.md
+== all .zip files outside system dirs:
+110436 /root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/61277881-um_diag_evidence.zip
+14757 /root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/7d94c409-batch1_inspection_evidence_1d813bd.zip
+237022 /root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/c4388603-g4_closeout_evidence.zip
+114527 /root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/9b7919af-batch0_evidence_1d813bd.zip
+9869201 /tmp/147.0.7727.24/chromedriver/chromedriver-linux64.zip
+255601 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip
+251210 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/prebuild2_superseded.zip
+219643 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/deliver/fts_decision_packet_errata_evidence_1d813bd.zip
+345778 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/b2/batch1_review_response_evidence_1d813bd.zip
+79260 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/b3_deliver/fts_decision_packet_evidence_1d813bd.zip
+21632 /home/claude/ocbrain-v4.1/docs/studies/evidence/live-check-draft-plan-batch-20261012T121543Z.zip
+== user attachment/upload dirs:
+/mnt/user-data/:
+total 20
+drwxr-xr-x 5 root root 4096 Oct 23 00:03 .
+drwxr-xr-x 6 root root 4096 Oct 13 09:01 ..
+drwx------ 3 root root 4096 Oct 24 15:55 attachments
+lrwxrwxrwx 1 root root   19 Oct 13 09:01 outputs -> /mnt/attach/outputs
+drwxr-xr-x 2 root root 4096 Oct 13 09:01 uploads
+drwxr-xr-x 2 root root 4096 Oct 13 09:01 working
+
+/mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3:
+total 80
+drwx------ 2 root root  4096 Oct 24 15:55 .
+drwx------ 3 root root  4096 Oct 24 15:55 ..
+-rw------- 1 root root  4225 Oct 24 12:38 6fc67af1-attachment.txt
+-rw------- 1 root root 33716 Oct 24 15:55 76f58f1e-attachment.txt
+-rw------- 1 root root 14410 Oct 24 07:50 7af26dc9-attachment.txt
+-rw------- 1 root root  9182 Oct 24 15:00 fba8a2e6-attachment.txt
+
+/mnt/user-data/uploads:
+total 160
+drwxr-xr-x 2 root root  4096 Oct 13 09:01 .
+drwxr-xr-x 5 root root  4096 Oct 23 00:03 ..
+-r--r--r-- 1 root root  9205 Oct 13 09:01 attachment-38637bd8.txt
+-r--r--r-- 1 root root 15198 Oct 13 09:01 attachment-4faa6fa1.txt
+-r--r--r-- 1 root root 13173 Oct 13 09:01 attachment-5352cdbf.txt
+-r--r--r-- 1 root root 31179 Oct 13 09:01 attachment-673adc69.txt
+-r--r--r-- 1 root root  7091 Oct 13 09:01 attachment-72baa259.txt
+-r--r--r-- 1 root root  9554 Oct 13 09:01 attachment-865e7d97.txt
+-r--r--r-- 1 root root 14018 Oct 13 09:01 attachment-b2f6a6c5.txt
+-r--r--r-- 1 root root 13349 Oct 13 09:01 attachment-d0bde757.txt
+-r--r--r-- 1 root root 11414 Oct 13 09:01 attachment-d156fbec.txt
+-r--r--r-- 1 root root  8400 Oct 13 09:01 attachment.txt
+/root/.claude/uploads/:
+total 12
+drwx------  3 root root 4096 Oct 13 09:01 .
+drwxr-xr-x 12 root root 4096 Oct 24 15:55 ..
+drwx------  2 root root 4096 Oct 18 10:35 d441201d-0373-573d-8f64-186072f858d3
+
+/root/.claude/uploads/d441201d-0373-573d-8f64-186072f858d3/:
+total 844
+drwx------ 2 root root   4096 Oct 18 10:35 .
+drwx------ 3 root root   4096 Oct 13 09:01 ..
+-rw------- 1 root root  12945 Oct 13 09:01 057c164f-batch0_input_C_context_to_prompt_inventory.md
+-rw------- 1 root root  10806 Oct 16 09:10 0c5de411-attachment.txt
+-rw------- 1 root root  11442 Oct 13 09:01 0ff48684-g4_security_finding_ctx_scope.md
+-rw------- 1 root root   7649 Oct 13 09:01 1ae84c40-g4_remediation_proposal_verification.md
+-rw------- 1 root root   9205 Oct 13 09:01 38637bd8-attachment.txt
+-rw------- 1 root root  15198 Oct 13 09:01 4faa6fa1-attachment.txt
+-rw------- 1 root root  12916 Oct 13 09:01 503917a6-g4_addendum_2026-10-10.md
+-rw------- 1 root root  13173 Oct 13 09:01 5352cdbf-attachment.txt
+-rw------- 1 root root 110436 Oct 13 09:01 61277881-um_diag_evidence.zip
+-rw------- 1 root root  10038 Oct 13 09:01 663f013c-um_diag_evidence_report.md
+-rw------- 1 root root  31179 Oct 13 09:01 673adc69-attachment.txt
+-rw------- 1 root root   7091 Oct 13 09:01 72baa259-attachment.txt
+-rw------- 1 root root   8400 Oct 13 14:34 7321dea4-attachment.txt
+-rw------- 1 root root  11740 Oct 13 09:01 79f8086e-g4_findings.md
+-rw------- 1 root root  14670 Oct 13 09:01 7bb6dcce-review_4faa6fa1_verification.md
+-rw------- 1 root root  14757 Oct 13 09:01 7d94c409-batch1_inspection_evidence_1d813bd.zip
+-rw------- 1 root root   7202 Oct 17 11:05 7e35531d-attachment.txt
+-rw------- 1 root root  16319 Oct 13 09:01 7f7018f7-batch0_evidence_report_1d813bd.md
+-rw------- 1 root root   9554 Oct 13 09:01 865e7d97-attachment.txt
+-rw------- 1 root root 114527 Oct 13 09:01 9b7919af-batch0_evidence_1d813bd.zip
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:57:45Z

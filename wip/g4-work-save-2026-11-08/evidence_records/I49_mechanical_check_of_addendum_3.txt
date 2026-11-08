@@ -1,0 +1,59 @@
+# evidence-id: I49_mechanical_check_of_addendum_3
+# started-utc: 2026-11-02T10:22:21Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum3.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_3_SECOND_ATTACHED_REVIEW_AND_P1d_REV2_2026-11-02.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_attachment_3bce0bf2_p1d_rev2_block_tests_evidence_I44-I48.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_rev2_handoff_section7_18_verification_block_PROPOSED.patch /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/proposed_diffs/P1d_handoff_section7_18_and_wording_PROPOSED.patch /mnt/user-data/attachments/d441201d-0373-573d-8f64-186072f858d3/3bce0bf2-attachment.txt /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final3/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_1_P1_PUSHED_2026-11-01.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final4/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_2_ATTACHED_REVIEW_AND_P1d_2026-11-02.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final2/CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7]
+section references: [1, 3, 5, 6, 7, 16]
+FAIL: reference number outside 1..7
+last non-empty line ok: True
+   PASS     Attached review treated as unverified input; its verifiable claims checked
+   PASS     P1d revision 2 built, applies, and its block identical to the tested block
+   PASS     Block tested on positive and negative scenarios
+   PASS     Unmodified block run on the real remote branch
+   PASS     No ref, commit, working file, pull request or remote changed
+   PASS     G4/freeze invariants
+   PASS     Overall result (this addendum's scope)
+non-PASS gates: [] | overall: ['PASS']
+ids cited: ['I36', 'I37', 'I38', 'I39', 'I40', 'I41', 'I44', 'I45', 'I46', 'I47', 'I48', 'I49'] | missing files: []
+40-hex ids: 1 | unresolved: []
+64-hex digests: 7 | not backed: []
+   bundle: 3ebd79aef18f91f78b60ea910929e10a4a88ed79d9fe9a7f25152b3dcbf141da cited: True
+   P1d rev2: b058780be6e388409c1cad12df6facf4606ebcd371fdd05e0c2c336a0c535003 cited: True
+   attachment: 9c5753c49127c98e77e4a4fb700b0a4e2367b438a522df3fc55c7d41412bd586 cited: True
+   addendum1: eba20d6661df735a75c273eb458519055f38b07f48b97b234287e6eece53d382 cited: True
+   addendum2: 4003be115020ec7c2e8269c954f82babf90696ed52fbe5875cf6dd141579d938 cited: True
+   report: 561f22648a36df52cf1cdc546f00cc37ed758f0098a12f93ede0ad77d3fb9050 cited: True
+attachment bytes: 8556
+abbreviated hex ids: 3 | not a prefix of any id seen: []
+bundle manifest entries: 15 | mismatches: 0 | unlisted: []
+   claim FOUND  I44 P1d has no is-ancestor, no diff-tree, no cat-file -e
+   claim FOUND  I44 P1d cumulative diff only
+   claim FOUND  I44 P1d section 7 used --oneline
+   claim FOUND  I44 P3 committer date 2026-11-01T14:12:28
+   claim FOUND  I44 post-repair state: 556 tracked, 0 / 0 / 0
+   claim FOUND  I44 incident counts 44 ?? and 556 D
+   claim FOUND  I45 11 scenarios, 0 mismatches, 5 false PASS
+   claim FOUND  I45 s01 block PASS, P1d-orig FAIL
+   claim FOUND  I45 s05 block FAIL, P1d-orig PASS
+   claim FOUND  I45 s06 false PASS
+   claim FOUND  I45 s07 false PASS
+   claim FOUND  I45 s08 false PASS
+   claim FOUND  I45 s09 false PASS
+   claim FOUND  I45 s10 and s11 FAIL/FAIL/FAIL
+   claim FOUND  I46 apply-check exit 0, numstat 33 5
+   claim FOUND  I46 19 headings, CR 0
+   claim FOUND  I46 block identical, 25 lines
+   claim FOUND  I47 unmodified block PASS twice, same block sha
+   claim FOUND  I47 state unchanged: HEAD = remote tip, status 0
+   claim FOUND  I48 versions git 2.43.0 and bash 5.2.21
+   claim FOUND  I36 last clean status 23:51:16Z
+   claim FOUND  I41 pre-repair 556 D and 44 ??
+merge-base lines in P1d: [' 3. Verify scope: `git diff --stat $(git merge-base origin/main HEAD) ']
+block sha256 from the proposed patch: 014fad4792ab082448fc48f3328c49ceb67bf551261ac828cb4a81527336519f | tested block in the bundle: 014fad4792ab082448fc48f3328c49ceb67bf551261ac828cb4a81527336519f
+live REV2 tip: d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+clone status lines: 0
+RESULT: FAILURES PRESENT
+# ---- end output ----
+# exit-status: 1
+# finished-utc: 2026-11-02T10:22:22Z

@@ -1,0 +1,52 @@
+# evidence-id: H03_new_prs_and_register_after_main_moved
+# started-utc: 2026-10-28T14:09:48Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: 
+R=1h0lde4/ocbrain-v4.1;
+echo "== PRs 93, 94: title, author, draft, created, files"; for n in 93 94; do gh api repos/$R/pulls/$n --jq "\"#\(.number) state=\(.state) draft=\(.draft) author=\(.user.login) created=\(.created_at) title=\(.title)\""; gh api "repos/$R/pulls/$n/files?per_page=100" --jq "[.[].filename]|join(\", \")" | cut -c1-400; done;
+echo "== path scan of every open PR now (sqlite_storage|unified_memory|knowledge_entry|core/memory/)"; for n in $(gh api "repos/$R/pulls?state=open&per_page=100" --jq ".[].number"); do h=$(gh api "repos/$R/pulls/$n/files?per_page=100" --jq ".[].filename" | grep -E "sqlite_storage|unified_memory|knowledge_entry|core/memory/" | tr "\n" " "); echo "#$n: ${h:-none}"; done;
+echo "== PR 89 now"; gh api repos/$R/pulls/89 --jq "\"state=\(.state) merged=\(.merged) merged_at=\(.merged_at) merge_commit=\(.merge_commit_sha)\"";
+echo "== files changed on main since f13bfde"; gh api "repos/$R/compare/f13bfdefcdd197ed1f966de0b1f93037a4168af4...main" --jq ".files[]|\"\(.status) \(.filename)\"";
+echo "== DEBT-042 row on main now (status columns)"; gh api "repos/$R/contents/KNOWN_ISSUES.md?ref=main" --jq ".content" | base64 -d | sed -n "56p" | grep -o -E "\| *(OPEN|FIXED|CLOSED|VERIFIED|DEFERRED|IN PROGRESS)[^|]*\|?" | head -3; gh api "repos/$R/contents/KNOWN_ISSUES.md?ref=main" --jq ".content" | base64 -d | grep -n -E "^\| DEBT-04[2-5] " | cut -c1-60;
+
+# ---- output ----
+== PRs 93, 94: title, author, draft, created, files
+#93 state=open draft=false author=1h0lde4 created=2026-10-27T12:23:54Z title=CTX-AUTH-002: reconcile approved remediation with main (ADR-KERNEL-08, harness remediation)
+CURRENT_STATE.md, KNOWN_ISSUES.md, core/cognitive/intent.py, core/cognitive/planner.py, docs/architecture/decisions/ADR_INDEX.md, docs/architecture/decisions/ADR_KERNEL_06_VERIFIABLE_HYPOTHESIS_PROVENANCE.md, docs/architecture/decisions/ADR_KERNEL_08_REJECT_CONTENT_CORROBORATION_AUTHORITY.md, docs/reports/context-compiler-remediation-register.md, docs/research/context-engineering/context-authority
+#94 state=open draft=false author=1h0lde4 created=2026-10-28T07:18:14Z title=DEBT-025: default-on bearer-token authentication boundary for the HTTP API
+.gitignore, KNOWN_ISSUES.md, core/event_bus.py, docs/reports/api-exposure-and-auth-boundary-oct2026.md, interface/api.py, interface/auth.py, interface/cli.py, interface/tray.py, interface/web/auth.js, interface/web/index.html, interface/web/settings.html, tests/conftest.py, tests/js/auth_js_live.js, tests/test_api_auth_boundary.py, tests/test_web_auth_js.py
+== path scan of every open PR now (sqlite_storage|unified_memory|knowledge_entry|core/memory/)
+#94: none
+#93: none
+#92: none
+#91: none
+#90: none
+#88: none
+#87: none
+#86: none
+#83: none
+#81: none
+#79: none
+#77: none
+#76: none
+#33: none
+#32: none
+#30: none
+#27: none
+== PR 89 now
+state=closed merged=true merged_at=2026-10-28T10:24:19Z merge_commit=6e411877e426646f3c40892c75f407991b4d235b
+== files changed on main since f13bfde
+modified KNOWN_ISSUES.md
+modified core/context.py
+modified core/orchestrator.py
+modified core/workers/planner.py
+modified interface/api.py
+added tests/test_debt_044_context_persistence.py
+modified tests/test_workflow_failure_disclosure.py
+== DEBT-042 row on main now (status columns)
+56:| DEBT-042 | Memory | **`SqliteStorage._fts_escape()` lea
+57:| DEBT-043 | Cognitive front-end | **Three defects in the
+58:| DEBT-044 | Context/Memory | **`ContextMemory.save()` is
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-28T14:10:04Z

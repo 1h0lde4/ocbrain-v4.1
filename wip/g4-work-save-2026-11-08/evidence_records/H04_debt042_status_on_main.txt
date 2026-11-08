@@ -1,0 +1,14 @@
+# evidence-id: H04_debt042_status_on_main
+# started-utc: 2026-10-28T14:10:10Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: gh api repos/1h0lde4/ocbrain-v4.1/contents/KNOWN_ISSUES.md?ref=main --jq ".content" | base64 -d | sed -n 56p | tr "|" "\n" | sed "s/^ *//" | awk "NR>=2" | cut -c1-140
+# ---- output ----
+DEBT-042 
+Memory 
+**`SqliteStorage._fts_escape()` leaves most FTS5 query-syntax characters unescaped, so L1 full-text search fails for ordinary punctuation (f
+Medium 
+L1 BM25/FTS5 retrieval is skipped for any query containing such punctuation; hybrid retrieval degrades to the remaining legs. 
+
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-28T14:10:11Z

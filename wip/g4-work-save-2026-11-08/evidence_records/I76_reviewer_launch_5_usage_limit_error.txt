@@ -1,0 +1,20 @@
+# evidence-id: I76
+# started-utc: 2026-11-08T11:55:59Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: echo 'launch 5 (2026-11-07 about 22:2x local): Agent returned: You have hit your 5-hour limit, resets 3:20am (UTC), error type rate_limit, HTTP 429 (request id req_011CgpNM7L32aNwtfbQfb3RP)'; ls -la --time-style=full-iso /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5; find /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a7/review5 -type f | wc -l; cd /home/claude/ocbrain-v4.1 && git rev-parse HEAD && git status --porcelain | wc -l && git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026
+# ---- output ----
+launch 5 (2026-11-07 about 22:2x local): Agent returned: You have hit your 5-hour limit, resets 3:20am (UTC), error type rate_limit, HTTP 429 (request id req_011CgpNM7L32aNwtfbQfb3RP)
+total 24
+drwxr-xr-x  4 root root 4096 2026-11-07 22:31:55.458994585 +0000 .
+drwxr-xr-x 21 root root 4096 2026-11-07 22:22:25.014960676 +0000 ..
+-rw-r--r--  1 root root 2367 2026-11-07 22:31:42.346993805 +0000 REPORT.md
+-rw-r--r--  1 root root    3 2026-11-07 22:31:55.458994585 +0000 handoff.md
+drwxr-xr-x  3 root root 4096 2026-11-07 22:22:40.570961600 +0000 pkg
+drwxr-xr-x 25 root root 4096 2026-11-07 22:35:40.691007973 +0000 work
+1929
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+0
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-08T11:56:00Z

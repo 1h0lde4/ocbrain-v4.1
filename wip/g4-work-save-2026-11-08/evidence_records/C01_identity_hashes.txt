@@ -1,0 +1,20 @@
+# evidence-id: C01_identity_hashes
+# started-utc: 2026-10-24T15:58:43Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; F=$S/a4/final; PK=g4_fts_correctness_batch_decision_packet_1d813bd; echo "== REV2 zip (scratch copy of what was delivered):"; sha256sum $F/fts_decision_packet_errata_evidence_1d813bd.zip; stat -c "size=%s" $F/fts_decision_packet_errata_evidence_1d813bd.zip; echo "== packet bytes, 4 sources:"; echo -n "repo @HEAD 51564e3: "; git show HEAD:docs/studies/g4-fts-errata-oct2026/${PK}_REV2_PROPOSED.md | sha256sum; echo -n "repo @origin/main (expect absent): "; git cat-file -e refs/remotes/origin/main:docs/studies/g4-fts-errata-oct2026/${PK}_REV2_PROPOSED.md 2>&1 | head -1; echo "(rc=$?)"; echo -n "scratch a4/final copy: "; sha256sum < $F/${PK}_REV2_PROPOSED.md; echo -n "inside zip (report/${PK}_REV2_PROPOSED.md): "; unzip -p $F/fts_decision_packet_errata_evidence_1d813bd.zip report/${PK}_REV2_PROPOSED.md | sha256sum; echo "== REV3 claims packet SHA-256 db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2 (historical report; not measured on any REV3 artefact here)"; echo "== audit report text recording which packet bytes each checker run saw:"; grep -n -E "runs? [0-9]|packet .?[0-9a-f]{8}" $F/evidence_audit_report_1d813bd.md | grep -i -E "6a15f260|4685970b|db6d7b89" | cut -c1-400
+# ---- output ----
+== REV2 zip (scratch copy of what was delivered):
+e6910c0cc6eb1acefaaf369ce46599856a169228a3060b6492687c8fd70b9c3d  /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/fts_decision_packet_errata_evidence_1d813bd.zip
+size=255601
+== packet bytes, 4 sources:
+repo @HEAD 51564e3: db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  -
+repo @origin/main (expect absent): fatal: path 'docs/studies/g4-fts-errata-oct2026/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md' exists on disk, but not in 'refs/remotes/origin/main'
+(rc=0)
+scratch a4/final copy: db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  -
+inside zip (report/g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md): db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2  -
+== REV3 claims packet SHA-256 db6d7b89b0ec7a32341fe9749cbea46f55f713f16392783b311d96f582857ee2 (historical report; not measured on any REV3 artefact here)
+== audit report text recording which packet bytes each checker run saw:
+55:**Transcription check of the new rev 2 figures (new): `scripts/rev2_numbers_check.py`.** For each new figure quoted in packet rev 2 (R1 histories and product-path counts, R2 fault/torn-WAL/SIGKILL counts, R3 state dispositions and costs, R4 transaction facts, R5 concurrency figures, VACUUM controls, durations, history/digest facts) it derives the quantity from the raw probe JSON (or from `git`)
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:58:43Z

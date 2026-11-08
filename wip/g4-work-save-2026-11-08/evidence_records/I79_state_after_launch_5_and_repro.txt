@@ -1,0 +1,16 @@
+# evidence-id: I79
+# started-utc: 2026-11-08T11:58:21Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: cd /home/claude/ocbrain-v4.1 && git rev-parse HEAD && git status --porcelain | wc -l && git ls-remote origin refs/heads/docs/g4-fts-errata-handoff-oct2026 refs/heads/main && git ls-remote origin 'refs/heads/*g4*' | head -5; curl -sS -H 'Accept: application/vnd.github+json' https://api.github.com/repos/1h0lde4/ocbrain-v4.1/pulls/90 2>&1 | python3 -I -c 'import sys,json; d=json.load(sys.stdin); print("PR90", d.get("state"), "draft=", d.get("draft"), "commits=", d.get("commits"), "files=", d.get("changed_files"), "head=", d.get("head",{}).get("sha"))'
+# ---- output ----
+d963daa502de4220411d0d0c2f19f67b3ec2682b
+0
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+283920eea92e91a77edb763793e3c8b6d3e54550	refs/heads/g4-fix
+PR90 open draft= True commits= 3 files= 7 head= 9407db5a01acea9684f158caa8107fb71611a102
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-08T11:58:22Z

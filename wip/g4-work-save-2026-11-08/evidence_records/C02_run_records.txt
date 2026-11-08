@@ -1,0 +1,24 @@
+# evidence-id: C02_run_records
+# started-utc: 2026-10-24T15:58:54Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: S=/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad; F=$S/a4/final; echo "== where the per-run packet hashes are recorded (prefixes 6a15f260 / 4685970b / db6d7b89):"; grep -n -o -E ".{0,160}(6a15f260|4685970b)[0-9a-f…]*.{0,160}" $F/evidence_audit_report_1d813bd.md $F/fresh_extraction_verification_report.md | cut -c1-420; echo; echo "== the bundled run outputs in the REV2 zip (names, sizes):"; unzip -l $F/fts_decision_packet_errata_evidence_1d813bd.zip | grep -E "rev2_numbers_check" ; echo "== run 4 JSON: records packet by basename only? (keys)"; unzip -p $F/fts_decision_packet_errata_evidence_1d813bd.zip out/rev2_numbers_check_run4.json | python3 -I -c "import json,sys; d=json.load(sys.stdin); print({k:(v if not isinstance(v,(list,dict)) else type(v).__name__+\"[\"+str(len(v))+\"]\") for k,v in d.items()})"
+# ---- output ----
+== where the per-run packet hashes are recorded (prefixes 6a15f260 / 4685970b / db6d7b89):
+/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/evidence_audit_report_1d813bd.md:55:re right; that independence rests on the probes themselves, the source excerpts and the earlier independent derivation. Packet checked in runs 1 and 2: sha256 `6a15f26016313145319ee3b79adb92aab2fa3d9fe3c959e95d6ca3583f9e60f1`; run 3: sha256 `4685970bdbbf25b675504fb623312df5149e50f068c7a633087a08b09e
+/tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a4/final/fresh_extraction_verification_report.md:49:9…`), because the output records the packet's basename, not its hash; which packet text each run saw is recorded in the audit report §3 (runs 1–2: packet `6a15f260…`; run 3: `4685970b…`; run 4 and this verification: `db6d7b89…`). Run 1 (80/83) is preserved separately and differs.
+
+== the bundled run outputs in the REV2 zip (names, sizes):
+    29144  2026-10-21 17:43   out/rev2_numbers_check_run1.json
+    28214  2026-10-21 17:44   out/rev2_numbers_check_run2.json
+    28214  2026-10-23 00:04   out/rev2_numbers_check_run3.json
+    28214  2026-10-23 00:05   out/rev2_numbers_check_run4.json
+       20  2026-10-21 17:44   out/rev2_numbers_check_stdout_run2.txt
+       20  2026-10-23 00:04   out/rev2_numbers_check_stdout_run3.txt
+       20  2026-10-23 00:05   out/rev2_numbers_check_stdout_run4.txt
+    20321  2026-10-21 17:43   scripts/rev2_numbers_check.py
+    20311  2026-10-21 09:15   scripts/superseded/rev2_numbers_check_as_used_for_run1.py
+== run 4 JSON: records packet by basename only? (keys)
+{'tool': 'rev2_numbers_check.py', 'packet': 'g4_fts_correctness_batch_decision_packet_1d813bd_REV2_PROPOSED.md', 'total': 83, 'failed': 'list[0]', 'checks': 'list[83]'}
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-24T15:58:54Z

@@ -1,0 +1,22 @@
+# evidence-id: F01_live_recheck_before_report
+# started-utc: 2026-10-25T00:06:41Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: date -u +"%Y-%m-%dT%H:%M:%SZ"; echo "branch: $(git branch --show-current)  HEAD: $(git rev-parse HEAD)"; echo "worktree changes (incl. untracked): $(git status --porcelain --untracked-files=all | wc -l); stash: $(git stash list | wc -l)"; echo "--- remote tips:"; git ls-remote --heads origin | grep -E "refs/heads/(main|docs/g4)"; echo "--- PR #90:"; gh api repos/1h0lde4/ocbrain-v4.1/pulls/90 --jq "{state,draft,head_sha:.head.sha,changed_files,commits,mergeable_state,updated_at}"; echo "--- open PR count / numbers:"; gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=open&per_page=100" --jq "[.[].number]|sort|reverse|map(tostring)|join(\",\")"; echo "--- any PR whose head is the REV2 branch?"; gh api "repos/1h0lde4/ocbrain-v4.1/pulls?state=all&head=1h0lde4:docs/g4-fts-errata-handoff-oct2026" --jq "length"; echo "--- tracked-file diff vs HEAD (should be empty):"; git diff HEAD --stat | tail -1
+# ---- output ----
+2026-10-25T00:06:41Z
+branch: docs/g4-fts-errata-handoff-oct2026  HEAD: 51564e34c18e5cc908cf517000ebc9bd41eaf194
+worktree changes (incl. untracked): 0; stash: 0
+--- remote tips:
+2dd2e7bb05db949a6156266cfa3430c58de09922	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+51564e34c18e5cc908cf517000ebc9bd41eaf194	refs/heads/docs/g4-fts-errata-handoff-oct2026
+f13bfdefcdd197ed1f966de0b1f93037a4168af4	refs/heads/main
+--- PR #90:
+{"changed_files":6,"commits":1,"draft":true,"head_sha":"2dd2e7bb05db949a6156266cfa3430c58de09922","mergeable_state":"clean","state":"open","updated_at":"2026-10-23T10:30:47Z"}
+--- open PR count / numbers:
+91,90,89,88,87,86,83,81,79,77,76,33,32,30,29,27
+--- any PR whose head is the REV2 branch?
+0
+--- tracked-file diff vs HEAD (should be empty):
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-10-25T00:06:44Z
