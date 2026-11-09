@@ -1,0 +1,3 @@
+# Keep the snapshot bytes exactly as exported: no line-ending normalization.
+* -text
+*.docx binary
