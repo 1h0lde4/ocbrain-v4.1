@@ -110,7 +110,16 @@ jobs:
             --require-executable printenv \
             --require-executable yes \
             --require-executable head \
-            --require-executable grep
+            --require-executable grep \
+            --require-executable date \
+            --require-executable mv \
+            --require-executable rm \
+            --require-executable cat \
+            --require-executable ln \
+            --require-executable mkdir \
+            --require-executable hostname \
+            --require-executable readlink \
+            --require-executable ls
 
       - name: Upload Docker preflight report
         if: always()
@@ -194,7 +203,7 @@ jobs:
           {
             python --version
             mypy --version
-            pip list 2>/dev/null | grep -i -E '^(pytest|mypy) '
+            python -m pip list 2>/dev/null | grep -i -E '^(pytest|mypy) '
             echo "files: $FILES"
           } 2>&1 | tee /tmp/mypy-b03.txt
           echo "== mypy (default) ==" | tee -a /tmp/mypy-b03.txt
