@@ -157,26 +157,106 @@ def _preflight_required_executables() -> set[str]:
     return {tokens[i + 1] for i, t in enumerate(tokens) if t == "--require-executable"}
 
 
+CONTRACT_TESTS = ROOT / "tests" / "core" / "sandbox" / "test_network_isolation_contract.py"
+DOCKER_TEST_FILES = (DOCKER_TESTS, CONTRACT_TESTS)
+
+# Every utility the Docker-backed tests run INSIDE the image (the container's own PATH), found by
+# reading the tests: SandboxRequest(command=(...)) first tokens, `docker exec <id> X` / `docker run
+# ... <image> X`, and the words of `sh -c` snippets (the heartbeat loop `date`/`mv`, the manifest
+# test `mkdir`, the read-only-mount test `rm`/`cat`, the symlink test `ln`, the UTS test `hostname`,
+# the namespace probes `readlink`, the pid-namespace test `ls`).  The preflight must require all of
+# them: a bare `alpine:3`-style image check that omitted one turned a green preflight into
+# "exec: hostname: executable file not found" failures inside the tests (seen against a minimal image).
+IN_CONTAINER_TOOLS = frozenset({
+    "python3", "sh", "sleep", "true", "echo", "printenv", "yes", "head", "grep",
+    "date", "mv", "rm", "cat", "ln", "mkdir", "hostname", "readlink", "ls",
+})
+# Words from the same candidate list that appear in the tests but are NOT run inside the container:
+# docker sub-commands (ps, cp, rm/ls in `docker rm`/`docker network ls`), shell builtins (kill,
+# printf, test, exec, exit), parameters or data (timeout, env, id=, ip in a python probe), prose.
+NOT_RUN_IN_CONTAINER = frozenset({
+    "exec", "exit", "kill", "printf", "test", "false", "mount", "cp", "id", "ps", "timeout", "env",
+    "find", "ip",
+})
+# Utilities whose appearance in a test string must be classified (ratchet): anything here that is in
+# neither set above fails the test below until a human decides which side it belongs on.
+_UTILITY_CANDIDATES = frozenset(
+    "cat cp date echo env exec exit false find grep head hostname id ip kill ln ls mkdir mount mv "
+    "printenv printf ps python python3 readlink rm sh sleep test timeout true yes wait cd "
+    "awk base64 basename chmod chown curl cut dd df dirname gzip md5sum nc nohup nproc od perl "
+    "pwd setsid sed sha256sum sort stat tail tar tee touch tr uname uniq unshare wc wget xargs".split()
+)
+
+
+def _preflight_required_executables() -> set[str]:
+    tokens = _step("tests", "Docker preflight")["run"].replace("\\\n", " ").split()
+    return {tokens[i + 1] for i, t in enumerate(tokens) if t == "--require-executable"}
+
+
+def _string_constants(path: Path) -> list[str]:
+    """Non-docstring string constants (f-string literal parts included) of a test file."""
+    import re  # noqa: F401  (kept local: only this helper tokenizes)
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = {
+        id(n.body[0].value)
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and n.body and isinstance(n.body[0], ast.Expr) and isinstance(getattr(n.body[0], "value", None), ast.Constant)
+    }
+    return [n.value for n in ast.walk(tree)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings]
+
+
+def _words_in_test_strings() -> set[str]:
+    import re
+
+    words: set[str] = set()
+    for path in DOCKER_TEST_FILES:
+        for text in _string_constants(path):
+            words |= {w for w in re.findall(r"(?<![\w./-])([A-Za-z0-9_+-]+)(?![\w/.-])", text) if w in _UTILITY_CANDIDATES}
+    return words
+
+
 def _commands_launched_in_containers() -> set[str]:
-    """First token of every SandboxRequest(command=...) in the Docker backend tests."""
+    """First token of every SandboxRequest(command=...) and of every `docker exec/run` command."""
     found: set[str] = set()
-    for node in ast.walk(ast.parse(DOCKER_TESTS.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "SandboxRequest":
-            for kw in node.keywords:
-                if kw.arg == "command" and isinstance(kw.value, (ast.Tuple, ast.List)) and kw.value.elts:
-                    first = kw.value.elts[0]
-                    if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                        found.add(first.value)
+    for path in DOCKER_TEST_FILES:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "SandboxRequest":
+                for kw in node.keywords:
+                    if kw.arg == "command" and isinstance(kw.value, (ast.Tuple, ast.List)) and kw.value.elts:
+                        first = kw.value.elts[0]
+                        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                            found.add(first.value)
+            if isinstance(node, ast.List) and len(node.elts) >= 4:
+                lits = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None for e in node.elts]
+                if lits[0] == "docker" and lits[1] == "exec" and lits[3] is not None:
+                    found.add(lits[3])  # docker exec <container> <tool> ...
     return found
 
 
 def test_preflight_requires_every_executable_the_docker_tests_launch() -> None:
     launched = _commands_launched_in_containers()
-    assert {"python3", "sh", "sleep", "true", "echo"} <= launched, "the scan found too little: has the test file changed shape?"
+    assert {"python3", "sh", "sleep", "true", "echo", "cat", "hostname", "readlink"} <= launched, (
+        "the scan found too little: has a test file changed shape?"
+    )
     required = _preflight_required_executables()
     assert launched <= required, f"the image check does not cover {sorted(launched - required)}"
-    # Tools used inside `sh -c` snippets (not visible as a first token): kept explicit.
-    assert {"yes", "head", "grep"} <= required
+    assert IN_CONTAINER_TOOLS <= required, f"the image check does not cover {sorted(IN_CONTAINER_TOOLS - required)}"
+
+
+def test_every_utility_word_in_the_docker_tests_is_classified_and_none_is_stale() -> None:
+    seen = _words_in_test_strings()
+    unclassified = seen - IN_CONTAINER_TOOLS - NOT_RUN_IN_CONTAINER
+    assert not unclassified, (
+        f"the Docker tests now mention {sorted(unclassified)}: decide whether each runs inside the image "
+        "(add it to IN_CONTAINER_TOOLS and to the preflight's --require-executable list) or not "
+        "(NOT_RUN_IN_CONTAINER), so the image check keeps covering what the tests launch"
+    )
+    stale = (IN_CONTAINER_TOOLS | NOT_RUN_IN_CONTAINER) - seen - {"python3"}
+    assert not stale, f"classified but no longer mentioned in the tests: {sorted(stale)}"
+    assert not (IN_CONTAINER_TOOLS & NOT_RUN_IN_CONTAINER)
 
 
 # ------------------------------------------------------------------ mypy
