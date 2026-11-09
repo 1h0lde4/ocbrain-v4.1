@@ -128,6 +128,18 @@ def test_every_hosted_job_uploads_its_evidence_even_on_failure() -> None:
         assert names <= uploaded, f"{job}: missing artifact uploads {names - uploaded}"
 
 
+def test_pytest_report_flags_keep_the_failures_the_gate_parses_and_add_skip_reasons() -> None:
+    """`-r` REPLACES pytest's default short-summary set.  The gate reads FAILED/ERROR node ids from
+    that summary, so `-rs` alone makes a run with failures unparseable (the gate reports
+    "N failed but 0 distinct FAILED node ID(s)").  Require f, E and s."""
+    import re
+
+    run = _step("tests", "Run test suite")["run"]
+    flags = re.findall(r"(?<!\S)-r([A-Za-z]+)(?!\S)", run)
+    assert flags, "no -r flag: skip reasons would not be attributable"
+    assert set("fEs") <= set("".join(flags)), f"-r flags {flags!r} must include f, E and s"
+
+
 # ------------------------------------------------------------------ docker preflight
 
 
