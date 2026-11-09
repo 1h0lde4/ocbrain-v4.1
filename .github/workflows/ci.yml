@@ -140,12 +140,14 @@ jobs:
         # (docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt); the gate
         # tolerates ONLY those, only with pytest exit code 1.
         #
-        # `-rs` adds the skip reasons to pytest's short summary so that every
-        # skip in a hosted run can be attributed (a skipped test is not a pass).
-        # It adds `SKIPPED [n] ...` lines only; the gate ignores them.
+        # `-rfEs` keeps pytest's DEFAULT short-summary set (`f` failed, `E` error: the
+        # gate reads the FAILED/ERROR node ids from it) and adds `s`, the skip reasons,
+        # so that every skip in a hosted run can be attributed (a skipped test is not a
+        # pass).  Do not shorten it to `-rs`: `-r` REPLACES the default, the FAILED lines
+        # disappear, and the gate then fails with "0 distinct FAILED node ID(s)".
         run: |
           set +e
-          pytest tests/ -q --tb=short -rs 2>&1 | tee /tmp/pytest-output.txt
+          pytest tests/ -q --tb=short -rfEs 2>&1 | tee /tmp/pytest-output.txt
           echo "${PIPESTATUS[0]}" > /tmp/pytest-exit-code.txt
           exit 0
 
