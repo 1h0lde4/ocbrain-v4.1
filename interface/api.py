@@ -135,6 +135,7 @@ def setup(orchestrator: Orchestrator, scheduler):
     # Fail fast and closed: resolve the API auth settings (creating the token
     # file on first run) at startup rather than on the first request.
     _auth = api_auth.get_settings(config.get("global.api_auth"))
+    api_auth.schedule_flush()  # persist any opt-out transition now (the opt-out waits for its record)
     if _auth.mode == api_auth.MODE_REQUIRED:
         log.info("API authentication: bearer token required (token file: %s). "
                  "Show the token with: ocbrain token --show", api_auth.token_path())
