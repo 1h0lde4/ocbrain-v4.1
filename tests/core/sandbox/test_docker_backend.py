@@ -507,9 +507,30 @@ async def test_two_concurrent_sandboxes_do_not_collide(tmp_path):
 # ======================================================================
 
 
+def _host_root_prefix() -> list[str]:
+    """The argv prefix that runs a command with root privileges on the HOST: ``[]`` for root, else ``sudo -n``.
+
+    The A2 mount test must create a mount in the host's own mount namespace, which needs
+    CAP_SYS_ADMIN.  A hosted GitHub runner job is a non-root user with passwordless sudo, where a
+    bare ``mount`` fails ("must be superuser to use mount").  If neither root nor passwordless sudo
+    is available the precondition FAILS the test with a message that says so; it is never turned
+    into a skip, because that would let the test pass without having tested anything.
+    """
+    if os.geteuid() == 0:
+        return []
+    try:
+        probe = subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        pytest.fail(f"the host-mount precondition is unmet: not root and `sudo -n` is unusable ({exc!r})")
+    if probe.returncode != 0:
+        pytest.fail("the host-mount precondition is unmet: not root and passwordless `sudo -n` is refused")
+    return ["sudo", "-n"]
+
+
 @_needs_docker
 @pytest.mark.asyncio
 async def test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start(backend, tmp_path):
+    host_root = _host_root_prefix()  # checked first, so an unmet precondition leaks no container
     policy = SandboxPolicy(workspace_dir=str(tmp_path))
     request = SandboxRequest(command=("sleep", "10"), policy=policy)
     handle = await backend.create(request)
@@ -518,14 +539,18 @@ async def test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start(
     mount_point = "/tmp/a2-pytest-host-only-mount"
     try:
         subprocess.run(["mkdir", "-p", mount_point], check=True)
-        subprocess.run(["mount", "-t", "tmpfs", "tmpfs", mount_point], check=True)
+        subprocess.run([*host_root, "mount", "-t", "tmpfs", "tmpfs", mount_point], check=True)
+        # The host really has the mount (otherwise the assertion below would be vacuous).
+        host_mounts = pathlib.Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+        assert "a2-pytest-host-only-mount" in host_mounts
         out = subprocess.run(
             ["docker", "exec", container_id, "cat", "/proc/self/mountinfo"],
             capture_output=True, text=True,
         )
+        assert out.returncode == 0 and out.stdout, "the container's mountinfo must be readable"
         assert "a2-pytest-host-only-mount" not in out.stdout
     finally:
-        subprocess.run(["umount", mount_point], check=False)
+        subprocess.run([*host_root, "umount", mount_point], check=False)
         await backend.destroy(handle)
 
 

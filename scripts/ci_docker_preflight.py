@@ -30,8 +30,12 @@ exit code, and nothing is substituted:
                (``docker inspect --format {{index .RepoDigests 0}}``) gets a usable
                answer, exactly the acceptance rule ``_resolve_image_digest`` applies.
 ``smoke``      a container is actually started from the image (``--pull never``,
-               ``--network none``), and, for every ``--require-executable NAME``, NAME
-               is found as an executable along the image's own PATH.
+               ``--network none``, the PATH DockerBackend gives every container) by tag
+               AND by the RepoDigest the product resolves and runs; for every
+               ``--require-executable NAME``, NAME is found as an executable along that
+               PATH; with ``--probe-capabilities`` the applet features the tests rely on
+               (nanosecond ``date``, fractional ``sleep``, ``head -c``) are exercised,
+               because a presence check cannot tell a full applet from a stripped one.
 
 The JSON report (schema ``ocbrain.ci.docker-preflight/1``) is written on failure too, so
 the evidence of what was provisioned survives a red run.
@@ -60,6 +64,12 @@ _PRODUCT_DIGEST_FORMAT = "{{index .RepoDigests 0}}"
 _IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _BARE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 _TAIL = 400
+
+# The PATH DockerBackend sets in EVERY container (core/sandbox/backends/docker_backend.py,
+# ``_build_container_env``), whatever PATH the image defines.  Executables must therefore be looked
+# up against this, not against the image's own ENV.  tests/test_ci_docker_preflight.py pins the
+# equality with the product's value, so the two cannot drift apart unnoticed.
+_CONTAINER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 class PreflightFailure(Exception):
@@ -171,40 +181,80 @@ def _check_identity(image: str, report: dict[str, Any]) -> None:
     print(f"docker-preflight: resolved digest={digest}")
 
 
-# POSIX-sh lookup of each name along the image's own PATH (what `docker create <ref> <name>`
-# resolves against); `command -v` is avoided because it also reports shell builtins.
+# POSIX-sh lookup of each name along $PATH (which the smoke runs set to the PATH DockerBackend gives
+# every container, so this is what `docker create <ref> <name>` resolves against); `command -v` is
+# avoided because it also reports shell builtins.
 _FIND_EXECUTABLES = (
     'rc=0; for c in "$@"; do f=0; old=$IFS; IFS=:; '
     'for d in $PATH; do if [ -x "$d/$c" ] && [ ! -d "$d/$c" ]; then f=1; fi; done; IFS=$old; '
     'if [ "$f" = 0 ]; then echo "missing: $c"; rc=1; fi; done; exit $rc'
 )
 
+# Applet FEATURES the Docker tests depend on, which a presence check cannot see (a stripped busybox
+# has the applet but not the feature).  Each line names the test that needs it:
+#   date +%s%N      the heartbeat loop and test_d7 (two readings 0.6 s apart must differ, so the clock
+#                   must have sub-second resolution; a `date` without %N prints a literal "N")
+#   sleep 0.01      the heartbeat loop sleeps 0.2 s
+#   head -c 1       `yes | head -c 200000000` in the memory-limit test
+_CAPABILITY_PROBES = (
+    'rc=0; d=$(date +%s%N 2>/dev/null); '
+    'case "$d" in '
+    '""|*[!0-9]*) echo "probe failed: date +%s%N is not numeric (got: $d)"; rc=1;; '
+    '*) [ "${#d}" -ge 19 ] || { echo "probe failed: date +%s%N has no nanoseconds (got: $d)"; rc=1; };; '
+    'esac; '
+    'sleep 0.01 >/dev/null 2>&1 || { echo "probe failed: sleep rejects a fractional duration"; rc=1; }; '
+    'head -c 1 /dev/zero >/dev/null 2>&1 || { echo "probe failed: head does not support -c"; rc=1; }; '
+    'exit $rc'
+)
 
-def _smoke(image: str, required: Sequence[str], report: dict[str, Any]) -> None:
-    rc, out, err = _docker(["run", "--rm", "--pull", "never", "--network", "none", image, "true"], 180)
+
+def _run_in_image(ref: str, *tail: str, entrypoint: str | None = None) -> tuple[int, str, str]:
+    """``docker run`` that can neither pull nor reach a network, with DockerBackend's PATH."""
+    args = ["run", "--rm", "--pull", "never", "--network", "none", "-e", f"PATH={_CONTAINER_PATH}"]
+    if entrypoint is not None:
+        args += ["--entrypoint", entrypoint]
+    return _docker([*args, ref, *tail], 180)
+
+
+def _smoke(image: str, required: Sequence[str], probe: bool, report: dict[str, Any]) -> None:
+    digest = report["image"]["resolved_digest"]
     smoke: dict[str, Any] = {
-        "command": f"docker run --rm --pull never --network none {image} true",
-        "rc": rc,
+        "command": f"docker run --rm --pull never --network none -e PATH=<container PATH> {image} true",
         "required_executables": list(required),
+        "capability_probes": probe,
     }
     report["smoke"] = smoke
+
+    rc, out, err = _run_in_image(image, "true")
+    smoke["rc"] = rc
     if rc != 0:
         raise PreflightFailure(
             "smoke", f"the daemon holds {image!r} but could not run a container from it (rc={rc}): {_tail(err or out)}"
         )
-    if required:
-        rc, out, err = _docker(
-            ["run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "sh", image,
-             "-c", _FIND_EXECUTABLES, "sh", *required],
-            180,
+    # DockerBackend does not run the tag: it runs the RepoDigest it resolved (`docker create ... <digest>`).
+    rc, out, err = _run_in_image(digest, "true")
+    smoke["digest_ref"] = digest
+    smoke["digest_run_rc"] = rc
+    if rc != 0:
+        raise PreflightFailure(
+            "smoke",
+            f"a container cannot be started from the resolved digest reference {digest!r}, which is what "
+            f"DockerBackend runs (rc={rc}): {_tail(err or out)}",
         )
+    if required:
+        rc, out, err = _run_in_image(image, "-c", _FIND_EXECUTABLES, "sh", *required, entrypoint="sh")
         smoke["executables_rc"] = rc
         if rc != 0:
             raise PreflightFailure("smoke", f"{image!r} lacks required executables: {_tail(out or err)}")
+    if probe:
+        rc, out, err = _run_in_image(image, "-c", _CAPABILITY_PROBES, entrypoint="sh")
+        smoke["capabilities_rc"] = rc
+        if rc != 0:
+            raise PreflightFailure("smoke", f"{image!r} lacks an applet feature the tests use: {_tail(out or err)}")
 
 
 def run_preflight(
-    image: str, attempts: int, delay: float, required: Sequence[str] = ()
+    image: str, attempts: int, delay: float, required: Sequence[str] = (), probe: bool = False
 ) -> tuple[dict[str, Any], PreflightFailure | None]:
     report: dict[str, Any] = {
         "schema": SCHEMA,
@@ -219,7 +269,7 @@ def run_preflight(
         _check_daemon(report)
         _provision(image, attempts, delay, report)
         _check_identity(image, report)
-        _smoke(image, required, report)
+        _smoke(image, required, probe, report)
         report["result"] = "passed"
     except PreflightFailure as exc:
         failure = exc
@@ -242,11 +292,17 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     ap.add_argument("--retry-delay", type=float, default=5.0, help="seconds between pull attempts (default 5)")
     ap.add_argument(
         "--require-executable", action="append", default=[], metavar="NAME",
-        help="bare executable name that must exist on the image's PATH (repeatable)",
+        help="bare executable name that must exist on the container PATH (repeatable)",
+    )
+    ap.add_argument(
+        "--probe-capabilities", action="store_true",
+        help="also exercise the applet features the tests rely on (nanosecond date, fractional sleep, head -c)",
     )
     args = ap.parse_args(argv)
     if not args.image.strip():
         ap.error("--image must be a non-empty image reference (there is no default image)")
+    if args.image.strip().startswith("-"):
+        ap.error(f"--image must be an image reference, not an option: {args.image!r}")
     if args.pull_attempts < 1:
         ap.error("--pull-attempts must be at least 1")
     if args.retry_delay < 0:
@@ -260,7 +316,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     image = args.image.strip()
-    report, failure = run_preflight(image, args.pull_attempts, args.retry_delay, args.require_executable)
+    report, failure = run_preflight(
+        image, args.pull_attempts, args.retry_delay, args.require_executable, args.probe_capabilities
+    )
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -269,8 +327,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     required = report["smoke"]["required_executables"]
     print(
-        "docker-preflight: smoke run ok; required executables present: "
-        f"{', '.join(required) if required else '(none requested)'}"
+        "docker-preflight: smoke run ok (tag and digest); required executables present: "
+        f"{', '.join(required) if required else '(none requested)'}; "
+        f"capability probes: {'passed' if report['smoke']['capability_probes'] else 'not requested'}"
     )
     print("docker-preflight: PASS")
     return 0

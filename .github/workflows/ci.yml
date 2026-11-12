@@ -98,10 +98,16 @@ jobs:
         # with every executable the tests launch present.  Before this step the image
         # was never provisioned and 75 tests failed with "no such object: alpine:3".
         # No fallback image; no mocks; nothing is added to the known-failure list.
+        #
+        # The step is exactly ONE command (a test pins that): nothing may be appended to it
+        # that could turn its exit code into success.  `--probe-capabilities` additionally
+        # exercises the busybox features the tests depend on (nanosecond `date`, fractional
+        # `sleep`, `head -c`), which a presence check cannot see.
         run: |
           python3 scripts/ci_docker_preflight.py \
             --image "$OCBRAIN_SANDBOX_DOCKER_IMAGE" \
             --report /tmp/docker-preflight.json \
+            --probe-capabilities \
             --require-executable python3 \
             --require-executable sh \
             --require-executable sleep \
@@ -117,6 +123,7 @@ jobs:
             --require-executable cat \
             --require-executable ln \
             --require-executable mkdir \
+            --require-executable mkfifo \
             --require-executable hostname \
             --require-executable readlink \
             --require-executable ls
@@ -172,14 +179,27 @@ jobs:
             --exit-code-file /tmp/pytest-exit-code.txt \
             --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
 
+      - name: Assert the Docker-backed tests ran (none skipped for a missing daemon or image)
+        # The preflight step has just proved a reachable daemon and the provisioned image.  A
+        # SKIPPED line whose reason says either is missing therefore means a Docker-gating probe
+        # inside the tests (a 5 s / 10 s timeout at import time) misfired, and the whole
+        # Docker-backed suite would pass without having run.  A skip is not a pass.  Other skips
+        # (for example the 32-bit toolchain one) are listed by `-rs` and judged on their own reason.
+        run: |
+          if grep -E '^SKIPPED .*(requires a reachable Docker daemon|requires the test image)' /tmp/pytest-output.txt; then
+            echo "::error::Docker-backed tests were skipped although the preflight proved the daemon and the image"
+            exit 1
+          fi
+          echo "no Docker-prerequisite skips"
+
   typecheck-b03:
     # B03's acceptance includes a clean mypy run over its two files (reconciliation
     # section 22).  Until this job existed that evidence was local only, never CI.
     # Deliberately narrow: the two B03 files, not a repository-wide typing gate.
     # Command and flags are the ones recorded as the evidence of record:
     # MYPYPATH=. mypy [--strict] --explicit-package-bases --follow-imports=silent <files>.
-    # The toolchain is pinned to the version that evidence used (mypy 2.4.0); pytest is
-    # unpinned here exactly as requirements.txt leaves it, and its version is printed.
+    # The toolchain is pinned to the versions that evidence used (mypy 2.4.0, pytest 9.2.0),
+    # so a future release of either cannot turn this job red (or green) on its own.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -193,7 +213,7 @@ jobs:
       - name: Install pinned mypy and pytest
         run: |
           python -m pip install --upgrade pip
-          pip install mypy==2.4.0 "pytest>=8.0.0"
+          pip install mypy==2.4.0 pytest==9.2.0
 
       - name: mypy on the B03 files (default and --strict)
         # Both runs always execute and both exit codes are kept; the step fails
