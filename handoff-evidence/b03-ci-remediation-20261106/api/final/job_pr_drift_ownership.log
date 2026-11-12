@@ -1,0 +1,484 @@
+﻿2026-11-08T16:42:52.0819670Z Current runner version: '2.338.2'
+2026-11-08T16:42:52.0844426Z ##[group]Runner Image Provisioner
+2026-11-08T16:42:52.0845370Z Hosted Compute Agent
+2026-11-08T16:42:52.0846004Z Version: 20261028.624
+2026-11-08T16:42:52.0846614Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-08T16:42:52.0847391Z Build Date: 2026-10-28T21:51:42Z
+2026-11-08T16:42:52.0848065Z Worker ID: {3cce3704-a446-436a-9ab9-3cfb2040aa49}
+2026-11-08T16:42:52.0848806Z Region: westus
+2026-11-08T16:42:52.0849385Z Cloud: Azure
+2026-11-08T16:42:52.0849923Z ##[endgroup]
+2026-11-08T16:42:52.0851942Z ##[group]Operating System
+2026-11-08T16:42:52.0852597Z Ubuntu
+2026-11-08T16:42:52.0853181Z 26.04.1
+2026-11-08T16:42:52.0853738Z LTS
+2026-11-08T16:42:52.0854237Z ##[endgroup]
+2026-11-08T16:42:52.0854840Z ##[group]Runner Image
+2026-11-08T16:42:52.0855493Z Image: ubuntu-26.04
+2026-11-08T16:42:52.0856032Z Version: 20261101.186.1
+2026-11-08T16:42:52.0857360Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261101.186/images/ubuntu/Ubuntu2604-Readme.md
+2026-11-08T16:42:52.0858944Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261101.186
+2026-11-08T16:42:52.0859906Z ##[endgroup]
+2026-11-08T16:42:52.0861684Z ##[group]GITHUB_TOKEN Permissions
+2026-11-08T16:42:52.0863588Z Contents: read
+2026-11-08T16:42:52.0864300Z Metadata: read
+2026-11-08T16:42:52.0864880Z ##[endgroup]
+2026-11-08T16:42:52.0866944Z Secret source: Actions
+2026-11-08T16:42:52.0868001Z Cache mode: write
+2026-11-08T16:42:52.0868689Z Prepare workflow directory
+2026-11-08T16:42:52.1224821Z Prepare all required actions
+2026-11-08T16:42:52.1296692Z Getting action download info
+2026-11-08T16:42:52.4527272Z Download action repository 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-11-08T16:42:52.5696266Z Download action repository 'actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-11-08T16:42:52.6332037Z Download action repository 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-11-08T16:42:52.8216016Z Complete job name: drift-and-ownership
+2026-11-08T16:42:52.9111800Z ##[group]Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+2026-11-08T16:42:52.9112882Z with:
+2026-11-08T16:42:52.9113313Z   fetch-depth: 0
+2026-11-08T16:42:52.9113800Z   repository: 1h0lde4/ocbrain-v4.1
+2026-11-08T16:42:52.9117532Z   token: ***
+2026-11-08T16:42:52.9117969Z   ssh-strict: true
+2026-11-08T16:42:52.9118404Z   ssh-user: git
+2026-11-08T16:42:52.9118847Z   persist-credentials: true
+2026-11-08T16:42:52.9119329Z   clean: true
+2026-11-08T16:42:52.9119770Z   sparse-checkout-cone-mode: true
+2026-11-08T16:42:52.9120287Z   fetch-tags: false
+2026-11-08T16:42:52.9120923Z   show-progress: true
+2026-11-08T16:42:52.9121364Z   lfs: false
+2026-11-08T16:42:52.9121770Z   submodules: false
+2026-11-08T16:42:52.9122209Z   set-safe-directory: true
+2026-11-08T16:42:52.9122708Z   allow-unsafe-pr-checkout: false
+2026-11-08T16:42:52.9123501Z ##[endgroup]
+2026-11-08T16:42:53.2334853Z Syncing repository: 1h0lde4/ocbrain-v4.1
+2026-11-08T16:42:53.2337112Z ##[group]Getting Git version info
+2026-11-08T16:42:53.2338417Z Working directory is '/home/runner/work/ocbrain-v4.1/ocbrain-v4.1'
+2026-11-08T16:42:53.2339976Z [command]/usr/bin/git version
+2026-11-08T16:42:53.2362724Z git version 2.56.0
+2026-11-08T16:42:53.2383576Z ##[endgroup]
+2026-11-08T16:42:53.2397969Z Temporarily overriding HOME='/home/runner/work/_temp/a3165c3b-8e16-436f-9019-891a9bb02d56' before making global git config changes
+2026-11-08T16:42:53.2400640Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-08T16:42:53.2402843Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ocbrain-v4.1/ocbrain-v4.1
+2026-11-08T16:42:53.2481778Z Deleting the contents of '/home/runner/work/ocbrain-v4.1/ocbrain-v4.1'
+2026-11-08T16:42:53.2484940Z ##[group]Initializing the repository
+2026-11-08T16:42:53.2489112Z [command]/usr/bin/git init /home/runner/work/ocbrain-v4.1/ocbrain-v4.1
+2026-11-08T16:42:53.2637178Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-08T16:42:53.2639426Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-08T16:42:53.2641448Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-08T16:42:53.2642886Z hint: call:
+2026-11-08T16:42:53.2643869Z hint:
+2026-11-08T16:42:53.2644978Z hint: 	git config --global init.defaultBranch <name>
+2026-11-08T16:42:53.2645768Z hint:
+2026-11-08T16:42:53.2646427Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-08T16:42:53.2647413Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-08T16:42:53.2648345Z hint:
+2026-11-08T16:42:53.2649032Z hint: 	git branch -m <name>
+2026-11-08T16:42:53.2649623Z hint:
+2026-11-08T16:42:53.2650328Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-08T16:42:53.2658845Z Initialized empty Git repository in /home/runner/work/ocbrain-v4.1/ocbrain-v4.1/.git/
+2026-11-08T16:42:53.2671794Z [command]/usr/bin/git remote add origin https://github.com/1h0lde4/ocbrain-v4.1
+2026-11-08T16:42:53.2726585Z ##[endgroup]
+2026-11-08T16:42:53.2727887Z ##[group]Disabling automatic garbage collection
+2026-11-08T16:42:53.2730738Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-08T16:42:53.2766935Z ##[endgroup]
+2026-11-08T16:42:53.2768134Z ##[group]Setting up auth
+2026-11-08T16:42:53.2774904Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-08T16:42:53.2812291Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-08T16:42:53.3348071Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-08T16:42:53.3387412Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-08T16:42:53.3664391Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-08T16:42:53.3701730Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-08T16:42:53.3995292Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-08T16:42:53.4037685Z ##[endgroup]
+2026-11-08T16:42:53.4038545Z ##[group]Fetching the repository
+2026-11-08T16:42:53.4050815Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +923f5008c982ea78dee64e2dc3416f920434337c:refs/remotes/pull/110/merge
+2026-11-08T16:42:54.4918725Z From https://github.com/1h0lde4/ocbrain-v4.1
+2026-11-08T16:42:54.4934210Z  * [new branch]      architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026 -> origin/architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026
+2026-11-08T16:42:54.4938166Z  * [new branch]      archive/fix-debt-020-completion-semantics-sep2026 -> origin/archive/fix-debt-020-completion-semantics-sep2026
+2026-11-08T16:42:54.4942209Z  * [new branch]      archive/pr-03-fix-adaptive-semaphore-instability-jun2026 -> origin/archive/pr-03-fix-adaptive-semaphore-instability-jun2026
+2026-11-08T16:42:54.4945768Z  * [new branch]      archive/pr-04-systematic-audit-jul2026   -> origin/archive/pr-04-systematic-audit-jul2026
+2026-11-08T16:42:54.4949180Z  * [new branch]      archive/pr-05-bug-research-hardening-jul2026 -> origin/archive/pr-05-bug-research-hardening-jul2026
+2026-11-08T16:42:54.4951737Z  * [new branch]      archive/pr-06-github-release-automation-aug2026 -> origin/archive/pr-06-github-release-automation-aug2026
+2026-11-08T16:42:54.4954001Z  * [new branch]      audit/freeze-remediation-batch0-oct2026  -> origin/audit/freeze-remediation-batch0-oct2026
+2026-11-08T16:42:54.4955848Z  * [new branch]      audit/kernel-v1-0-definitive-freeze-sep2026 -> origin/audit/kernel-v1-0-definitive-freeze-sep2026
+2026-11-08T16:42:54.4957883Z  * [new branch]      audit/kernel-v1-freeze-blockers-12407359760497844566 -> origin/audit/kernel-v1-freeze-blockers-12407359760497844566
+2026-11-08T16:42:54.4961785Z  * [new branch]      audit/kernel-v1-remaining-freezing-blockers-486744888107768061 -> origin/audit/kernel-v1-remaining-freezing-blockers-486744888107768061
+2026-11-08T16:42:54.4963876Z  * [new branch]      chore/live-check-runbook                 -> origin/chore/live-check-runbook
+2026-11-08T16:42:54.4965602Z  * [new branch]      dependabot/github_actions/actions/checkout-7.0.1 -> origin/dependabot/github_actions/actions/checkout-7.0.1
+2026-11-08T16:42:54.4967644Z  * [new branch]      dependabot/github_actions/actions/download-artifact-8.0.2 -> origin/dependabot/github_actions/actions/download-artifact-8.0.2
+2026-11-08T16:42:54.4969833Z  * [new branch]      dependabot/github_actions/actions/setup-python-7.1.0 -> origin/dependabot/github_actions/actions/setup-python-7.1.0
+2026-11-08T16:42:54.4972258Z  * [new branch]      dependabot/github_actions/actions/upload-artifact-7.0.2 -> origin/dependabot/github_actions/actions/upload-artifact-7.0.2
+2026-11-08T16:42:54.4974476Z  * [new branch]      dependabot/github_actions/softprops/action-gh-release-3.0.3 -> origin/dependabot/github_actions/softprops/action-gh-release-3.0.3
+2026-11-08T16:42:54.4976308Z  * [new branch]      dependabot/pip/chromadb-1.5.9            -> origin/dependabot/pip/chromadb-1.5.9
+2026-11-08T16:42:54.4978103Z  * [new branch]      dependabot/pip/sentence-transformers-gte-3.0.0-and-lt-7.0 -> origin/dependabot/pip/sentence-transformers-gte-3.0.0-and-lt-7.0
+2026-11-08T16:42:54.4980124Z  * [new branch]      docs/adr-kernel-07-state-reconciliation-oct2026 -> origin/docs/adr-kernel-07-state-reconciliation-oct2026
+2026-11-08T16:42:54.4982388Z  * [new branch]      docs/adr-kernel-08-owner-acceptance-sync-nov2026 -> origin/docs/adr-kernel-08-owner-acceptance-sync-nov2026
+2026-11-08T16:42:54.4984415Z  * [new branch]      docs/b10-fz-remediation-reconcile-oct2026 -> origin/docs/b10-fz-remediation-reconcile-oct2026
+2026-11-08T16:42:54.4986120Z  * [new branch]      docs/codeql-clean-import-boundary-oct2026 -> origin/docs/codeql-clean-import-boundary-oct2026
+2026-11-08T16:42:54.4987934Z  * [new branch]      docs/ctx-auth-002-closure-oct2026        -> origin/docs/ctx-auth-002-closure-oct2026
+2026-11-08T16:42:54.4989308Z  * [new branch]      docs/d11-closure-evidence                -> origin/docs/d11-closure-evidence
+2026-11-08T16:42:54.4991250Z  * [new branch]      docs/debt-020-prior-art-ref-correction-oct2026 -> origin/docs/debt-020-prior-art-ref-correction-oct2026
+2026-11-08T16:42:54.4993257Z  * [new branch]      docs/debt-025-control-plane-authorization-design-nov2026 -> origin/docs/debt-025-control-plane-authorization-design-nov2026
+2026-11-08T16:42:54.4995180Z  * [new branch]      docs/debt-038-status-sep2026             -> origin/docs/debt-038-status-sep2026
+2026-11-08T16:42:54.4997348Z  * [new branch]      docs/debt-044-resolution-oct2026         -> origin/docs/debt-044-resolution-oct2026
+2026-11-08T16:42:54.5000928Z  * [new branch]      docs/debt-register-live-reconciliation-nov2026 -> origin/docs/debt-register-live-reconciliation-nov2026
+2026-11-08T16:42:54.5004625Z  * [new branch]      docs/debt037-closure-debt032-boundary-oct2026 -> origin/docs/debt037-closure-debt032-boundary-oct2026
+2026-11-08T16:42:54.5007918Z  * [new branch]      docs/exception-redaction-register-oct2026 -> origin/docs/exception-redaction-register-oct2026
+2026-11-08T16:42:54.5011232Z  * [new branch]      docs/fz-freeze-decision-register-oct2026 -> origin/docs/fz-freeze-decision-register-oct2026
+2026-11-08T16:42:54.5013918Z  * [new branch]      docs/g4-fts-correctness-handoff-rev3-oct2026 -> origin/docs/g4-fts-correctness-handoff-rev3-oct2026
+2026-11-08T16:42:54.5017149Z  * [new branch]      docs/g4-fts-errata-handoff-oct2026       -> origin/docs/g4-fts-errata-handoff-oct2026
+2026-11-08T16:42:54.5019612Z  * [new branch]      docs/known-issues-debt-039-debt-021      -> origin/docs/known-issues-debt-039-debt-021
+2026-11-08T16:42:54.5022396Z  * [new branch]      docs/known-issues-debt-040-host-local-services -> origin/docs/known-issues-debt-040-host-local-services
+2026-11-08T16:42:54.5025567Z  * [new branch]      docs/known-issues-debt-041-capability-dropping -> origin/docs/known-issues-debt-041-capability-dropping
+2026-11-08T16:42:54.5028703Z  * [new branch]      docs/network-isolation-spec-and-studies  -> origin/docs/network-isolation-spec-and-studies
+2026-11-08T16:42:54.5031573Z  * [new branch]      docs/register-65-70-decisions-oct2026    -> origin/docs/register-65-70-decisions-oct2026
+2026-11-08T16:42:54.5034500Z  * [new branch]      docs/register-debt033-debt030-oct2026    -> origin/docs/register-debt033-debt030-oct2026
+2026-11-08T16:42:54.5036298Z  * [new branch]      docs/response-path-disposition-c-plus-oct2026 -> origin/docs/response-path-disposition-c-plus-oct2026
+2026-11-08T16:42:54.5038040Z  * [new branch]      docs/result-record-compare-json-wording  -> origin/docs/result-record-compare-json-wording
+2026-11-08T16:42:54.5039796Z  * [new branch]      docs/withdraw-d5-ab-conformance-claim-oct2026 -> origin/docs/withdraw-d5-ab-conformance-claim-oct2026
+2026-11-08T16:42:54.5042623Z  * [new branch]      eval-lab/research-and-architecture       -> origin/eval-lab/research-and-architecture
+2026-11-08T16:42:54.5044357Z  * [new branch]      feature/capability-foundation-mission1   -> origin/feature/capability-foundation-mission1
+2026-11-08T16:42:54.5045898Z  * [new branch]      feature/intent-sufficiency-slice1        -> origin/feature/intent-sufficiency-slice1
+2026-11-08T16:42:54.5047518Z  * [new branch]      feature/verification-critic-evidence-phase-c -> origin/feature/verification-critic-evidence-phase-c
+2026-11-08T16:42:54.5049372Z  * [new branch]      fix/answer-text-error-redaction-sep2026  -> origin/fix/answer-text-error-redaction-sep2026
+2026-11-08T16:42:54.5139917Z  * [new branch]      fix/chromadb-pin-oct2026                 -> origin/fix/chromadb-pin-oct2026
+2026-11-08T16:42:54.5142929Z  * [new branch]      fix/ci-gate-r1-structured-report-oct2026 -> origin/fix/ci-gate-r1-structured-report-oct2026
+2026-11-08T16:42:54.5145789Z  * [new branch]      fix/ci-gate-r1a-hardening-oct2026        -> origin/fix/ci-gate-r1a-hardening-oct2026
+2026-11-08T16:42:54.5148841Z  * [new branch]      fix/codeql-remaining-stack-trace-flows-sep2026 -> origin/fix/codeql-remaining-stack-trace-flows-sep2026
+2026-11-08T16:42:54.5152287Z  * [new branch]      fix/ctx-auth-001-ctx-delete-001-sep2026  -> origin/fix/ctx-auth-001-ctx-delete-001-sep2026
+2026-11-08T16:42:54.5155193Z  * [new branch]      fix/ctx-auth-001b-rem004-authority-boundary-sep2026 -> origin/fix/ctx-auth-001b-rem004-authority-boundary-sep2026
+2026-11-08T16:42:54.5157273Z  * [new branch]      fix/ctx-auth-002-reconciled-remediation-oct2026 -> origin/fix/ctx-auth-002-reconciled-remediation-oct2026
+2026-11-08T16:42:54.5159507Z  * [new branch]      fix/ctx-auth-002-reject-content-corroboration-authority-sep2026 -> origin/fix/ctx-auth-002-reject-content-corroboration-authority-sep2026
+2026-11-08T16:42:54.5161797Z  * [new branch]      fix/ctx-scope-001-packet-b-sep2026       -> origin/fix/ctx-scope-001-packet-b-sep2026
+2026-11-08T16:42:54.5163355Z  * [new branch]      fix/d11-destroy-causal-classification    -> origin/fix/d11-destroy-causal-classification
+2026-11-08T16:42:54.5164992Z  * [new branch]      fix/debt-003-crash-restart-evidence-oct2026 -> origin/fix/debt-003-crash-restart-evidence-oct2026
+2026-11-08T16:42:54.5167021Z  * [new branch]      fix/debt-012-test-config-isolation-oct2026-16508008999830840178 -> origin/fix/debt-012-test-config-isolation-oct2026-16508008999830840178
+2026-11-08T16:42:54.5168925Z  * [new branch]      fix/debt-014-consolidated-oct2026        -> origin/fix/debt-014-consolidated-oct2026
+2026-11-08T16:42:54.5171059Z  * [new branch]      fix/debt-014-drift10-learning-boundary-oct2026 -> origin/fix/debt-014-drift10-learning-boundary-oct2026
+2026-11-08T16:42:54.5173245Z  * [new branch]      fix/debt-014-drift10-learning-boundary-oct2026-5777447058067279164 -> origin/fix/debt-014-drift10-learning-boundary-oct2026-5777447058067279164
+2026-11-08T16:42:54.5175329Z  * [new branch]      fix/debt-014-final-deep-review-oct2026   -> origin/fix/debt-014-final-deep-review-oct2026
+2026-11-08T16:42:54.5177042Z  * [new branch]      fix/debt-014-final-review-handoff-oct2026 -> origin/fix/debt-014-final-review-handoff-oct2026
+2026-11-08T16:42:54.5178764Z  * [new branch]      fix/debt-025-api-auth-boundary-oct2026   -> origin/fix/debt-025-api-auth-boundary-oct2026
+2026-11-08T16:42:54.5181194Z  * [new branch]      fix/debt-028-workflow-runtime-concurrency-lock-3172688588772460252 -> origin/fix/debt-028-workflow-runtime-concurrency-lock-3172688588772460252
+2026-11-08T16:42:54.5184211Z  * [new branch]      fix/debt-029-context-persistence-failure-isolation-oct2026-4372039021546723617 -> origin/fix/debt-029-context-persistence-failure-isolation-oct2026-4372039021546723617
+2026-11-08T16:42:54.5186688Z  * [new branch]      fix/debt-029-resolution-oct2026          -> origin/fix/debt-029-resolution-oct2026
+2026-11-08T16:42:54.5188454Z  * [new branch]      fix/distill-module-name-validation-sep2026 -> origin/fix/distill-module-name-validation-sep2026
+2026-11-08T16:42:54.5190277Z  * [new branch]      fix/fz02-b2b-stalled-deadline-oct2026    -> origin/fix/fz02-b2b-stalled-deadline-oct2026
+2026-11-08T16:42:54.5192340Z  * [new branch]      fix/fz02-b2c-cancellation-terminal-oct2026 -> origin/fix/fz02-b2c-cancellation-terminal-oct2026
+2026-11-08T16:42:54.5194105Z  * [new branch]      fix/fz02-provider-failure-oct2026        -> origin/fix/fz02-provider-failure-oct2026
+2026-11-08T16:42:54.5195886Z  * [new branch]      fix/fz03-scheduler-loop-containment-oct2026 -> origin/fix/fz03-scheduler-loop-containment-oct2026
+2026-11-08T16:42:54.5198093Z  * [new branch]      fix/fz04-adaptive-semaphore-permit-conservation-oct2026 -> origin/fix/fz04-adaptive-semaphore-permit-conservation-oct2026
+2026-11-08T16:42:54.5200263Z  * [new branch]      fix/fz07-ci-gate-exit-code-oct2026       -> origin/fix/fz07-ci-gate-exit-code-oct2026
+2026-11-08T16:42:54.5202217Z  * [new branch]      fix/import-bundle-boundary-oct2026       -> origin/fix/import-bundle-boundary-oct2026
+2026-11-08T16:42:54.5203915Z  * [new branch]      fix/import-root-containment-oct2026      -> origin/fix/import-root-containment-oct2026
+2026-11-08T16:42:54.5205689Z  * [new branch]      fix/module-factory-path-in-error-sep2026 -> origin/fix/module-factory-path-in-error-sep2026
+2026-11-08T16:42:54.5207514Z  * [new branch]      fix/module-name-path-containment-oct2026 -> origin/fix/module-name-path-containment-oct2026
+2026-11-08T16:42:54.5209206Z  * [new branch]      fix/test-c2-hermetic-upstream            -> origin/fix/test-c2-hermetic-upstream
+2026-11-08T16:42:54.5211020Z  * [new branch]      fix/test-d7-heartbeat-read-race          -> origin/fix/test-d7-heartbeat-read-race
+2026-11-08T16:42:54.5212620Z  * [new branch]      fix/test-net-proxy-read-to-eof           -> origin/fix/test-net-proxy-read-to-eof
+2026-11-08T16:42:54.5214340Z  * [new branch]      fix/updater-check-error-redaction-sep2026 -> origin/fix/updater-check-error-redaction-sep2026
+2026-11-08T16:42:54.5216312Z  * [new branch]      fix/workflow-failure-answer-redaction-oct2026 -> origin/fix/workflow-failure-answer-redaction-oct2026
+2026-11-08T16:42:54.5218441Z  * [new branch]      follow-up/fz02-b2d-latent-token-cancellation-oct2026 -> origin/follow-up/fz02-b2d-latent-token-cancellation-oct2026
+2026-11-08T16:42:54.5220068Z  * [new branch]      g4-fix                                   -> origin/g4-fix
+2026-11-08T16:42:54.5221623Z  * [new branch]      handoff/adr-kernel-07-live-check-oct2026 -> origin/handoff/adr-kernel-07-live-check-oct2026
+2026-11-08T16:42:54.5223320Z  * [new branch]      handoff/codeql-remediation-sep2026       -> origin/handoff/codeql-remediation-sep2026
+2026-11-08T16:42:54.5225182Z  * [new branch]      handoff/sandbox-network-isolation-v4     -> origin/handoff/sandbox-network-isolation-v4
+2026-11-08T16:42:54.5226887Z  * [new branch]      handoff/security-remediation-oct2026     -> origin/handoff/security-remediation-oct2026
+2026-11-08T16:42:54.5228544Z  * [new branch]      integration/b03-ci-evidence-20261106     -> origin/integration/b03-ci-evidence-20261106
+2026-11-08T16:42:54.5230296Z  * [new branch]      integration/capability-foundation-mission1 -> origin/integration/capability-foundation-mission1
+2026-11-08T16:42:54.5231944Z  * [new branch]      lost-work                                -> origin/lost-work
+2026-11-08T16:42:54.5232994Z  * [new branch]      main                                     -> origin/main
+2026-11-08T16:42:54.5234464Z  * [new branch]      preserve/ctx-auth-002-verified-99875d0-oct2026 -> origin/preserve/ctx-auth-002-verified-99875d0-oct2026
+2026-11-08T16:42:54.5236461Z  * [new branch]      remediate/ctx-auth-002-from-f13bfde-local-oct2026 -> origin/remediate/ctx-auth-002-from-f13bfde-local-oct2026
+2026-11-08T16:42:54.5238494Z  * [new branch]      repair/debt-012-codeql-and-side-effects-oct2026 -> origin/repair/debt-012-codeql-and-side-effects-oct2026
+2026-11-08T16:42:54.5240333Z  * [new branch]      repair/debt-012-codeql-current-oct2026   -> origin/repair/debt-012-codeql-current-oct2026
+2026-11-08T16:42:54.5242350Z  * [new branch]      repair/debt-012-root-isolation-coherent-oct2026 -> origin/repair/debt-012-root-isolation-coherent-oct2026
+2026-11-08T16:42:54.5244395Z  * [new branch]      revise/ctx-auth-002-evidence-from-7b57cf1-oct2026 -> origin/revise/ctx-auth-002-evidence-from-7b57cf1-oct2026
+2026-11-08T16:42:54.5246003Z  * [new branch]      sandbox-fabric                           -> origin/sandbox-fabric
+2026-11-08T16:42:54.5247415Z  * [new branch]      sandbox-network-isolation/b01-base       -> origin/sandbox-network-isolation/b01-base
+2026-11-08T16:42:54.5249175Z  * [new branch]      sandbox-network-isolation/b01-contract-suite -> origin/sandbox-network-isolation/b01-contract-suite
+2026-11-08T16:42:54.5251372Z  * [new branch]      sandbox-network-isolation/b02-net-namespace-gate -> origin/sandbox-network-isolation/b02-net-namespace-gate
+2026-11-08T16:42:54.5253485Z  * [new branch]      sandbox-network-isolation/b03-capacity-ipv6-guards -> origin/sandbox-network-isolation/b03-capacity-ipv6-guards
+2026-11-08T16:42:54.5255332Z  * [new branch]      security/codeql-findings-sep2026         -> origin/security/codeql-findings-sep2026
+2026-11-08T16:42:54.5256967Z  * [new branch]      security/freeze-reconciliation-sep2026   -> origin/security/freeze-reconciliation-sep2026
+2026-11-08T16:42:54.5258715Z  * [new branch]      security/privacy-wipe-containment-oct2026 -> origin/security/privacy-wipe-containment-oct2026
+2026-11-08T16:42:54.5260605Z  * [new branch]      spec/sandbox-network-isolation-master    -> origin/spec/sandbox-network-isolation-master
+2026-11-08T16:42:54.5262247Z  * [new branch]      study/b3-host-firewall-supplement        -> origin/study/b3-host-firewall-supplement
+2026-11-08T16:42:54.5263806Z  * [new branch]      study/sandbox-network-redesign           -> origin/study/sandbox-network-redesign
+2026-11-08T16:42:54.5265355Z  * [new branch]      sync/main-into-sandbox-fabric-b00        -> origin/sync/main-into-sandbox-fabric-b00
+2026-11-08T16:42:54.5266865Z  * [new branch]      tools/live-check-repeat-runs             -> origin/tools/live-check-repeat-runs
+2026-11-08T16:42:54.5268534Z  * [new branch]      wip/fz02-b2c-cancellation-checkpoint-oct2026 -> origin/wip/fz02-b2c-cancellation-checkpoint-oct2026
+2026-11-08T16:42:54.5270274Z  * [new branch]      wip/g4-work-save-checkpoint-nov2026      -> origin/wip/g4-work-save-checkpoint-nov2026
+2026-11-08T16:42:54.5271688Z  * [new tag]         v1.0.0                                   -> v1.0.0
+2026-11-08T16:42:54.5272803Z  * [new tag]         v4.2.0-k4.2-cognitive-frontend           -> v4.2.0-k4.2-cognitive-frontend
+2026-11-08T16:42:54.5274152Z  * [new ref]         923f5008c982ea78dee64e2dc3416f920434337c -> pull/110/merge
+2026-11-08T16:42:54.5276179Z ##[endgroup]
+2026-11-08T16:42:54.5276948Z ##[group]Determining the checkout info
+2026-11-08T16:42:54.5277841Z ##[endgroup]
+2026-11-08T16:42:54.5278355Z [command]/usr/bin/git sparse-checkout disable
+2026-11-08T16:42:54.5279954Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-08T16:42:54.5281923Z ##[group]Checking out the ref
+2026-11-08T16:42:54.5282785Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/110/merge
+2026-11-08T16:42:54.5818678Z Note: switching to 'refs/remotes/pull/110/merge'.
+2026-11-08T16:42:54.5819780Z 
+2026-11-08T16:42:54.5820896Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-11-08T16:42:54.5823133Z changes and commit them, and you can discard any commits you make in this
+2026-11-08T16:42:54.5825571Z state without impacting any branches by switching back to a branch.
+2026-11-08T16:42:54.5827108Z 
+2026-11-08T16:42:54.5827998Z If you want to create a new branch to retain commits you create, you may
+2026-11-08T16:42:54.5830097Z do so (now or later) by using -c with the switch command. Example:
+2026-11-08T16:42:54.5831544Z 
+2026-11-08T16:42:54.5832043Z   git switch -c <new-branch-name>
+2026-11-08T16:42:54.5832922Z 
+2026-11-08T16:42:54.5833397Z Or undo this operation with:
+2026-11-08T16:42:54.5834191Z 
+2026-11-08T16:42:54.5834626Z   git switch -
+2026-11-08T16:42:54.5835084Z 
+2026-11-08T16:42:54.5835855Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-11-08T16:42:54.5836763Z 
+2026-11-08T16:42:54.5837600Z HEAD is now at 923f500 Merge 3be06521ea0141b2700e622681127f4b7ea13e69 into 2491ae469edd6ef1267a14604c4f8f40d698f7ea
+2026-11-08T16:42:54.5841199Z ##[endgroup]
+2026-11-08T16:42:54.5889207Z [command]/usr/bin/git log -1 --format=%H
+2026-11-08T16:42:54.5915370Z 923f5008c982ea78dee64e2dc3416f920434337c
+2026-11-08T16:42:54.6291745Z ##[group]Run actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+2026-11-08T16:42:54.6292731Z with:
+2026-11-08T16:42:54.6293173Z   python-version: 3.12
+2026-11-08T16:42:54.6293692Z   check-latest: false
+2026-11-08T16:42:54.6298256Z   token: ***
+2026-11-08T16:42:54.6298739Z   update-environment: true
+2026-11-08T16:42:54.6299289Z   allow-prereleases: false
+2026-11-08T16:42:54.6299826Z   freethreaded: false
+2026-11-08T16:42:54.6300314Z ##[endgroup]
+2026-11-08T16:42:54.7691116Z ##[group]Installed versions
+2026-11-08T16:42:54.7830973Z (node:2402) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-08T16:42:54.7833261Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-08T16:42:54.7835024Z Successfully set up CPython (3.12.16)
+2026-11-08T16:42:54.7836897Z ##[endgroup]
+2026-11-08T16:42:54.8053859Z ##[group]Run python3 scripts/check_drift.py --out /tmp/drift-report.json
+2026-11-08T16:42:54.8055140Z [36;1mpython3 scripts/check_drift.py --out /tmp/drift-report.json[0m
+2026-11-08T16:42:54.8056370Z [36;1mecho "Full report: /tmp/drift-report.json (also uploaded as an artifact below)"[0m
+2026-11-08T16:42:54.8152567Z shell: /usr/bin/bash -e {0}
+2026-11-08T16:42:54.8153210Z env:
+2026-11-08T16:42:54.8153793Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:54.8154794Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+2026-11-08T16:42:54.8155788Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:54.8156696Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:54.8157724Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:54.8159694Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib
+2026-11-08T16:42:54.8161482Z ##[endgroup]
+2026-11-08T16:42:58.1618565Z   DRIFT-01: PASS
+2026-11-08T16:42:58.1619401Z   DRIFT-02: PASS
+2026-11-08T16:42:58.1620045Z   DRIFT-03: PASS
+2026-11-08T16:42:58.1620928Z   DRIFT-04: PASS
+2026-11-08T16:42:58.1621910Z   DRIFT-05: PASS
+2026-11-08T16:42:58.1622288Z   DRIFT-06: PASS
+2026-11-08T16:42:58.1623363Z       note: Heuristic (spec says only 'literal string analysis'): flags `<expr>.<...type...> == "literal"` comparisons in planner.py. A VIOLATION is worth a human read, not an automatic failure.
+2026-11-08T16:42:58.1624378Z   DRIFT-07: PASS
+2026-11-08T16:42:58.1625780Z       note: Declared architectural exception applied per D7 (frozen implementation plan §9 'DRIFT-07 Exception'): core/orchestrator.py:413 emits 'cognitive.planner_impasse_terminal'
+2026-11-08T16:42:58.1626824Z   DRIFT-08: PASS
+2026-11-08T16:42:58.1630847Z       note: Interpreted as: none of the 7 canonical contract dataclasses (RawRequest, Goal, ExecutionPlan, CapabilityDiscoveryResult, CompilationResult, OperationRecoveryBudget, CapabilityDiscoveryRequest) may be directly constructed in production code (tests/*.py exempt) outside their declared owner file. Test doubles and compatibility adapters are exempt via the tests/ exclusion, per the spec's explicit note. (K4.2-H2 D10: grown from 6 to 7 entries — see CANONICAL_OWNERS' own inline comment for what was added and why; the count here is computed, not hand-copied, specifically so it cannot go stale again the way the original 'six' description would have the moment this dict grew.)
+2026-11-08T16:42:58.1635256Z   DRIFT-09: PASS
+2026-11-08T16:42:58.1636753Z       note: Heuristic, narrower in confidence than DRIFT-08 — see this check's function docstring in scripts/check_drift.py for exactly what it does and doesn't catch.
+2026-11-08T16:42:58.1638074Z   DRIFT-10: PASS
+2026-11-08T16:42:58.1638421Z   DRIFT-11: PASS
+2026-11-08T16:42:58.1638906Z   DRIFT-12: PASS
+2026-11-08T16:42:58.1639239Z   DRIFT-13: PASS
+2026-11-08T16:42:58.1640069Z       note: Marker still present in docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md — open, as expected.
+2026-11-08T16:42:58.1641106Z   DRIFT-14: PASS
+2026-11-08T16:42:58.1641433Z   DRIFT-15: PASS
+2026-11-08T16:42:58.1641773Z {
+2026-11-08T16:42:58.1642131Z   "schema_version": "1.0",
+2026-11-08T16:42:58.1642529Z   "generated_at": "2026-11-08T16:42:58.160703+00:00",
+2026-11-08T16:42:58.1643091Z   "purpose": "K4.2-H2 D10 full architecture drift enforcement (post-H2-integration)",
+2026-11-08T16:42:58.1644438Z   "source_spec": "DRIFT-01..09: docs/architecture/implementation_plan - K42 v1-0 FINAL PRE-FREEZE ARCHITECTURE SPECIFICATION frozen.md, section 9 (Final Drift Verification Contract). DRIFT-10..15: docs/architecture/h2_packets/D10_ARCHITECTURE_DRIFT_ENFORCEMENT.md.",
+2026-11-08T16:42:58.1645583Z   "checks": [
+2026-11-08T16:42:58.1645888Z     {
+2026-11-08T16:42:58.1646223Z       "check_id": "DRIFT-01",
+2026-11-08T16:42:58.1646692Z       "rule": "core/cognitive/*.py must not import core.workflow.runtime",
+2026-11-08T16:42:58.1647262Z       "status": "PASS",
+2026-11-08T16:42:58.1647902Z       "violations": [],
+2026-11-08T16:42:58.1648321Z       "notes": ""
+2026-11-08T16:42:58.1648661Z     },
+2026-11-08T16:42:58.1648978Z     {
+2026-11-08T16:42:58.1649336Z       "check_id": "DRIFT-02",
+2026-11-08T16:42:58.1649841Z       "rule": "core/cognitive/*.py must not import core.capabilities.adapter_runtime",
+2026-11-08T16:42:58.1650353Z       "status": "PASS",
+2026-11-08T16:42:58.1650915Z       "violations": [],
+2026-11-08T16:42:58.1651248Z       "notes": ""
+2026-11-08T16:42:58.1651567Z     },
+2026-11-08T16:42:58.1651860Z     {
+2026-11-08T16:42:58.1652191Z       "check_id": "DRIFT-03",
+2026-11-08T16:42:58.1653020Z       "rule": "supervisor.py must not import plan() or compile() functions (importing CompilationResult/CompilationStatus is legitimate \u2014 a consumer, not a caller)",
+2026-11-08T16:42:58.1653827Z       "status": "PASS",
+2026-11-08T16:42:58.1654180Z       "violations": [],
+2026-11-08T16:42:58.1654520Z       "notes": ""
+2026-11-08T16:42:58.1654840Z     },
+2026-11-08T16:42:58.1655171Z     {
+2026-11-08T16:42:58.1655488Z       "check_id": "DRIFT-04",
+2026-11-08T16:42:58.1655955Z       "rule": "RawRequest construction only in core/cognitive/intent.py",
+2026-11-08T16:42:58.1656599Z       "status": "PASS",
+2026-11-08T16:42:58.1656950Z       "violations": [],
+2026-11-08T16:42:58.1657290Z       "notes": ""
+2026-11-08T16:42:58.1657597Z     },
+2026-11-08T16:42:58.1657894Z     {
+2026-11-08T16:42:58.1658210Z       "check_id": "DRIFT-05",
+2026-11-08T16:42:58.1659056Z       "rule": "SupervisorWorker must not call GovernanceKernel.evaluate_action() directly (docstring mentions are not violations \u2014 AST does not parse docstrings as calls)",
+2026-11-08T16:42:58.1659891Z       "status": "PASS",
+2026-11-08T16:42:58.1660237Z       "violations": [],
+2026-11-08T16:42:58.1660829Z       "notes": ""
+2026-11-08T16:42:58.1661121Z     },
+2026-11-08T16:42:58.1661387Z     {
+2026-11-08T16:42:58.1661710Z       "check_id": "DRIFT-06",
+2026-11-08T16:42:58.1662174Z       "rule": "No hard-coded capability type strings in Planner routing",
+2026-11-08T16:42:58.1662661Z       "status": "PASS",
+2026-11-08T16:42:58.1663005Z       "violations": [],
+2026-11-08T16:42:58.1663872Z       "notes": "Heuristic (spec says only 'literal string analysis'): flags `<expr>.<...type...> == \"literal\"` comparisons in planner.py. A VIOLATION is worth a human read, not an automatic failure."
+2026-11-08T16:42:58.1664729Z     },
+2026-11-08T16:42:58.1665024Z     {
+2026-11-08T16:42:58.1665342Z       "check_id": "DRIFT-07",
+2026-11-08T16:42:58.1666212Z       "rule": "cognitive.* events emitted only from core/cognitive/ or core/workers/ (exception: cognitive.planner_impasse_terminal from core/orchestrator.py, declared owner per D7)",
+2026-11-08T16:42:58.1667060Z       "status": "PASS",
+2026-11-08T16:42:58.1667403Z       "violations": [],
+2026-11-08T16:42:58.1668286Z       "notes": "Declared architectural exception applied per D7 (frozen implementation plan \u00a79 'DRIFT-07 Exception'): core/orchestrator.py:413 emits 'cognitive.planner_impasse_terminal'"
+2026-11-08T16:42:58.1669138Z     },
+2026-11-08T16:42:58.1669431Z     {
+2026-11-08T16:42:58.1669753Z       "check_id": "DRIFT-08",
+2026-11-08T16:42:58.1670315Z       "rule": "[CORRECTED] Canonical builders not bypassed by production code outside declared owner",
+2026-11-08T16:42:58.1671137Z       "status": "PASS",
+2026-11-08T16:42:58.1671476Z       "violations": [],
+2026-11-08T16:42:58.1674413Z       "notes": "Interpreted as: none of the 7 canonical contract dataclasses (RawRequest, Goal, ExecutionPlan, CapabilityDiscoveryResult, CompilationResult, OperationRecoveryBudget, CapabilityDiscoveryRequest) may be directly constructed in production code (tests/*.py exempt) outside their declared owner file. Test doubles and compatibility adapters are exempt via the tests/ exclusion, per the spec's explicit note. (K4.2-H2 D10: grown from 6 to 7 entries \u2014 see CANONICAL_OWNERS' own inline comment for what was added and why; the count here is computed, not hand-copied, specifically so it cannot go stale again the way the original 'six' description would have the moment this dict grew.)"
+2026-11-08T16:42:58.1676997Z     },
+2026-11-08T16:42:58.1677302Z     {
+2026-11-08T16:42:58.1677636Z       "check_id": "DRIFT-09",
+2026-11-08T16:42:58.1678163Z       "rule": "No unauthorized shared-contract producer outside declared owners",
+2026-11-08T16:42:58.1678683Z       "status": "PASS",
+2026-11-08T16:42:58.1679048Z       "violations": [],
+2026-11-08T16:42:58.1679909Z       "notes": "Heuristic, narrower in confidence than DRIFT-08 \u2014 see this check's function docstring in scripts/check_drift.py for exactly what it does and doesn't catch."
+2026-11-08T16:42:58.1680944Z     },
+2026-11-08T16:42:58.1681261Z     {
+2026-11-08T16:42:58.1681593Z       "check_id": "DRIFT-10",
+2026-11-08T16:42:58.1682903Z       "rule": "Intent Interpretation and Planner must not call GovernanceKernel.evaluate_action() directly (Governance sits at the compilation boundary only \u2014 extends DRIFT-05's same check, which independently still covers SupervisorWorker, to these two files)",
+2026-11-08T16:42:58.1684050Z       "status": "PASS",
+2026-11-08T16:42:58.1684400Z       "violations": [],
+2026-11-08T16:42:58.1684755Z       "notes": ""
+2026-11-08T16:42:58.1685245Z     },
+2026-11-08T16:42:58.1685549Z     {
+2026-11-08T16:42:58.1685877Z       "check_id": "DRIFT-11",
+2026-11-08T16:42:58.1687193Z       "rule": "interpret_request()/plan()/compile() importable as callables only from core/orchestrator.py in production code (importing the data types they return \u2014 Goal/ExecutionPlan/CompilationResult/CompilationStatus \u2014 is unrestricted; this checks the callables only)",
+2026-11-08T16:42:58.1688521Z       "status": "PASS",
+2026-11-08T16:42:58.1689053Z       "violations": [],
+2026-11-08T16:42:58.1689465Z       "notes": ""
+2026-11-08T16:42:58.1689792Z     },
+2026-11-08T16:42:58.1690108Z     {
+2026-11-08T16:42:58.1690658Z       "check_id": "DRIFT-12",
+2026-11-08T16:42:58.1693421Z       "rule": "No class outside core/cognitive/recovery.py (other than OperationRecoveryBudget itself) may define all three of consume()/remaining/exhausted \u2014 that exact trio is a strong, narrow signal of a shadow recovery authority. Does not flag RetryPolicy (core/workflow/definition.py) or any other config-only dataclass, since neither defines this method/property trio.",
+2026-11-08T16:42:58.1695165Z       "status": "PASS",
+2026-11-08T16:42:58.1695532Z       "violations": [],
+2026-11-08T16:42:58.1695874Z       "notes": ""
+2026-11-08T16:42:58.1696180Z     },
+2026-11-08T16:42:58.1696479Z     {
+2026-11-08T16:42:58.1696799Z       "check_id": "DRIFT-13",
+2026-11-08T16:42:58.1697754Z       "rule": "'RECONCILE-PENDING' marker in docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md must not silently disappear without a recorded resolution",
+2026-11-08T16:42:58.1698626Z       "status": "PASS",
+2026-11-08T16:42:58.1698988Z       "violations": [],
+2026-11-08T16:42:58.1699765Z       "notes": "Marker still present in docs/architecture/OCBRAIN_K4_2_COGNITIVE_FRONTEND_ARCHITECTURE_AUTHORITATIVE.md \u2014 open, as expected."
+2026-11-08T16:42:58.1700736Z     },
+2026-11-08T16:42:58.1701050Z     {
+2026-11-08T16:42:58.1701395Z       "check_id": "DRIFT-14",
+2026-11-08T16:42:58.1702874Z       "rule": "PlannerRequest constructed only in core/cognitive/planner.py or core/orchestrator.py (its two genuine production sites \u2014 an internal builder and the entrypoint's caller preparing its own call; complementary to DRIFT-08's single-owner-file checks, for the one canonical contract that doesn't fit that shape)",
+2026-11-08T16:42:58.1704206Z       "status": "PASS",
+2026-11-08T16:42:58.1704556Z       "violations": [],
+2026-11-08T16:42:58.1704889Z       "notes": ""
+2026-11-08T16:42:58.1705201Z     },
+2026-11-08T16:42:58.1705502Z     {
+2026-11-08T16:42:58.1705834Z       "check_id": "DRIFT-15",
+2026-11-08T16:42:58.1706934Z       "rule": "No cognitive.* event is ever passed to a .emit(...) call (EventBus's method \u2014 the legitimate cognitive.* transport, EventStream, is reached via .append(...)/_emit_event(...) only)",
+2026-11-08T16:42:58.1707831Z       "status": "PASS",
+2026-11-08T16:42:58.1708184Z       "violations": [],
+2026-11-08T16:42:58.1708559Z       "notes": ""
+2026-11-08T16:42:58.1708933Z     }
+2026-11-08T16:42:58.1709236Z   ],
+2026-11-08T16:42:58.1709544Z   "summary": {
+2026-11-08T16:42:58.1709873Z     "total": 15,
+2026-11-08T16:42:58.1710199Z     "pass": 15,
+2026-11-08T16:42:58.1710658Z     "violation": 0
+2026-11-08T16:42:58.1710983Z   }
+2026-11-08T16:42:58.1711287Z }
+2026-11-08T16:42:58.1711777Z Full report: /tmp/drift-report.json (also uploaded as an artifact below)
+2026-11-08T16:42:58.1799660Z ##[group]Run actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+2026-11-08T16:42:58.1800144Z with:
+2026-11-08T16:42:58.1800549Z   name: drift-report
+2026-11-08T16:42:58.1800840Z   path: /tmp/drift-report.json
+2026-11-08T16:42:58.1801164Z   if-no-files-found: warn
+2026-11-08T16:42:58.1801456Z   compression-level: 6
+2026-11-08T16:42:58.1801717Z   overwrite: false
+2026-11-08T16:42:58.1801979Z   include-hidden-files: false
+2026-11-08T16:42:58.1802257Z env:
+2026-11-08T16:42:58.1802554Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:58.1803200Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+2026-11-08T16:42:58.1803673Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:58.1804106Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:58.1804535Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:58.1805002Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib
+2026-11-08T16:42:58.1805376Z ##[endgroup]
+2026-11-08T16:42:58.3496456Z (node:2415) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-08T16:42:58.3497697Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-08T16:42:58.3547626Z With the provided path, there will be 1 file uploaded
+2026-11-08T16:42:58.3550099Z Artifact name is valid!
+2026-11-08T16:42:58.3551440Z Root directory input is valid!
+2026-11-08T16:42:58.7373426Z Beginning upload of artifact content to blob storage
+2026-11-08T16:42:58.7585082Z (node:2415) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-11-08T16:42:59.0133539Z Uploaded bytes 2318
+2026-11-08T16:42:59.0845974Z Finished uploading artifact content to blob storage!
+2026-11-08T16:42:59.0847467Z SHA256 digest of uploaded artifact zip is 1213721ff2b41ac11b003e26816ed46a7a57bf9793ad8431199653e9922a1d13
+2026-11-08T16:42:59.0851526Z Finalizing artifact upload
+2026-11-08T16:42:59.5501595Z Artifact drift-report.zip successfully finalized. Artifact ID 13624858577
+2026-11-08T16:42:59.5521576Z Artifact drift-report has been successfully uploaded! Final size is 2318 bytes. Artifact ID is 13624858577
+2026-11-08T16:42:59.5522614Z Artifact download URL: https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/42501282719/artifacts/13624858577
+2026-11-08T16:42:59.5652382Z ##[group]Run BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+2026-11-08T16:42:59.5652867Z [36;1mBRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"[0m
+2026-11-08T16:42:59.5653210Z [36;1mPACKET=$(python3 -c "[0m
+2026-11-08T16:42:59.5653466Z [36;1mimport json[0m
+2026-11-08T16:42:59.5653801Z [36;1mm = json.load(open('docs/architecture/h2_packet_ownership.json'))[0m
+2026-11-08T16:42:59.5654197Z [36;1mbranch = '$BRANCH'[0m
+2026-11-08T16:42:59.5654561Z [36;1mmatch = [pid for pid, e in m['packets'].items() if e['branch'] == branch][0m
+2026-11-08T16:42:59.5654968Z [36;1mprint(match[0] if match else '')[0m
+2026-11-08T16:42:59.5655244Z [36;1m")[0m
+2026-11-08T16:42:59.5655454Z [36;1mif [ -z "$PACKET" ]; then[0m
+2026-11-08T16:42:59.5655878Z [36;1m  echo "Branch '$BRANCH' is not one of this manifest's declared packet branches -- "[0m
+2026-11-08T16:42:59.5656534Z [36;1m  echo "ownership check is scoped to packet branches (docs/architecture/h2_packet_ownership.json), "[0m
+2026-11-08T16:42:59.5657194Z [36;1m  echo "skipping cleanly rather than failing on an inapplicable check."[0m
+2026-11-08T16:42:59.5657597Z [36;1melse[0m
+2026-11-08T16:42:59.5657853Z [36;1m  echo "Branch '$BRANCH' -> packet $PACKET"[0m
+2026-11-08T16:42:59.5658260Z [36;1m  python3 scripts/check_packet_ownership.py --packet "$PACKET"[0m
+2026-11-08T16:42:59.5658627Z [36;1mfi[0m
+2026-11-08T16:42:59.5710121Z shell: /usr/bin/bash -e {0}
+2026-11-08T16:42:59.5710610Z env:
+2026-11-08T16:42:59.5710915Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:59.5711387Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib/pkgconfig
+2026-11-08T16:42:59.5711831Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:59.5712218Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:59.5712611Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.16/x64
+2026-11-08T16:42:59.5713011Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.16/x64/lib
+2026-11-08T16:42:59.5713348Z ##[endgroup]
+2026-11-08T16:42:59.5993051Z Branch 'docs/debt-025-control-plane-authorization-design-nov2026' is not one of this manifest's declared packet branches -- 
+2026-11-08T16:42:59.5994833Z ownership check is scoped to packet branches (docs/architecture/h2_packet_ownership.json), 
+2026-11-08T16:42:59.5995796Z skipping cleanly rather than failing on an inapplicable check.
+2026-11-08T16:42:59.6082366Z Post job cleanup.
+2026-11-08T16:42:59.7285995Z (node:2430) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-11-08T16:42:59.7287496Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-11-08T16:42:59.7472616Z Post job cleanup.
+2026-11-08T16:42:59.8408169Z [command]/usr/bin/git version
+2026-11-08T16:42:59.8457887Z git version 2.56.0
+2026-11-08T16:42:59.8503279Z Temporarily overriding HOME='/home/runner/work/_temp/3a15e54c-52a9-48ab-b829-7cff1a69cb53' before making global git config changes
+2026-11-08T16:42:59.8506719Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-08T16:42:59.8510227Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/ocbrain-v4.1/ocbrain-v4.1
+2026-11-08T16:42:59.8554738Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-08T16:42:59.8598321Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-08T16:42:59.8950016Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-08T16:42:59.8983809Z http.https://github.com/.extraheader
+2026-11-08T16:42:59.8998597Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-11-08T16:42:59.9048168Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-08T16:42:59.9359839Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-08T16:42:59.9395474Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-08T16:42:59.9841595Z Cleaning up orphan processes
+2026-11-08T16:43:00.0244917Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11d5960a326750d5838078e36cf38b85af677262, actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065, actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
