@@ -1,0 +1,51 @@
+"""Mutants of scripts/ci_docker_preflight.py covering every stage (not only --require-executable)."""
+import shutil, subprocess, sys
+from pathlib import Path
+
+ROOT = Path("/home/claude/ocbrain-v4.1")
+F = ROOT / "scripts/ci_docker_preflight.py"
+orig = F.read_text()
+backup = Path(sys.argv[1]); shutil.copy(F, backup)
+
+
+def swap(a, b):
+    assert orig.count(a) == 1, f"pattern count {orig.count(a)}: {a!r}"
+    return orig.replace(a, b)
+
+
+mutants = {
+ "P1 always pull, never reuse a present image": swap("    if not present:\n        prov[\"status\"] = \"pulled\"", "    if True:\n        prov[\"status\"] = \"pulled\""),
+ "P2 pull attempts unbounded by one": swap("for n in range(1, attempts + 1):", "for n in range(1, attempts + 2):"),
+ "P3 no retry after a failed pull": swap("            if rc == 0:\n                break\n            if n < attempts:\n                time.sleep(delay)", "            break"),
+ "P4 fallback image on later pull attempts": swap('rc, out, err = _docker(["pull", image], 900)', 'rc, out, err = _docker(["pull", image if n == 1 else "alpine:3"], 900)'),
+ "P5 identity accepts empty / <no value> digest": swap('    if not digest or digest == "<no value>":', "    if False:"),
+ "P6 identity accepts any image id": swap("    if rc != 0 or not _IMAGE_ID_RE.match(image_id):", "    if rc != 0:"),
+ "P7 identity asks a different question than the product": swap('_PRODUCT_DIGEST_FORMAT = "{{index .RepoDigests 0}}"', '_PRODUCT_DIGEST_FORMAT = "{{.Id}}"'),
+ "P8 smoke ignores a failed container start": swap('    if rc != 0:\n        raise PreflightFailure(\n            "smoke", f"the daemon holds', '    if False:\n        raise PreflightFailure(\n            "smoke", f"the daemon holds'),
+ "P9 smoke run may pull": swap('["run", "--rm", "--pull", "never", "--network", "none", image, "true"]', '["run", "--rm", "--network", "none", image, "true"]'),
+ "P10 smoke run has network": swap('["run", "--rm", "--pull", "never", "--network", "none", image, "true"]', '["run", "--rm", "--pull", "never", image, "true"]'),
+ "P11 report not written on failure": swap("    if args.report is not None:\n", "    if args.report is not None and failure is None:\n"),
+ "P12 unreachable daemon ignored": swap('    if rc != 0:\n        raise PreflightFailure("daemon", f"the docker daemon is not reachable', '    if False:\n        raise PreflightFailure("daemon", f"the docker daemon is not reachable'),
+ "P13 failing preflight exits 0": swap("        return 1\n    required = report", "        return 0\n    required = report"),
+ "P14 empty --image accepted": swap("    if not args.image.strip():", "    if False:"),
+ "P15 zero pull attempts accepted": swap("    if args.pull_attempts < 1:", "    if False:"),
+ "P16 no post-pull presence check": swap('        present, why = _image_present(image)\n        if not present:', '        present, why = True, ""\n        if not present:'),
+ "P17 failed pull attempt not recorded": swap('            prov["attempts"].append({"attempt": n, "rc": rc, "output_tail": last})\n', ''),
+ "P18 image id not recorded in the report": swap('report["image"] = {"ref": image, "id": image_id, "resolved_digest": digest}', 'report["image"] = {"ref": image, "id": "", "resolved_digest": digest}'),
+ "P19 failure stage not recorded": swap('        report["failed_stage"] = exc.stage\n', ''),
+ "P20 bare-name validation removed": swap("        if not _BARE_NAME_RE.match(name):", "        if False:"),
+}
+survivors = []
+try:
+    for name, text in mutants.items():
+        F.write_text(text)
+        r = subprocess.run([sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "-x", "tests/test_ci_docker_preflight.py"],
+                           cwd=ROOT, capture_output=True, text=True)
+        killed = r.returncode != 0
+        print(("KILLED  " if killed else "SURVIVED"), name)
+        if not killed:
+            survivors.append(name)
+finally:
+    shutil.copy(backup, F)
+print("restored identical:", F.read_text() == orig)
+print("survivors:", survivors)

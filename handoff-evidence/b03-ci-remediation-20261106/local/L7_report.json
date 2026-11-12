@@ -1,0 +1,54 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": "smoke",
+  "finished_at": "2026-11-11T21:05:38+00:00",
+  "image": {
+    "id": "sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299",
+    "ref": "python:3.12-alpine",
+    "resolved_digest": "python@sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299"
+  },
+  "image_ref": "python:3.12-alpine",
+  "message": "'python:3.12-alpine' lacks required executables: missing: mkfifo",
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "failed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "capability_probes": true,
+    "command": "docker run --rm --pull never --network none -e PATH=<container PATH> python:3.12-alpine true",
+    "digest_ref": "python@sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299",
+    "digest_run_rc": 0,
+    "executables_rc": 1,
+    "rc": 0,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep",
+      "date",
+      "mv",
+      "rm",
+      "cat",
+      "ln",
+      "mkdir",
+      "mkfifo",
+      "hostname",
+      "readlink",
+      "ls"
+    ]
+  },
+  "started_at": "2026-11-11T21:05:36+00:00"
+}

@@ -1,0 +1,40 @@
+"""Mutants of core/sandbox/backends/_seccomp.py: the seccomp tests must fail for each."""
+import shutil, subprocess, sys
+from pathlib import Path
+
+ROOT = Path("/home/claude/ocbrain-v4.1")
+F = ROOT / "core/sandbox/backends/_seccomp.py"
+orig = F.read_text()
+backup = Path(sys.argv[1]); shutil.copy(F, backup)
+
+def swap(a, b):
+    assert orig.count(a) == 1, f"pattern count {orig.count(a)}: {a!r}"
+    return orig.replace(a, b)
+
+mutants = {
+ "S1 AF_ALG errno EAFNOSUPPORT->EPERM": swap("    (AF_ALG, _EAFNOSUPPORT,\n", "    (AF_ALG, _EPERM,\n"),
+ "S2 AF_ALG entry removed": swap(orig[orig.index("    (AF_ALG, _EAFNOSUPPORT,"):orig.index("    (AF_VSOCK, _EPERM,")], ""),
+ "S3 AF_ALG constant 38->39": swap("AF_ALG = 38\n", "AF_ALG = 39\n"),
+ "S4 socket-family loop never runs": swap("if socket_num >= 0 and deny_socket_families:", "if False:"),
+ "S5 filter never loaded": swap("        rc = lib.seccomp_load(ctx)\n        if rc != 0:", "        rc = 0\n        if rc != 0:"),
+ "S6 blanket socket() block": swap("rc = lib.seccomp_rule_add_array(\n                    ctx, _scmp_act_errno(family_errno), socket_num, 1, ctypes.byref(arg_cmp)\n                )",
+                                   "rc = lib.seccomp_rule_add(ctx, _scmp_act_errno(family_errno), socket_num, 0)"),
+ "S7 AF_VSOCK errno EPERM->EAFNOSUPPORT": swap("    (AF_VSOCK, _EPERM,\n", "    (AF_VSOCK, _EAFNOSUPPORT,\n"),
+ "S8 comparator EQ->NE": swap("op=_SCMP_CMP_EQ, datum_a=family", "op=_SCMP_CMP_NE, datum_a=family"),
+ "S9 comparator inspects arg 1 not arg 0": swap("_ScmpArgCmp(arg=0, op=_SCMP_CMP_EQ", "_ScmpArgCmp(arg=1, op=_SCMP_CMP_EQ"),
+ "S10 per-entry errno ignored (always EPERM)": swap("_scmp_act_errno(family_errno), socket_num, 1", "_scmp_act_errno(_EPERM), socket_num, 1"),
+}
+survivors = []
+try:
+    for name, text in mutants.items():
+        F.write_text(text)
+        r = subprocess.run([sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "tests/core/sandbox/test_seccomp.py"],
+                           cwd=ROOT, capture_output=True, text=True)
+        killed = r.returncode != 0
+        failed = [l for l in r.stdout.splitlines() if l.startswith("FAILED")]
+        print(("KILLED  " if killed else "SURVIVED"), name, "|", "; ".join(x.split("::")[-1].split(" ")[0] for x in failed)[:150])
+        if not killed: survivors.append(name)
+finally:
+    shutil.copy(backup, F)
+print("restored identical:", F.read_text() == orig)
+print("survivors:", survivors)

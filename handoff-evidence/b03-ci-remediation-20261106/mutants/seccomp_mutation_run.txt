@@ -1,0 +1,12 @@
+KILLED   S1 AF_ALG errno EAFNOSUPPORT->EPERM | test_production_table_pins_the_errno_of_each_denied_socket_family; test_production_filter_blocks_af_alg_socket_creation
+KILLED   S2 AF_ALG entry removed | test_denied_socket_families_is_non_trivial; test_production_table_pins_the_errno_of_each_denied_socket_family
+KILLED   S3 AF_ALG constant 38->39 | test_denied_socket_families_is_non_trivial
+KILLED   S4 socket-family loop never runs | test_argument_filter_matches_the_af_alg_family_value_on_any_kernel; test_production_filter_blocks_af_vsock_socket_creation; test_a_supported_family_ex
+KILLED   S5 filter never loaded | test_ptrace_is_blocked_after_apply; test_argument_filter_matches_the_af_alg_family_value_on_any_kernel; test_production_filter_blocks_af_alg_socket_cr
+KILLED   S6 blanket socket() block | test_ordinary_sockets_still_work_after_apply; test_argument_filter_matches_the_af_alg_family_value_on_any_kernel; test_production_filter_blocks_af_alg
+KILLED   S7 AF_VSOCK errno EPERM->EAFNOSUPPORT | test_production_table_pins_the_errno_of_each_denied_socket_family; test_production_filter_blocks_af_vsock_socket_creation
+KILLED   S8 comparator EQ->NE | test_apply_denylist_blocks_most_syscalls_on_this_arch; test_ptrace_is_blocked_after_apply; test_getpid_unaffected_after_apply; test_ordinary_sockets_s
+KILLED   S9 comparator inspects arg 1 not arg 0 | test_argument_filter_matches_the_af_alg_family_value_on_any_kernel; test_production_filter_blocks_af_vsock_socket_creation; test_a_supported_family_ex
+KILLED   S10 per-entry errno ignored (always EPERM) | test_argument_filter_matches_the_af_alg_family_value_on_any_kernel; test_production_filter_blocks_af_alg_socket_creation; test_a_supported_family_exer
+restored identical: True
+survivors: []

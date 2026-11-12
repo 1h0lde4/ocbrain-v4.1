@@ -1,0 +1,9 @@
+=== L3: image present but WITHOUT python3 ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'ocbrain-test/nopython:local' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:3fec70d01a388f45bab2a95722a85a212eaf81e0e254a28d1b16946984d83ade
+docker-preflight: resolved digest=ocbrain-test/nopython@sha256:3fec70d01a388f45bab2a95722a85a212eaf81e0e254a28d1b16946984d83ade
+docker-preflight: FAIL [smoke] the daemon holds 'ocbrain-test/nopython:local' but could not run a container from it (rc=127): docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "true": executable file not found in $PATH
+
+Run 'docker run --help' for more information
+exit=1

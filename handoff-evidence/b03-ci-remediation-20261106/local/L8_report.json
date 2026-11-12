@@ -1,0 +1,55 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": null,
+  "finished_at": "2026-11-11T21:06:02+00:00",
+  "image": {
+    "id": "sha256:d8622640d2c1e9b039bb7c1469c4b912ea98b2019832a6f6ef496b569bc93ac9",
+    "ref": "python:3.12-alpine",
+    "resolved_digest": "python@sha256:d8622640d2c1e9b039bb7c1469c4b912ea98b2019832a6f6ef496b569bc93ac9"
+  },
+  "image_ref": "python:3.12-alpine",
+  "message": null,
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "passed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "capabilities_rc": 0,
+    "capability_probes": true,
+    "command": "docker run --rm --pull never --network none -e PATH=<container PATH> python:3.12-alpine true",
+    "digest_ref": "python@sha256:d8622640d2c1e9b039bb7c1469c4b912ea98b2019832a6f6ef496b569bc93ac9",
+    "digest_run_rc": 0,
+    "executables_rc": 0,
+    "rc": 0,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep",
+      "date",
+      "mv",
+      "rm",
+      "cat",
+      "ln",
+      "mkdir",
+      "mkfifo",
+      "hostname",
+      "readlink",
+      "ls"
+    ]
+  },
+  "started_at": "2026-11-11T21:06:01+00:00"
+}

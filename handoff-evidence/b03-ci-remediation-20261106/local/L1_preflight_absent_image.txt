@@ -1,0 +1,4 @@
+=== L1: image ABSENT, registry unreachable (pull must fail closed; no fallback) ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: FAIL [provision] could not pull 'python:3.12-alpine' after 2 attempt(s); last rc=1: Error response from daemon: failed to resolve reference "docker.io/library/python:3.12-alpine": failed to do request: Head "https://registry-1.docker.io/v2/library/python/manifests/3.12-alpine": Forbidden
+exit=1

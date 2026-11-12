@@ -1,0 +1,16 @@
+KILLED   E1 skip the executables check
+KILLED   E2 ignore executables rc
+KILLED   E3 required names not passed to sh
+KILLED   E4 check runs with the image entrypoint
+KILLED   E5 check may pull
+KILLED   E6 check has network
+KILLED   E7 executables_rc not recorded
+KILLED   E8 required list not recorded
+KILLED   E9 lookup counts directories
+KILLED   E10 lookup counts non-executable files
+KILLED   E11 lookup uses command -v (builtins count)
+KILLED   E12 lookup never fails
+KILLED   E13 lookup stops at first path entry
+KILLED   E14 lookup silent about the name
+restored identical: True
+survivors: []

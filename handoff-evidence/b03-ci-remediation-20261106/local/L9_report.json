@@ -1,0 +1,40 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": "smoke",
+  "finished_at": "2026-11-11T21:06:15+00:00",
+  "image": {
+    "id": "sha256:6b301487037acf3b07ff9b63f901275dd3ca4f456d246447945d91f0a73a0700",
+    "ref": "ocbrain-test/nodatenano:local",
+    "resolved_digest": "ocbrain-test/nodatenano@sha256:6b301487037acf3b07ff9b63f901275dd3ca4f456d246447945d91f0a73a0700"
+  },
+  "image_ref": "ocbrain-test/nodatenano:local",
+  "message": "'ocbrain-test/nodatenano:local' lacks an applet feature the tests use: probe failed: date +%s%N is not numeric (got: 1731000000N)",
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "failed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "capabilities_rc": 1,
+    "capability_probes": true,
+    "command": "docker run --rm --pull never --network none -e PATH=<container PATH> ocbrain-test/nodatenano:local true",
+    "digest_ref": "ocbrain-test/nodatenano@sha256:6b301487037acf3b07ff9b63f901275dd3ca4f456d246447945d91f0a73a0700",
+    "digest_run_rc": 0,
+    "executables_rc": 0,
+    "rc": 0,
+    "required_executables": [
+      "sh",
+      "date",
+      "sleep",
+      "head"
+    ]
+  },
+  "started_at": "2026-11-11T21:06:14+00:00"
+}

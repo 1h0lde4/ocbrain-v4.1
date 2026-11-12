@@ -1,0 +1,7 @@
+=== L9: preflight with --probe-capabilities vs an image whose date prints a literal N (no nanoseconds) ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'ocbrain-test/nodatenano:local' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:6b301487037acf3b07ff9b63f901275dd3ca4f456d246447945d91f0a73a0700
+docker-preflight: resolved digest=ocbrain-test/nodatenano@sha256:6b301487037acf3b07ff9b63f901275dd3ca4f456d246447945d91f0a73a0700
+docker-preflight: FAIL [smoke] 'ocbrain-test/nodatenano:local' lacks an applet feature the tests use: probe failed: date +%s%N is not numeric (got: 1731000000N)
+exit=1

@@ -1,0 +1,7 @@
+=== L7: new preflight (probes + mkfifo required) vs the PREVIOUS stand-in image, which has no mkfifo ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'python:3.12-alpine' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299
+docker-preflight: resolved digest=python@sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299
+docker-preflight: FAIL [smoke] 'python:3.12-alpine' lacks required executables: missing: mkfifo
+exit=1

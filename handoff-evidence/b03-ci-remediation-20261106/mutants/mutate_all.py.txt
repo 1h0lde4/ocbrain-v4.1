@@ -1,0 +1,163 @@
+"""Mutation run over a SCRATCH COPY of the working tree (the real repository is never touched).
+
+usage: mutate_all.py <repo> <scratch-copy-dir> <python>
+
+For each mutant: edit one file in the copy, run the tests that are supposed to protect it, expect a
+non-zero exit (KILLED).  A passing run is a SURVIVOR and is reported.  Every pattern must match exactly
+once, so a stale mutant fails loudly instead of silently becoming a no-op.
+"""
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(sys.argv[1])
+COPY = Path(sys.argv[2])
+PY = sys.argv[3]
+
+if COPY.exists():
+    shutil.rmtree(COPY)
+COPY.mkdir(parents=True)
+files = subprocess.run(["git", "ls-files", "-z", "-c", "-o", "--exclude-standard"], cwd=REPO, capture_output=True, check=True).stdout
+tar = subprocess.Popen(["tar", "--null", "-T", "-", "-cf", "-"], cwd=REPO, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+extract = subprocess.Popen(["tar", "-x", "-C", str(COPY)], stdin=tar.stdout)
+assert tar.stdin is not None
+tar.stdin.write(files)
+tar.stdin.close()
+extract.wait()
+tar.wait()
+assert (COPY / "scripts/ci_docker_preflight.py").exists()
+
+PRE = "scripts/ci_docker_preflight.py"
+WF = ".github/workflows/ci.yml"
+SEC = "core/sandbox/backends/_seccomp.py"
+T_PRE = ["tests/test_ci_docker_preflight.py"]
+T_WF = ["tests/test_ci_workflow_config.py", "tests/test_ci_test_gate.py"]
+T_SEC = ["tests/core/sandbox/test_seccomp.py"]
+
+M: list[tuple[str, str, str, str, list[str]]] = []
+
+
+def m(name: str, rel: str, old: str, new: str, tests: list[str]) -> None:
+    M.append((name, rel, old, new, tests))
+
+
+# ---------------------------------------------------------------- preflight: stages
+m("P01 always pull, never reuse a present image", PRE, '    if not present:\n        prov["status"] = "pulled"', '    if True:\n        prov["status"] = "pulled"', T_PRE)
+m("P02 one pull attempt too many", PRE, "for n in range(1, attempts + 1):", "for n in range(1, attempts + 2):", T_PRE)
+m("P03 no retry after a failed pull", PRE, "            if rc == 0:\n                break\n            if n < attempts:\n                time.sleep(delay)", "            break", T_PRE)
+m("P04 fallback image on later pull attempts", PRE, 'rc, out, err = _docker(["pull", image], 900)', 'rc, out, err = _docker(["pull", image if n == 1 else "alpine:3"], 900)', T_PRE)
+m("P05 identity accepts empty / <no value> digest", PRE, '    if not digest or digest == "<no value>":', "    if False:", T_PRE)
+m("P06 identity accepts any image id", PRE, "    if rc != 0 or not _IMAGE_ID_RE.match(image_id):", "    if rc != 0:", T_PRE)
+m("P07 identity asks another question than the product", PRE, '_PRODUCT_DIGEST_FORMAT = "{{index .RepoDigests 0}}"', '_PRODUCT_DIGEST_FORMAT = "{{.Id}}"', T_PRE)
+m("P08 tag smoke run failure ignored", PRE, '    smoke["rc"] = rc\n    if rc != 0:', '    smoke["rc"] = rc\n    if False:', T_PRE)
+m("P09 report not written on failure", PRE, "    if args.report is not None:\n", "    if args.report is not None and failure is None:\n", T_PRE)
+m("P10 unreachable daemon ignored", PRE, '    if rc != 0:\n        raise PreflightFailure("daemon", f"the docker daemon is not reachable', '    if False:\n        raise PreflightFailure("daemon", f"the docker daemon is not reachable', T_PRE)
+m("P11 failing preflight exits 0", PRE, "        return 1\n    required = report", "        return 0\n    required = report", T_PRE)
+m("P12 empty --image accepted", PRE, "    if not args.image.strip():", "    if False:", T_PRE)
+m("P13 zero pull attempts accepted", PRE, "    if args.pull_attempts < 1:", "    if False:", T_PRE)
+m("P14 no post-pull presence check", PRE, '        present, why = _image_present(image)\n        if not present:', '        present, why = True, ""\n        if not present:', T_PRE)
+m("P15 failed pull attempt not recorded", PRE, '            prov["attempts"].append({"attempt": n, "rc": rc, "output_tail": last})\n', "", T_PRE)
+m("P16 image id not recorded", PRE, 'report["image"] = {"ref": image, "id": image_id, "resolved_digest": digest}', 'report["image"] = {"ref": image, "id": "", "resolved_digest": digest}', T_PRE)
+m("P17 failed stage not recorded", PRE, '        report["failed_stage"] = exc.stage\n', "", T_PRE)
+m("P18 bare-name validation removed", PRE, "        if not _BARE_NAME_RE.match(name):", "        if False:", T_PRE)
+m("P19 bare-name regex allows a leading dash", PRE, '_BARE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")', '_BARE_NAME_RE = re.compile(r"^[A-Za-z0-9._+-]+$")', T_PRE)
+m("P20 image-looks-like-an-option check removed", PRE, '    if args.image.strip().startswith("-"):', "    if False:", T_PRE)
+# ---------------------------------------------------------------- preflight: how containers are started
+RUNFLAGS = 'args = ["run", "--rm", "--pull", "never", "--network", "none", "-e", f"PATH={_CONTAINER_PATH}"]'
+m("P21 containers may pull (--pull never dropped)", PRE, RUNFLAGS, 'args = ["run", "--rm", "--network", "none", "-e", f"PATH={_CONTAINER_PATH}"]', T_PRE)
+m("P22 containers pull always", PRE, RUNFLAGS, 'args = ["run", "--rm", "--pull", "always", "--network", "none", "-e", f"PATH={_CONTAINER_PATH}"]', T_PRE)
+m("P23 containers have a network (--network none dropped)", PRE, RUNFLAGS, 'args = ["run", "--rm", "--pull", "never", "-e", f"PATH={_CONTAINER_PATH}"]', T_PRE)
+m("P24 containers on the host network", PRE, RUNFLAGS, 'args = ["run", "--rm", "--pull", "never", "--network", "host", "-e", f"PATH={_CONTAINER_PATH}"]', T_PRE)
+m("P25 product PATH not passed", PRE, RUNFLAGS, 'args = ["run", "--rm", "--pull", "never", "--network", "none"]', T_PRE)
+m("P26 PATH constant drifts from the product's", PRE, '_CONTAINER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"', '_CONTAINER_PATH = "/usr/local/bin:/usr/bin:/bin"', T_PRE)
+# ---------------------------------------------------------------- preflight: digest run, executables, probes
+m("P27 digest run skipped", PRE, '    rc, out, err = _run_in_image(digest, "true")', "    rc, out, err = 0, '', ''", T_PRE)
+m("P28 digest run failure ignored", PRE, '    smoke["digest_run_rc"] = rc\n    if rc != 0:', '    smoke["digest_run_rc"] = rc\n    if False:', T_PRE)
+m("P29 digest run uses the tag instead", PRE, '    rc, out, err = _run_in_image(digest, "true")', '    rc, out, err = _run_in_image(image, "true")', T_PRE)
+m("P30 executables never checked", PRE, "    if required:\n        rc, out, err", "    if False:\n        rc, out, err", T_PRE)
+m("P31 executable check result ignored", PRE, '        smoke["executables_rc"] = rc\n        if rc != 0:', '        smoke["executables_rc"] = rc\n        if False:', T_PRE)
+m("P32 executable check runs another image", PRE, '_run_in_image(image, "-c", _FIND_EXECUTABLES, "sh", *required, entrypoint="sh")', '_run_in_image("alpine:3", "-c", _FIND_EXECUTABLES, "sh", *required, entrypoint="sh")', T_PRE)
+m("P33 executable check without --entrypoint sh", PRE, '_run_in_image(image, "-c", _FIND_EXECUTABLES, "sh", *required, entrypoint="sh")', '_run_in_image(image, "sh", "-c", _FIND_EXECUTABLES, "sh", *required)', T_PRE)
+m("P34 capability probes never run", PRE, "    if probe:\n", "    if False:\n", T_PRE)
+m("P35 capability probe result ignored", PRE, '        smoke["capabilities_rc"] = rc\n        if rc != 0:', '        smoke["capabilities_rc"] = rc\n        if False:', T_PRE)
+m("P36 date probe dropped", PRE, "    'rc=0; d=$(date +%s%N 2>/dev/null); '", "    'rc=0; d=1731000000123456789; '", T_PRE)
+m("P37 date probe accepts any length", PRE, '[ "${#d}" -ge 19 ]', '[ "${#d}" -ge 1 ]', T_PRE)
+m("P38 sleep probe dropped", PRE, "'sleep 0.01 >/dev/null 2>&1 ||", "'true ||", T_PRE)
+m("P39 head probe dropped", PRE, "'head -c 1 /dev/zero >/dev/null 2>&1 ||", "'true ||", T_PRE)
+m("P40 docker timeout mapped to success", PRE, "        return 124, \"\", f\"`docker", "        return 0, \"\", f\"`docker", T_PRE)
+m("P41 docker not found mapped to success", PRE, '        return 127, "", f"docker executable not found: {exc}"', '        return 0, "", f"docker executable not found: {exc}"', T_PRE)
+m("P42 lookup: directories count as executables", PRE, ' && [ ! -d "$d/$c" ]', "", T_PRE)
+m("P43 lookup: -x relaxed to -e", PRE, 'if [ -x "$d/$c" ]', 'if [ -e "$d/$c" ]', T_PRE)
+m("P44 lookup: missing never reported", PRE, 'if [ "$f" = 0 ]; then echo "missing: $c"; rc=1; fi;', 'if [ "$f" = 0 ]; then :; fi;', T_PRE)
+# ---------------------------------------------------------------- workflow
+m("W01 drop b01-base from PR branches", WF, "branches: [ main, 'sandbox-network-isolation/b01-base' ]", "branches: [ main ]", T_WF)
+m("W02 wildcard PR branch", WF, "'sandbox-network-isolation/b01-base' ]", "'sandbox-network-isolation/**' ]", T_WF)
+m("W03 drop integration/** from push", WF, "[ main, 'h2/**', 'integration/**' ]", "[ main, 'h2/**' ]", T_WF)
+m("W04 event-conditional test step", WF, "      - name: Run test suite\n", "      - name: Run test suite\n        if: github.event_name != 'pull_request'\n", T_WF)
+m("W05 continue-on-error on the gate", WF, "      - name: Gate on pytest exit code, errors and unlisted failures\n", "      - name: Gate on pytest exit code, errors and unlisted failures\n        continue-on-error: true\n", T_WF)
+m("W06 drop --require-executable python3", WF, "            --require-executable python3 \\\n", "", T_WF)
+m("W07 image back to bare alpine:3", WF, "OCBRAIN_SANDBOX_DOCKER_IMAGE: python:3.12-alpine", "OCBRAIN_SANDBOX_DOCKER_IMAGE: alpine:3", T_WF)
+m("W08 drop the mypy --strict run", WF, "mypy --strict --explicit-package-bases --follow-imports=silent $FILES 2>&1 | tee -a /tmp/mypy-b03.txt", "true 2>&1 | tee -a /tmp/mypy-b03.txt", T_WF)
+m("W09 unpinned mypy", WF, "pip install mypy==2.4.0 pytest==9.2.0", "pip install mypy pytest==9.2.0", T_WF)
+m("W10 unpinned pytest in the mypy job", WF, "pip install mypy==2.4.0 pytest==9.2.0", "pip install mypy==2.4.0 pytest", T_WF)
+m("W11 add workflow_dispatch", WF, "on:\n  push:", "on:\n  workflow_dispatch:\n  push:", T_WF)
+m("W12 preflight swallowed with || true", WF, "            --require-executable ls\n", "            --require-executable ls || true\n", T_WF)
+m("W13 `exit 0` appended to the preflight step", WF, "            --require-executable ls\n", "            --require-executable ls\n          exit 0\n", T_WF)
+m("W14 `; true` appended to the preflight step", WF, "            --require-executable ls\n", "            --require-executable ls ; true\n", T_WF)
+m("W15 `set +e` before the preflight step", WF, "        run: |\n          python3 scripts/ci_docker_preflight.py", "        run: |\n          set +e\n          python3 scripts/ci_docker_preflight.py", T_WF)
+m("W16 preflight dependent on a condition", WF, "      - name: Docker preflight and test-image provisioning\n", "      - name: Docker preflight and test-image provisioning\n        if: github.event_name == 'push'\n", T_WF)
+m("W17 step-level image override in preflight", WF, "      - name: Docker preflight and test-image provisioning\n", "      - name: Docker preflight and test-image provisioning\n        env:\n          OCBRAIN_SANDBOX_DOCKER_IMAGE: alpine:3\n", T_WF)
+m("W18 mypy job conditional", WF, "  typecheck-b03:\n", "  typecheck-b03:\n    if: github.event_name == 'push'\n", T_WF)
+m("W19 docker-preflight artifact renamed", WF, "          name: docker-preflight\n", "          name: preflight-misnamed\n", T_WF)
+m("W20 pytest flags -rs only", WF, "-rfEs 2>&1 | tee", "-rs 2>&1 | tee", T_WF)
+m("W21 pytest flags drop skip reasons", WF, "-rfEs 2>&1 | tee", "-rfE 2>&1 | tee", T_WF)
+m("W22 hostname not required", WF, "            --require-executable hostname \\\n", "", T_WF)
+m("W23 mkfifo not required", WF, "            --require-executable mkfifo \\\n", "", T_WF)
+m("W24 capability probes not requested", WF, "            --probe-capabilities \\\n", "", T_WF)
+m("W25 read-write permissions", WF, "  contents: read", "  contents: write", T_WF)
+m("W26 gate step swallowed", WF, "            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt\n\n      - name: Assert", "            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt || true\n\n      - name: Assert", T_WF)
+m("W27 gate pointed at another allowlist", WF, "            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt\n\n      - name: Assert", "            --allowlist docs/architecture/other.txt\n\n      - name: Assert", T_WF)
+m("W28 mypy FILES widened", WF, 'FILES="core/sandbox/backends/_sandbox_network.py tests/core/sandbox/test_sandbox_network_guards.py"', 'FILES="core/ tests/"', T_WF)
+m("W29 mypy gate swallowed", WF, '[ "$RC_DEFAULT" = "0" ] && [ "$RC_STRICT" = "0" ]', '[ "$RC_DEFAULT" = "0" ] && [ "$RC_STRICT" = "0" ] || true', T_WF)
+m("W30 skip assertion step removed", WF, "      - name: Assert the Docker-backed tests ran (none skipped for a missing daemon or image)", "      - name: Something else entirely", T_WF)
+m("W31 skip assertion ignores the image reason", WF, "(requires a reachable Docker daemon|requires the test image)", "(requires a reachable Docker daemon)", T_WF)
+m("W32 skip assertion ignores the daemon reason", WF, "(requires a reachable Docker daemon|requires the test image)", "(requires the test image)", T_WF)
+m("W33 skip assertion swallowed", WF, "            exit 1\n          fi\n          echo \"no Docker-prerequisite skips\"", "            exit 0\n          fi\n          echo \"no Docker-prerequisite skips\"", T_WF)
+m("W34 skip assertion matches anywhere, not only SKIPPED lines", WF, "grep -E '^SKIPPED .*(", "grep -E '.*(", T_WF)
+m("W35 skip assertion conditional", WF, "      - name: Assert the Docker-backed tests ran (none skipped for a missing daemon or image)\n", "      - name: Assert the Docker-backed tests ran (none skipped for a missing daemon or image)\n        if: always()\n", T_WF)
+m("W36 packet ownership ignores GITHUB_HEAD_REF", WF, 'BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"', 'BRANCH="${GITHUB_REF_NAME}"', T_WF)
+# ---------------------------------------------------------------- seccomp (production filter)
+m("S01 AF_ALG errno EAFNOSUPPORT->EPERM", SEC, "    (AF_ALG, _EAFNOSUPPORT,\n", "    (AF_ALG, _EPERM,\n", T_SEC)
+m("S02 AF_VSOCK entry removed", SEC, "    (AF_VSOCK, _EPERM,", "    (99999, _EPERM,", T_SEC)
+m("S03 socket-family loop never runs", SEC, "if socket_num >= 0 and deny_socket_families:", "if False:", T_SEC)
+m("S04 filter never loaded", SEC, "        rc = lib.seccomp_load(ctx)\n        if rc != 0:", "        rc = 0\n        if rc != 0:", T_SEC)
+m("S05 AF_ALG constant 38->39", SEC, "AF_ALG = 38\n", "AF_ALG = 39\n", T_SEC)
+m("S06 comparator inspects arg 1 not arg 0", SEC, "_ScmpArgCmp(arg=0, op=_SCMP_CMP_EQ", "_ScmpArgCmp(arg=1, op=_SCMP_CMP_EQ", T_SEC)
+m("S07 comparator EQ->NE", SEC, "op=_SCMP_CMP_EQ, datum_a=family", "op=_SCMP_CMP_NE, datum_a=family", T_SEC)
+
+only = sys.argv[4:]  # optional name prefixes
+survivors: list[str] = []
+killed_n = 0
+for name, rel, old, new, tests in M:
+    if only and not any(name.startswith(o) for o in only):
+        continue
+    f = COPY / rel
+    orig = f.read_text()
+    if orig.count(old) != 1:
+        print("STALE   ", name, f"(pattern matched {orig.count(old)}x)")
+        survivors.append(name + " [STALE PATTERN]")
+        continue
+    f.write_text(orig.replace(old, new))
+    try:
+        r = subprocess.run([PY, "-m", "pytest", "-p", "no:cacheprovider", "-q", "-x", "-o", "addopts=", *tests], cwd=COPY, capture_output=True, text=True, timeout=600)
+    finally:
+        f.write_text(orig)
+    killed = r.returncode != 0
+    killed_n += killed
+    first = next((ln for ln in r.stdout.splitlines() if ln.startswith("FAILED")), "")
+    print(("KILLED  " if killed else "SURVIVED"), name, ("| " + first.split("::")[-1][:90]) if first else "")
+    if not killed:
+        survivors.append(name)
+print(f"killed {killed_n} / {len([1 for n, *_ in M if not only or any(n.startswith(o) for o in only)])}")
+print("survivors:", survivors)

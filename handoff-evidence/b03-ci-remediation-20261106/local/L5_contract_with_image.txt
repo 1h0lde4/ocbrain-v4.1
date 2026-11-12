@@ -1,0 +1,20 @@
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+xxxxxxxx.....                                                            [100%]
+=========================== short test summary info ============================
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc01_wildcard_tcp_listener_is_unreachable_through_the_gateway[docker] - TC-01: DEBT-040 (F6, a 0.0.0.0 host listener is reachable through the gateway) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc02_wildcard_udp_listener_receives_no_datagram_from_the_sandbox[docker] - TC-02: DEBT-040 (F6, a 0.0.0.0 UDP host listener receives datagrams from a sandbox) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-handed_port] - TC-03: DEBT-039 (F1 to F4, a sandbox uses a sibling's proxy) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-scan] - TC-03: DEBT-039 (F1 to F4, a sandbox uses a sibling's proxy) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-connect_method] - TC-03: DEBT-039 (F1 to F4, a sandbox uses a sibling's proxy) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-plain_http] - TC-03: DEBT-039 (F1 to F4, a sandbox uses a sibling's proxy) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc04_net_raw_attacker_gets_no_reply_from_sibling_or_host[docker-sibling_proxy] - TC-04: DEBT-039 (F28, a crafted frame reaches a sibling's proxy endpoint) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+XFAIL tests/core/sandbox/test_network_isolation_contract.py::test_tc04_net_raw_attacker_gets_no_reply_from_sibling_or_host[docker-host_primary] - TC-04: DEBT-040 (F28, a crafted frame reaches a host service on the primary address) is open, so this case is expected red until the isolation mechanism is provisioned (spec §16 B01). A pass means the gate is earned: remove this marker in the same change.
+5 passed, 8 xfailed in 19.51s
+
+real	0m19.816s
+user	0m4.256s
+sys	0m2.341s
+exit=0

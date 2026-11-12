@@ -1,0 +1,77 @@
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+....ssss..................................................s............. [ 17%]
+.........................................................FFF..FFFFF..... [ 35%]
+xxxxxxxx................................................................ [ 53%]
+........................................................................ [ 71%]
+........................................................................ [ 89%]
+.............................s..............                             [100%]
+=================================== FAILURES ===================================
+____________________ test_network_egress_denied_by_default _____________________
+tests/core/sandbox/test_namespace_backend.py:146: in test_network_egress_denied_by_default
+    assert result.exit_code == 0, (
+E   AssertionError: connect_ex succeeded -- network was NOT blocked. stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert 1 == 0
+E    +  where 1 = SandboxResult(handle_id='ns-e920ae4ef9f1', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.06829098499997599, artifacts=ArtifactManifest(files=())).exit_code
+_________________ test_memory_limit_kills_oversized_allocation _________________
+tests/core/sandbox/test_namespace_backend.py:163: in test_memory_limit_kills_oversized_allocation
+    assert result.termination_reason == TerminationReason.RESOURCE_EXCEEDED, (
+E   AssertionError: exit_code=1 stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert <TerminationReason.COMPLETED: 'completed'> == <TerminationReason.RESOURCE_EXCEEDED: 'resource_exceeded'>
+E    +  where <TerminationReason.COMPLETED: 'completed'> = SandboxResult(handle_id='ns-5b50c5a63a84', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...ason=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.0705367620000743, artifacts=ArtifactManifest(files=())).termination_reason
+E    +  and   <TerminationReason.RESOURCE_EXCEEDED: 'resource_exceeded'> = TerminationReason.RESOURCE_EXCEEDED
+_______________________ test_pids_limit_blocks_fork_bomb _______________________
+tests/core/sandbox/test_namespace_backend.py:192: in test_pids_limit_blocks_fork_bomb
+    assert "FORK_BLOCKED_AT" in result.stdout, (
+E   AssertionError: expected a caught OSError before 200 forks; stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert 'FORK_BLOCKED_AT' in ''
+E    +  where '' = SandboxResult(handle_id='ns-51c0d7d3bfcc', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.06021548800003984, artifacts=ArtifactManifest(files=())).stdout
+________________ test_artifacts_are_collected_with_real_hashes _________________
+tests/core/sandbox/test_namespace_backend.py:248: in test_artifacts_are_collected_with_real_hashes
+    assert result.succeeded, f"stderr={result.stderr!r}"
+E   AssertionError: stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert False
+E    +  where False = SandboxResult(handle_id='ns-ce304beccba8', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.05733283000006395, artifacts=ArtifactManifest(files=())).succeeded
+__________________________ test_seccomp_blocks_ptrace __________________________
+tests/core/sandbox/test_namespace_backend.py:279: in test_seccomp_blocks_ptrace
+    assert result.exit_code == 0, (
+E   AssertionError: ptrace was not blocked by seccomp; stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert 1 == 0
+E    +  where 1 = SandboxResult(handle_id='ns-92060593afaa', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...on=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.058033168999941154, artifacts=ArtifactManifest(files=())).exit_code
+__________________ test_seccomp_blocks_mount_for_the_payload ___________________
+tests/core/sandbox/test_namespace_backend.py:303: in test_seccomp_blocks_mount_for_the_payload
+    assert result.exit_code == 0, (
+E   AssertionError: mount was not blocked for the payload; stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert 1 == 0
+E    +  where 1 = SandboxResult(handle_id='ns-0e7dab6a998b', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.06622122299995681, artifacts=ArtifactManifest(files=())).exit_code
+____________ test_seccomp_denylist_does_not_break_normal_execution _____________
+tests/core/sandbox/test_namespace_backend.py:328: in test_seccomp_denylist_does_not_break_normal_execution
+    assert result.succeeded, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+E   AssertionError: stdout='' stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert False
+E    +  where False = SandboxResult(handle_id='ns-a3703a68bae7', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.06843713199998547, artifacts=ArtifactManifest(files=())).succeeded
+_____________________ test_uts_namespace_isolates_hostname _____________________
+tests/core/sandbox/test_namespace_backend.py:346: in test_uts_namespace_isolates_hostname
+    assert result.succeeded, f"stderr={result.stderr!r}"
+E   AssertionError: stderr='Traceback (most recent call last):\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 102, in <module>\n  File "/home/claude/ocbrain-v4.1/core/sandbox/backends/_ns_init.py", line 97, in main\n  File "<frozen os>", line 580, in execvp\n  File "<frozen os>", line 603, in _execvpe\nFileNotFoundError: [Errno 2] No such file or directory\n'
+E   assert False
+E    +  where False = SandboxResult(handle_id='ns-331497adf4d7', exit_code=1, stdout='', stderr='Traceback (most recent call last):\n  File ...son=<TerminationReason.COMPLETED: 'completed'>, duration_sec=0.06492075099993144, artifacts=ArtifactManifest(files=())).succeeded
+=========================== short test summary info ============================
+FAILED tests/core/sandbox/test_namespace_backend.py::test_network_egress_denied_by_default
+FAILED tests/core/sandbox/test_namespace_backend.py::test_memory_limit_kills_oversized_allocation
+FAILED tests/core/sandbox/test_namespace_backend.py::test_pids_limit_blocks_fork_bomb
+FAILED tests/core/sandbox/test_namespace_backend.py::test_artifacts_are_collected_with_real_hashes
+FAILED tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_ptrace
+FAILED tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_mount_for_the_payload
+FAILED tests/core/sandbox/test_namespace_backend.py::test_seccomp_denylist_does_not_break_normal_execution
+FAILED tests/core/sandbox/test_namespace_backend.py::test_uts_namespace_isolates_hostname
+SKIPPED [1] tests/core/sandbox/test_allowed_hosts.py:103: requires unshare + iproute2 + a writable cgroup v1 memory controller
+SKIPPED [1] tests/core/sandbox/test_allowed_hosts.py:123: requires unshare + iproute2 + a writable cgroup v1 memory controller
+SKIPPED [1] tests/core/sandbox/test_allowed_hosts.py:143: requires unshare + iproute2 + a writable cgroup v1 memory controller
+SKIPPED [1] tests/core/sandbox/test_allowed_hosts.py:161: requires unshare + iproute2 + a writable cgroup v1 memory controller
+SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)
+SKIPPED [1] tests/core/sandbox/test_seccomp.py:276: this kernel has no AF_ALG (the unfiltered control already returned EAFNOSUPPORT), so the production errno cannot be told apart from the kernel's own refusal; enforcement on this host is covered by test_argument_filter_matches_the_af_alg_family_value_on_any_kernel
+8 failed, 382 passed, 6 skipped, 8 xfailed in 93.42s (0:01:33)
+exit=1

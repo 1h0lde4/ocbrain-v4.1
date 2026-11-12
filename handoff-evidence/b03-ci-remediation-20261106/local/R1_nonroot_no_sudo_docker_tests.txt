@@ -1,0 +1,22 @@
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+..........................F.....s....................................... [ 65%]
+.........................xxxxxxxx.....                                   [100%]
+=================================== FAILURES ===================================
+____ test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start _____
+tests/core/sandbox/test_docker_backend.py:521: in test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start
+    subprocess.run(["mount", "-t", "tmpfs", "tmpfs", mount_point], check=True)
+/usr/lib/python3.12/subprocess.py:571: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['mount', '-t', 'tmpfs', 'tmpfs', '/tmp/a2-pytest-host-only-mount']' returned non-zero exit status 32.
+----------------------------- Captured stderr call -----------------------------
+mount: /tmp/a2-pytest-host-only-mount: must be superuser to use mount.
+       dmesg(1) may have more information after failed mount system call.
+umount: /tmp/a2-pytest-host-only-mount: not mounted.
+=========================== short test summary info ============================
+FAILED tests/core/sandbox/test_docker_backend.py::test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start
+SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)
+1 failed, 100 passed, 1 skipped, 8 xfailed in 87.34s (0:01:27)
+exit=1 elapsed=94s

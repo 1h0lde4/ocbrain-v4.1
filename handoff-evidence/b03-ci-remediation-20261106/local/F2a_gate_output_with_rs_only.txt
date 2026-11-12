@@ -1,0 +1,8 @@
+pytest exit code: 1
+pytest summary:   49 failed, 2316 passed, 6 skipped, 9 xfailed, 1 warning in 203.28s (0:03:23)
+Known environmental failures still failing (expected, not gated):
+
+==========================================================
+TEST GATE FAILED:
+  - summary reports 49 failed but 0 distinct FAILED node ID(s) were found in the output
+==========================================================

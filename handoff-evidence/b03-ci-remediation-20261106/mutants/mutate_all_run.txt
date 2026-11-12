@@ -1,0 +1,89 @@
+KILLED   P01 always pull, never reuse a present image | test_image_already_present_is_not_pulled_again
+KILLED   P02 one pull attempt too many | test_pull_that_keeps_failing_fails_at_the_provision_stage_after_bounded_attempts
+KILLED   P03 no retry after a failed pull | test_a_transient_pull_failure_is_retried_and_every_attempt_is_recorded
+KILLED   P04 fallback image on later pull attempts | test_only_the_requested_image_is_ever_passed_to_docker
+KILLED   P05 identity accepts empty / <no value> digest | test_an_image_without_a_usable_repo_digest_fails_at_the_identity_stage[]
+KILLED   P06 identity accepts any image id | test_an_unreadable_image_id_fails_at_the_identity_stage
+KILLED   P07 identity asks another question than the product | test_absent_image_is_pulled_resolved_and_smoke_tested
+KILLED   P08 tag smoke run failure ignored | test_an_image_the_daemon_cannot_run_fails_at_the_smoke_stage
+KILLED   P09 report not written on failure | test_unreachable_daemon_fails_at_the_daemon_stage_and_provisions_nothing
+KILLED   P10 unreachable daemon ignored | test_unreachable_daemon_fails_at_the_daemon_stage_and_provisions_nothing
+KILLED   P11 failing preflight exits 0 | test_unreachable_daemon_fails_at_the_daemon_stage_and_provisions_nothing
+KILLED   P12 empty --image accepted | test_an_empty_image_is_a_usage_error_not_a_silent_default[bad0]
+KILLED   P13 zero pull attempts accepted | test_zero_pull_attempts_is_a_usage_error
+KILLED   P14 no post-pull presence check | test_a_pull_that_reports_success_but_leaves_no_image_fails_at_the_provision_stage
+KILLED   P15 failed pull attempt not recorded | test_absent_image_is_pulled_resolved_and_smoke_tested
+KILLED   P16 image id not recorded | test_absent_image_is_pulled_resolved_and_smoke_tested
+KILLED   P17 failed stage not recorded | test_unreachable_daemon_fails_at_the_daemon_stage_and_provisions_nothing
+KILLED   P18 bare-name validation removed | test_required_executables_must_be_bare_names[/usr/bin/python3]
+KILLED   P19 bare-name regex allows a leading dash | test_the_equals_form_reaches_the_name_validation_not_just_argparse[-x]
+KILLED   P20 image-looks-like-an-option check removed | test_an_image_that_looks_like_a_docker_option_is_a_usage_error[--image=-foo]
+KILLED   P21 containers may pull (--pull never dropped) | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P22 containers pull always | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P23 containers have a network (--network none dropped) | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P24 containers on the host network | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P25 product PATH not passed | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P26 PATH constant drifts from the product's | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P27 digest run skipped | test_only_the_requested_image_is_ever_passed_to_docker
+KILLED   P28 digest run failure ignored | test_the_digest_dockerbackend_will_run_must_itself_start_a_container
+KILLED   P29 digest run uses the tag instead | test_the_smoke_runs_cannot_pull_have_no_network_and_use_the_product_path
+KILLED   P30 executables never checked | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P31 executable check result ignored | test_an_image_missing_a_required_executable_fails_at_the_smoke_stage_naming_it
+KILLED   P32 executable check runs another image | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P33 executable check without --entrypoint sh | test_required_executables_are_looked_up_on_the_container_path_with_exact_flags
+KILLED   P34 capability probes never run | test_only_the_requested_image_is_ever_passed_to_docker
+KILLED   P35 capability probe result ignored | test_an_image_whose_applets_lack_a_feature_the_tests_use_fails_at_the_smoke_stage
+KILLED   P36 date probe dropped | test_probes_reject_a_date_without_nanoseconds[1731000000N]
+KILLED   P37 date probe accepts any length | test_probes_reject_a_date_without_nanoseconds[1731000000]
+KILLED   P38 sleep probe dropped | test_probes_reject_a_sleep_that_refuses_fractions
+KILLED   P39 head probe dropped | test_probes_reject_a_head_without_c
+KILLED   P40 docker timeout mapped to success | test_a_docker_call_that_times_out_fails_the_stage_it_belongs_to[info-daemon]
+KILLED   P41 docker not found mapped to success | test_docker_helper_maps_a_missing_binary_and_a_timeout_to_distinct_nonzero_codes
+KILLED   P42 lookup: directories count as executables | test_lookup_does_not_count_a_directory_with_the_name
+KILLED   P43 lookup: -x relaxed to -e | test_lookup_does_not_count_a_non_executable_file
+KILLED   P44 lookup: missing never reported | test_an_image_missing_a_required_executable_fails_at_the_smoke_stage_naming_it
+KILLED   W01 drop b01-base from PR branches | test_pull_request_trigger_covers_main_and_the_b03_target_and_nothing_broader
+KILLED   W02 wildcard PR branch | test_pull_request_trigger_covers_main_and_the_b03_target_and_nothing_broader
+KILLED   W03 drop integration/** from push | test_push_trigger_is_preserved - Ass...
+KILLED   W04 event-conditional test step | test_the_only_step_conditionals_are_always_on_artifact_uploads
+KILLED   W05 continue-on-error on the gate | test_no_job_is_conditional_and_nothing_continues_past_a_failure
+KILLED   W06 drop --require-executable python3 | test_preflight_requires_every_executable_the_docker_tests_launch
+KILLED   W07 image back to bare alpine:3 | test_preflight_runs_before_pytest_in_the_same_job_and_reads_the_same_image_variable
+KILLED   W08 drop the mypy --strict run | test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes
+KILLED   W09 unpinned mypy | test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes
+KILLED   W10 unpinned pytest in the mypy job | test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes
+KILLED   W11 add workflow_dispatch | test_the_workflow_listens_to_exactly_push_and_pull_request
+KILLED   W12 preflight swallowed with || true | test_preflight_has_no_fallback_image_and_no_escape_hatch
+KILLED   W13 `exit 0` appended to the preflight step | test_the_preflight_and_the_gate_are_each_exactly_one_command
+KILLED   W14 `; true` appended to the preflight step | test_the_preflight_and_the_gate_are_each_exactly_one_command
+KILLED   W15 `set +e` before the preflight step | test_the_preflight_and_the_gate_are_each_exactly_one_command
+KILLED   W16 preflight dependent on a condition | test_the_only_step_conditionals_are_always_on_artifact_uploads
+KILLED   W17 step-level image override in preflight | test_preflight_runs_before_pytest_in_the_same_job_and_reads_the_same_image_variable
+KILLED   W18 mypy job conditional | test_no_job_is_conditional_and_nothing_continues_past_a_failure
+KILLED   W19 docker-preflight artifact renamed | test_every_hosted_job_uploads_its_evidence_even_on_failure
+KILLED   W20 pytest flags -rs only | test_pytest_report_flags_keep_the_failures_the_gate_parses_and_add_skip_reasons
+KILLED   W21 pytest flags drop skip reasons | test_pytest_report_flags_keep_the_failures_the_gate_parses_and_add_skip_reasons
+KILLED   W22 hostname not required | test_preflight_requires_every_executable_the_docker_tests_launch
+KILLED   W23 mkfifo not required | test_preflight_requires_every_executable_the_docker_tests_launch
+KILLED   W24 capability probes not requested | test_the_preflight_exercises_the_applet_capabilities_the_tests_rely_on
+KILLED   W25 read-write permissions | test_the_workflow_keeps_read_only_permissions
+KILLED   W26 gate step swallowed | test_the_preflight_and_the_gate_are_each_exactly_one_command
+KILLED   W27 gate pointed at another allowlist | test_the_preflight_and_the_gate_are_each_exactly_one_command
+KILLED   W28 mypy FILES widened | test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes
+KILLED   W29 mypy gate swallowed | test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes
+KILLED   W30 skip assertion step removed | test_the_skip_step_runs_after_the_gate_and_the_reasons_it_matches_are_the_tests_own
+KILLED   W31 skip assertion ignores the image reason | test_the_skip_step_runs_after_the_gate_and_the_reasons_it_matches_are_the_tests_own
+KILLED   W32 skip assertion ignores the daemon reason | test_the_skip_step_runs_after_the_gate_and_the_reasons_it_matches_are_the_tests_own
+KILLED   W33 skip assertion swallowed | test_a_docker_prerequisite_skip_fails_the_job[requires a reachable Docker daemon]
+KILLED   W34 skip assertion matches anywhere, not only SKIPPED lines | test_the_words_in_a_test_name_or_a_failure_message_are_not_a_skip
+KILLED   W35 skip assertion conditional | test_the_only_step_conditionals_are_always_on_artifact_uploads
+KILLED   W36 packet ownership ignores GITHUB_HEAD_REF | test_declared_packet_branch_is_recognised_under_a_pull_request_event
+KILLED   S01 AF_ALG errno EAFNOSUPPORT->EPERM | test_production_table_pins_the_errno_of_each_denied_socket_family
+KILLED   S02 AF_VSOCK entry removed | test_denied_socket_families_is_non_trivial
+KILLED   S03 socket-family loop never runs | test_argument_filter_matches_the_af_alg_family_value_on_any_kernel
+KILLED   S04 filter never loaded | test_ptrace_is_blocked_after_apply
+KILLED   S05 AF_ALG constant 38->39 | test_denied_socket_families_is_non_trivial
+KILLED   S06 comparator inspects arg 1 not arg 0 | test_denied_socket_families_is_non_trivial
+KILLED   S07 comparator EQ->NE | test_denied_socket_families_is_non_trivial
+killed 87 / 87
+survivors: []

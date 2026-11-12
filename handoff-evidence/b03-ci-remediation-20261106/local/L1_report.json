@@ -1,0 +1,31 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": "provision",
+  "finished_at": "2026-11-08T13:18:02+00:00",
+  "image_ref": "python:3.12-alpine",
+  "message": "could not pull 'python:3.12-alpine' after 2 attempt(s); last rc=1: Error response from daemon: failed to resolve reference \"docker.io/library/python:3.12-alpine\": failed to do request: Head \"https://registry-1.docker.io/v2/library/python/manifests/3.12-alpine\": Forbidden",
+  "provision": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "output_tail": "Error response from daemon: failed to resolve reference \"docker.io/library/python:3.12-alpine\": failed to do request: Head \"https://registry-1.docker.io/v2/library/python/manifests/3.12-alpine\": Forbidden",
+        "rc": 1
+      },
+      {
+        "attempt": 2,
+        "output_tail": "Error response from daemon: failed to resolve reference \"docker.io/library/python:3.12-alpine\": failed to do request: Head \"https://registry-1.docker.io/v2/library/python/manifests/3.12-alpine\": Forbidden",
+        "rc": 1
+      }
+    ],
+    "status": "failed"
+  },
+  "result": "failed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "started_at": "2026-11-08T13:18:01+00:00"
+}

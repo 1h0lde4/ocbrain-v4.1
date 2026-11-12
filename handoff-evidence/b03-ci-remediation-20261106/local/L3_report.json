@@ -1,0 +1,41 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": "smoke",
+  "finished_at": "2026-11-08T13:18:38+00:00",
+  "image": {
+    "id": "sha256:a91c4bb9937b97514009c0f5c3bf17f5140916589bd9820779e46fb7f2c60b9b",
+    "ref": "ocbrain-test/nopython:local",
+    "resolved_digest": "ocbrain-test/nopython@sha256:a91c4bb9937b97514009c0f5c3bf17f5140916589bd9820779e46fb7f2c60b9b"
+  },
+  "image_ref": "ocbrain-test/nopython:local",
+  "message": "'ocbrain-test/nopython:local' lacks required executables: missing: python3",
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "failed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "command": "docker run --rm --pull never --network none ocbrain-test/nopython:local true",
+    "executables_rc": 1,
+    "rc": 0,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep"
+    ]
+  },
+  "started_at": "2026-11-08T13:18:37+00:00"
+}

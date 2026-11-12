@@ -1,0 +1,6 @@
+F4 failed: 49; earlier branch run F1: 49; pristine PR head B2: 124
+F4 == F1: True
+F4 not in D10: 15 (equals recorded 15-entry sandbox-local set: True)
+F4 in D10: 34
+fixed vs pristine head: 75; newly failing vs pristine head: 0
+NEWLY FAILING: 

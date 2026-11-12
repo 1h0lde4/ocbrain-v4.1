@@ -1,0 +1,8 @@
+=== L8: new preflight (probes + mkfifo required) vs the REBUILT stand-in image (adds mkfifo) ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'python:3.12-alpine' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:d8622640d2c1e9b039bb7c1469c4b912ea98b2019832a6f6ef496b569bc93ac9
+docker-preflight: resolved digest=python@sha256:d8622640d2c1e9b039bb7c1469c4b912ea98b2019832a6f6ef496b569bc93ac9
+docker-preflight: smoke run ok (tag and digest); required executables present: python3, sh, sleep, true, echo, printenv, yes, head, grep, date, mv, rm, cat, ln, mkdir, mkfifo, hostname, readlink, ls; capability probes: passed
+docker-preflight: PASS
+exit=0

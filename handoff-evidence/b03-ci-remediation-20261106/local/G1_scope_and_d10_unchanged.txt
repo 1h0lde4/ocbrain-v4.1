@@ -1,0 +1,21 @@
+== files changed vs PR #86 head a887e148 ==
+ .github/workflows/ci.yml           | 113 +++++++++-
+ scripts/ci_docker_preflight.py     | 280 ++++++++++++++++++++++++
+ tests/core/sandbox/test_seccomp.py | 251 ++++++++++++++++++++--
+ tests/test_ci_docker_preflight.py  | 424 +++++++++++++++++++++++++++++++++++++
+ tests/test_ci_workflow_config.py   | 337 +++++++++++++++++++++++++++++
+ 5 files changed, 1381 insertions(+), 24 deletions(-)
+== core/, docs/, scripts/ci_test_gate.py, requirements*, B03 files changed? (expect nothing) ==
+(end)
+== D10 allowlist ==
+at a887e148: 51caa5d6d79c790162d1d97095a00c94127b337c26ad5d420ce400e47f158316  -
+at HEAD:     51caa5d6d79c790162d1d97095a00c94127b337c26ad5d420ce400e47f158316  docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+entries (non-comment, non-blank): 34
+allowlist byte-identical
+== B03 inertness: DockerBackend does not import the B03 module ==
+core/sandbox/backends/docker_backend.py:287:    set (see `_ensure_sandbox_network()`).
+core/sandbox/backends/docker_backend.py:415:async def _ensure_sandbox_network() -> str:
+core/sandbox/backends/docker_backend.py:640:                gateway_ip = await _ensure_sandbox_network()
+(grep exit=0; empty above = not referenced)
+== B03 module importers outside tests (expect none) ==
+(end)

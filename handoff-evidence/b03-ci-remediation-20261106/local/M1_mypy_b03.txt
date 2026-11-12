@@ -1,0 +1,8 @@
+Python 3.12.3
+mypy 2.4.0 (compiled: yes)
+files: core/sandbox/backends/_sandbox_network.py tests/core/sandbox/test_sandbox_network_guards.py
+== mypy (default) ==
+Success: no issues found in 2 source files
+== mypy --strict ==
+Success: no issues found in 2 source files
+exit codes: default=0 strict=0

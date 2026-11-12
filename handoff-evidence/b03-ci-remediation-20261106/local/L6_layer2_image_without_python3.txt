@@ -1,0 +1,30 @@
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+................................sFFFFFF......FF......................... [ 65%]
+...........F.............FFFFFFFF.....                                   [100%]
+=========================== short test summary info ============================
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_allowed_host_reaches_the_real_server_through_the_tunnel
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_disallowed_host_is_rejected_at_the_tunnel
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_direct_connection_cannot_bypass_the_proxy
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_docker_gateway_has_no_route_to_the_internet
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_sibling_sandbox_container_is_unreachable
+FAILED tests/core/sandbox/test_docker_backend.py::test_c2_env_cannot_redirect_the_enforced_proxy
+FAILED tests/core/sandbox/test_docker_backend.py::test_cgroup_pids_enforced_and_container_stays_controllable
+FAILED tests/core/sandbox/test_docker_backend.py::test_filesystem_jail_full_attack_surface
+FAILED tests/core/sandbox/test_docker_backend.py::test_a5_a_restrictive_allowed_imports_value_still_runs_unimpeded
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc01_wildcard_tcp_listener_is_unreachable_through_the_gateway[docker]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc02_wildcard_udp_listener_receives_no_datagram_from_the_sandbox[docker]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-handed_port]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-scan]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-connect_method]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc03_sandbox_cannot_reach_a_siblings_proxy[docker-plain_http]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc04_net_raw_attacker_gets_no_reply_from_sibling_or_host[docker-sibling_proxy]
+FAILED tests/core/sandbox/test_network_isolation_contract.py::test_tc04_net_raw_attacker_gets_no_reply_from_sibling_or_host[docker-host_primary]
+17 failed, 92 passed, 1 skipped in 75.30s (0:01:15)
+
+real	1m15.689s
+user	0m15.679s
+sys	0m9.948s
+exit=1

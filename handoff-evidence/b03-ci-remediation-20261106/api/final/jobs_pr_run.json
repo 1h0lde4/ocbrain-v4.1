@@ -1,0 +1,213 @@
+{
+  "total_count": 2,
+  "jobs": [
+    {
+      "id": 128794370306,
+      "run_id": 42501282719,
+      "workflow_name": "CI",
+      "head_branch": "docs/debt-025-control-plane-authorization-design-nov2026",
+      "run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/runs/42501282719",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSWs39c8AAAAd_L4hAg",
+      "head_sha": "3be06521ea0141b2700e622681127f4b7ea13e69",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/jobs/128794370306",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/42501282719/job/128794370306",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-08T16:42:48Z",
+      "started_at": "2026-11-08T16:42:50Z",
+      "completed_at": "2026-11-08T16:50:29Z",
+      "name": "tests",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-08T16:42:51Z",
+          "completed_at": "2026-11-08T16:42:52Z"
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-08T16:42:52Z",
+          "completed_at": "2026-11-08T16:42:53Z"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-08T16:42:53Z",
+          "completed_at": "2026-11-08T16:42:54Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-08T16:42:54Z",
+          "completed_at": "2026-11-08T16:45:11Z"
+        },
+        {
+          "name": "Run test suite",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-08T16:45:11Z",
+          "completed_at": "2026-11-08T16:50:11Z"
+        },
+        {
+          "name": "Upload full test output",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-08T16:50:11Z",
+          "completed_at": "2026-11-08T16:50:12Z"
+        },
+        {
+          "name": "Gate on pytest exit code, errors and unlisted failures",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-08T16:50:12Z",
+          "completed_at": "2026-11-08T16:50:12Z"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-08T16:50:12Z",
+          "completed_at": "2026-11-08T16:50:26Z"
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-08T16:50:26Z",
+          "completed_at": "2026-11-08T16:50:27Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-08T16:50:27Z",
+          "completed_at": "2026-11-08T16:50:27Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/check-runs/128794370306",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002326,
+      "runner_name": "GitHub Actions 1000002326",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 128794370647,
+      "run_id": 42501282719,
+      "workflow_name": "CI",
+      "head_branch": "docs/debt-025-control-plane-authorization-design-nov2026",
+      "run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/runs/42501282719",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSWs39c8AAAAd_L4iVw",
+      "head_sha": "3be06521ea0141b2700e622681127f4b7ea13e69",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/jobs/128794370647",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/42501282719/job/128794370647",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-08T16:42:48Z",
+      "started_at": "2026-11-08T16:42:51Z",
+      "completed_at": "2026-11-08T16:43:02Z",
+      "name": "drift-and-ownership",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-08T16:42:52Z",
+          "completed_at": "2026-11-08T16:42:52Z"
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-08T16:42:52Z",
+          "completed_at": "2026-11-08T16:42:54Z"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-08T16:42:54Z",
+          "completed_at": "2026-11-08T16:42:54Z"
+        },
+        {
+          "name": "Architecture drift check (DRIFT-01..15)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-08T16:42:54Z",
+          "completed_at": "2026-11-08T16:42:58Z"
+        },
+        {
+          "name": "Upload drift report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-08T16:42:58Z",
+          "completed_at": "2026-11-08T16:42:59Z"
+        },
+        {
+          "name": "Packet ownership check (only on a recognized packet branch)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-08T16:42:59Z",
+          "completed_at": "2026-11-08T16:42:59Z"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-08T16:42:59Z",
+          "completed_at": "2026-11-08T16:42:59Z"
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-08T16:42:59Z",
+          "completed_at": "2026-11-08T16:42:59Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-08T16:42:59Z",
+          "completed_at": "2026-11-08T16:43:00Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/check-runs/128794370647",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002327,
+      "runner_name": "GitHub Actions 1000002327",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

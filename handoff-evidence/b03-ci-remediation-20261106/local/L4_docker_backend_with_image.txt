@@ -1,0 +1,14 @@
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+................................s....................................... [ 74%]
+.........................                                                [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)
+96 passed, 1 skipped in 70.80s (0:01:10)
+
+real	1m15.845s
+user	0m12.275s
+sys	0m7.761s
+exit=0

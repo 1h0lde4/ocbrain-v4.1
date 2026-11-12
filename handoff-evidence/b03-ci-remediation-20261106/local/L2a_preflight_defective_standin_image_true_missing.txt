@@ -1,0 +1,9 @@
+=== L2: image PRESENT (local stand-in imported rootfs tagged python:3.12-alpine) ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'python:3.12-alpine' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:3b41adacbae7462dde9be02b6ef54957351b2331ed8bce67831542f6f2e5b387
+docker-preflight: resolved digest=python@sha256:3b41adacbae7462dde9be02b6ef54957351b2331ed8bce67831542f6f2e5b387
+docker-preflight: FAIL [smoke] the daemon holds 'python:3.12-alpine' but could not run a container from it (rc=127): docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "true": executable file not found in $PATH
+
+Run 'docker run --help' for more information
+exit=1

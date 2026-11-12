@@ -1,0 +1,22 @@
+KILLED   P1 always pull, never reuse a present image
+KILLED   P2 pull attempts unbounded by one
+KILLED   P3 no retry after a failed pull
+SURVIVED P4 fallback image on later pull attempts
+KILLED   P5 identity accepts empty / <no value> digest
+KILLED   P6 identity accepts any image id
+KILLED   P7 identity asks a different question than the product
+KILLED   P8 smoke ignores a failed container start
+KILLED   P9 smoke run may pull
+KILLED   P10 smoke run has network
+KILLED   P11 report not written on failure
+KILLED   P12 unreachable daemon ignored
+KILLED   P13 failing preflight exits 0
+KILLED   P14 empty --image accepted
+KILLED   P15 zero pull attempts accepted
+KILLED   P16 no post-pull presence check
+KILLED   P17 failed pull attempt not recorded
+KILLED   P18 image id not recorded in the report
+KILLED   P19 failure stage not recorded
+KILLED   P20 bare-name validation removed
+restored identical: True
+survivors: ['P4 fallback image on later pull attempts']

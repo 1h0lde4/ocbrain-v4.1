@@ -1,0 +1,40 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": "smoke",
+  "finished_at": "2026-11-08T13:18:07+00:00",
+  "image": {
+    "id": "sha256:3fec70d01a388f45bab2a95722a85a212eaf81e0e254a28d1b16946984d83ade",
+    "ref": "ocbrain-test/nopython:local",
+    "resolved_digest": "ocbrain-test/nopython@sha256:3fec70d01a388f45bab2a95722a85a212eaf81e0e254a28d1b16946984d83ade"
+  },
+  "image_ref": "ocbrain-test/nopython:local",
+  "message": "the daemon holds 'ocbrain-test/nopython:local' but could not run a container from it (rc=127): docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"true\": executable file not found in $PATH\n\nRun 'docker run --help' for more information",
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "failed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "command": "docker run --rm --pull never --network none ocbrain-test/nopython:local true",
+    "rc": 127,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep"
+    ]
+  },
+  "started_at": "2026-11-08T13:18:06+00:00"
+}

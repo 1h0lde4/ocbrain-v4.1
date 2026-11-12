@@ -1,0 +1,42 @@
+"""Mutants for the --require-executable code path of scripts/ci_docker_preflight.py."""
+import shutil, subprocess, sys
+from pathlib import Path
+
+ROOT = Path("/home/claude/ocbrain-v4.1")
+F = ROOT / "scripts/ci_docker_preflight.py"
+orig = F.read_text()
+backup = Path(sys.argv[1]); shutil.copy(F, backup)
+
+def swap(a, b):
+    assert orig.count(a) == 1, f"pattern count {orig.count(a)}: {a!r}"
+    return orig.replace(a, b)
+
+mutants = {
+ "E1 skip the executables check": swap("    if required:\n        rc, out, err", "    if False:\n        rc, out, err"),
+ "E2 ignore executables rc": swap('        smoke["executables_rc"] = rc\n        if rc != 0:', '        smoke["executables_rc"] = rc\n        if False:'),
+ "E3 required names not passed to sh": swap('"-c", _FIND_EXECUTABLES, "sh", *required]', '"-c", _FIND_EXECUTABLES, "sh"]'),
+ "E4 check runs with the image entrypoint": swap('"--entrypoint", "sh", image,', 'image,'),
+ "E5 check may pull": swap('["run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "sh", image,', '["run", "--rm", "--network", "none", "--entrypoint", "sh", image,'),
+ "E6 check has network": swap('["run", "--rm", "--pull", "never", "--network", "none", "--entrypoint", "sh", image,', '["run", "--rm", "--pull", "never", "--entrypoint", "sh", image,'),
+ "E7 executables_rc not recorded": swap('        smoke["executables_rc"] = rc\n', ''),
+ "E8 required list not recorded": swap('"required_executables": list(required),', '"required_executables": [],'),
+ "E9 lookup counts directories": swap('[ -x "$d/$c" ] && [ ! -d "$d/$c" ]', '[ -x "$d/$c" ]'),
+ "E10 lookup counts non-executable files": swap('[ -x "$d/$c" ] && [ ! -d "$d/$c" ]', '[ -e "$d/$c" ] && [ ! -d "$d/$c" ]'),
+ "E11 lookup uses command -v (builtins count)": swap('[ -x "$d/$c" ] && [ ! -d "$d/$c" ]', 'command -v "$c" >/dev/null'),
+ "E12 lookup never fails": swap('echo "missing: $c"; rc=1; fi', 'echo "missing: $c"; fi'),
+ "E13 lookup stops at first path entry": swap('for d in $PATH; do', 'for d in ${PATH%%:*}; do'),
+ "E14 lookup silent about the name": swap('echo "missing: $c"', 'echo "missing"'),
+}
+survivors = []
+try:
+    for name, text in mutants.items():
+        F.write_text(text)
+        r = subprocess.run([sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "-x", "tests/test_ci_docker_preflight.py"],
+                           cwd=ROOT, capture_output=True, text=True)
+        killed = r.returncode != 0
+        print(("KILLED  " if killed else "SURVIVED"), name)
+        if not killed: survivors.append(name)
+finally:
+    shutil.copy(backup, F)
+print("restored identical:", F.read_text() == orig)
+print("survivors:", survivors)

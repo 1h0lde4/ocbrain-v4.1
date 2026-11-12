@@ -1,0 +1,213 @@
+{
+  "total_count": 2,
+  "jobs": [
+    {
+      "id": 127911372535,
+      "run_id": 42223596080,
+      "workflow_name": "CI",
+      "head_branch": "integration/b03-ci-evidence-20261106",
+      "run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/runs/42223596080",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSWs39c8AAAAdyBym9w",
+      "head_sha": "a887e14881670fae2e4c6828a47a268c4a9d2296",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/jobs/127911372535",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/42223596080/job/127911372535",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-06T13:12:15Z",
+      "started_at": "2026-11-06T13:12:17Z",
+      "completed_at": "2026-11-06T13:16:15Z",
+      "name": "tests",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-06T13:12:17Z",
+          "completed_at": "2026-11-06T13:12:18Z"
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-06T13:12:18Z",
+          "completed_at": "2026-11-06T13:12:19Z"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-06T13:12:19Z",
+          "completed_at": "2026-11-06T13:12:20Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-06T13:12:20Z",
+          "completed_at": "2026-11-06T13:14:36Z"
+        },
+        {
+          "name": "Run test suite",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-06T13:14:36Z",
+          "completed_at": "2026-11-06T13:16:11Z"
+        },
+        {
+          "name": "Upload full test output",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-06T13:16:11Z",
+          "completed_at": "2026-11-06T13:16:12Z"
+        },
+        {
+          "name": "Gate on pytest exit code, errors and unlisted failures",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 7,
+          "started_at": "2026-11-06T13:16:12Z",
+          "completed_at": "2026-11-06T13:16:12Z"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13,
+          "started_at": "2026-11-06T13:16:12Z",
+          "completed_at": "2026-11-06T13:16:12Z"
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-06T13:16:12Z",
+          "completed_at": "2026-11-06T13:16:12Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-06T13:16:12Z",
+          "completed_at": "2026-11-06T13:16:12Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/check-runs/127911372535",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002316,
+      "runner_name": "GitHub Actions 1000002316",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 127911372979,
+      "run_id": 42223596080,
+      "workflow_name": "CI",
+      "head_branch": "integration/b03-ci-evidence-20261106",
+      "run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/runs/42223596080",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOSWs39c8AAAAdyByosw",
+      "head_sha": "a887e14881670fae2e4c6828a47a268c4a9d2296",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/jobs/127911372979",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/42223596080/job/127911372979",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-06T13:12:15Z",
+      "started_at": "2026-11-06T13:12:17Z",
+      "completed_at": "2026-11-06T13:12:26Z",
+      "name": "drift-and-ownership",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-06T13:12:17Z",
+          "completed_at": "2026-11-06T13:12:18Z"
+        },
+        {
+          "name": "Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-06T13:12:18Z",
+          "completed_at": "2026-11-06T13:12:19Z"
+        },
+        {
+          "name": "Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-06T13:12:19Z",
+          "completed_at": "2026-11-06T13:12:20Z"
+        },
+        {
+          "name": "Architecture drift check (DRIFT-01..15)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-06T13:12:20Z",
+          "completed_at": "2026-11-06T13:12:22Z"
+        },
+        {
+          "name": "Upload drift report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-06T13:12:22Z",
+          "completed_at": "2026-11-06T13:12:23Z"
+        },
+        {
+          "name": "Packet ownership check (only on a recognized packet branch)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-06T13:12:23Z",
+          "completed_at": "2026-11-06T13:12:24Z"
+        },
+        {
+          "name": "Post Set up Python",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-06T13:12:24Z",
+          "completed_at": "2026-11-06T13:12:24Z"
+        },
+        {
+          "name": "Post Checkout code",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-06T13:12:24Z",
+          "completed_at": "2026-11-06T13:12:24Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-06T13:12:24Z",
+          "completed_at": "2026-11-06T13:12:24Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/check-runs/127911372979",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000002317,
+      "runner_name": "GitHub Actions 1000002317",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

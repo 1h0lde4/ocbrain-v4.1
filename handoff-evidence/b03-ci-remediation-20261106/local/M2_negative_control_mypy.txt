@@ -1,0 +1,10 @@
+Python 3.12.3
+mypy 2.4.0 (compiled: yes)
+files: /tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/b03-ci-remediation/negctl/bad.py
+== mypy (default) ==
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/b03-ci-remediation/negctl/bad.py:2: error: Incompatible return value type (got "int", expected "str")  [return-value]
+Found 1 error in 1 file (checked 1 source file)
+== mypy --strict ==
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/b03-ci-remediation/negctl/bad.py:2: error: Incompatible return value type (got "int", expected "str")  [return-value]
+Found 1 error in 1 file (checked 1 source file)
+exit codes: default=1 strict=1

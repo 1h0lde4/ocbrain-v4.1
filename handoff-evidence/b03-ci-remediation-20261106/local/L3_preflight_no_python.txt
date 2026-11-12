@@ -1,0 +1,7 @@
+=== L3: image present but WITHOUT python3 ===
+docker-preflight: daemon id=ccd4e1a9-4114-4ab8-a758-805993d30c68 version=29.9.2 platform=linux/x86_64 context=default DOCKER_HOST=None
+docker-preflight: image 'ocbrain-test/nopython:local' already-present (0 pull attempt(s))
+docker-preflight: image id=sha256:a91c4bb9937b97514009c0f5c3bf17f5140916589bd9820779e46fb7f2c60b9b
+docker-preflight: resolved digest=ocbrain-test/nopython@sha256:a91c4bb9937b97514009c0f5c3bf17f5140916589bd9820779e46fb7f2c60b9b
+docker-preflight: FAIL [smoke] 'ocbrain-test/nopython:local' lacks required executables: missing: python3
+exit=1

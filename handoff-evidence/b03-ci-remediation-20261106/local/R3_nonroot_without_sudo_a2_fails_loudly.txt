@@ -1,0 +1,18 @@
+=== R3: the A2 mount test as non-root WITHOUT passwordless sudo: must FAIL loudly (not skip, not pass) ===
+/tmp/claude-0/-home-claude/74c91717-34b2-58e0-a75e-e5d0b2f8f435/scratchpad/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start _____
+tests/core/sandbox/test_docker_backend.py:533: in test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start
+    host_root = _host_root_prefix()  # checked first, so an unmet precondition leaks no container
+                ^^^^^^^^^^^^^^^^^^^
+tests/core/sandbox/test_docker_backend.py:526: in _host_root_prefix
+    pytest.fail("the host-mount precondition is unmet: not root and passwordless `sudo -n` is refused")
+E   Failed: the host-mount precondition is unmet: not root and passwordless `sudo -n` is refused
+=========================== short test summary info ============================
+FAILED tests/core/sandbox/test_docker_backend.py::test_a2_mount_namespace_does_not_see_a_host_mount_created_after_start
+1 failed, 96 deselected in 0.17s
+exit=1

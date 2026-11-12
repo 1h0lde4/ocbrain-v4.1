@@ -1,0 +1,21 @@
+KILLED   W1 drop b01-base from PR branches
+KILLED   W2 wildcard PR branch
+KILLED   W3 drop integration/** from push
+KILLED   W4 event-conditional test step
+KILLED   W5 continue-on-error on gate
+KILLED   W6 drop --require-executable python3
+KILLED   W7 image back to bare alpine:3
+KILLED   W8 drop the mypy --strict run
+KILLED   W9 unpinned mypy
+KILLED   W10 add workflow_dispatch
+KILLED   W11 preflight swallowed with || true
+KILLED   W12 packet ownership ignores GITHUB_HEAD_REF
+KILLED   W13 step-level image override in preflight
+KILLED   W14 mypy job conditional
+KILLED   W15 drop upload of docker-preflight artifact
+KILLED   W17 pytest flags -rs only (drops FAILED lines)
+KILLED   W18 pytest flags drop skip reasons
+KILLED   W19 required executable hostname dropped
+KILLED   W16 read-write permissions
+restored ci.yml identical: True
+survivors: []

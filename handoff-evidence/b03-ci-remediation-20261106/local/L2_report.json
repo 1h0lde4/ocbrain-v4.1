@@ -1,0 +1,50 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "ccd4e1a9-4114-4ab8-a758-805993d30c68",
+    "platform": "linux/x86_64",
+    "version": "29.9.2"
+  },
+  "failed_stage": null,
+  "finished_at": "2026-11-09T01:38:46+00:00",
+  "image": {
+    "id": "sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299",
+    "ref": "python:3.12-alpine",
+    "resolved_digest": "python@sha256:2594cb13fe674592671d29416373499cdad89ef83854e458bd2ffc1567ae3299"
+  },
+  "image_ref": "python:3.12-alpine",
+  "message": null,
+  "provision": {
+    "attempts": [],
+    "status": "already-present"
+  },
+  "result": "passed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "command": "docker run --rm --pull never --network none python:3.12-alpine true",
+    "executables_rc": 0,
+    "rc": 0,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep",
+      "date",
+      "mv",
+      "rm",
+      "cat",
+      "ln",
+      "mkdir",
+      "hostname",
+      "readlink",
+      "ls"
+    ]
+  },
+  "started_at": "2026-11-09T01:38:45+00:00"
+}

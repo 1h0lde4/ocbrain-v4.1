@@ -1,0 +1,48 @@
+"""Mutation run for tests/test_ci_workflow_config.py: each mutant edits ci.yml, the config tests must fail."""
+import shutil, subprocess, sys
+from pathlib import Path
+
+ROOT = Path("/home/claude/ocbrain-v4.1")
+WF = ROOT / ".github/workflows/ci.yml"
+orig = WF.read_text()
+backup = Path(sys.argv[1])
+shutil.copy(WF, backup)
+
+def swap(a, b, count=1):
+    assert orig.count(a) >= 1, f"pattern not found: {a!r}"
+    return orig.replace(a, b, count)
+
+mutants = {
+ "W1 drop b01-base from PR branches": swap("branches: [ main, 'sandbox-network-isolation/b01-base' ]", "branches: [ main ]"),
+ "W2 wildcard PR branch": swap("'sandbox-network-isolation/b01-base' ]", "'sandbox-network-isolation/**' ]"),
+ "W3 drop integration/** from push": swap("[ main, 'h2/**', 'integration/**' ]", "[ main, 'h2/**' ]"),
+ "W4 event-conditional test step": swap("      - name: Run test suite\n", "      - name: Run test suite\n        if: github.event_name != 'pull_request'\n"),
+ "W5 continue-on-error on gate": swap("      - name: Gate on pytest exit code, errors and unlisted failures\n", "      - name: Gate on pytest exit code, errors and unlisted failures\n        continue-on-error: true\n"),
+ "W6 drop --require-executable python3": swap("            --require-executable python3 \\\n", ""),
+ "W7 image back to bare alpine:3": swap("OCBRAIN_SANDBOX_DOCKER_IMAGE: python:3.12-alpine", "OCBRAIN_SANDBOX_DOCKER_IMAGE: alpine:3"),
+ "W8 drop the mypy --strict run": swap('mypy --strict --explicit-package-bases --follow-imports=silent $FILES 2>&1 | tee -a /tmp/mypy-b03.txt', 'true 2>&1 | tee -a /tmp/mypy-b03.txt'),
+ "W9 unpinned mypy": swap("pip install mypy==2.4.0", "pip install mypy"),
+ "W10 add workflow_dispatch": swap("on:\n  push:", "on:\n  workflow_dispatch:\n  push:"),
+ "W11 preflight swallowed with || true": swap("            --require-executable ls\n", "            --require-executable ls || true\n"),
+ "W12 packet ownership ignores GITHUB_HEAD_REF": swap('BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"', 'BRANCH="${GITHUB_REF_NAME}"'),
+ "W13 step-level image override in preflight": swap("      - name: Docker preflight and test-image provisioning\n", "      - name: Docker preflight and test-image provisioning\n        env:\n          OCBRAIN_SANDBOX_DOCKER_IMAGE: alpine:3\n"),
+ "W14 mypy job conditional": swap("  typecheck-b03:\n", "  typecheck-b03:\n    if: github.event_name == 'push'\n"),
+ "W15 drop upload of docker-preflight artifact": swap("          name: docker-preflight\n", "          name: preflight-misnamed\n"),
+ "W17 pytest flags -rs only (drops FAILED lines)": swap("-rfEs 2>&1 | tee", "-rs 2>&1 | tee"),
+ "W18 pytest flags drop skip reasons": swap("-rfEs 2>&1 | tee", "-rfE 2>&1 | tee"),
+ "W19 required executable hostname dropped": swap("            --require-executable hostname \\\n", ""),
+ "W16 read-write permissions": swap("  contents: read", "  contents: write"),
+}
+survivors = []
+try:
+    for name, text in mutants.items():
+        WF.write_text(text)
+        r = subprocess.run([sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "-x", "tests/test_ci_workflow_config.py"],
+                           cwd=ROOT, capture_output=True, text=True)
+        killed = r.returncode != 0
+        print(("KILLED  " if killed else "SURVIVED"), name)
+        if not killed: survivors.append(name)
+finally:
+    shutil.copy(backup, WF)
+print("restored ci.yml identical:", WF.read_text() == orig)
+print("survivors:", survivors)
