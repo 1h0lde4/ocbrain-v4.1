@@ -12,8 +12,12 @@ What these pin, and why:
   actor, and nothing may continue past a failure.  The only conditionals allowed
   are ``if: always()`` on artifact uploads.
 * DOCKER PREFLIGHT.  The ``tests`` job must run the preflight before pytest, in the
-  same job, against the same image variable pytest reads, and must require every
+  same job, against the same image variable pytest reads, as ONE command (nothing
+  appended that could turn its exit code into success), and must require every
   executable the Docker-backed tests launch inside the container.
+* NO VACUOUS DOCKER SUITE.  After the gate, a step fails the job if pytest reports a
+  skip whose reason says the daemon or the image is missing (the preflight has just
+  proved both); its real ``run:`` block is executed against sample pytest output.
 * MYPY.  A pinned, narrow mypy job over the two B03 files, default and --strict.
 * PACKET OWNERSHIP.  The real ``run:`` block is executed under a pull_request-style
   environment (``GITHUB_HEAD_REF`` set) and a push-style one (``GITHUB_REF_NAME``
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import shutil
 import stat
 import subprocess
@@ -132,8 +137,6 @@ def test_pytest_report_flags_keep_the_failures_the_gate_parses_and_add_skip_reas
     """`-r` REPLACES pytest's default short-summary set.  The gate reads FAILED/ERROR node ids from
     that summary, so `-rs` alone makes a run with failures unparseable (the gate reports
     "N failed but 0 distinct FAILED node ID(s)").  Require f, E and s."""
-    import re
-
     run = _step("tests", "Run test suite")["run"]
     flags = re.findall(r"(?<!\S)-r([A-Za-z]+)(?!\S)", run)
     assert flags, "no -r flag: skip reasons would not be attributable"
@@ -164,9 +167,42 @@ def test_preflight_has_no_fallback_image_and_no_escape_hatch() -> None:
     assert "ci_docker_preflight.py" in run
 
 
+def _single_command(run: str) -> list[str]:
+    """The tokens of a `run:` block that must be exactly one command (continuation lines joined).
+
+    Nothing may be chained to it (`;`, `&&`, `||`, `|`, `&`), no second line may follow it, and it
+    may not be prefixed by shell options or assignments: `exit 0`, `; true`, `set +e` all turn a
+    failing command into a passing step.
+    """
+    joined = run.replace("\\\n", " ").strip()
+    assert "\n" not in joined, f"expected one command, got several lines: {joined!r}"
+    assert not re.search(r"[;&|]", joined), f"expected one command, found a chaining operator: {joined!r}"
+    return joined.split()
+
+
+def test_the_preflight_and_the_gate_are_each_exactly_one_command() -> None:
+    pre = _single_command(_step("tests", "Docker preflight")["run"])
+    assert pre[:2] == ["python3", "scripts/ci_docker_preflight.py"]
+    gate = _single_command(_step("tests", "Gate on pytest exit code")["run"])
+    assert gate[:2] == ["python3", "scripts/ci_test_gate.py"]
+    assert "docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt" in gate, "the gate must use the D10 list, unchanged"
+
+
+def test_the_preflight_exercises_the_applet_capabilities_the_tests_rely_on() -> None:
+    assert "--probe-capabilities" in _single_command(_step("tests", "Docker preflight")["run"])
+
+
+def test_single_command_helper_rejects_every_way_to_neuter_a_step() -> None:
+    ok = "python3 scripts/x.py \\\n  --a b"
+    assert _single_command(ok) == ["python3", "scripts/x.py", "--a", "b"]
+    for bad in (ok + "\nexit 0", ok + " ; true", ok + " && true", ok + " || true", ok + " | cat", "set +e\n" + ok):
+        with pytest.raises(AssertionError):
+            _single_command(bad)
+
+
 def _preflight_required_executables() -> set[str]:
-    tokens = _step("tests", "Docker preflight")["run"].replace("\\\n", " ").split()
-    return {tokens[i + 1] for i, t in enumerate(tokens) if t == "--require-executable"}
+    return {t for i, t in enumerate(_single_command(_step("tests", "Docker preflight")["run"])[1:], 1)
+            if _single_command(_step("tests", "Docker preflight")["run"])[i - 1] == "--require-executable"}
 
 
 CONTRACT_TESTS = ROOT / "tests" / "core" / "sandbox" / "test_network_isolation_contract.py"
@@ -176,12 +212,12 @@ DOCKER_TEST_FILES = (DOCKER_TESTS, CONTRACT_TESTS)
 # reading the tests: SandboxRequest(command=(...)) first tokens, `docker exec <id> X` / `docker run
 # ... <image> X`, and the words of `sh -c` snippets (the heartbeat loop `date`/`mv`, the manifest
 # test `mkdir`, the read-only-mount test `rm`/`cat`, the symlink test `ln`, the UTS test `hostname`,
-# the namespace probes `readlink`, the pid-namespace test `ls`).  The preflight must require all of
-# them: a bare `alpine:3`-style image check that omitted one turned a green preflight into
-# "exec: hostname: executable file not found" failures inside the tests (seen against a minimal image).
+# the namespace probes `readlink`, the pid-namespace test `ls`, the FIFO test `mkfifo`).  The
+# preflight must require all of them: an image check that omitted one would go green and the test
+# would then fail (or, for `mkfifo`, pass without exercising what it claims to) inside the container.
 IN_CONTAINER_TOOLS = frozenset({
     "python3", "sh", "sleep", "true", "echo", "printenv", "yes", "head", "grep",
-    "date", "mv", "rm", "cat", "ln", "mkdir", "hostname", "readlink", "ls",
+    "date", "mv", "rm", "cat", "ln", "mkdir", "mkfifo", "hostname", "readlink", "ls",
 })
 # Words from the same candidate list that appear in the tests but are NOT run inside the container:
 # docker sub-commands (ps, cp, rm/ls in `docker rm`/`docker network ls`), shell builtins (kill,
@@ -194,21 +230,14 @@ NOT_RUN_IN_CONTAINER = frozenset({
 # neither set above fails the test below until a human decides which side it belongs on.
 _UTILITY_CANDIDATES = frozenset(
     "cat cp date echo env exec exit false find grep head hostname id ip kill ln ls mkdir mount mv "
-    "printenv printf ps python python3 readlink rm sh sleep test timeout true yes wait cd "
+    "printenv printf ps python python3 readlink rm sh sleep test timeout true yes wait cd mkfifo mknod "
     "awk base64 basename chmod chown curl cut dd df dirname gzip md5sum nc nohup nproc od perl "
     "pwd setsid sed sha256sum sort stat tail tar tee touch tr uname uniq unshare wc wget xargs".split()
 )
 
 
-def _preflight_required_executables() -> set[str]:
-    tokens = _step("tests", "Docker preflight")["run"].replace("\\\n", " ").split()
-    return {tokens[i + 1] for i, t in enumerate(tokens) if t == "--require-executable"}
-
-
 def _string_constants(path: Path) -> list[str]:
     """Non-docstring string constants (f-string literal parts included) of a test file."""
-    import re  # noqa: F401  (kept local: only this helper tokenizes)
-
     tree = ast.parse(path.read_text(encoding="utf-8"))
     docstrings = {
         id(n.body[0].value)
@@ -221,8 +250,6 @@ def _string_constants(path: Path) -> list[str]:
 
 
 def _words_in_test_strings() -> set[str]:
-    import re
-
     words: set[str] = set()
     for path in DOCKER_TEST_FILES:
         for text in _string_constants(path):
@@ -271,12 +298,175 @@ def test_every_utility_word_in_the_docker_tests_is_classified_and_none_is_stale(
     assert not (IN_CONTAINER_TOOLS & NOT_RUN_IN_CONTAINER)
 
 
+# ------------------------------------------------------------------ commands inside container shell scripts
+#
+# The word ratchet above only sees words from a closed candidate list, so a utility nobody listed
+# (that is how `mkfifo` slipped through) is invisible to it.  This one reads the shell scripts the
+# tests hand to `sh -c` and takes whatever stands in COMMAND position, with no candidate list.
+
+SHELL_KEYWORDS_AND_BUILTINS = frozenset({
+    "exit", "kill", "printf", "cd", "wait", "exec", "test", "set", "read", "eval", "trap", "done", "fi", "esac",
+    "for", "in", "case", "return", "break", "continue", "export", "unset", "shift", "type", "command",
+})
+_KEYWORDS_BEFORE_COMMAND = re.compile(r"\b(?:do|then|else|elif|if|while|until)\b")
+_COMMAND_POSITION = re.compile(
+    r"""(?:^|[;&|(){}\n`]|\$\(|-c\s+['"])\s*([A-Za-z_][\w.+-]*)(?=[\s;&|()}'"]|$)"""
+)
+_SH_C_IN_TEXT = re.compile(r"""["']sh["']\s*,\s*["']-c["']\s*,\s*"((?:[^"\\]|\\.)*)\"""")
+
+
+def _render(node: ast.AST, scopes: list[dict[str, str]]) -> str | None:
+    """The text of a string expression: literals, f-strings, `+`, and names bound to those."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for part in node.values:
+            if isinstance(part, ast.Constant):
+                parts.append(str(part.value))
+            elif isinstance(part, ast.FormattedValue):
+                parts.append(_render(part.value, scopes) or "X")
+        return "".join(parts)
+    if isinstance(node, ast.Name):
+        return next((scope[node.id] for scope in scopes if node.id in scope), None)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _render(node.left, scopes), _render(node.right, scopes)
+        return left + right if left is not None and right is not None else None
+    return None
+
+
+def _bindings(nodes: Any, scopes: list[dict[str, str]]) -> dict[str, str]:
+    bound: dict[str, str] = {}
+    for n in nodes:
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            text = _render(n.value, [bound, *scopes])
+            if text is not None:
+                bound[n.targets[0].id] = text
+    return bound
+
+
+def _container_shell_scripts() -> list[tuple[str, int, str]]:
+    """(file, line, script) for every ``... "sh", "-c", <script> ...`` list/tuple, plus every such
+    pattern spelled inside a string constant (the tests that run a Python helper in a subprocess)."""
+    found: list[tuple[str, int, str]] = []
+    for path in DOCKER_TEST_FILES:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        module_scope = _bindings(tree.body, [])
+
+        def visit(node: ast.AST, scopes: list[dict[str, str]]) -> None:
+            for child in ast.iter_child_nodes(node):
+                inner = scopes
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    inner = [_bindings(ast.walk(child), scopes), *scopes]
+                if isinstance(child, (ast.Tuple, ast.List)):
+                    lits = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None for e in child.elts]
+                    for i in range(len(lits) - 2):
+                        if lits[i] == "sh" and lits[i + 1] == "-c":
+                            text = _render(child.elts[i + 2], inner)
+                            assert text is not None, f"{path.name}:{child.lineno}: cannot resolve the sh -c script"
+                            found.append((path.name, child.lineno, text))
+                if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                    for m in _SH_C_IN_TEXT.finditer(child.value):
+                        found.append((path.name, child.lineno, m.group(1)))
+                visit(child, inner)
+
+        visit(tree, [module_scope])
+    return found
+
+
+def _command_words(script: str) -> set[str]:
+    text = _KEYWORDS_BEFORE_COMMAND.sub(";", script)
+    return {m.group(1) for m in _COMMAND_POSITION.finditer(text)}
+
+
+def test_command_word_extraction_handles_the_shapes_the_tests_use() -> None:
+    assert _command_words("while true; do date +%s%N > /w/h.tmp && mv -f /w/h.tmp /w/h; sleep 0.2; done") == {
+        "true", "date", "mv", "sleep", "done"}
+    assert _command_words("sh -c '(sh -c \"echo x\" &) ; sleep 30'") == {"sh", "echo", "sleep"}
+    assert _command_words("python3 -c \"'x'*10**9\" 2>/dev/null || : $(yes | head -c 200000000)") == {"python3", "yes", "head"}
+    assert _command_words("mkfifo pipe; echo ok > legit.txt") == {"mkfifo", "echo"}
+    assert _command_words("ls /proc | grep -c '^1$' || true") == {"ls", "grep", "true"}
+    assert _command_words("X=1; printf 'deep' > f") == {"printf"}, "assignments and quoted arguments are not commands"
+
+
+def test_every_command_a_container_shell_script_runs_is_required_or_a_shell_builtin() -> None:
+    scripts = _container_shell_scripts()
+    words: set[str] = set()
+    for _, _, script in scripts:
+        words |= _command_words(script)
+    words -= SHELL_KEYWORDS_AND_BUILTINS
+    assert len(scripts) >= 15, "the scan found too few `sh -c` scripts: has a test file changed shape?"
+    assert {"date", "mv", "sleep", "mkfifo", "ln", "mkdir", "grep", "head", "yes", "python3", "ls", "cat", "rm"} <= words, (
+        f"the scan misses commands it is known to see: {sorted(words)}"
+    )
+    required = _preflight_required_executables()
+    assert words <= required, (
+        f"container shell scripts run {sorted(words - required)}, which the preflight does not require: add each to "
+        "the workflow's --require-executable list (or, if it is a shell builtin, to SHELL_KEYWORDS_AND_BUILTINS)"
+    )
+
+
+# ------------------------------------------------------------------ the Docker suite must not skip silently
+
+
+_SKIP_STEP_NAME = "Assert the Docker-backed tests ran"
+
+
+def _run_skip_step(tmp_path: Path, pytest_output: str) -> subprocess.CompletedProcess[str]:
+    run = _step("tests", _SKIP_STEP_NAME)["run"]
+    assert "/tmp/pytest-output.txt" in run
+    out = tmp_path / "pytest-output.txt"
+    out.write_text(pytest_output, encoding="utf-8")
+    script = tmp_path / "step.sh"
+    script.write_text(run.replace("/tmp/pytest-output.txt", str(out)), encoding="utf-8")
+    return subprocess.run(["bash", "-e", str(script)], capture_output=True, text=True, timeout=60)
+
+
+def test_the_skip_step_runs_after_the_gate_and_the_reasons_it_matches_are_the_tests_own() -> None:
+    names = [s.get("name", "") for s in _steps("tests")]
+    gate = next(i for i, n in enumerate(names) if n.startswith("Gate on pytest exit code"))
+    skip = next(i for i, n in enumerate(names) if n.startswith(_SKIP_STEP_NAME))
+    assert gate < skip
+    assert "if" not in _steps("tests")[skip] and "continue-on-error" not in _steps("tests")[skip]
+    run = _steps("tests")[skip]["run"]
+    gating_sources = (DOCKER_TESTS.read_text(encoding="utf-8"), CONTRACT_TESTS.read_text(encoding="utf-8"))
+    for reason in ("requires a reachable Docker daemon", "requires the test image"):
+        assert reason in run, f"the step no longer matches {reason!r}"
+        assert any(reason in src for src in gating_sources), f"no Docker test gate uses the reason {reason!r} any more"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="executes the workflow's bash step")
+class TestDockerSkipAssertionStep:
+    CLEAN = "....\n=== short test summary info ===\nFAILED tests/x.py::t - boom\n10 passed, 1 failed in 1.0s\n"
+
+    @pytest.mark.parametrize("reason", [
+        "requires a reachable Docker daemon",
+        "requires the test image 'python:3.12-alpine' locally (OCBRAIN_SANDBOX_DOCKER_IMAGE; it must contain python3)",
+    ])
+    def test_a_docker_prerequisite_skip_fails_the_job(self, tmp_path: Path, reason: str) -> None:
+        r = _run_skip_step(tmp_path, self.CLEAN + f"SKIPPED [57] tests/core/sandbox/test_docker_backend.py: {reason}\n")
+        assert r.returncode == 1, r.stdout
+        assert "::error::" in r.stdout
+
+    def test_an_unrelated_skip_does_not(self, tmp_path: Path) -> None:
+        r = _run_skip_step(tmp_path, self.CLEAN + "SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)\n")
+        assert r.returncode == 0, r.stdout
+        assert "no Docker-prerequisite skips" in r.stdout
+
+    def test_a_run_without_skips_passes(self, tmp_path: Path) -> None:
+        assert _run_skip_step(tmp_path, self.CLEAN).returncode == 0
+
+    def test_the_words_in_a_test_name_or_a_failure_message_are_not_a_skip(self, tmp_path: Path) -> None:
+        r = _run_skip_step(tmp_path, "FAILED tests/x.py::test_requires_a_reachable_Docker_daemon - requires a reachable Docker daemon\n")
+        assert r.returncode == 0, "only SKIPPED lines count"
+
+
 # ------------------------------------------------------------------ mypy
 
 
 def test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes() -> None:
     install = _step("typecheck-b03", "Install pinned mypy")["run"]
-    assert "mypy==2.4.0" in install
+    assert "mypy==2.4.0" in install and "pytest==9.2.0" in install, "both tools pinned to the evidence versions"
     run = _step("typecheck-b03", "mypy on the B03 files")["run"]
     for path in B03_FILES:
         assert path in run

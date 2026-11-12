@@ -13,8 +13,13 @@ every call, and is configured per scenario.  What is pinned:
 * every failure stage, with its exit code and the stage named in the report;
 * no fallback: only the requested image reference is ever passed to docker;
 * the identity stage asks the daemon the same question DockerBackend asks;
-* required executables are looked up on the image's own PATH (the lookup snippet
-  that runs inside the image is also executed for real, against a controlled PATH);
+* every container the preflight starts gets DockerBackend's PATH and no network, can
+  never pull, and is started by tag AND by the resolved RepoDigest;
+* required executables are looked up on that PATH (the lookup snippet that runs inside
+  the image is also executed for real, against a controlled PATH);
+* the capability probes (applet features) are exercised on request, and their snippet is
+  executed for real as well;
+* a docker call that times out fails closed;
 * the report is written on failure as well as on success;
 * the CLI contract (missing or empty --image is a usage error).
 """
@@ -35,6 +40,7 @@ IMAGE = "python:3.12-alpine"  # deliberately not the product default (alpine:3):
 DIGEST = "python@sha256:" + "a" * 64
 IMAGE_ID = "sha256:" + "b" * 64
 PRODUCT_DIGEST_FORMAT = "{{index .RepoDigests 0}}"
+CONTAINER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"  # what DockerBackend sets in every container
 
 # A fake docker CLI.  Behaviour comes from the JSON file named by FAKE_DOCKER_CFG; every
 # call is appended to FAKE_DOCKER_LOG; whether the image is present, and how many pulls
@@ -89,7 +95,12 @@ if cmd == "inspect":
     out(cfg["digest"] + "\\n", cfg["digest_rc"], "digest lookup failed" if cfg["digest_rc"] else "")
 if cmd == "run":
     if "--entrypoint" in argv:
-        out(cfg["exec_out"] if cfg["exec_rc"] else "", cfg["exec_rc"])
+        script = argv[argv.index("-c") + 1]
+        if "missing:" in script:  # the executable lookup
+            out(cfg["exec_out"] if cfg["exec_rc"] else "", cfg["exec_rc"])
+        out(cfg["probe_out"] if cfg["probe_rc"] else "", cfg["probe_rc"])  # the capability probes
+    if cfg["digest"] in argv:  # a run by the resolved RepoDigest
+        out("", cfg["digest_run_rc"], "digest run failed" if cfg["digest_run_rc"] else "")
     out("", cfg["smoke_rc"], "container could not start" if cfg["smoke_rc"] else "")
 out("", 99, "fake docker: unexpected sub-command " + " ".join(argv))
 '''
@@ -108,6 +119,9 @@ def _cfg(**overrides: object) -> dict[str, object]:
         "smoke_rc": 0,
         "exec_rc": 0,
         "exec_out": "missing: python3\n",
+        "digest_run_rc": 0,
+        "probe_rc": 0,
+        "probe_out": "probe failed: date +%s%N has no nanoseconds (got: 1731N)\n",
     }
     for key, value in overrides.items():
         if key == "version_rc":  # historical alias used by one test: `docker info` failing
@@ -265,7 +279,7 @@ def test_an_image_the_daemon_cannot_run_fails_at_the_smoke_stage(env: Env) -> No
 # ---------------------------------------------------------------- required executables
 
 
-def test_required_executables_are_looked_up_on_the_images_own_path(env: Env) -> None:
+def test_required_executables_are_looked_up_on_the_container_path_with_exact_flags(env: Env) -> None:
     proc = env.run(_cfg(), "--require-executable", "python3", "--require-executable", "sleep")
     assert proc.returncode == 0, proc.stderr
     assert "python3, sleep" in proc.stdout
@@ -273,9 +287,12 @@ def test_required_executables_are_looked_up_on_the_images_own_path(env: Env) -> 
     assert rep["smoke"]["required_executables"] == ["python3", "sleep"] and rep["smoke"]["executables_rc"] == 0
     checks = [c for c in env.calls() if c[0] == "run" and "--entrypoint" in c]
     assert len(checks) == 1
-    call = checks[0]
-    assert call[call.index("--entrypoint") + 1] == "sh" and call[-3:] == ["sh", "python3", "sleep"]
-    assert "--pull" in call and "--network" in call and IMAGE in call
+    # The WHOLE argv, not a few tokens: `--pull always` would let a second pull change the image whose
+    # digest was recorded, `--network host` would hand the container the network.
+    assert checks[0] == [
+        "run", "--rm", "--pull", "never", "--network", "none", "-e", f"PATH={CONTAINER_PATH}",
+        "--entrypoint", "sh", IMAGE, "-c", _load_preflight()._FIND_EXECUTABLES, "sh", "python3", "sleep",
+    ]
 
 
 def test_an_image_missing_a_required_executable_fails_at_the_smoke_stage_naming_it(env: Env) -> None:
@@ -291,21 +308,40 @@ def test_required_executables_must_be_bare_names(env: Env, bad: str) -> None:
     assert proc.returncode == 2
 
 
+@pytest.mark.parametrize("bad", ["-x", "--help", "/usr/bin/python3", "a b", "a;b", "$(id)"])
+def test_the_equals_form_reaches_the_name_validation_not_just_argparse(env: Env, bad: str) -> None:
+    """`--require-executable=-x` is NOT rejected by argparse's own option parsing, so only the
+    bare-name regex stands between such a value and the shell snippet that receives it."""
+    proc = env.run(_cfg(), f"--require-executable={bad}")
+    assert proc.returncode == 2
+    assert "bare executable name" in proc.stderr
+    assert not env.calls(), "validation must happen before docker is touched"
+
+
+@pytest.mark.parametrize("name", ["python3", "mkfifo", "x86_64-linux-gnu-gcc", "g++", "ld.so", "a_b"])
+def test_ordinary_executable_names_are_accepted(env: Env, name: str) -> None:
+    assert env.run(_cfg(), f"--require-executable={name}").returncode == 0
+
+
 # ---------------------------------------------------------------- invariants
 
 
 def test_only_the_requested_image_is_ever_passed_to_docker(env: Env) -> None:
-    """No fallback image: every image-bearing call names exactly the requested reference."""
-    env.run(_cfg(pull_rcs=[1, 0]), "--pull-attempts", "2", "--require-executable", "sh")
+    """No fallback image: every image-bearing call names the requested reference, or (for a run) the
+    RepoDigest the daemon resolved for exactly that reference."""
+    env.run(_cfg(pull_rcs=[1, 0]), "--pull-attempts", "2", "--require-executable", "sh", "--probe-capabilities")
+    seen_runs = 0
     for call in env.calls():
         if call[0] in ("pull",):
             assert call == ["pull", IMAGE]
         elif call[0] in ("inspect", "image"):
             assert call[-1] == IMAGE
         elif call[0] == "run":
-            assert call.count(IMAGE) == 1
+            seen_runs += 1
+            assert call.count(IMAGE) + call.count(DIGEST) == 1, call
             # nothing else in a `run` call may look like an image reference
-            assert not any(a in ("alpine", "busybox", "ubuntu", "debian", "scratch") or a.startswith(("alpine:", "busybox:", "ubuntu:", "debian:")) for a in call if a != IMAGE)
+            assert not any(a in ("alpine", "busybox", "ubuntu", "debian", "scratch") or a.startswith(("alpine:", "busybox:", "ubuntu:", "debian:")) for a in call if a not in (IMAGE, DIGEST))
+    assert seen_runs == 4, "tag run, digest run, executable lookup, capability probes"
 
 
 def test_the_identity_stage_asks_the_daemon_what_dockerbackend_asks(env: Env) -> None:
@@ -316,10 +352,101 @@ def test_the_identity_stage_asks_the_daemon_what_dockerbackend_asks(env: Env) ->
     assert f'"{PRODUCT_DIGEST_FORMAT}"' in product
 
 
-def test_the_smoke_run_cannot_pull_and_has_no_network(env: Env) -> None:
+def test_the_smoke_runs_cannot_pull_have_no_network_and_use_the_product_path(env: Env) -> None:
     env.run(_cfg())
     runs = [c for c in env.calls() if c[0] == "run"]
-    assert runs == [["run", "--rm", "--pull", "never", "--network", "none", IMAGE, "true"]]
+    flags = ["run", "--rm", "--pull", "never", "--network", "none", "-e", f"PATH={CONTAINER_PATH}"]
+    assert runs == [[*flags, IMAGE, "true"], [*flags, DIGEST, "true"]]
+
+
+def test_the_container_path_is_the_one_dockerbackend_gives_every_container() -> None:
+    """The lookup must resolve names against what `docker create` will really use: DockerBackend
+    always sets PATH explicitly (`_build_container_env`), overriding the image's own ENV PATH."""
+    from core.sandbox.backends.docker_backend import _build_container_env
+
+    assert _load_preflight()._CONTAINER_PATH == _build_container_env({})["PATH"]
+    assert CONTAINER_PATH == _build_container_env({})["PATH"]
+
+
+def test_the_digest_dockerbackend_will_run_must_itself_start_a_container(env: Env) -> None:
+    proc = env.run(_cfg(present=True, digest_run_rc=125))
+    assert proc.returncode == 1
+    assert "FAIL [smoke]" in proc.stderr and "resolved digest reference" in proc.stderr and DIGEST in proc.stderr
+    rep = env.report()
+    assert rep["failed_stage"] == "smoke" and rep["smoke"]["rc"] == 0 and rep["smoke"]["digest_run_rc"] == 125
+    assert rep["smoke"]["digest_ref"] == DIGEST
+
+
+# ---------------------------------------------------------------- capability probes
+
+
+def test_capability_probes_run_only_when_requested(env: Env) -> None:
+    assert env.run(_cfg(present=True, probe_rc=1)).returncode == 0, "not requested, so not run"
+    assert env.report()["smoke"]["capability_probes"] is False
+    assert not [c for c in env.calls() if "--entrypoint" in c]
+
+
+def test_capability_probes_that_pass_are_recorded(env: Env) -> None:
+    proc = env.run(_cfg(present=True), "--probe-capabilities")
+    assert proc.returncode == 0, proc.stderr
+    assert "capability probes: passed" in proc.stdout
+    rep = env.report()
+    assert rep["smoke"]["capability_probes"] is True and rep["smoke"]["capabilities_rc"] == 0
+    probes = [c for c in env.calls() if c[0] == "run" and "--entrypoint" in c]
+    assert probes == [[
+        "run", "--rm", "--pull", "never", "--network", "none", "-e", f"PATH={CONTAINER_PATH}",
+        "--entrypoint", "sh", IMAGE, "-c", _load_preflight()._CAPABILITY_PROBES,
+    ]]
+
+
+def test_an_image_whose_applets_lack_a_feature_the_tests_use_fails_at_the_smoke_stage(env: Env) -> None:
+    proc = env.run(_cfg(present=True, probe_rc=1), "--probe-capabilities")
+    assert proc.returncode == 1
+    assert "FAIL [smoke]" in proc.stderr and "applet feature" in proc.stderr and "date +%s%N" in proc.stderr
+    rep = env.report()
+    assert rep["failed_stage"] == "smoke" and rep["smoke"]["capabilities_rc"] == 1
+
+
+# ---------------------------------------------------------------- timeouts fail closed
+
+
+def _fake_docker_run_with(env: Env, timeout_on: str):
+    """The preflight module with `subprocess.run` replaced: calls whose docker sub-command is
+    `timeout_on` raise TimeoutExpired, every other call goes to the fake docker executable."""
+    module = _load_preflight()
+    real_run = subprocess.run
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["docker", timeout_on] or (timeout_on == "run" and argv[:2] == ["docker", "run"]):
+            raise subprocess.TimeoutExpired(argv, kwargs.get("timeout", 1))
+        return real_run(argv, **kwargs)
+
+    module.subprocess = type("S", (), {**vars(subprocess), "run": staticmethod(fake_run)})  # type: ignore[assignment]
+    return module
+
+
+@pytest.mark.parametrize("hung, stage", [("info", "daemon"), ("pull", "provision"), ("run", "smoke")])
+def test_a_docker_call_that_times_out_fails_the_stage_it_belongs_to(env: Env, monkeypatch: pytest.MonkeyPatch, hung: str, stage: str) -> None:
+    env.cfg_path.write_text(json.dumps(_cfg(present=(hung != "pull"))), encoding="utf-8")
+    Path(str(env.cfg_path) + ".state").unlink(missing_ok=True)
+    env.log_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("PATH", str(env.bin) + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("FAKE_DOCKER_CFG", str(env.cfg_path))
+    monkeypatch.setenv("FAKE_DOCKER_LOG", str(env.log_path))
+    module = _fake_docker_run_with(env, hung)
+    report, failure = module.run_preflight(IMAGE, 1, 0.0, ())
+    assert failure is not None and failure.stage == stage, (hung, report)
+    assert report["result"] == "failed" and "timed out" in report["message"]
+
+
+def test_docker_helper_maps_a_missing_binary_and_a_timeout_to_distinct_nonzero_codes(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_preflight()
+    monkeypatch.setenv("PATH", str(env.tmp / "empty"))
+    assert module._docker(["info"], 5)[0] == 127
+    monkeypatch.setenv("PATH", str(env.bin) + os.pathsep + os.environ.get("PATH", ""))
+    module = _fake_docker_run_with(env, "info")
+    rc, _, err = module._docker(["info"], 5)
+    assert rc == 124 and "timed out" in err
 
 
 def test_the_report_is_written_on_failure_too(env: Env) -> None:
@@ -344,6 +471,12 @@ def test_an_empty_image_is_a_usage_error_not_a_silent_default(env: Env, bad: lis
     env.cfg_path.write_text(json.dumps(_cfg()), encoding="utf-8")
     proc = subprocess.run([sys.executable, str(SCRIPT), *bad], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 2
+
+
+@pytest.mark.parametrize("bad", ["--image=-foo", "--image=--privileged"])
+def test_an_image_that_looks_like_a_docker_option_is_a_usage_error(env: Env, bad: str) -> None:
+    proc = subprocess.run([sys.executable, str(SCRIPT), bad], capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 2 and "not an option" in proc.stderr
 
 
 def test_zero_pull_attempts_is_a_usage_error(env: Env) -> None:
@@ -422,3 +555,64 @@ def test_lookup_does_not_count_shell_builtins(tmp_path: Path) -> None:
 def test_lookup_with_no_names_succeeds(tmp_path: Path) -> None:
     (tmp_path / "empty").mkdir()
     assert _lookup([tmp_path / "empty"]).returncode == 0
+
+
+# ---------------------------------------------------------------- the capability probes, run for real
+#
+# Same idea as the lookup above: the probe snippet runs inside the image, so it is executed here with a
+# real POSIX sh and shim applets, one feature broken at a time.
+
+
+def _probe(tmp_path: Path, *, date: str = "1731000000123456789", sleep_rc: int = 0, head_rc: int = 0) -> subprocess.CompletedProcess[str]:
+    import shutil
+
+    sh = shutil.which("sh")
+    assert sh, "a POSIX sh is required"
+    bindir = tmp_path / "shims"
+    bindir.mkdir(exist_ok=True)
+    for name, body in {
+        "date": f"echo '{date}'",
+        "sleep": f"exit {sleep_rc}",
+        "head": f"exit {head_rc}",
+    }.items():
+        shim = bindir / name
+        shim.write_text(f"#!{sh}\n{body}\n", encoding="utf-8")
+        shim.chmod(0o755)
+    snippet = _load_preflight()._CAPABILITY_PROBES
+    return subprocess.run([sh, "-c", snippet], capture_output=True, text=True, env={"PATH": str(bindir)}, timeout=30)
+
+
+def test_probes_pass_for_nanosecond_date_fractional_sleep_and_head_c(tmp_path: Path) -> None:
+    r = _probe(tmp_path)
+    assert r.returncode == 0 and r.stdout == ""
+
+
+@pytest.mark.parametrize("date", ["1731000000N", "N", "", "1731000000", "17310000001234567", "abc123"])
+def test_probes_reject_a_date_without_nanoseconds(tmp_path: Path, date: str) -> None:
+    r = _probe(tmp_path, date=date)
+    assert r.returncode == 1 and "probe failed: date +%s%N" in r.stdout
+
+
+def test_probes_reject_a_sleep_that_refuses_fractions(tmp_path: Path) -> None:
+    r = _probe(tmp_path, sleep_rc=1)
+    assert r.returncode == 1 and r.stdout.splitlines() == ["probe failed: sleep rejects a fractional duration"]
+
+
+def test_probes_reject_a_head_without_c(tmp_path: Path) -> None:
+    r = _probe(tmp_path, head_rc=1)
+    assert r.returncode == 1 and r.stdout.splitlines() == ["probe failed: head does not support -c"]
+
+
+def test_probes_report_every_broken_feature_not_just_the_first(tmp_path: Path) -> None:
+    r = _probe(tmp_path, date="1N", sleep_rc=1, head_rc=1)
+    assert r.returncode == 1 and len(r.stdout.splitlines()) == 3
+
+
+def test_probes_pass_against_this_hosts_real_applets() -> None:
+    """Sanity check of the snippet's syntax and of its premise on a real userland (GNU here, busybox in CI)."""
+    import shutil
+
+    sh = shutil.which("sh")
+    assert sh
+    r = subprocess.run([sh, "-c", _load_preflight()._CAPABILITY_PROBES], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stdout
