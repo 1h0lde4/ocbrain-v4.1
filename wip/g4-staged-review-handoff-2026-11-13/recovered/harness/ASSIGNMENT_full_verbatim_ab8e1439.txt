@@ -1,0 +1,231 @@
+Independent Review Assignment — G4 REV3 Complete A–I Assessment
+
+1. Assignment
+
+Perform a complete, independent technical review of the unchanged REV3 verification package.
+
+The objective is to determine whether REV3 satisfies its stated contract and whether its verification block can reliably establish the canonical repository identity without producing false PASS results or exposing credentials.
+
+This is a review-only assignment.
+
+Do not implement corrections, edit the repository, alter the package, create commits, push branches, or modify pull requests.
+
+2. Source material
+
+Obtain the following from the immutable temporary branch and the Addendum 5 delivery:
+
+- The complete original review package under "review_package/".
+- The exact REV3 patch and verification block.
+- The package manifest and integrity information.
+- Addendum 5 and its referenced evidence.
+
+Verify the package's full SHA-256 against its authoritative recorded value. Do not rely on a matching filename or truncated hash.
+
+Use a scratch directory or isolated clone for testing. Preserve the original files byte-for-byte.
+
+3. Independence and review protocol
+
+Declare your reviewer identity, model family or human-review status, tools, and execution environment.
+
+Perform the review in two phases.
+
+Phase A — blinded independent assessment
+
+Use the original REV3 package without consulting Addendum 6's conclusions.
+
+Evaluate every criterion A–I using the definitions and acceptance conditions in the original package.
+
+Do not assume that previous findings are correct or that an earlier reviewer completed the work correctly.
+
+Phase B — adversarial comparison
+
+After recording Phase A, inspect Addendum 6 and its F14/F15 evidence.
+
+Compare your independent findings with the reported findings.
+
+Independently investigate discrepancies. Do not automatically adopt the author's conclusions.
+
+4. Mandatory technical requirements
+
+A. REV2 and REV3 regression assessment
+
+Reproduce the relevant cases specified in the original review package.
+
+Determine whether the REV3 modification actually resolves the reported REV2 defects.
+
+Record exact commands, inputs, outputs, exit codes, and environment details.
+
+B. Repository identity and URL parsing
+
+Examine how the verification block extracts and validates the Git remote identity.
+
+Test URL parsing boundaries, including:
+
+- Canonical GitHub HTTPS URL.
+- User information before the host.
+- "?@" and "#@" forms.
+- "/@" and path/query boundary variants.
+- Backslash and percent-encoded authority variants.
+- Other relevant URL normalization and parsing ambiguities.
+
+Where safe, use loopback-only servers to establish the difference between the host accepted by the identity check and the host contacted by Git.
+
+Critical acceptance condition: A verification block must never report PASS when the actual Git destination is not the intended canonical repository.
+
+C. Remaining original criterion
+
+Evaluate criterion C exactly as specified in the original package. Do not substitute a narrower interpretation.
+
+D. Remaining original criterion
+
+Evaluate criterion D exactly as specified in the original package. Preserve all required evidence and provenance.
+
+E. Credential confidentiality
+
+Examine the complete execution path, including:
+
+- Verification-block output.
+- Git stdout and stderr.
+- Shell error handling.
+- Failed authentication.
+- Dead or unreachable endpoints.
+- URL user-information credentials.
+- Query-string credentials.
+- Error propagation and logging.
+
+Use dummy credentials exclusively.
+
+Test locally. Never submit credentials to a public GitHub endpoint.
+
+Critical acceptance condition: No dummy credential embedded in a remote URL may appear in captured output or generated evidence artifacts.
+
+F. Remaining original criterion
+
+Evaluate criterion F exactly as specified in the original package.
+
+G. Prose and technical-claim consistency
+
+Check every relevant claim against the actual implementation and observed execution.
+
+Pay particular attention to claims involving:
+
+- URL credential handling.
+- Output sanitization.
+- False-PASS prevention.
+- Canonical repository identity.
+- What has and has not been tested.
+
+Distinguish claims supported by execution evidence from claims supported only by reasoning.
+
+H. Remaining original criterion
+
+Evaluate criterion H exactly as specified in the original package.
+
+I. Remaining original criterion
+
+Evaluate criterion I exactly as specified in the original package.
+
+5. F14 and F15 adversarial verification
+
+Independently investigate both findings.
+
+F14 — false PASS
+
+Establish whether a crafted remote URL can cause the verification block to accept GitHub identity while Git connects to another host.
+
+Where feasible, reproduce the complete false-PASS execution using a loopback TLS server with controlled repository history.
+
+Record:
+
+- The exact remote URL.
+- The identity check's parsed result.
+- The actual network destination.
+- The server's request log.
+- The block's printed result and exit code.
+
+If the complete reproduction is not feasible, clearly identify what was established and what remains unverified.
+
+F15 — secret output
+
+Establish whether Git's own error messages expose credentials embedded in a remote URL.
+
+Test username and query-string credential forms with dummy tokens and loopback servers.
+
+Capture stdout and stderr separately, then examine all combined output.
+
+Record whether the credential appears and identify the exact output path.
+
+Do not claim that credential output is universally prevented merely because selected test cases show no leaks.
+
+6. Evidence requirements
+
+Every substantive finding must include:
+
+1. Finding identifier.
+2. Exact source location.
+3. Reproduction conditions.
+4. Commands and inputs.
+5. Raw or minimally transformed output.
+6. Expected versus actual behavior.
+7. Severity and impact.
+8. Evidence classification: OBSERVED, REPORTED, or DERIVED.
+9. Reproduction limitations.
+10. Whether the finding is substantive under the package's acceptance contract.
+
+Do not present self-reported conclusions as independent proof.
+
+Do not silently omit failed, incomplete, or inconclusive tests.
+
+7. Required final deliverable
+
+Produce one completed A–I review matrix.
+
+Each criterion must have exactly one status:
+
+- PASS
+- FAIL
+- BLOCKED
+- NOT RUN
+
+For every status, provide the associated evidence references and reasoning.
+
+Also provide:
+
+- Package integrity verification.
+- Reviewer independence declaration.
+- Environment and tool versions.
+- Complete F14/F15 assessment.
+- Findings register, including any newly discovered findings.
+- Explicit list of unreviewed or unverified matters.
+- Overall verdict.
+- Reproducibility instructions.
+
+The overall verdict must not be PASS if any substantive finding remains unresolved or any mandatory criterion is BLOCKED or NOT RUN.
+
+A report marked IN PROGRESS is not a completed review.
+
+8. Stopping and governance rules
+
+This assignment grants no implementation authority.
+
+If a substantive finding is discovered:
+
+- Record it.
+- Preserve the relevant evidence.
+- Stop any proposed correction work.
+- Do not prepare or apply another rewrite.
+- Return the findings for owner disposition.
+
+Do not modify REV2, REV3, main, PR #90, or any remote branch.
+
+Do not reinterpret DECIDED as ACCEPTED or PROPOSED as ACCEPTED.
+
+Do not declare G4 resolved.
+
+9. Final reporting statement
+
+Conclude with:
+
+G4 remains OPEN · High · freeze-blocking unless separately resolved through the required owner decisions and verification process. G5–G8 remain HELD. Freeze readiness is NOT DECLARED.
+
+The deliverable is a completed independent assessment, not an implementation proposal or an authorization request.

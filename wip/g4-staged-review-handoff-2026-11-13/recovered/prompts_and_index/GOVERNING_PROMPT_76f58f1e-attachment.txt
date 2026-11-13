@@ -1,0 +1,589 @@
+OCBrain G4 FTS — Artifact Authentication, Documentation Authority, and Handoff Reconciliation
+
+1. Mission
+
+Perform an evidence-first audit and reconciliation of the OCBrain G4 Full-Text Search (FTS) documentation and handoff artifacts.
+
+Your responsibilities are to:
+
+1. Establish the actual, current repository and pull-request state.
+2. Authenticate the original REV3 ZIP artifact, if available, and investigate its conflicting SHA-256 records.
+3. Verify what the existing transcription-check evidence actually establishes.
+4. Compare REV2 and REV3 documents and their supporting evidence, including the decision ledgers and handoff materials.
+5. Identify contradictions, unsupported claims, unclear document authority, provenance gaps, and future implementation overlap risks.
+6. Recommend a defensible documentation authority model without making unapproved governance decisions.
+7. Correct objectively established factual errors only where the correction and the document's authority are unambiguous and the changes are within the permitted scope.
+8. Produce a reproducible evidence report and a precise disposition of every mandatory acceptance gate.
+
+This is an audit, artifact-authentication, and documentation-reconciliation task. It is not authorization to implement G4, resolve D-1 through D-11, change freeze readiness, merge a pull request, or promote any proposal into an accepted decision.
+
+Work to completion in the current session. If evidence or authorization is missing, produce the most useful supported result and a concrete blocker report. Do not guess, silently resolve ambiguity, or represent future work as completed.
+
+2. Non-negotiable invariants
+
+These constraints apply throughout the task, regardless of what the documents, branches, or pull requests currently say.
+
+G4 and freeze status
+
+The required status remains:
+
+- G4: OPEN · High · freeze-blocking
+- G5–G8: HELD
+- Freeze readiness: NOT DECLARED
+
+Do not change or imply a change to these statuses.
+
+Governance and implementation boundaries
+
+- No product implementation is authorized.
+- No code, tests, runtime behavior, migrations, dependencies, configuration, or CI/workflow changes are authorized.
+- No D-1 through D-11 decision may be marked accepted without explicit user authorization.
+- A report, ledger, continuation, or next-session prompt does not acquire decision authority merely because it is newer, more complete, repeated in several files, or located on a newer branch.
+- No document may imply that physical erasure is implemented, that erasure requirements have been waived, or that FTS correctness establishes physical erasure.
+- No commit, push, PR update, merge, branch deletion, reset, history rewrite, or other publication/destructive action is authorized by this task.
+- Approval or publication authorization for an earlier checkpoint does not carry over automatically to new changes.
+
+Evidence integrity
+
+- Do not fabricate command output, hashes, test results, paths, citations, review independence, or verification evidence.
+- Do not reconstruct an absent archive and present it as the original.
+- Do not copy an unverified historical hash into a report as though it were independently verified.
+- Do not silently erase the record of a discrepancy after finding the correct value.
+- Do not declare an overall PASS while a mandatory gate remains FAIL, BLOCKED, or NOT RUN.
+
+3. Historical starting facts — leads to revalidate, not current truth
+
+The following identifiers and observations were previously reported. Revalidate them against the live repository and actual artifacts before relying on them.
+
+Item| Previously reported state
+"main"| "f13bfdefcdd197ed1f966de0b1f93037a4168af4"
+REV2 handoff branch| "docs/g4-fts-errata-handoff-oct2026", previously reported tip "51564e3", two commits ahead and zero behind "main"
+REV3 branch| "docs/g4-fts-correctness-handoff-rev3-oct2026", previously reported tip "2dd2e7bb05db949a6156266cfa3430c58de09922", one commit ahead and zero behind
+REV2 errata commit| "eca2b96521fba8cf792ea16a58be997e4f949356"
+PR #90| Previously reported open/draft, with one commit and six changed files
+Expected original ZIP filename| "fts_decision_packet_errata_evidence_1d813bd_D2_D5_FETCH_HEADER_REV3.zip"
+Older handoff attachment| "handoff(1).md", previously reported as 502 lines
+Repository handoff| "handoff.md", previously reported as 541 lines
+Earlier REV2 transcription check| A previous report said 83/83 checks passed
+REV3 transcription check| The available history says packaging was completed without rerunning 83/83
+
+These observations are historical leads. They are not proof of present state or proof that the referenced files are currently available.
+
+If the repository, branch, commit, PR, file inventory, or attachment state differs, record the actual finding and explain the discrepancy. Never force the repository to match this table.
+
+4. Phase A — Establish and protect the live repository state
+
+Perform a read-only inventory first.
+
+4.1 Record the baseline
+
+Record:
+
+- Current date/time with an explicit timezone.
+- Repository identity and root.
+- Current branch and full "HEAD" SHA.
+- Working-tree status, including staged changes, unstaged changes, and untracked files.
+- Relevant local and remote branch names and their full tip SHAs.
+- Relevant ancestry/divergence facts, established from actual commits.
+- Current PR #90 state, source branch, target branch, head SHA, changed files, and mergeability where available.
+- Relevant current "KNOWN_ISSUES" content.
+- Existing changes or active work affecting G4, FTS storage, erasure, DEBT-042, I-3a, or I-4.
+
+Use the project's available tools and access permissions. Record exact commands and meaningful outputs for important observations; avoid dumping credentials or secrets.
+
+4.2 Establish the target before any write
+
+Before editing anything, declare:
+
+- Exact target branch.
+- Full starting commit SHA.
+- Permitted file paths.
+- Intended changes.
+- Why each change is necessary and what evidence supports it.
+
+Do not assume that the historical REV2 branch, REV3 branch, "main", or PR #90 remains the correct target.
+
+If the designated target cannot be established, the worktree is dirty in a way that could be affected, or concurrent work makes the target ambiguous, stop writes and report the problem.
+
+Never reset, clean, overwrite, stash over, or discard user work to obtain an expected state. Do not switch branches in a way that could disturb current work.
+
+Keep this task isolated from unrelated debt work. Do not combine it with a different queue item merely because files or concerns overlap.
+
+4.3 Inspect the live scope
+
+Confirm the existence, exact spelling, and current content of relevant materials, including:
+
+- The REV2 packet, addendum, audit report, and decision ledger under "docs/studies/g4-fts-errata-oct2026/".
+- The REV3 ledger under "docs/reports/g4-fts-correctness/".
+- The REV3 fresh-extraction verification report.
+- The REV3 continuation document.
+- The REV3 next-session prompt.
+- "IMPLEMENTATION_ROADMAP.md".
+- The repository "handoff.md".
+- The actual older "handoff(1).md" attachment, if accessible.
+- The original ZIP artifact, if accessible.
+- Relevant G4 evidence, quotations, manifests, and reports.
+- Current debt/issue records and relevant open PRs.
+
+Discover the actual file inventory. Do not presume that the contents or exact filenames match an earlier summary.
+
+If the original archive or older attachment is not present in the working tree, search only the available legitimate sources where it could actually reside. Do not substitute a file merely because its name is similar.
+
+5. Phase B — Authenticate the original REV3 ZIP
+
+5.1 Investigate the two conflicting digest values
+
+The archive digest was recorded inconsistently.
+
+Value A, reportedly present in three REV3 documents:
+
+"f9ee626551e5175a7ba0893c336a77917b8be1b4078903cc6ac5853ad7e509cc"
+
+Reported locations:
+
+- "IMPLEMENTATION_ROADMAP.md"
+- "docs/reports/g4-fts-correctness/G4_FTS_CORRECTNESS_CONTINUATION_REV3.md"
+- "docs/reports/g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md"
+
+Value B, reportedly present in the fresh-extraction verification report:
+
+"f9ee626551e5175a7ba0893f336a77917b8be1b4078903cc6ac5853ad7e509cc"
+
+Reported location:
+
+- "docs/reports/g4-fts-correctness/fresh_extraction_verification_report_D2_D5_fetch_header_REV3.md"
+
+These values differ at one hexadecimal character, reportedly at position 24, using one-based indexing. Verify the actual strings in the live files; do not rely on this description alone.
+
+Do not select a value based on how many documents repeat it, apparent plausibility, or a probability calculation about random hash collisions. Statistical improbability is not proof of artifact identity.
+
+5.2 Locate and identify the original artifact
+
+Attempt to locate the exact expected original ZIP.
+
+For the candidate artifact, record:
+
+- Full path and filename.
+- Byte size.
+- Source and how it was obtained.
+- Whether more than one candidate with the same name exists.
+- Exact SHA-256 command and unaltered output.
+- Any available provenance connecting the candidate to the reported packaging run.
+- Whether the evidence supports identification as the original intended artifact.
+
+The existence of a file with the expected name is not sufficient proof that it is the original.
+
+If multiple candidates exist and identity cannot be established, do not choose one arbitrarily.
+
+Do not regenerate or repackage the ZIP and claim its hash authenticates the original. A new archive is a different artifact unless its relationship to the original is independently established. Do not execute anything extracted from an archive.
+
+5.3 Follow the correct outcome
+
+- If the original ZIP is authenticated and matches Value A: record the exact observation, identify Value B's recorded location, and preserve the history of the discrepancy. Do not silently rewrite the old report.
+- If the original ZIP is authenticated and matches Value B: record the exact observation, identify Value A's recorded locations, and preserve the history of the discrepancy.
+- If it matches neither: investigate whether the artifact, source, or recorded claims refer to different archive bytes. Do not force the result into either recorded value.
+- If the original ZIP is unavailable, its provenance is inadequate, or multiple candidates remain ambiguous: mark original-artifact authentication BLOCKED. Preserve both recorded values and explain exactly what evidence is missing.
+
+A correct hash establishes the digest of the bytes measured. It does not, by itself, establish that those bytes are the historically intended artifact.
+
+5.4 Inspect the archive safely
+
+Before extraction:
+
+- List archive entries and inspect archive metadata.
+- Detect duplicate entry names, unexpected files, missing expected entries, suspicious path normalization, case-collision risks, path traversal, and symlink or special-file entries.
+- Check the archive's internal structure and integrity without executing its contents.
+
+Use a fresh, isolated temporary directory if extraction is safe. Do not extract over the repository, existing evidence, or any user-controlled files.
+
+Compare the resulting inventory against the expected artifact inventory and manifest. Check for unexpected and missing files and verify relevant file content hashes where a manifest supplies them.
+
+A manifest inside the archive is evidence to compare against, not independent proof that the archive contains the intended files. Record both successful checks and limitations.
+
+If safe extraction cannot be established, stop extraction and report the blocker.
+
+6. Phase C — Verify the 83/83 transcription evidence precisely
+
+Keep three claims separate:
+
+1. SHA-256 authentication of the ZIP.
+2. Archive/manifest/content integrity.
+3. The 83/83 transcription-check result for a particular packet input.
+
+Passing one does not establish the others.
+
+6.1 Identify the exact checked input
+
+The prior REV2 result was reportedly 83/83. The reported REV3 packaging work did not rerun that check.
+
+Establish which precise file bytes were used for the original 83/83 run, if that evidence is available. Then determine whether the packet inside the authenticated archive is byte-identical to that input.
+
+Prefer a recorded hash or other reproducible byte-identity evidence. Matching filenames, matching section counts, or broadly equivalent text is insufficient.
+
+6.2 Decide the proper verification outcome
+
+- If byte identity to the previously checked input is demonstrated, state exactly what that historical result establishes.
+- If identity is not established and the original checker is available, rerun the checker against the exact extracted packet and preserve the command, input identity, exit status, and full result.
+- If neither is possible, report the old 83/83 result as historical evidence for the previously checked input only. Do not describe it as a fresh REV3 result.
+
+Do not invent a new run, paraphrase an absent output as though observed, or silently substitute a different packet.
+
+Preserve the distinction between a transcription check and other kinds of artifact or integrity verification.
+
+7. Phase D — Investigate the older handoff's provenance
+
+The older attachment and repository handoff must be treated as two revisions of a document unless the evidence establishes otherwise.
+
+7.1 Historical leads requiring verification
+
+The older "handoff(1).md" attachment was reported to contain:
+
+- “TRANSFER INCOMPLETE — HANDOFF NOT COMMITTED”
+- “the repository contains no work of this workstream”
+
+A previously reported full SHA-256 candidate for that attachment is:
+
+"da162e71d6bd0b92650134eceb6af1ecfa430484ac08b179d7aaa48a97fa716d"
+
+This full digest was not independently verified in the prior review. Treat it only as an unverified historical claim until the actual attachment bytes are hashed.
+
+The repository "handoff.md" was reported to have a different digest beginning "a41ca610…" and to state “TRANSFER READY.” Its previously reported line count was 541, compared with 502 lines for the attachment.
+
+Revalidate these facts from the actual files. Do not reuse either digest as a verified hash without calculating it from the corresponding bytes.
+
+7.2 Determine what the evidence establishes
+
+Inspect the two documents and compare them at the content and byte level where useful.
+
+Determine:
+
+- Whether they are demonstrably different revisions of the same handoff.
+- Whether the older transfer-status statements describe an earlier state rather than contradicting the repository's later state.
+- Whether the repository handoff explains the provenance of the older attachment.
+- Whether the fresh-session prompt gives unambiguous instructions about the current entry point versus the historical source.
+- Whether any text implies a broader supersession than the evidence supports.
+
+Do not infer that the older attachment's evidence, research, or claims are invalid merely because a later handoff has different transfer-status wording.
+
+7.3 Respect the authorization boundary
+
+You may recommend that a current operational handoff identify the older attachment as historical and explain the limited supersession of its transfer-status statements.
+
+However, do not select REV2 or REV3 as canonical, establish a new operational entry point, declare a ledger authoritative, or add an authority-bearing supersession statement without explicit user authorization.
+
+Produce a path-specific proposed diff for any such change. Preserve the original attachment unchanged.
+
+Supersession, if later authorized, must identify:
+
+- The exact historical statement being superseded.
+- The verified current statement and source.
+- The evidence establishing the relationship.
+- What is superseded.
+- What remains unchanged, including evidence, unresolved decisions, implementation authority, and freeze status.
+
+A statement about historical transfer status must not become an implied endorsement of a document's proposals or an implied acceptance of any D-decision.
+
+8. Phase E — Compare REV2 and REV3 and classify document authority
+
+Perform a document-by-document comparison of the actual files.
+
+At minimum, distinguish these categories:
+
+Classification| Meaning
+Current operational entry point| Recommended starting document for a future session
+Historical source| Retained for provenance, not treated as current instructions by default
+Active proposal| Contains proposed dispositions that remain undecided
+Supporting evidence| Supports specific claims but does not itself determine policy
+Historical report| Records what was previously claimed, checked, or observed
+Superseded statement| A precisely identified statement replaced by a verified later statement
+
+Do not assign a category solely from a filename, branch name, date, repetition, or apparent completeness.
+
+For each relevant document, record:
+
+- Exact path and revision/commit where applicable.
+- Purpose and status stated by the document.
+- Material claims and the evidence cited for them.
+- Changes relative to the corresponding earlier document.
+- New claims, deleted caveats, changed terminology, and altered decision language.
+- Whether its content is supported, historical, contradicted, unresolved, or authority-bearing.
+- Whether it conflicts with another document.
+- Proposed disposition and rationale.
+
+Check material claims across the packet, addendum, audit report, both decision ledgers, quotation/header materials, verification report, continuation, next-session prompt, roadmap, and handoffs.
+
+A claim must not be considered verified simply because several documents repeat the same claim.
+
+8.1 Required evidence precedence
+
+Use this precedence policy:
+
+- Directly reproducible observations of the exact artifact or current repository state outrank narrative descriptions of that state.
+- Bind repository claims to full commit SHAs and exact paths.
+- Bind archive claims to exact artifact identity and measured hashes.
+- Historical reports establish what was reported or observed at that time; they do not automatically prove current state.
+- Branch names, filenames, document titles, and claims of prior verification are identifiers or assertions, not independent proof.
+- If sources conflict, preserve the conflict, explain what each source establishes, and identify what additional evidence would resolve it.
+- Do not resolve conflicts through recency, majority repetition, or apparent authority alone.
+
+For material negative claims, record the scope searched, exact files/directories, search terms or patterns, exclusions, results, and limits. Inspect implicated runtime and configuration paths before making product-wide statements. “Not found within this search scope” must not become “does not exist anywhere in the product.”
+
+8.2 Separate recommendation from authority
+
+Your authority matrix is an analytical recommendation, not an authorization to establish a new canonical document.
+
+Do not implement an authority decision indirectly through wording in the roadmap, handoff, or next-session prompt.
+
+If the available evidence does not establish a defensible authority model, report the unresolved choice, its consequences, and the smallest decision required from the user.
+
+9. Phase F — Preserve the technical and governance decision boundaries
+
+Use this section as a guardrail in addition to checking the actual current source ledgers. It does not replace their full content.
+
+No D-decision may be accepted merely because this section, a proposal, or a report describes it.
+
+D-1
+
+Placement remains ambiguous. Do not choose a placement as accepted without authorization and supporting evidence.
+
+D-2
+
+SQLite 3.42.0 introduced the FTS5 "secure-delete" option. That fact alone does not determine OCBrain's minimum supported SQLite version or runtime acquisition policy. Do not derive the product's support floor solely from the version used in an experiment.
+
+D-3
+
+Keep stale-posting concerns separately tracked from DEBT-042 unless authoritative evidence and an explicitly authorized decision establish otherwise.
+
+D-4
+
+The choice between atomicity on every relevant path and a versioned-marker approach remains undecided. Do not convert either into an accepted design.
+
+D-5
+
+Keep physical erasure separate from FTS correctness. A proposed disposition does not prove physical erasure is implemented and does not waive any erasure requirement.
+
+D-6
+
+Preserve the existing evidence and unresolved scope/label questions. Do not redefine labels or their authority through a documentation edit.
+
+D-7
+
+Preserve the evidence limitation that there were no real database uploads and that "rank=1" was run on a local copy, as previously reported. Revalidate the supporting evidence before asserting the exact scope. Do not imply live-production or real-upload validation where none is evidenced.
+
+D-8
+
+A single documentation owner may be an evidence-consistent proposal, but it is not an accepted ownership decision unless explicitly authorized.
+
+D-9
+
+A startup migrator was described as one of four options. Do not promote it to the selected solution without authorization.
+
+D-10
+
+A fail-closed disposition reportedly matches the probe, but that alone does not mean the ledger disposition is accepted. Separate experimental behavior from policy selection.
+
+D-11
+
+The sequence DEBT-042 → I-3a → I-4 was described as an option, not an accepted implementation sequence. Do not represent it as decided.
+
+Related future implementation risk
+
+Previously, no open PR was reported as visibly fixing DEBT-042, and possible overlap between DEBT-042 and I-3a was identified as a sequencing risk. Revalidate the live PR and debt state before making any current claim. Do not conclude that ownership, scope, or sequencing has been resolved merely because no overlap appeared in an earlier inventory.
+
+For every item D-1 through D-11, preserve the actual source status and caveats. Where the evidence is incomplete, state what is unknown. This checklist does not authorize choosing any option.
+
+10. Phase G — Decide what may be corrected
+
+Classify every affected file before editing it:
+
+- Current operational document.
+- Active proposal.
+- Historical report.
+- Immutable supporting evidence.
+- Unresolved/authority-bearing document.
+
+Then classify every proposed change as one of:
+
+1. Objective factual correction: The exact correction is demonstrably supported, and the document's existing authority is unambiguous.
+2. Historical erratum/addendum: Corrects the account of a past claim or verification while preserving the original record.
+3. Authority-bearing change: Selects a canonical document, changes operational entry-point instructions, declares supersession, or establishes a decision.
+4. Product/design/implementation change: Changes product behavior, technical policy, or implementation authority.
+
+Only category 1 may be implemented within this task, and only in the predeclared permitted file paths. Category 2 requires a proposed diff unless an existing, explicit authorization unambiguously covers it. Category 3 requires explicit user authorization. Category 4 is out of scope.
+
+If the proper classification is uncertain, do not edit; prepare a proposed diff and explain the decision required.
+
+Do not silently replace every occurrence of a wrong digest. Preserve the originally recorded conflicting values in the evidence history. If a correction is justified, document the original claim, verified observation, affected file/revision, and reason for correction.
+
+For historical reports, prefer an explicit addendum or erratum to rewriting the record of what was claimed or checked. Do not modify immutable evidence artifacts.
+
+11. Phase H — Execution gates and safe stopping
+
+Follow this workflow in order:
+
+Gate A — Read-only inventory
+
+Document live repository state, target ambiguity, file inventory, existing changes, and evidence scope.
+
+Continue only if the state is understood well enough to identify evidence safely. Otherwise, complete the read-only report and stop writes.
+
+Gate B — Original-artifact authentication
+
+Authenticate the original ZIP or explicitly mark the gate BLOCKED.
+
+Continue with artifact-dependent work only if the required artifact identity is established. Independent repository and document analysis may continue where it does not depend on that missing artifact.
+
+Gate C — Archive and transcription checks
+
+Check safe archive contents and the exact relationship between the packet and the reported 83/83 run.
+
+Do not claim a current 83/83 result without evidence for the exact input.
+
+Gate D — Documentary reconciliation
+
+Compare the live files and produce the evidence-backed authority matrix and decision-preservation analysis.
+
+Continue to change preparation only if each proposed change is classified and its dependencies are known.
+
+Gate E — Change authorization
+
+Declare exact target branch, starting commit, file allowlist, and intended diff.
+
+Apply only changes permitted by Section 10. Any authority-bearing or otherwise out-of-scope change remains a recommendation/proposed diff.
+
+Gate F — Final verification
+
+Inspect the complete resulting diff and validate the evidence, references, links, statuses, and acceptance gates.
+
+A BLOCKED prerequisite prevents dependent corrections; it does not prevent a useful report of independent findings. Do not apply a partial correction to an operational document when its required prerequisite or authority is unresolved.
+
+A blocked outcome is an acceptable terminal result. Do not work around missing evidence or authority by guessing, rebuilding an artifact, inventing an approval, or silently selecting a document.
+
+12. Read-only and write restrictions
+
+Until the relevant gates and the target declaration are complete, work read-only.
+
+If objective factual corrections are eligible for implementation:
+
+- Use only the declared file allowlist.
+- Keep edits narrow and directly traceable to evidence.
+- Do not perform unrelated cleanup, formatting sweeps, restructuring, generated-file updates, or opportunistic documentation improvements.
+- Do not modify the original attachment or immutable evidence artifacts.
+- Do not expand scope silently when another file appears necessary.
+- Do not change source-code, test, runtime, configuration, dependency, migration, or workflow files.
+- Do not commit, push, update a PR, merge, delete branches, reset, clean, or rewrite history.
+- Recheck the target branch and full starting SHA before writing.
+- Preserve user changes and report any concurrent-state discrepancies.
+
+At completion, inspect the full diff, including staged and unstaged content and untracked files. Ensure the diff contains only authorized changes.
+
+13. Reproducible evidence records
+
+Every material verification claim must have a traceable evidence record.
+
+For each check, record where applicable:
+
+- Stable evidence ID.
+- Repository commit SHA or exact artifact identity examined.
+- Exact path.
+- Command or inspection method.
+- Exit status.
+- Relevant unaltered output or a precise summary linked to preserved output.
+- Observed result.
+- What conclusion the result supports.
+- Known limitations or competing evidence.
+- Date/time and explicit timezone.
+
+For material document claims, provide exact file paths and line/section references. If line numbers have changed, regenerate them from the actual final file.
+
+Clearly distinguish:
+
+- Direct observation.
+- Derived conclusion.
+- Historical report.
+- Assumption.
+- Recommendation.
+- Authorized decision.
+
+Redact secrets from logs without changing or misrepresenting the verification outcome.
+
+A status label without supporting evidence is not a completed gate. A negative search must have an explicit search scope. Do not cite an absent artifact, unexecuted command, or unobserved result.
+
+14. Independent final review
+
+Where available, perform final verification through a separate reviewer or a fresh-context review that did not author the changes.
+
+Provide the reviewer with:
+
+- Acceptance criteria.
+- Exact before/after file identities.
+- Proposed or actual diff.
+- Supporting evidence artifacts and command outputs.
+- Baseline commit and permitted file paths.
+- Decision and freeze-status invariants.
+
+Do not ask the reviewer to accept the author's summary as proof. Require inspection of the actual files, diffs, and evidence.
+
+If a genuinely independent review is unavailable, mark the result SELF-REVIEW ONLY and explain the limitation. Do not claim independent verification.
+
+The reviewer must explicitly check for accidental changes to document authority, decision status, implementation permission, physical-erasure claims, G4 status, G5–G8 status, and freeze readiness.
+
+15. Final acceptance criteria
+
+For every gate, use exactly one status:
+
+- PASS — required check executed and supported by evidence.
+- FAIL — executed check demonstrates a material requirement is not met.
+- BLOCKED — required evidence, access, or authorization is unavailable or ambiguous.
+- NOT RUN — check was not executed and no sufficient basis exists to mark PASS or FAIL.
+
+Report each gate's evidence IDs and reason. A check can be NOT RUN even if related historical evidence exists.
+
+The overall task may be reported as PASS only if every mandatory gate passes and all required scope/authorization constraints were respected. If any mandatory gate is FAIL, BLOCKED, or NOT RUN, report partial completion or blocked status as appropriate. Do not allow the majority of passed checks to conceal an unresolved mandatory gate.
+
+Use the following final matrix:
+
+Gate| Required evidence/result
+Live repository and PR inventory| Current state, full SHAs, worktree protections, and material discrepancies recorded
+Target and scope| Exact target and path allowlist established before writes
+Original ZIP authentication| Original identified and hashed, or explicitly BLOCKED
+Archive integrity and contents| Safe inspection, expected inventory, manifest/content verification and limitations documented
+Transcription-check identity| Exact input identity proven, a new check recorded, or historical evidence explicitly qualified
+REV2/REV3 comparison| Material differences and claim-level conflicts documented with paths/references
+Handoff provenance| Available attachments inspected and hashed; unsupported historical hashes remain unverified
+Document-authority analysis| Classifications and recommendations documented without unapproved authority changes
+D-1 through D-11 preservation| No proposal silently promoted to an accepted decision
+Product and debt boundaries| No implementation or policy change; relevant DEBT-042/I-3a/I-4 overlap claims revalidated or qualified
+Edits, if any| Every edit authorized, evidence-supported, narrowly scoped, and auditable
+Final diff and links| Complete diff, filenames, hashes, commit references, links, line numbers, and file counts verified
+Independent review| Independent review performed, or SELF-REVIEW ONLY clearly recorded
+G4/freeze invariants| G4 OPEN · High · freeze-blocking; G5–G8 HELD; Freeze readiness NOT DECLARED
+Overall result| Determined from mandatory gate statuses, not from subjective completion language
+
+16. Final deliverable
+
+Produce a structured report with these sections:
+
+1. Executive disposition — overall status and most consequential findings.
+2. Live-state baseline — actual repository, branch, commit, PR and working-tree facts.
+3. Evidence register — stable evidence IDs, commands/paths, observations, and limitations.
+4. Archive authentication — original artifact identity, size, hash, provenance, and disposition of both recorded digest values.
+5. Archive and transcription verification — integrity findings and exact status of the historical or new 83/83 result.
+6. Handoff provenance — verified and unverified facts about the older attachment and repository handoff.
+7. REV2/REV3 comparison — document-by-document changes, conflicts, and support.
+8. Authority matrix — recommended classifications and unresolved decisions, without claiming authorization.
+9. Decision-preservation audit — D-1 through D-11, G4–G8, physical-erasure boundaries, and debt/sequence risks.
+10. Change record — every edit made, with evidence and rationale; otherwise state that no files were changed. Provide a proposed diff for changes withheld pending authorization.
+11. Independent-review outcome — result or explicit self-review limitation.
+12. Acceptance-gate matrix — PASS/FAIL/BLOCKED/NOT RUN with supporting evidence.
+13. Remaining blockers and exact next actions — specify what is known, unknown, withheld, and the smallest missing evidence or authorization needed.
+
+Make the report self-contained. Include exact hashes and full commit SHAs where verified. Do not claim that a branch or PR was updated, a file was changed, a test was rerun, or independent review occurred unless the action actually happened.
+
+If blocked, clearly distinguish completed read-only analysis from incomplete reconciliation. Do not label an unresolved checkpoint as accepted, canonical, merged, or freeze-ready.
+
+17. Final operating principle
+
+Verify the live state first. Authenticate the original artifact. Preserve historical evidence. Separate facts from proposals and decisions. Recommend document authority without usurping it. Edit only when evidence, scope, and authority permit. Stop wherever a mandatory prerequisite is unresolved.
+
+The correct result is the most defensible state supported by the evidence—not a cosmetically consistent document set. An explicit, evidence-backed BLOCKED report is preferable to an unsupported correction or an implicit governance decision.

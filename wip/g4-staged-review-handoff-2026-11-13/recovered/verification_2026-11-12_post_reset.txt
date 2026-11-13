@@ -1,0 +1,184 @@
+# Post-reset verification, recorded by the author at 2026-11-12T23:57:13Z (read-only: fetch, ls-remote, archive to a temp dir, gh pr view)
+# cwd: /home/claude/ocbrain-v4.1  git: git version 2.43.0
+## 1. fetch (read-only to the remote)
+From https://github.com/1h0lde4/ocbrain-v4.1
+ * [new branch]      docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026
+ * [new branch]      docs/g4-fts-correctness-handoff-rev3-oct2026 -> origin/docs/g4-fts-correctness-handoff-rev3-oct2026
+ * [new branch]      wip/g4-work-save-checkpoint-nov2026 -> origin/wip/g4-work-save-checkpoint-nov2026
+fetch exit: 0
+## 2. live tips (git ls-remote)
+9407db5a01acea9684f158caa8107fb71611a102	refs/heads/docs/g4-fts-correctness-handoff-rev3-oct2026
+d963daa502de4220411d0d0c2f19f67b3ec2682b	refs/heads/docs/g4-fts-errata-handoff-oct2026
+2491ae469edd6ef1267a14604c4f8f40d698f7ea	refs/heads/main
+8fd8f4da1caf966e550774e8e06bfe13822d55ea	refs/heads/wip/g4-work-save-checkpoint-nov2026
+## 3. REV2 branch (docs/g4-fts-errata-handoff-oct2026) vs main
+d963daa502de4220411d0d0c2f19f67b3ec2682b 51564e34c18e5cc908cf517000ebc9bd41eaf194 | Claude | 2026-10-31T15:16:16+00:00 | docs(handoff): record provenance of the earlier handoff revision and the parallel REV3 draft, and say how thi
+51564e34c18e5cc908cf517000ebc9bd41eaf194 eca2b96521fba8cf792ea16a58be997e4f949356 | Claude | 2026-10-24T01:28:46+00:00 | docs(handoff): G4 / FTS errata session handoff for fresh-session continuation
+eca2b96521fba8cf792ea16a58be997e4f949356 f13bfdefcdd197ed1f966de0b1f93037a4168af4 | Claude | 2026-10-24T01:26:30+00:00 | docs(g4): FTS correctness errata rev 2 (PROPOSED, documentation-only checkpoint)
+ tests/test_b2c_cancellation.py                     | 321 ---------
+ .../test_debt_029_post_dispatch_merge_isolation.py |  71 --
+ tests/test_debt_044_context_persistence.py         | 309 ---------
+ tests/test_live_citation_check.py                  | 627 ------------------
+ tests/test_workflow_crash_restart_subprocess.py    |  86 ---
+ tests/test_workflow_failure_disclosure.py          |   2 +-
+ tests/test_workflow_runtime.py                     |  16 +-
+ 33 files changed, 1606 insertions(+), 3923 deletions(-)
+## 4. REV3 branch (docs/g4-fts-correctness-handoff-rev3-oct2026) vs main
+9407db5a01acea9684f158caa8107fb71611a102 9bb2443b6eb03ae296f24dfc45b4bbab706c9c54 | docs(g4): correct the REV3 archive SHA-256 from Value A to Value B at three locations (P3)
+9bb2443b6eb03ae296f24dfc45b4bbab706c9c54 2dd2e7bb05db949a6156266cfa3430c58de09922 | docs(g4): record the REV3 archive digest discrepancy and its measurement (P2 erratum)
+2dd2e7bb05db949a6156266cfa3430c58de09922 f13bfdefcdd197ed1f966de0b1f93037a4168af4 | docs(g4): preserve REV3 FTS evidence handoff and next-session gate
+ tests/core/cognitive/test_intent_security.py       | 498 +++-----------
+ tests/core/cognitive/test_k42_completion.py        |  28 +-
+ tests/test_b2c_cancellation.py                     | 321 ---------
+ .../test_debt_029_post_dispatch_merge_isolation.py |  71 --
+ tests/test_debt_044_context_persistence.py         | 309 ---------
+ tests/test_live_citation_check.py                  | 627 ------------------
+ tests/test_workflow_crash_restart_subprocess.py    |  86 ---
+ tests/test_workflow_failure_disclosure.py          |   2 +-
+ tests/test_workflow_runtime.py                     |  16 +-
+ 35 files changed, 794 insertions(+), 3923 deletions(-)
+## 5. save branch
+8fd8f4da1caf966e550774e8e06bfe13822d55ea 2491ae469edd6ef1267a14604c4f8f40d698f7ea | wip: save G4 documentation-study work products (checkpoint only)
+ .../verify_block_rev3_draft1.sh                    |  38 +++
+ 201 files changed, 8950 insertions(+)
+      1 .gitattributes
+      1 README_WIP_CHECKPOINT.md
+      1 SHA256SUMS.txt
+     10 evidence_bundles
+    120 evidence_records
+     10 proposed_patches
+     11 reports
+      1 review_package
+     37 tooling
+      9 verification_blocks_and_tests
+## 6. save branch README
+# G4 / FTS-correctness documentation study — work-save checkpoint (2026-11-08)
+
+**What this is.** A temporary branch that saves the work products of the OCBrain v4.1 Kernel v1.0 Phase G4 documentation and audit study, so they survive the end of the working session. It adds files under `wip/g4-work-s
+
+**What this is not.** It is not a `handoff.md` under PROJECT_INSTRUCTIONS section 18.4.8 and does not claim `TRANSFER READY`. It is not a statement that any work is complete or verified, and it is not meant to be merged.
+
+Base: `main` at `2491ae469edd6ef1267a14604c4f8f40d698f7ea`. Everything is a copy of a file that was delivered to the owner during the session, plus the scripts used to produce and check them.
+
+**Governing statuses, unchanged:** G4 OPEN · High · freeze-blocking. G5–G8 HELD. Freeze readiness NOT DECLARED. No implementation authorized.
+
+## Repository state at this checkpoint (observed 2026-11-08)
+
+| Ref | Commit | Note |
+|---|---|---|
+| REV2 branch `docs/g4-fts-errata-handoff-oct2026` | `d963daa502de4220411d0d0c2f19f67b3ec2682b` | pushed earlier (P1 and P1b); unchanged |
+| REV3 branch `docs/g4-fts-correctness-handoff-rev3-oct2026` | `9407db5a01acea9684f158caa8107fb71611a102` | pushed earlier (P2, P3); unchanged |
+| PR #90 | open, draft, 3 commits, 7 files, head `9407db5a…` | unchanged |
+| `main` | `2491ae469edd6ef1267a14604c4f8f40d698f7ea` | unchanged |
+
+## Where things stand
+
+- **Revision 3 of the verification block (patch P1d rev3) is PROPOSED, not applied, and not acceptable as it stands.** An independent-context reviewer's partial report (Addendum 6, evidence I78) reported two substantive 
+  - **F14**, false PASS: the identity check cuts the URL authority only at `/`, so an `origin` such as `https://127.0.0.1:18443?@github.com/1h0lde4/ocbrain-v4.1` is accepted as canonical while git connects to the other h
+  - **F15**, secret output: git's own error messages print a token that is part of the `origin` URL.
+- **The independent review is not complete.** Five reviewer launches ended on the plan's usage limit; the fifth reached items A, B and E only. Items C, D, F, the prose claims in G, H and I are not reviewed. A report mark
+- **F7 stays OPEN.** No application, push to the REV2 or REV3 branches, merge or closure is authorized.
+- Decisions that are the owner's and are still open: whether to allow one bounded correction of revision 3; who performs the next independent review; whether to adopt the stronger status checker (v2); D-1…D-11; the nex
+
+| Finding | Status |
+|---|---|
+| F1–F5 (pushed wording residuals) | OPEN |
+| F6 (metadata only) | not changed |
+| F7 | OPEN |
+| F8 (the Addendum 2 P1d must not be applied) | OPEN |
+| F9–F12 (rev2 block weaknesses, addressed in the rev3 proposal) | FIXED in the proposal; not VERIFIED |
+| F13 (status checker v1 too weak; v2 added) | FIXED in tooling (v2); not VERIFIED by anyone else |
+| F14, F15 (found in rev3) | OPEN |
+
+## Contents
+
+| Path | What it is |
+|---|---|
+| `reports/` | The consolidated reports and addenda, in order: the reconciliation report, P1/P2/P3 execution report, Addendum 1 to 6, and the earlier dated addenda. **Start with `CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_6_�
+| `evidence_records/` | Every recorded command and output (records A01 to A03, H01 to H04 and I01 to I81), as written by the recorder `tooling/ev.sh`. Descriptive names; I73 and I80 are kept as first runs that failed or 
+| `evidence_bundles/` | The zip bundles delivered with each addendum, unchanged. |
+| `review_package/g4_rev3_independent_review_package.zip` | The unchanged package for the independent review of revision 3 (sha256 `391eb0a06784153af4591d6bbfdc0af87edce0f17dd2e2aae0a7593794ce2286`). It carries none of t
+| `proposed_patches/` | Every proposed patch (P1 to P1d rev3, P3) and the P2 erratum text. All are PROPOSED. Only P1, P1b, P2 and P3 were applied, on the REV2 and REV3 branches. P1c and every P1d variant were not applied
+| `verification_blocks_and_tests/` | The verification block variants (rev2, rev3 drafts, rev3 final) and the scenario and unit test scripts. Revision 2 gives false PASS in six cases and revision 3 has F14 and F15: do not
+| `tooling/` | Builders, mechanical checkers (`check_addendum1.py` to `check_addendum6.py`, the v2 status checker, the mutation test), reproduction scripts and the evidence recorder. Scripts contain session-specific scra
+
+## How to resume
+
+1. Verify the refs in the table above (`git ls-remote origin`) before changing anything; resolve any mismatch first.
+2. Read Addendum 6, then Addendum 5, then the findings table above.
+3. Get the one independent review of the unchanged review package completed (all of items A to I with explicit dispositions), then consolidate every substantive finding, then ask the owner for the next decision. Do not s
+4. Never run anything extracted from an archive; read it. Run the block variants only against throw-away synthetic repositories.
+
+## Not saved here
+
+Scratch working directories (synthetic repositories, reviewer scratch directories), the original REV3 ZIP and the owner's `handoff(1).md`, the third-party reviews that the owner attached, and the download page. Their has
+
+The repository is publicly readable, so this branch is too. The files were scanned before commit for tokens, private keys, credentialed URLs and e-mail addresses; the only credential-like strings are dummy values used in
+
+Rollback: delete the branch (`git push origin --delete wip/g4-work-save-checkpoint-nov2026`, owner's decision). Nothing else depends on it.
+
+G4 OPEN · High · freeze-blocking. G5–G8 HELD. Freeze readiness NOT DECLARED.
+
+## 7. merge bases and changed files relative to the merge base (diff against main is dominated by main advancing)
+merge-base main/REV2: f13bfdefcdd197ed1f966de0b1f93037a4168af4
+merge-base main/REV3: f13bfdefcdd197ed1f966de0b1f93037a4168af4
+main commits since that base: 89
+-- REV2 files changed since base:
+ .../addendum_evidence_labels_REV2_PROPOSED.md      |  39 ++
+ .../decision_ledger_1d813bd_OPEN.md                |  90 ++++
+ .../evidence_audit_report_1d813bd.md               | 151 ++++++
+ ..._batch_decision_packet_1d813bd_REV2_PROPOSED.md | 376 ++++++++++++++
+ handoff.md                                         | 547 +++++++++++++++++++++
+ 5 files changed, 1203 insertions(+)
+-- REV3 files changed since base:
+ IMPLEMENTATION_ROADMAP.md                          |  1 +
+ .../DIGEST_DISCREPANCY_ERRATUM_REV3.md             | 54 +++++++++++++
+ .../G4_FTS_CORRECTNESS_CONTINUATION_REV3.md        | 90 +++++++++++++++++++++
+ .../g4-fts-correctness/NEXT_SESSION_PROMPT_REV3.md | 66 ++++++++++++++++
+ .../decision_ledger_1d813bd_OPEN_D2_D5_REV2.md     | 91 ++++++++++++++++++++++
+ ...doc_fetch_quotations_as_returned_HEADER_REV2.md | 60 ++++++++++++++
+ ..._verification_report_D2_D5_fetch_header_REV3.md | 29 +++++++
+ 7 files changed, 391 insertions(+)
+-- handoff.md on REV2 tip: mode/blob: 100644 blob f3434b71516445856e106b5e12d48801b643d057	handoff.md
+-- handoff.md on REV3 tip: 
+
+## 8. PR #90 (gh pr view, read-only)
+HTTP 403: GitHub GraphQL is not available from Claude Code sessions; use the REST API (gh api repos/{owner}/{repo}/...). For review threads, auto-merge, and draft/ready-for-review use the CCR routes on api.github.com: GET /repos/{owner}/{repo}/pulls/{n}/ccr/review_threads, POST /repos/{owner}/{repo}/pulls/{n}/ccr/comments/{comment_id}/resolve (or /unresolve), PUT or DELETE /repos/{owner}/{repo}/pulls/{n}/ccr/auto_merge, POST /repos/{owner}/{repo}/pulls/{n}/ccr/ready_for_review, POST /repos/{owner}/{repo}/pulls/{n}/ccr/convert_to_draft. (https://api.github.com/graphql)
+
+## 9. save branch: committed blobs versus its own SHA256SUMS.txt (archive to a temp dir; nothing executed)
+9bdf28f748daaaf97a4183358abab603d0947ab83b3f946859c4f14b16e3bdf9  ./.gitattributes
+8cdba01663a5c173139852bcf39673d8e876de6770fcd5da7c34568a3e2e9259  ./README_WIP_CHECKPOINT.md
+006a9c96c2e427f82c604fd3931beee1ae3ca00e86f934cadfa3d1dc541b07f6  ./evidence_bundles/g4_addendum_5_e
+lines in SHA256SUMS.txt: 200
+OK 200
+failed lines:
+files present in the save branch for Addendum 6 and the review package:
+ADDENDUM_2026-10-28_REV3_branch_ZIP_search.md
+ADDENDUM_2_2026-10-29_REV3_ZIP_authentication.md
+ADDENDUM_3_2026-10-31_attached_review_cc2745a2.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_1_P1_PUSHED_2026-11-01.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_2_ATTACHED_REVIEW_AND_P1d_2026-11-02.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_3_SECOND_ATTACHED_REVIEW_AND_P1d_REV2_2026-11-02.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_5_INDEPENDENT_REVIEW_BLOCKED_2026-11-07.md
+CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_6_REVIEWER_LAUNCH_5_FINDINGS_ON_REV3_2026-11-08.md
+CONSOLIDATED_EVIDENCE_REPORT_P1_P2_P3_EXECUTION_2026-11-01.md
+OCBRAIN_G4_FTS_AUTHENTICATION_RECONCILIATION_REPORT.md
+/tmp/tmp.KVqI6s9LKl/wip/g4-work-save-2026-11-08/evidence_bundles:
+g4_addendum_5_evidence_I68-I72.zip
+g4_addendum_6_evidence_I76-I79.zip
+g4_attachment_3bce0bf2_p1d_rev2_block_tests_evidence_I44-I48.zip
+g4_attachment_7705231e_check_and_p1d_evidence_I38-I42.zip
+g4_attachment_af046c14_p1d_rev3_block_tests_evidence_I51-I64.zip
+g4_fts_authentication_reconciliation_evidence_bundle.zip
+g4_p1_p1b_push_and_report_checks_evidence_I29-I36.zip
+g4_p1_p2_p3_execution_evidence_I17-I28.zip
+g4_rev3_branch_zip_search_evidence_H01-H04.zip
+g4_rev3_zip_authentication_evidence_I01-I14.zip
+
+/tmp/tmp.KVqI6s9LKl/wip/g4-work-save-2026-11-08/review_package:
+g4_rev3_independent_review_package.zip
+
+## 8b. PR #90 via REST (the GraphQL route is blocked in this environment)
+{"base":"main","changed_files":7,"commits":3,"draft":true,"head":"docs/g4-fts-correctness-handoff-rev3-oct2026","head_sha":"9407db5a01acea9684f158caa8107fb71611a102","mergeable":true,"mergeable_state":"behind","merged":false,"number":90,"state":"open","title":"docs(g4): preserve REV3 FTS evidence handoff and next-session gate","updated_at":"2026-11-02T11:23:16Z"}
+main HEAD message: 2491ae469edd6ef1267a14604c4f8f40d698f7ea Merge pull request #106 from 1h0lde4/docs/ctx-auth-002-closure-oct2026
