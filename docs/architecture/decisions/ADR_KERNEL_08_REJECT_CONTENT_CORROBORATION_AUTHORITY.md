@@ -439,11 +439,22 @@ facts; it approves nothing and changes no decision in §§1-8.
    Oct 30 authorization once items 1-3 were done; the re-verification §9 requires is recorded there.
    CTX-AUTH-001b stays OPEN (§8.1 item 4 only allows it to be reconsidered, as a separate decision).
 
-## 8.3 Owner acceptance, verified chronology and reconciliation (recorded Nov 2, 2026)
+## 8.3 Owner acceptance, verified chronology and reconciliation (evidence snapshot Nov 2, 2026; published Nov 3, 2026)
 
-Recorded on Nov 2, 2026 (UTC) from live GitHub metadata, `git` history, the experiment's own record
-and the code on `main` at `2491ae4`. It adds to §8.2, corrects the dates listed in §8.3.6, and changes
-no decision in §§1-8.1. Documentation only: no code, test, harness or policy changed.
+An evidence snapshot of Nov 2, 2026 (UTC), from live GitHub metadata, `git` history, the experiment's own
+record and the code on `main` at `2491ae4`, committed and published on Nov 3, 2026 (commit `023918c`,
+12:04:03Z; PR #109, 12:04:31Z). It adds to §8.2, corrects the dates listed in §8.3.6, and changes no
+decision in §§1-8.1. Documentation only: no code, test, harness or policy changed.
+
+**Date convention.** "Nov 2" in this section and in the other documents of this change (the sync entries,
+the register note, the threat-model clarification and the K4.2 notes) names the evidence-snapshot date, not
+the date the text was committed. Statements that something was "verified", "searched" or "recomputed" on
+Nov 2 refer to that snapshot: the individual checks were not timestamped, the one server-clock reading
+taken when the snapshot was assembled is 2026-11-02T14:35:15Z, and the drafting date of each note is not
+recorded. In the K4.2 notes, "added Nov 2, 2026" is likewise the snapshot date. Owner decisions are dated as the
+owner states them (the delegation of Oct 30, the acceptance of Nov 1); their UTC times are not recorded. The
+delegation preceded `7fbf7c2` (Oct 29, 23:08:10Z), so in UTC it falls on Oct 29. The Git publication date of
+all of it is Nov 3, 2026.
 
 **Scope of "ESCALATED".** Everywhere in this ADR (§§7, 8.2, 8.3 and 9), "ESCALATED" means the harness's own
 measure, defined under "Terminology boundary" in §8.3.4. It is never a count of Plan Compiler
@@ -482,6 +493,7 @@ were tested; that the production pipeline is proven secure end to end.
 | When | Event | Source |
 |---|---|---|
 | Oct 6, 2026 | ADR-KERNEL-08 approved by the owner | ADR header |
+| Oct 29, before 23:08:10 (UTC time not recorded; the owner dates it Oct 30) | Owner's delegation of the §8.1 item 1 review and merge authorization (§8.3.1); inferred to precede `7fbf7c2` | owner statement |
 | Oct 29, 23:08:10 | `7fbf7c2`: `main` (`16d663a`) merged into the PR #93 branch | git |
 | Oct 30, 09:21:02 | `0c16cd3`: harness exit-code fix, found by the delegated review | git |
 | Oct 30, 09:29:43 | `ccf0489`: review, reconciliation and item 2 "OPEN" recorded on the branch | git |
@@ -490,14 +502,18 @@ were tested; that the production pipeline is proven secure end to end.
 | Oct 31, 19:22:56 | `099a238`: `main` (`ed3d141`) merged into the branch | git |
 | Oct 31, 19:31:10 | `396e374`: experiment recorded on the branch | git |
 | **Nov 1, 03:23:47** | **PR #93 merged** (`b742e4a`): promotion | GitHub `merged_at` |
-| Nov 1, 03:39:49 | `8ceadd1`: IMPLEMENTED and the CTX-AUTH-002 closure recorded (PR #106 head) | git |
-| **Nov 1** (time of day not recorded) | **Owner accepts §8.1 item 1**, after PR #93 merged | owner statement |
+| **Nov 1, after 03:23:47** (time of day not recorded) | **Owner accepts §8.1 item 1**. Placed here by its lower bound only; its order against the next two rows is not recorded | owner statement |
+| Nov 1, 03:39:49 | `8ceadd1`: records the re-verification on `main`, IMPLEMENTED and the CTX-AUTH-002 closure (PR #106 head) | git |
 | Nov 1, 12:31:28 | PR #106 merged (`2491ae4`) | GitHub `merged_at` |
-| Nov 2 | This reconciliation recorded | n/a |
+| Nov 2 | Evidence snapshot (assessment and reconciliation). GitHub's server clock was read as 2026-11-02T14:35:15Z during it; individual checks and the drafting of the notes were not timestamped | session record |
+| **Nov 3, 12:04:03** | `023918c`: this reconciliation committed (the only commit of PR #109) | git |
+| **Nov 3, 12:04:31** | PR #109 created: publication | GitHub (PR page) |
 
-The owner did not say whether the acceptance came before or after PR #106 merged, so that order is not
-recorded. PR #106's records were written (03:39:49Z) without the acceptance on record; the acceptance
-confirms item 1 and changes neither the IMPLEMENTED status nor the qualified closure.
+The owner did not state the time of day of the acceptance, so its order against `8ceadd1` (03:39:49Z) and
+against PR #106's merge (12:31:28Z) is not recorded; only "after PR #93 merged" is known. PR #106's records
+were written (03:39:49Z) without the acceptance on record; the acceptance confirms item 1 and changes
+neither the IMPLEMENTED status nor the qualified closure. The Nov 2 and Nov 3 rows are different events:
+Nov 2 is when the evidence was assessed, Nov 3 is when it entered Git and GitHub.
 
 ### 8.3.3 §8.1 prerequisites, status as of Nov 2, 2026
 
@@ -640,11 +656,31 @@ Earlier text is recoverable from `git` history.
 ## 9. Lifecycle
 
 APPROVED (Oct 6, 2026, by Moncif). **IMPLEMENTED (Nov 1, 2026)**: the replacement was promoted to
-`main` by PR #93 (merge `b742e4a`) after §8.1 items 1-3, and re-verified there, as §8.1 item 4
-requires: the merged tree is identical to the tested head; suite 2176 passed, 1 xfailed, 8 failed
+`main` by PR #93 (merge `b742e4a`) once the delegated review, the real-model experiment and the reconciliation (§8.1 items 1-3, as
+performed) were done, and re-verified there, as §8.1 item 4 requires (the owner's formal acceptance of
+item 1 came after the merge: see the sequence below): the merged tree is identical to the tested head; suite 2176 passed, 1 xfailed, 8 failed
 (pre-merge `main` 2087 / 1 / 8; the same 8 sandbox-namespace environment failures); drift 30 PASS /
 0 FAIL; mutation check 43/43; six `--dry-run` stand-ins exit 0 with ESCALATED 0; CI green on the
 merge commit; plus the owner's real-model run recorded in §8.2. This is not FINAL (no finalization criteria are defined anywhere; §8.3.3), and it does not
 close CTX-AUTH-001b: §8.1 item 4 only says it *may be reconsidered* on this evidence. The residual
 risks R1-R6 in §6 stand as recorded (R3 is now measured and R5 has one real-model data point; neither
 is closed).
+
+**Sequence behind this statement** (sources and times in §8.3.2; UTC):
+
+1. **Delegated review performed:** between the first reconciliation commit `7fbf7c2` (Oct 29, 23:08:10Z)
+   and the records commit `ccf0489` (Oct 30, 09:29:43Z), at the owner's instruction and under the owner's
+   delegation, which the owner dates Oct 30. The UTC time of that instruction is not recorded; it
+   preceded `7fbf7c2` (inferred from that being the first resulting commit), so in UTC it falls no later
+   than Oct 29, 23:08:10Z. The defect fix is `0c16cd3` (Oct 30, 09:21:02Z). It was recorded then as
+   awaiting the owner's own acceptance (§8.2 item 1).
+2. **Real-model experiment and reconciliation completed:** the owner's experiment on Oct 31 at 19:17:56Z, the
+   second reconciliation `099a238` (19:22:56Z) and its records `396e374` (19:31:10Z).
+3. **Promotion:** PR #93 merged on Nov 1 at 03:23:47Z, under the owner's delegation and merge
+   authorization, which the owner dates Oct 30 (§8.3.1). The promotion was authorized; the owner's formal acceptance of item 1 had not
+   yet been given and did not precede it.
+4. **Re-verification on `main`:** recorded in `8ceadd1`, committed on Nov 1 at 03:39:49Z (about sixteen
+   minutes after the merge) and merged with PR #106 at 12:31:28Z.
+5. **Owner's formal acceptance of §8.1 item 1:** Nov 1, after PR #93 merged (§8.3.1). Its time of day, and
+   so its order against step 4 and PR #106, is not recorded. It is not backdated, and it confirms the
+   review without changing IMPLEMENTED or the qualified closure.
