@@ -1,0 +1,48 @@
+# evidence-id: I75
+# started-utc: 2026-11-07T01:48:24Z  (tz of user: Africa/Casablanca, UTC+00:00)
+# cwd: /home/claude/ocbrain-v4.1
+# command: python3 -I /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a6_scripts/check_addendum5.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_5_INDEPENDENT_REVIEW_BLOCKED_2026-11-07.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/a5/evidence /home/claude/ocbrain-v4.1 /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/g4_addendum_5_evidence_I68-I72.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/g4_rev3_independent_review_package.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final6/CONSOLIDATED_EVIDENCE_REPORT_ADDENDUM_4_THIRD_ATTACHED_REVIEW_AND_P1d_REV3_2026-11-06.md /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/g4_addendum_4_delivery_all_files_2026-11-06.zip /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/check_addendum4_v2.py /tmp/claude-0/-home-claude/d441201d-0373-573d-8f64-186072f858d3/scratchpad/deliver_a5/final7/check_status_mutations.py
+# ---- output ----
+level-2 headings: [1, 2, 3, 4, 5, 6, 7, 8]
+hardened status rules: conflicting matches: 0
+   PASS     Pasted text treated as unverified input; what it allows recorded
+   BLOCKED  One independent-context review of revision 3 completed
+   PASS     Review package prepared, identical to the delivered block and patch, patch applies, brief 
+   PASS     Status handling of the checker mutation-tested; stronger version rejects 9 of 9 and accept
+   PASS     No ref, commit, working file, pull request or remote changed
+   PASS     G4/freeze invariants
+   BLOCKED  Overall result (this addendum's scope)
+non-PASS gates: 1 | overall: ['BLOCKED']
+ids cited: ['I57', 'I65', 'I67', 'I68', 'I69', 'I70', 'I71', 'I72', 'I73', 'I74', 'I75'] | missing: []
+40-hex ids: 1 | unresolved: []
+64-hex digests: 5 | not backed: []
+   bundle 5: 006a9c96c2e427f82c604fd3931beee1ae3ca00e86f934cadfa3d1dc541b07f6 cited: True
+   package zip: 391eb0a06784153af4591d6bbfdc0af87edce0f17dd2e2aae0a7593794ce2286 cited: True
+   addendum 4: d619b7c87b4b3d242adc6922bbaa9fb770ad7025196db5b45a162c476fa637f8 cited: True
+   addendum 4 delivery zip: 162b4238c6d2437ee8a4cef95fb1f2a8296116c4dc832e7bb7c664fda34822ef cited: True
+abbreviated hex: ['d963daa5'] | unsourced: []
+bundle 5 entries: 9 | mismatches: 0
+package zip integrity: OK | entries: 8
+package inner checksum list: 7 files | mismatches: 0
+package block sha256 is the tested block: True
+mutants in I69: 10 | in the addendum table: 10 | identical: True
+rejected by v1: 2 | by v2: 9 | v1 accepted: 7
+   claim FOUND  I57 launches 1 and 2: 72 and 41 entries, no reports
+   claim FOUND  I68 launch 3: 3 entries, no report
+   claim FOUND  I68 launch 4: report file present
+   claim FOUND  I72 launch 4 report: 51 bytes, status line and heading, 0 findings lines
+   claim FOUND  I69 totals
+   claim FOUND  I70 package integrity and checksums
+   claim FOUND  I70 block, patch, rev2 block equalities
+   claim FOUND  I70 patch applies to the base
+   claim FOUND  I70 base equals the pushed handoff.md
+   claim FOUND  I70 independence patterns all zero
+   claim FOUND  I70 no secrets
+   claim FOUND  I71 PR #90 unchanged
+   claim FOUND  I71 state
+live REV2 tip: d963daa502de4220411d0d0c2f19f67b3ec2682b
+clone status lines: 0
+RESULT: ALL MECHANICAL CHECKS PASSED
+# ---- end output ----
+# exit-status: 0
+# finished-utc: 2026-11-07T01:48:25Z
