@@ -190,6 +190,10 @@ jobs:
         # Docker-backed suite would pass without having run.  A skip is not a pass.  Other skips
         # (for example the 32-bit toolchain one) are listed by `-rs` and judged on their own reason.
         run: |
+          if [ ! -s /tmp/pytest-output.txt ]; then
+            echo "::error::pytest output is missing or empty, so the skip check cannot be trusted"
+            exit 1
+          fi
           if grep -E '^SKIPPED .*(requires a reachable Docker daemon|requires the test image)' /tmp/pytest-output.txt; then
             echo "::error::Docker-backed tests were skipped although the preflight proved the daemon and the image"
             exit 1
