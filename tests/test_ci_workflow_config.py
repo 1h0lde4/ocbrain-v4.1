@@ -441,7 +441,7 @@ class TestDockerSkipAssertionStep:
 
     @pytest.mark.parametrize("reason", [
         "requires a reachable Docker daemon",
-        "requires the test image 'python:3.12-alpine' locally (OCBRAIN_SANDBOX_DOCKER_IMAGE; it must contain python3)",
+        "requires the test image 'python:3.12-slim' locally (OCBRAIN_SANDBOX_DOCKER_IMAGE; it must contain python3)",
     ])
     def test_a_docker_prerequisite_skip_fails_the_job(self, tmp_path: Path, reason: str) -> None:
         r = _run_skip_step(tmp_path, self.CLEAN + f"SKIPPED [57] tests/core/sandbox/test_docker_backend.py: {reason}\n")

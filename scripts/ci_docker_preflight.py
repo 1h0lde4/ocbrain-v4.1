@@ -286,7 +286,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description="Fail-closed Docker preflight: daemon, image provisioning, identity, smoke run."
     )
-    ap.add_argument("--image", required=True, help="exact image reference the tests use, e.g. python:3.12-alpine")
+    ap.add_argument("--image", required=True, help="exact image reference the tests use, e.g. python:3.12-slim")
     ap.add_argument("--report", type=Path, help="write a JSON report here (also on failure)")
     ap.add_argument("--pull-attempts", type=int, default=3, help="bounded pull attempts (default 3)")
     ap.add_argument("--retry-delay", type=float, default=5.0, help="seconds between pull attempts (default 5)")
