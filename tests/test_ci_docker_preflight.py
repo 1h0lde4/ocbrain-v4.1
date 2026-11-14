@@ -36,7 +36,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "ci_docker_preflight.py"
-IMAGE = "python:3.12-alpine"  # deliberately not the product default (alpine:3): a fallback to the default must be visible
+IMAGE = "python:3.12-slim"  # deliberately not the product default (alpine:3): a fallback to the default must be visible
 DIGEST = "python@sha256:" + "a" * 64
 IMAGE_ID = "sha256:" + "b" * 64
 PRODUCT_DIGEST_FORMAT = "{{index .RepoDigests 0}}"

@@ -71,10 +71,14 @@ jobs:
       # `alpine:3`).  It must contain python3: about 15 tests launch `python3`
       # inside the container (see the "image must contain python3" note in
       # tests/core/sandbox/test_network_isolation_contract.py), and a bare
-      # alpine:3 does not.  `python:3.12-alpine` is alpine with python3.  It is set
-      # here, once, for the preflight step and for pytest, so the two cannot
-      # diverge.  The digest actually used is recorded by the preflight step.
-      OCBRAIN_SANDBOX_DOCKER_IMAGE: python:3.12-alpine
+      # alpine:3 does not.  `python:3.12-alpine` was tried first and rejected by the
+      # first hosted run (43643507359): its BusyBox `date` has no `%N`, and the D7
+      # process-tree tests tell a live heartbeat from a stopped one by comparing
+      # `date +%s%N` readings, which needs sub-second resolution.  `python:3.12-slim`
+      # (Debian, GNU coreutils) has it.  The image is set here, once, for the
+      # preflight step and for pytest, so the two cannot diverge.  The digest actually
+      # used is recorded by the preflight step.
+      OCBRAIN_SANDBOX_DOCKER_IMAGE: python:3.12-slim
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
