@@ -122,6 +122,19 @@ def test_the_only_step_conditionals_are_always_on_artifact_uploads() -> None:
         assert step.startswith("Upload "), f"{job}/{step}: only upload steps may be conditional"
 
 
+def test_every_artifact_upload_runs_even_after_an_earlier_step_failed() -> None:
+    """The evidence of a red run is the evidence that matters: no upload may lose its `if: always()`."""
+    uploads = [
+        (name, step.get("name", ""), step.get("if"))
+        for name in JOBS
+        for step in _steps(name)
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+    ]
+    assert len(uploads) == 4, f"expected the four artifact uploads, found {uploads}"
+    for job, step, cond in uploads:
+        assert cond == "always()", f"{job}/{step}: an artifact upload without `if: always()` is lost on a failed run"
+
+
 def test_every_hosted_job_uploads_its_evidence_even_on_failure() -> None:
     wanted = {
         "drift-and-ownership": {"drift-report"},
@@ -452,6 +465,19 @@ class TestDockerSkipAssertionStep:
         r = _run_skip_step(tmp_path, self.CLEAN + "SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)\n")
         assert r.returncode == 0, r.stdout
         assert "no Docker-prerequisite skips" in r.stdout
+
+    def test_a_missing_or_empty_pytest_output_fails_the_job(self, tmp_path: Path) -> None:
+        run = _step("tests", _SKIP_STEP_NAME)["run"]
+        for content in (None, ""):
+            out = tmp_path / "pytest-output.txt"
+            out.unlink(missing_ok=True)
+            if content is not None:
+                out.write_text(content, encoding="utf-8")
+            script = tmp_path / "step.sh"
+            script.write_text(run.replace("/tmp/pytest-output.txt", str(out)), encoding="utf-8")
+            r = subprocess.run(["bash", "-e", str(script)], capture_output=True, text=True, timeout=60)
+            assert r.returncode == 1, (content, r.stdout)
+            assert "::error::" in r.stdout
 
     def test_a_run_without_skips_passes(self, tmp_path: Path) -> None:
         assert _run_skip_step(tmp_path, self.CLEAN).returncode == 0
