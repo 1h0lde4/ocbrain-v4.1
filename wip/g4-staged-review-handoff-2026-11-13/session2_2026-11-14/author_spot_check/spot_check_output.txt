@@ -1,0 +1,33 @@
+== build: T -> H -> P -> M(merge of P and side)
+Automatic merge went well; stopped before committing as requested
+T=ddb9921086fa354f3f1fa7af52c7d36276e5b2e0 H=44ccfc31bd57596a19a8b9b7190a86af9c889862 P=de94b713efb52a375a811088bd0bfc8d14162fd4 M=dfa70d16cde909f81f2b4d650dab8410659f2c2d X=e00344edb4bc82c3347e12606dd119b559dade85
+remote tip parents: 2 (2 = merge commit)
+  block copy differs from original in 3 line(s) (expect 3)
+--- control_clean
+follow-up: de94b713efb52a375a811088bd0bfc8d14162fd4 P
+FAIL: f822763fd650b5f1c5219b02f16c3d0f9dd1d626 does not change handoff.md alone
+follow-up: f822763fd650b5f1c5219b02f16c3d0f9dd1d626 S
+FAIL: dfa70d16cde909f81f2b4d650dab8410659f2c2d is not a single-parent child of f822763fd650b5f1c5219b02f16c3d0f9dd1d626
+FAIL: dfa70d16cde909f81f2b4d650dab8410659f2c2d does not change handoff.md alone
+follow-up: dfa70d16cde909f81f2b4d650dab8410659f2c2d merge
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+--- graft
+follow-up: de94b713efb52a375a811088bd0bfc8d14162fd4 P
+follow-up: dfa70d16cde909f81f2b4d650dab8410659f2c2d merge
+PASS at 2026-11-14T12:17:12Z: remote tip dfa70d16cde909f81f2b4d650dab8410659f2c2d; handoff commit 44ccfc31bd57596a19a8b9b7190a86af9c889862 on docs/g4-fts-errata-handoff-oct2026; 2 follow-up(s), each a
+exit=0
+--- replace_ref
+follow-up: de94b713efb52a375a811088bd0bfc8d14162fd4 P
+follow-up: dfa70d16cde909f81f2b4d650dab8410659f2c2d twin
+PASS at 2026-11-14T12:17:12Z: remote tip dfa70d16cde909f81f2b4d650dab8410659f2c2d; handoff commit 44ccfc31bd57596a19a8b9b7190a86af9c889862 on docs/g4-fts-errata-handoff-oct2026; 2 follow-up(s), each a
+exit=0
+--- replace_ref_control (GIT_NO_REPLACE_OBJECTS=1)
+follow-up: dfa70d16cde909f81f2b4d650dab8410659f2c2d merge
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+
+== token print by git itself (loopback 401 server, dummy token)
+git exit=128
+[git stderr]
+fatal: could not read Password for 'http://DUMMYTOKEN-xyz@127.0.0.1:18401': terminal prompts disabled
+token occurrences in git stderr: 1
