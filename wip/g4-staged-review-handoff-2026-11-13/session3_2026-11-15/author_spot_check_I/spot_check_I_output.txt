@@ -1,0 +1,7 @@
+governing line is file line 5; first gate table lines 92-101
+base  contract_expects=PASS checker=PASS (rc=0) -> correct PASS  
+A02   contract_expects=FAIL checker=FAIL (rc=1) -> correct FAIL  ['FAIL: governing-status line missing']
+C01   contract_expects=FAIL checker=PASS (rc=0) -> FALSE PASS  
+C04   contract_expects=FAIL checker=PASS (rc=0) -> FALSE PASS  
+M01   contract_expects=FAIL checker=PASS (rc=0) -> FALSE PASS  
+T13   contract_expects=FAIL checker=PASS (rc=0) -> FALSE PASS  
