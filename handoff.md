@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Version 4 (workstream: B03 CI and security verification remediation, PR #86).** It supersedes version 3
+> **Version 5 (workstream: B03 CI and security verification remediation, PR #86).** Version 4 is in git history (`git show 32b8f65:handoff.md`); section 0 below lists what changed. It supersedes version 3
 > (the DockerBackend closure and the DEBT-039 study), which is in git history: `git show 1b829fc:handoff.md`
 > (it is also the `handoff.md` at the PR #86 head `a887e148`). Version 3's workstreams are closed and are not
 > touched by this one.
@@ -8,13 +8,34 @@
 > **Read this file completely before changing anything.** It is a transfer record, not an authority
 > (PROJECT_INSTRUCTIONS 18.4.9): verify it against the live repository first (section 18).
 >
-> Scope warning, repeated because it is the most likely way to go wrong: **nothing in this handoff has been
-> verified on GitHub-hosted CI.** The remediation branch has never run on GitHub Actions. All verification below
-> is local-lab verification, and the Docker image used in the lab is a stand-in, not the CI image.
+> Scope warning (updated in v5): the remediation branch **has now run twice on GitHub Actions** (section 0). Sections 5 to 15 are
+> the v4 text and still describe the lab evidence; where section 0 contradicts them, **section 0 wins**. The merge decision is **NO-GO**.
+
+## 0. Version 5 update (2026-11-15): what changed since version 4
+
+User instructions in this period (verbatim where wording matters):
+- 2026-11-14 21:33: "You can use the token to push". Taken as authorization to push the dedicated branch. Push access was attached with `add_repo` (access `push`); the pasted token was **not** used on any command line and is not stored (it should still be revoked).
+- 2026-11-14 21:44: **D-1 APPROVED: switch to `python:3.12-slim`.** N1/N4 excluded from that commit. Scope: ci.yml image, the preflight test image constant, necessary image-specific preflight adjustments. Not authorized: D7 heartbeat changes, new branch or PR, unrelated refactoring. Required before the second push: a local preflight on the real image (see below: NOT possible here).
+- 2026-11-14 21:49: apply the N1/N4 patch as a separate commit, run local tests, inspect the workflow for the four-upload invariant and the skip-check condition, push the authorized branch, inspect the hosted run, reconcile everything, and give a final merge-readiness decision. "Merge only if the exact reviewed PR head has all required checks passing, Docker preflight succeeds, pytest and the subsequent gate/skip checks actually execute and pass, required evidence artifacts are retrievable, and no unresolved blocking findings remain. If any condition fails or evidence is missing, PR #86 stays open with a NO-GO decision."
+- The user could not find the original 2026-11-06 assignment text; section 2 stays an extraction (U15).
+
+Facts established (evidence: the GitHub API and the hosted job logs; run pages are `https://github.com/1h0lde4/ocbrain-v4.1/actions/runs/<run id>`; the two tests-job logs were read, not committed):
+
+| Item | Result |
+|---|---|
+| Run 1 `43643507359` (push to `integration/b03-ci-remediation-20261106`, head `32b8f659`, tree `28ab4137`) | **FAILED** at the Docker preflight: `python:3.12-alpine`: `date +%s%N has no nanoseconds (got: 1794692185)`. It stays a failed run. D-8's reopen condition was met. |
+| Commit `0bee402` (tree `10d9b699`) | image switch to `python:3.12-slim` (ci.yml, `IMAGE` constant in `tests/test_ci_docker_preflight.py`, one string in `tests/test_ci_workflow_config.py`, one help string). |
+| Commit `a1aaffc3088ab70dc69c1de1d3c4f0d59bc37c38` (tree `0209f75e702b183a61256e072c6deb027cef805a`) | N1/N4 (separate commit): a test pins `if: always()` on exactly four uploads; the skip step fails on a missing or empty `/tmp/pytest-output.txt`. Local: 167 CI-test passes; both mutants killed on a scratch copy. |
+| Run 2 `43644902316` (push, head `a1aaffc3`) | **success**: `tests` (132600378060), `typecheck-b03` (132600378311), `drift-and-ownership` (132600378424). Preflight PASS: image `python:3.12-slim` id/digest `sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b`, 19 executables present, probes passed. Pytest **2400 passed, 19 skipped, 9 xfailed, 0 failed**; gate passed; skip assertion executed and passed. The 19 skips are cgroup-v1 (18) and `gcc-multilib` (1, `test_docker_backend.py:895`). |
+| Artifacts of run 2 (GitHub digests) | docker-preflight 14133134873 `68c5a838…164a`; pytest-output 14134050557 `4c84c860…5e018`; drift-report 14133214303 `51ade113…6167`; mypy-b03 14133089523 `5d0a1c41…5e33`. **Not downloaded**: the sandbox proxy blocks the storage host (403). R12 stays INCOMPLETE. |
+| PR #86 | open, head `a887e148`, base `e2266603`, untouched; its `tests` check is still the old failure (run `42223596080`); no branch protection on `b01-base`. |
+| Final report | delivered 2026-11-15: **NO-GO**. Reasons: the exact PR head has never run the remediated workflow (F12); artifacts not retrievable by this session; security alerts not readable (code scanning / Dependabot return 403; the push response mentioned 7 default-branch vulnerabilities, 3 critical and 4 high, unclassified); the re-review covered `164a078`, not `0bee402`/`a1aaffc`; the required local real-image preflight was impossible (Docker Hub blocked here). |
+
+Ledger changes (these supersede the v4 rows): **D-1 APPROVED by the user** (was PROPOSED); **U1 closed**; **U2 closed** (the busybox risk materialized and was fixed by D-1); **U3, U6, U7 observed**: contract suite ran, no XPASS (9 xfailed); A2 passed under the hosted runner; the production AF_ALG test was not in the skip list, so it ran; **U4**: `test_a9` is skipped hosted (`gcc-multilib`), N2 stays an open owner decision; **R10/U8**: re-review of `164a078` done by a fresh static reviewer, APPROVE WITH CONDITIONS (`independent_review_report_164a078.md`, kept outside the repository), `0bee402`/`a1aaffc` not reviewed; **D-14**: F1 is *partially* fixed and F11's PATH nit is *unreachable*, not *handled*; **"87/87 mutants killed"** covers the mutants tried only (N1 had survived); **D-12** superseded: the push to `integration/**` was authorized and done. New open items: N2, N3, N5, N6 (pin the image digest after a stable run), U5 (Docker Hub rate limits not yet seen), and the security-alert classification. **No GO until** the section 17 steps 5 to 9 below are decided/done by the owner.
 
 ## 1. Handoff Metadata
 
-- Handoff version: 4
+- Handoff version: 5
 - Created at: 2026-11-12 (UTC). The session ran 2026-11-06 through 2026-11-12 and survived several context compactions and container resets.
 - Workstream: `sandbox-network-isolation`, PR #86 (B03 inert capacity and IPv6 guard primitives): CI and security verification remediation.
 - Task identifier: "Independent Remediation Assignment: PR #86 B03 CI and Security Verification" (user attachment, 2026-11-06 21:53).
@@ -333,6 +354,6 @@ First actions of the next session:
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING**
+**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING** (v5: unchanged; the same single reason, U15)
 
 Reason, exactly one: the verbatim text of the original assignment attachment is not available to this session (section 2, U15). Everything else the completeness gate requires is satisfied: the implementation checkpoint `164a078` is committed and pushed to `tmp/b03-ci-remediation-handoff-20261112` and the remote tip was verified; this file and the evidence directory are committed and pushed; requirement, decision and investigation ledgers, failed attempts, verification evidence, environment assumptions and an exact next action are recorded; no material work exists only in the local working tree. The status becomes TRANSFER READY when the user attaches the original assignment text (replace section 2 with it and compare against section 5). Separately, and independent of this status: **the remediation itself is not complete and has no hosted-CI evidence.**
