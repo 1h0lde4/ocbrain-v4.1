@@ -1,0 +1,3 @@
+# The call log under logs/ is part of the evidence record and must be tracked (the repo-level ignore rule for logs/ would otherwise skip it).
+!logs/
+!**/logs/
