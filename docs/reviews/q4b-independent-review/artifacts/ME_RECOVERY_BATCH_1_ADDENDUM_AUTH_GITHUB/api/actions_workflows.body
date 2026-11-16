@@ -1,0 +1,65 @@
+{
+  "total_count": 5,
+  "workflows": [
+    {
+      "id": 272537039,
+      "node_id": "W_kwDOSWs39c4QPpXP",
+      "name": "CI",
+      "path": ".github/workflows/ci.yml",
+      "state": "active",
+      "created_at": "2026-05-07T09:06:22.000Z",
+      "updated_at": "2026-08-23T22:05:02.000Z",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/workflows/272537039",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/blob/main/.github/workflows/ci.yml",
+      "badge_url": "https://github.com/1h0lde4/ocbrain-v4.1/workflows/CI/badge.svg"
+    },
+    {
+      "id": 272537042,
+      "node_id": "W_kwDOSWs39c4QPpXS",
+      "name": "Release",
+      "path": ".github/workflows/release.yml",
+      "state": "active",
+      "created_at": "2026-05-07T09:06:22.000Z",
+      "updated_at": "2026-08-13T15:10:10.000Z",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/workflows/272537042",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/blob/main/.github/workflows/release.yml",
+      "badge_url": "https://github.com/1h0lde4/ocbrain-v4.1/workflows/Release/badge.svg"
+    },
+    {
+      "id": 367636158,
+      "node_id": "W_kwDOSWs39c4V6a6-",
+      "name": "Dependabot Updates",
+      "path": "dynamic/dependabot/dependabot-updates",
+      "state": "active",
+      "created_at": "2026-09-26T10:39:27.000Z",
+      "updated_at": "2026-09-26T10:39:27.000Z",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/workflows/367636158",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/dependabot/dependabot-updates",
+      "badge_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/dependabot/dependabot-updates/badge.svg"
+    },
+    {
+      "id": 365555516,
+      "node_id": "W_kwDOSWs39c4Vye88",
+      "name": "Dependency Graph",
+      "path": "dynamic/dependabot/update-graph",
+      "state": "active",
+      "created_at": "2026-09-23T22:05:43.000Z",
+      "updated_at": "2026-09-23T22:05:43.000Z",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/workflows/365555516",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/dependabot/update-graph",
+      "badge_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/dependabot/update-graph/badge.svg"
+    },
+    {
+      "id": 365555822,
+      "node_id": "W_kwDOSWs39c4VyfBu",
+      "name": "CodeQL",
+      "path": "dynamic/github-code-scanning/codeql",
+      "state": "active",
+      "created_at": "2026-09-23T22:06:21.000Z",
+      "updated_at": "2026-09-23T22:06:21.000Z",
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/workflows/365555822",
+      "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/github-code-scanning/codeql",
+      "badge_url": "https://github.com/1h0lde4/ocbrain-v4.1/actions/workflows/github-code-scanning/codeql/badge.svg"
+    }
+  ]
+}

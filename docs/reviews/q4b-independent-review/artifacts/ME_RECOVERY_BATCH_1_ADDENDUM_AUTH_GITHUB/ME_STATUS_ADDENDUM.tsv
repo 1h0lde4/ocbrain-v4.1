@@ -1,0 +1,3 @@
+ME_ID	batch1_acquisition_status	addendum_acquisition_status	reason	evidence_references
+ME-07	INACCESSIBLE	LOCATED	CI runs, successful tests jobs and retained pytest-output artifacts (with platform digests) located for both commits; bytes blocked by sandbox network allowlist; CI evidence is the full-suite CI run, not the six-file selection	api/run_40781867485_*, api/run_39226693573_*, ci_logs/*.headers.txt, ci_artifacts/*.headers.txt
+ME-13	PARTIALLY RECOVERED	PARTIALLY RECOVERED	authenticated JSON captures of PR #81, issue #105, issue comments, PR list (4 pages) and main taken 2026-11-13; earlier-read states not reproducible	api/pull_81*.body, api/issue_105*.body, api/pulls_all_page*.body, api/branch_main.body

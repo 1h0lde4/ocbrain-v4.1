@@ -1,0 +1,2 @@
+# Keep every byte exactly as committed so the SHA-256 manifests verify on any platform.
+* -text

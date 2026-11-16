@@ -1,0 +1,24 @@
+HTTP/2 302 
+date: Sat, 14 Nov 2026 16:22:41 GMT
+content-type: text/html;charset=utf-8
+content-length: 0
+location: https://productionresultssa2.blob.core.windows.net/actions-results/bc2a9929-b089-8ad5-b508-02364f3abbf1/workflow-job-run-2646028e-c7d2-58f1-8fd7-7a1bd59906c2/artifacts/d426ecd78f1d54d51f4faf7602ce4b8ec3b6ac888086b009f995bee7fd562b5d.zip?[QUERY-REDACTED: signed temporary URL]
+x-github-api-version-selected: 2022-11-28
+access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+access-control-allow-origin: *
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
+content-security-policy: default-src 'none'
+vary: Accept-Encoding, Accept, X-Requested-With
+server: github.com
+x-ratelimit-limit: 5000
+x-ratelimit-remaining: 4999
+x-ratelimit-reset: 1794676961
+x-ratelimit-used: 1
+x-ratelimit-resource: core
+x-github-request-id: 7001:3601A5:17691F5:4B5B524:6AF88AD0
+x-github-edge-region: iad
+

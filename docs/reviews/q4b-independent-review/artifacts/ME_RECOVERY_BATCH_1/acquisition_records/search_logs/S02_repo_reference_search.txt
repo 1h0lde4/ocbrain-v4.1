@@ -1,0 +1,6 @@
+# repo reference search 2026-11-08T11:12:57Z
+## git grep -l on origin/main
+CURRENT_STATE.md
+KNOWN_ISSUES.md
+## git grep -l on origin/feature/verification-critic-evidence-phase-c
+handoff.md

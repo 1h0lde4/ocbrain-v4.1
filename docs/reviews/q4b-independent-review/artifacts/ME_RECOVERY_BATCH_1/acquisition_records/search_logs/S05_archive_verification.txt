@@ -1,0 +1,23 @@
+# archive verification (recomputed from actual files) 2026-11-08T20:17:46Z
+files.zip: 8443 bytes, sha256 73c4e52440d018d86194e9ccb0db7feb72224263caf5754a5045b30c750d2222
+zip test: OK | members: ['probe_main4.py', 'probe_main2.py', 'probe_main3.py', 'probe_main.py', 'README.md', 'probe_main5.py']
+  member probe_main.py     8419 bytes sha256 a761827d450591ddf2d0589b0a65428c5c1703a52f1b1ec4b19b66bfdd87e395 | brief-recorded: MATCH
+  member probe_main2.py    3343 bytes sha256 dc69e68f7818a77b09611fdf6c5a2cfd3c58805d6836fdd18efa6a016535110e | brief-recorded: MATCH
+  member probe_main3.py    2279 bytes sha256 e1aee93306461167996380d5dd783e525fee780bd6897ee3511d134c6ad1154c | brief-recorded: MATCH
+  member probe_main4.py    4668 bytes sha256 5ef869ee74f6749e0a65b937b799582a2750e01513e116eb9ee7c0e51a9f23ed | brief-recorded: MATCH
+  member probe_main5.py    1676 bytes sha256 403f6c37853fe8db33a128d22a8f56faaf2ce96511c7016f862bb60ebe522a11 | brief-recorded: no hash recorded in that paragraph
+  member README.md         1309 bytes sha256 fc5ba8aeb31db4a4983600a32233a64c3755ec5c7249b4c8c9e536e1916d5681 | brief-recorded: no hash recorded in that paragraph
+ARCHIVE_MANIFEST_r9_1.tsv: 19 rows; discrepancies: none
+ARCHIVE_MANIFEST.tsv: 16 rows; discrepancies: none
+  zip q4b_independent_review_interim.zip: testzip=OK members=27
+  zip q4b_independent_review_interim_r2.zip: testzip=OK members=38
+  zip q4b_independent_review_interim_r3.zip: testzip=OK members=60
+  zip q4b_independent_review_interim_r4_supplement.zip: testzip=OK members=30
+  zip q4b_review_consolidated_register_r9.zip: testzip=OK members=3
+  zip q4b_review_consolidated_register_r9_1.zip: testzip=OK members=37
+  zip q4b_review_note_r5_trace_id.zip: testzip=OK members=10
+  zip q4b_review_note_r6_identity.zip: testzip=OK members=9
+  zip q4b_review_note_r7_amendments.zip: testzip=OK members=9
+  zip q4b_review_note_r8_exceptional_events.zip: testzip=OK members=6
+r9 manifest rows present with identical hash in r9.1 manifest: True (16 rows)
+files in outputs not listed in r9.1 manifest: ['ARCHIVE_MANIFEST_r9_1.tsv', 'CONSOLIDATED_EVIDENCE_REGISTER_r9_1.md', 'INVENTORY_MANIFEST.tsv', 'Q4B_MISSING_EVIDENCE_INVENTORY.md', 'q4b_review_consolidated_register_r9_1.zip']

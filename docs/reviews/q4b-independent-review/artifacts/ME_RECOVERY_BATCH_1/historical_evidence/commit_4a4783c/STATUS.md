@@ -1,0 +1,3 @@
+# Commit 4a4783c (`4a4783c47ac37971a7d51ab3d7ab6fc904a37106`, merge of PR #95): historical probe outputs, test logs, diff output (ME-06, ME-07, ME-08): NOT FOUND (CI search INACCESSIBLE)
+
+Searched: sandbox filesystem and uploads (S01), repo references on `main` and the Verification branch (S02; secondary mentions only in `CURRENT_STATE.md`, `KNOWN_ISSUES.md`, `handoff.md`), GitHub CI via API (S03: HTTP 403 rate limit, all eight calls), GitHub static pages (S04: commit page and Actions index captured; no run or check data referencing this commit appears in the static HTML). Located but not original evidence: the brief's section 18 statements (170 passed; twelve audited files; probe hashes). Nothing was generated to replace the missing artifacts.

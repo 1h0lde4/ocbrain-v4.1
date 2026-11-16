@@ -1,0 +1,16 @@
+ME_ID	discovery	acquisition	integrity	sufficiency_for_the_missing_requirement	notes
+ME-01	LOCATED (source doc, rev 19)	NOT ACQUIRED (export delivered to the operator only; not preservable)	NOT ESTABLISHED (no bytes)	NOT MET	platform-reported sizes only
+ME-02	LOCATED (source doc, rev 28 as last observed)	NOT ACQUIRED	NOT ESTABLISHED	NOT MET	sizes only
+ME-03	LOCATED (source doc, rev 13 as last observed)	NOT ACQUIRED	NOT ESTABLISHED	NOT MET	which document is the ledger is an open owner confirmation
+ME-04	LOCATED (direction recorded; current status unknown)	NOT APPLICABLE (owner statement needed)	NOT APPLICABLE	NOT MET	no decision made or inferred
+ME-05	LOCATED (platform serves durable revision 17; claim and block hashes in the brief)	NOT ACQUIRED (original captures NOT FOUND; none regenerated and preserved)	NOT APPLICABLE	NOT MET	revision 10 readability inconclusive
+ME-06	PARTIAL (scripts located; outputs NOT FOUND)	PARTIAL (scripts already held; outputs not acquired)	scripts: 4 of 6 members match brief-recorded hashes; outputs: not applicable	NOT MET	CI artifacts are not probe outputs
+ME-07	LOCATED (CI runs, jobs, retained artifacts and platform digests for both commits)	NOT ACQUIRED (download hosts blocked by the sandbox allowlist; metadata and digests only)	NOT ESTABLISHED for bytes; platform digests are REPORTED	NOT MET for the six-file logs; NOT ASSESSED for the full-suite CI artifacts	pairing: 4a4783c with run 40781867485, f13bfde with run 39226693573
+ME-08	NOT FOUND	NOT ACQUIRED	NOT APPLICABLE	NOT MET	no replacement diff generated
+ME-09	LOCATED (brief sections 15 and 22; mission text in handoff v4)	NOT ACQUIRED as preserved bytes	NOT ESTABLISHED	NOT MET	
+ME-10	LOCATED (code on the Verification branch; section 21); runtime outputs NOT FOUND	NOT ACQUIRED	NOT ESTABLISHED	NOT MET	
+ME-11	LOCATED (tracker and reconciliation wording; Docs wording not extracted)	NOT ACQUIRED as preserved bytes	NOT ESTABLISHED	NOT MET	decision series need labels
+ME-12	PARTIAL (D1 referenced; D2 definition NOT FOUND)	NOT ACQUIRED	NOT APPLICABLE	NOT MET	no decision made or inferred
+ME-13	LOCATED	PARTIAL (authenticated JSON captures of current state; earlier states not reproducible)	captures hashed as received (VERIFIED as captures)	PARTIAL: new supporting records, not the original earlier captures; an API record does not establish practical ownership	separate history from ME-07
+ME-14	NOT INVESTIGATED	NOT INVESTIGATED	NOT INVESTIGATED	NOT INVESTIGATED	execution evidence, later authorized stage
+ME-15	NOT INVESTIGATED	NOT INVESTIGATED	NOT INVESTIGATED	NOT INVESTIGATED	execution evidence, later authorized stage

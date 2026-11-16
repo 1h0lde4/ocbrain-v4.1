@@ -1,0 +1,116 @@
+{
+  "name": "main",
+  "commit": {
+    "sha": "2491ae469edd6ef1267a14604c4f8f40d698f7ea",
+    "node_id": "C_kwDOSWs39doAKDI0OTFhZTQ2OWVkZDZlZjEyNjdhMTQ2MDRjNGY4ZjQwZDY5OGY3ZWE",
+    "commit": {
+      "author": {
+        "name": "N4Z",
+        "email": "monssif.lwazzzani@gmail.Com",
+        "date": "2026-11-01T12:31:27Z"
+      },
+      "committer": {
+        "name": "GitHub",
+        "email": "noreply@github.com",
+        "date": "2026-11-01T12:31:27Z"
+      },
+      "message": "Merge pull request #106 from 1h0lde4/docs/ctx-auth-002-closure-oct2026\n\ndocs(ctx-auth-002): close CTX-AUTH-002 (qualified); ADR-KERNEL-08 IMPLEMENTED",
+      "tree": {
+        "sha": "291288474a017206515a56543f5967a0524b9037",
+        "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/git/trees/291288474a017206515a56543f5967a0524b9037"
+      },
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/git/commits/2491ae469edd6ef1267a14604c4f8f40d698f7ea",
+      "comment_count": 0,
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJq5zEfCRC1aQ7uu5UhlAAAShAQAAd+hlXYpD2oaXrgMLHBOLkM\nnMmnc/Y9bHyHamrH1x30Hk7Ql8zRiWfJ5tYuUu2mNT5LAo/rxiBiUl6nno0qtE5k\nNUWd+y7qp3w1xchYDDCloWAINft3I6c6YI5MduNs3dfAshGutU1iZcp4EiH0clvN\nbmhNKX5MVTxCqdfZNpC5L5OOfclyFbxabUpHb2IfJXR/upTNLNggXXHhkytgZf1N\nwMELXBZEI+pA9zdZAB/nNEMNaRGabVTZonWWq66aaLuXmdD2Xc99qRdX/YthGq6R\nKZa42t9WJNUGYASIuDcqeIFs+KJcbtchGG6s5BDgQ/hzrcNYcHNd0y8SXOBzEdn7\nWL7Di7isshiqifvn8ArMxevNYh7nocve0lmDyPgfw/JTYAw1WCtOu8xbqVWOgFBU\nVzUhDZPBh6KrMpqMNRSEFY8PWDf0TmTYBolt5BvRgz8xq/laKDLVBmz+Qb5beNrr\nPeoB7spk8Dt26Ezsnl/GyvT1S2QBfqrkfNSNcPFRmfFCI5eead1VtPj3rpsettOB\n+2FIjlZpPq6LeA+04htszkSYRGSmCSSUZ44ySBD+wtJxR+ma+zTaw8Zs7D2jhhJT\nEOuH+ZAcINlP8uWPkpgrIi++Wy4fK5is/uXuWgltMwI50xKxU4MWXhZneNBTlg83\nux1g+3IFySdU1KTcXmYU\n=mQid\n-----END PGP SIGNATURE-----\n",
+        "payload": "tree 291288474a017206515a56543f5967a0524b9037\nparent b742e4a2d5063094665b375da4746b23ff7421bc\nparent 8ceadd1850f182e6b57ee0df1d2d95b54c301f4d\nauthor N4Z <monssif.lwazzzani@gmail.Com> 1793536287 +0000\ncommitter GitHub <noreply@github.com> 1793536287 +0000\n\nMerge pull request #106 from 1h0lde4/docs/ctx-auth-002-closure-oct2026\n\ndocs(ctx-auth-002): close CTX-AUTH-002 (qualified); ADR-KERNEL-08 IMPLEMENTED",
+        "verified_at": "2026-11-01T12:31:28Z"
+      }
+    },
+    "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/commits/2491ae469edd6ef1267a14604c4f8f40d698f7ea",
+    "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/commit/2491ae469edd6ef1267a14604c4f8f40d698f7ea",
+    "comments_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/commits/2491ae469edd6ef1267a14604c4f8f40d698f7ea/comments",
+    "author": {
+      "login": "1h0lde4",
+      "id": 196927701,
+      "node_id": "U_kgDOC7zg1Q",
+      "avatar_url": "https://avatars.githubusercontent.com/u/196927701?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/1h0lde4",
+      "html_url": "https://github.com/1h0lde4",
+      "followers_url": "https://api.github.com/users/1h0lde4/followers",
+      "following_url": "https://api.github.com/users/1h0lde4/following{/other_user}",
+      "gists_url": "https://api.github.com/users/1h0lde4/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/1h0lde4/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/1h0lde4/subscriptions",
+      "organizations_url": "https://api.github.com/users/1h0lde4/orgs",
+      "repos_url": "https://api.github.com/users/1h0lde4/repos",
+      "events_url": "https://api.github.com/users/1h0lde4/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/1h0lde4/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "committer": {
+      "login": "web-flow",
+      "id": 19864447,
+      "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+      "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/web-flow",
+      "html_url": "https://github.com/web-flow",
+      "followers_url": "https://api.github.com/users/web-flow/followers",
+      "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+      "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+      "organizations_url": "https://api.github.com/users/web-flow/orgs",
+      "repos_url": "https://api.github.com/users/web-flow/repos",
+      "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/web-flow/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "parents": [
+      {
+        "sha": "b742e4a2d5063094665b375da4746b23ff7421bc",
+        "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/commits/b742e4a2d5063094665b375da4746b23ff7421bc",
+        "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/commit/b742e4a2d5063094665b375da4746b23ff7421bc"
+      },
+      {
+        "sha": "8ceadd1850f182e6b57ee0df1d2d95b54c301f4d",
+        "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/commits/8ceadd1850f182e6b57ee0df1d2d95b54c301f4d",
+        "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/commit/8ceadd1850f182e6b57ee0df1d2d95b54c301f4d"
+      }
+    ]
+  },
+  "_links": {
+    "self": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/branches/main",
+    "html": "https://github.com/1h0lde4/ocbrain-v4.1/tree/main"
+  },
+  "protected": true,
+  "protection": {
+    "enabled": true,
+    "required_status_checks": {
+      "enforcement_level": "everyone",
+      "contexts": [
+        "tests",
+        "drift-and-ownership"
+      ],
+      "checks": [
+        {
+          "context": "tests",
+          "app_id": 15368
+        },
+        {
+          "context": "drift-and-ownership",
+          "app_id": 15368
+        }
+      ]
+    }
+  },
+  "protection_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/branches/main/protection"
+}

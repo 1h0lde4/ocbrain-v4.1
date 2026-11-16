@@ -1,0 +1,3 @@
+# Section 22 supporting raw evidence (ME-05): ORIGINAL NOT FOUND; claim and block-hash table LOCATED in the brief
+
+The claim is in the Q4-b brief section 22 ("Integrity check of revision 1"; block `ma34sn5v797.66124`, stamped revision 18) and the integrity table of section 17 (block `.15771`). Both are REPORTED original-author statements, read but not preserved as bytes. The brief's sentence that edits after revision 17 added only section 22 predates the revision-19 Late note (block `.67927`, stamped revision 19) and is not treated as proof of the complete revision history. The raw tool outputs behind the claim were not found (S01-S06).

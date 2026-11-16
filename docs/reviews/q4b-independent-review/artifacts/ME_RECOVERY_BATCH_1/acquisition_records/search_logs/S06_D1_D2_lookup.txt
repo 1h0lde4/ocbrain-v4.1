@@ -1,0 +1,18 @@
+# D1/D2 lookup in KNOWN_ISSUES.md at origin/main 2491ae4 (2026-11-08T20:18:04Z)
+17:*FZ-01** (the K4.2 path reads `wf_result.output or ""` and has no failure channel; open, blocked on maintainer decision D1, depends on FZ-02). No separate item was created for it, and nothing in this entry changes FZ-01's status. **Verification:** CI on `main` at `77e2e82`: `tests`, `drift-and-ownership` and both CodeQL 
+19:in` (PRs #51, #53, #55); FZ-01, FZ-02, FZ-05 and FZ-06 remain OPEN and are not started (blocked on maintainer decisions D1-D3). Nothing here is a FREEZE READY claim. `DEBT-031`'s description of the CI gate is superseded by FZ-07 (addendum on that row); the `docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt` header w
+20: 0 new. **PR #56** (merge commit `41fa85a`, Oct 5, 2026; issue #54, which records the owner's accepted design decisions D1-D5) confines `/import` and `/brain/v2/import` `bundle_path` to a configured import root. It supersedes **PR #44**, closed unmerged: #44's own analysis reported two new `py/path-injection` alerts (#38
+43:her than removed -- K4.2-H1, ADR-K4.2-H-06, Aug 16, 2026). H1 implemented `is_general_purpose` on `CapabilityContract` (D2, unrelated) and added `caused_by` (D9) to `LearningRecord`/`CognitiveDecision` without touching `ContentDomain` at all -- H1 deliberately did not attempt this reconciliation; it is recorded here spec
+44:e-ending noise only (CRLF -> LF, no content difference) -- confirmed on three separate H2 packet branches this session (D3, D7, D11). **Correction, added by a parallel session (Context Compiler / isolation-audit track):** `settings.toml` specifically is not always line-ending noise -- a single test-triggered rewrite ther
+82:or "book a flight to Tokyo next week" (the exact phrase ADR-K4.2-H-02 already uses as its own fixed-and-verified case). D2/ADR-K4.2-H-02 made sure that 0.0-scoring fallback candidate still gets *discovered*; it did not stop that 0.0 from becoming plan confidence and tripping `ClarificationPolicy`'s unconditional 0.5 thre
+82:shold. Predates H2 entirely; unrelated to the D3/D12 merge-then-revert episode on `main` the same day. Fixed by a new `_is_general_purpose_only()` check (computed independently of confidence, driven only by the registry's existing `is_general_purpo
+128:rmal return (audit repro: HTTP 200, `success=True`, empty answer while the workflow had failed). | **OPEN -- BLOCKED on D1** (not started; batches B3/B4) | Audit repro at `ecddbff`. Code path re-confirmed by inspection on `e438387` (`answer = wf_result.output or ""` at the K4.2 sites of `core/orchestrator.py`; `success=T
+# repo-wide search for a definition document of the FZ-freeze decisions
+core/runtime/watchdog_decision.py
+docs/Bugs Hunt & fix reports/K4_2_H1_FINAL_FREEZE_REVIEW.md
+docs/Bugs Hunt & fix reports/KERNEL_V1_0_PRE_FREEZE_DEBT_RECONCILIATION_AUDIT.md
+docs/architecture/decisions/ADR_CTX_01_LONG_TERM_MEMORY_SCOPE_STORAGE.md
+docs/architecture/decisions/ADR_INDEX.md
+docs/architecture/decisions/ADR_K2_3_01_GOVERNANCE_OWNERSHIP.md
+docs/architecture/decisions/ADR_K2_EXT_01_EXTENSION_OVER_MODIFICATION.md
+docs/architecture/decisions/ADR_K3_5_01_EVENT_ARCHITECTURE.md

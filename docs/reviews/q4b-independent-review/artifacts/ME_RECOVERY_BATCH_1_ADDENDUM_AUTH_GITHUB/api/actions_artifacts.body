@@ -1,0 +1,2005 @@
+{
+  "total_count": 850,
+  "artifacts": [
+    {
+      "id": 13626145627,
+      "node_id": "MDg6QXJ0aWZhY3QxMzYyNjE0NTYyNw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13626145627",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13626145627/zip",
+      "expired": false,
+      "digest": "sha256:3dd946b8f592571d7047abc6d90bbe10e214885a2b102b572df3f84755ece54d",
+      "created_at": "2026-11-08T16:50:12Z",
+      "updated_at": "2026-11-08T16:50:12Z",
+      "expires_at": "2027-02-06T16:42:48Z",
+      "workflow_run": {
+        "id": 42501282719,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-025-control-plane-authorization-design-nov2026",
+        "head_sha": "3be06521ea0141b2700e622681127f4b7ea13e69"
+      }
+    },
+    {
+      "id": 13624858577,
+      "node_id": "MDg6QXJ0aWZhY3QxMzYyNDg1ODU3Nw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13624858577",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13624858577/zip",
+      "expired": false,
+      "digest": "sha256:1213721ff2b41ac11b003e26816ed46a7a57bf9793ad8431199653e9922a1d13",
+      "created_at": "2026-11-08T16:42:59Z",
+      "updated_at": "2026-11-08T16:42:59Z",
+      "expires_at": "2027-02-06T16:42:48Z",
+      "workflow_run": {
+        "id": 42501282719,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-025-control-plane-authorization-design-nov2026",
+        "head_sha": "3be06521ea0141b2700e622681127f4b7ea13e69"
+      }
+    },
+    {
+      "id": 13505545049,
+      "node_id": "MDg6QXJ0aWZhY3QxMzUwNTU0NTA0OQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 7538,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505545049",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505545049/zip",
+      "expired": false,
+      "digest": "sha256:137f5d9e306ae2e3b4b5df700892321d6ac52b4c1266c90dddf64e3962c47e07",
+      "created_at": "2026-11-06T13:16:26Z",
+      "updated_at": "2026-11-06T13:16:26Z",
+      "expires_at": "2027-02-04T13:12:26Z",
+      "workflow_run": {
+        "id": 42223622852,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "integration/b03-ci-evidence-20261106",
+        "head_sha": "e82509241e39ee4baaaf2561e26f953fa8595cb9"
+      }
+    },
+    {
+      "id": 13505310083,
+      "node_id": "MDg6QXJ0aWZhY3QxMzUwNTMxMDA4Mw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505310083",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505310083/zip",
+      "expired": false,
+      "digest": "sha256:ee520506457e95b238b253b4e067d17319373054f5a3b2de6341601d70b38a04",
+      "created_at": "2026-11-06T13:12:35Z",
+      "updated_at": "2026-11-06T13:12:35Z",
+      "expires_at": "2027-02-04T13:12:26Z",
+      "workflow_run": {
+        "id": 42223622852,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "integration/b03-ci-evidence-20261106",
+        "head_sha": "e82509241e39ee4baaaf2561e26f953fa8595cb9"
+      }
+    },
+    {
+      "id": 13505010833,
+      "node_id": "MDg6QXJ0aWZhY3QxMzUwNTAxMDgzMw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505010833",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13505010833/zip",
+      "expired": false,
+      "digest": "sha256:d9823492c7db7f96922bba37accc84dae2c6fbde65febd7506fa7010e7d57348",
+      "created_at": "2026-11-06T13:12:23Z",
+      "updated_at": "2026-11-06T13:12:23Z",
+      "expires_at": "2027-02-04T13:12:15Z",
+      "workflow_run": {
+        "id": 42223596080,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "integration/b03-ci-evidence-20261106",
+        "head_sha": "a887e14881670fae2e4c6828a47a268c4a9d2296"
+      }
+    },
+    {
+      "id": 13504901928,
+      "node_id": "MDg6QXJ0aWZhY3QxMzUwNDkwMTkyOA==",
+      "name": "pytest-output",
+      "size_in_bytes": 7530,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13504901928",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13504901928/zip",
+      "expired": false,
+      "digest": "sha256:0bc2d72a1e944f898531ab05048dd52b82f9f6992a9920c182bca2fc3e90d2a0",
+      "created_at": "2026-11-06T13:16:12Z",
+      "updated_at": "2026-11-06T13:16:12Z",
+      "expires_at": "2027-02-04T13:12:15Z",
+      "workflow_run": {
+        "id": 42223596080,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "integration/b03-ci-evidence-20261106",
+        "head_sha": "a887e14881670fae2e4c6828a47a268c4a9d2296"
+      }
+    },
+    {
+      "id": 13402385288,
+      "node_id": "MDg6QXJ0aWZhY3QxMzQwMjM4NTI4OA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13402385288",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13402385288/zip",
+      "expired": false,
+      "digest": "sha256:a25e90c2f56a1731b06d9bdd52a1eec8d6f4ee4857559c6a9724fe1948a1507c",
+      "created_at": "2026-11-05T09:05:53Z",
+      "updated_at": "2026-11-05T09:05:53Z",
+      "expires_at": "2027-02-03T09:05:42Z",
+      "workflow_run": {
+        "id": 41999549279,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "c50caa9e4f9f8efe15f9e796857f45a4b34d6e25"
+      }
+    },
+    {
+      "id": 13401972351,
+      "node_id": "MDg6QXJ0aWZhY3QxMzQwMTk3MjM1MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1155,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13401972351",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13401972351/zip",
+      "expired": false,
+      "digest": "sha256:d6ff2afa1858e05dd1c1338d54007396ae6ab7aaf4d889c20eedc8cbe215c384",
+      "created_at": "2026-11-05T09:12:54Z",
+      "updated_at": "2026-11-05T09:12:54Z",
+      "expires_at": "2027-02-03T09:05:42Z",
+      "workflow_run": {
+        "id": 41999549279,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "c50caa9e4f9f8efe15f9e796857f45a4b34d6e25"
+      }
+    },
+    {
+      "id": 13229840841,
+      "node_id": "MDg6QXJ0aWZhY3QxMzIyOTg0MDg0MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13229840841",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13229840841/zip",
+      "expired": false,
+      "digest": "sha256:58d0375bc771b47dd5c6b2174608092faf9f9a0120f17443395155ac7016906a",
+      "created_at": "2026-11-03T12:11:01Z",
+      "updated_at": "2026-11-03T12:11:01Z",
+      "expires_at": "2027-02-01T12:04:35Z",
+      "workflow_run": {
+        "id": 41632666491,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/adr-kernel-08-owner-acceptance-sync-nov2026",
+        "head_sha": "023918cd59bfd3de542f2eca2f27f9f69fd3c6b7"
+      }
+    },
+    {
+      "id": 13229490612,
+      "node_id": "MDg6QXJ0aWZhY3QxMzIyOTQ5MDYxMg==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13229490612",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13229490612/zip",
+      "expired": false,
+      "digest": "sha256:4e939dfea6d1cbad0f228c06c3b4cf34688e3d735a24b56d730a6b18516042f9",
+      "created_at": "2026-11-03T12:04:45Z",
+      "updated_at": "2026-11-03T12:04:45Z",
+      "expires_at": "2027-02-01T12:04:35Z",
+      "workflow_run": {
+        "id": 41632666491,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/adr-kernel-08-owner-acceptance-sync-nov2026",
+        "head_sha": "023918cd59bfd3de542f2eca2f27f9f69fd3c6b7"
+      }
+    },
+    {
+      "id": 13190320957,
+      "node_id": "MDg6QXJ0aWZhY3QxMzE5MDMyMDk1Nw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1158,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13190320957",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13190320957/zip",
+      "expired": false,
+      "digest": "sha256:5f02bed3dc20ac288b416855cfc53af2289c24b24532386646380da094514383",
+      "created_at": "2026-11-02T23:51:08Z",
+      "updated_at": "2026-11-02T23:51:08Z",
+      "expires_at": "2027-01-31T23:44:48Z",
+      "workflow_run": {
+        "id": 41547756060,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "8552ca6e625fb9a54d0bb7d995284057d15fb7ea"
+      }
+    },
+    {
+      "id": 13189491942,
+      "node_id": "MDg6QXJ0aWZhY3QxMzE4OTQ5MTk0Mg==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13189491942",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13189491942/zip",
+      "expired": false,
+      "digest": "sha256:d452c95f2dee0e50280a8ac2ee82a23d118614efcbb245e211a94968768749e2",
+      "created_at": "2026-11-02T23:44:58Z",
+      "updated_at": "2026-11-02T23:44:58Z",
+      "expires_at": "2027-01-31T23:44:48Z",
+      "workflow_run": {
+        "id": 41547756060,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "8552ca6e625fb9a54d0bb7d995284057d15fb7ea"
+      }
+    },
+    {
+      "id": 13140905805,
+      "node_id": "MDg6QXJ0aWZhY3QxMzE0MDkwNTgwNQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13140905805",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13140905805/zip",
+      "expired": false,
+      "digest": "sha256:7ee9fdd3b188e928b12c7998e71a1ecbdd3508c6a726db85581f1f29cebd7479",
+      "created_at": "2026-11-02T11:59:47Z",
+      "updated_at": "2026-11-02T11:59:47Z",
+      "expires_at": "2027-01-31T11:52:24Z",
+      "workflow_run": {
+        "id": 41440188451,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "ce32d9035bdadc106f0279ea1f00127e9084cad4"
+      }
+    },
+    {
+      "id": 13140395033,
+      "node_id": "MDg6QXJ0aWZhY3QxMzE0MDM5NTAzMw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13140395033",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13140395033/zip",
+      "expired": false,
+      "digest": "sha256:6c8376946f2edcebc57293b4db1c476b7ba0549f0672dd4f8707b8fe920fb22a",
+      "created_at": "2026-11-02T11:55:01Z",
+      "updated_at": "2026-11-02T11:55:01Z",
+      "expires_at": "2027-01-31T11:46:59Z",
+      "workflow_run": {
+        "id": 41439499592,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "b2cf64647cb513c154c8820192bd005a66f0b95e"
+      }
+    },
+    {
+      "id": 13139895592,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzOTg5NTU5Mg==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139895592",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139895592/zip",
+      "expired": false,
+      "digest": "sha256:038040a83f377df064a055f74cc56fd7879bb575cb9be05f86519f5a4da1890d",
+      "created_at": "2026-11-02T11:55:53Z",
+      "updated_at": "2026-11-02T11:55:53Z",
+      "expires_at": "2027-01-31T11:51:11Z",
+      "workflow_run": {
+        "id": 41440035306,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "db562991078af745d9840ba76c55d5789c4d76e9"
+      }
+    },
+    {
+      "id": 13139475670,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzOTQ3NTY3MA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139475670",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139475670/zip",
+      "expired": false,
+      "digest": "sha256:57fccfdedbfa8b2c9e9acaf219bc441b167574fceaf45b3d3415ee1fe87b7b52",
+      "created_at": "2026-11-02T11:51:19Z",
+      "updated_at": "2026-11-02T11:51:19Z",
+      "expires_at": "2027-01-31T11:51:11Z",
+      "workflow_run": {
+        "id": 41440035306,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "db562991078af745d9840ba76c55d5789c4d76e9"
+      }
+    },
+    {
+      "id": 13139160096,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzOTE2MDA5Ng==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139160096",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139160096/zip",
+      "expired": false,
+      "digest": "sha256:fcdb8d0d52054f314a192edd3eb164b14524bac64f3074233ba4f44a0bf5f4c4",
+      "created_at": "2026-11-02T11:47:09Z",
+      "updated_at": "2026-11-02T11:47:09Z",
+      "expires_at": "2027-01-31T11:46:59Z",
+      "workflow_run": {
+        "id": 41439499592,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "b2cf64647cb513c154c8820192bd005a66f0b95e"
+      }
+    },
+    {
+      "id": 13139010883,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzOTAxMDg4Mw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139010883",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13139010883/zip",
+      "expired": false,
+      "digest": "sha256:7b30ee036986640cf780fe2f3725b9db1704808b661eb3153b2699d505dc924f",
+      "created_at": "2026-11-02T11:51:43Z",
+      "updated_at": "2026-11-02T11:51:43Z",
+      "expires_at": "2027-01-31T11:46:02Z",
+      "workflow_run": {
+        "id": 41439376468,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "13619d244d0d854943637f009c846dedb3fe0a95"
+      }
+    },
+    {
+      "id": 13138214111,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzODIxNDExMQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138214111",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138214111/zip",
+      "expired": false,
+      "digest": "sha256:ed3d1fb81be0d396beb2f70eca4c6309083a48e819233988b067da0bcb730810",
+      "created_at": "2026-11-02T11:55:56Z",
+      "updated_at": "2026-11-02T11:55:56Z",
+      "expires_at": "2027-01-31T11:47:50Z",
+      "workflow_run": {
+        "id": 41439607713,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "677c155d4806336e0e418010dca2cc76a3490635"
+      }
+    },
+    {
+      "id": 13138181313,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzODE4MTMxMw==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138181313",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138181313/zip",
+      "expired": false,
+      "digest": "sha256:a7ebcdd8ab9e3661e27ef23c79f47b0741149296be3d368e6975b9a5427a7a7c",
+      "created_at": "2026-11-02T11:39:36Z",
+      "updated_at": "2026-11-02T11:39:36Z",
+      "expires_at": "2027-01-31T11:39:28Z",
+      "workflow_run": {
+        "id": 41438537677,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "6557ccb6a253a33bf4798a58ef046dae01308ce5"
+      }
+    },
+    {
+      "id": 13138012423,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzODAxMjQyMw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138012423",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13138012423/zip",
+      "expired": false,
+      "digest": "sha256:8ae94292b94baeaa37d066e538d3ffd964c6a65b544fca884e4183ae687adaf5",
+      "created_at": "2026-11-02T11:46:23Z",
+      "updated_at": "2026-11-02T11:46:23Z",
+      "expires_at": "2027-01-31T11:39:06Z",
+      "workflow_run": {
+        "id": 41438490302,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "e3da380069139281ed0f37c48e9f53ba8693b6a5"
+      }
+    },
+    {
+      "id": 13137954277,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzk1NDI3Nw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137954277",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137954277/zip",
+      "expired": false,
+      "digest": "sha256:d4bd0ed3cd7b5221fd36fa0fbe53d6dcac1c858d452e99591c03788cac77f377",
+      "created_at": "2026-11-02T11:52:31Z",
+      "updated_at": "2026-11-02T11:52:31Z",
+      "expires_at": "2027-01-31T11:52:24Z",
+      "workflow_run": {
+        "id": 41440188451,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "ce32d9035bdadc106f0279ea1f00127e9084cad4"
+      }
+    },
+    {
+      "id": 13137915161,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzkxNTE2MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137915161",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137915161/zip",
+      "expired": false,
+      "digest": "sha256:a6a7305d3e8f462ed3e724790dbcf89fe359ca8545efafeff0f1cf43bc5e27fc",
+      "created_at": "2026-11-02T11:31:47Z",
+      "updated_at": "2026-11-02T11:31:47Z",
+      "expires_at": "2027-01-31T11:25:01Z",
+      "workflow_run": {
+        "id": 41436660096,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "5b4ccf6348c4b72bfe646578430c08aa5fec31a4"
+      }
+    },
+    {
+      "id": 13137862108,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzg2MjEwOA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137862108",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137862108/zip",
+      "expired": false,
+      "digest": "sha256:99883a3a093e11de52387c0d481a4cad92bd8eec69a330a873e8a5eeb2f483ae",
+      "created_at": "2026-11-02T11:46:12Z",
+      "updated_at": "2026-11-02T11:46:12Z",
+      "expires_at": "2027-01-31T11:46:02Z",
+      "workflow_run": {
+        "id": 41439376468,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "13619d244d0d854943637f009c846dedb3fe0a95"
+      }
+    },
+    {
+      "id": 13137828610,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzgyODYxMA==",
+      "name": "drift-report",
+      "size_in_bytes": 2319,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137828610",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137828610/zip",
+      "expired": false,
+      "digest": "sha256:a3d4475625e56e1d338892fbe46f991992c76e4dc4d1e8396686eb5b972cf82d",
+      "created_at": "2026-11-02T11:48:00Z",
+      "updated_at": "2026-11-02T11:48:00Z",
+      "expires_at": "2027-01-31T11:47:50Z",
+      "workflow_run": {
+        "id": 41439607713,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "677c155d4806336e0e418010dca2cc76a3490635"
+      }
+    },
+    {
+      "id": 13137653943,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzY1Mzk0Mw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137653943",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137653943/zip",
+      "expired": false,
+      "digest": "sha256:25c5bace9d6864df4e94bd0f4f89f1d4340f5333d79ee3ec4d6ef77e4818e852",
+      "created_at": "2026-11-02T11:47:26Z",
+      "updated_at": "2026-11-02T11:47:26Z",
+      "expires_at": "2027-01-31T11:39:28Z",
+      "workflow_run": {
+        "id": 41438537677,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "6557ccb6a253a33bf4798a58ef046dae01308ce5"
+      }
+    },
+    {
+      "id": 13137640769,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzY0MDc2OQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137640769",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137640769/zip",
+      "expired": false,
+      "digest": "sha256:870a5c231299dc2a9d4b24dc9d8053d0f94b892b285f295f0b8bba0a91592db6",
+      "created_at": "2026-11-02T11:32:28Z",
+      "updated_at": "2026-11-02T11:32:28Z",
+      "expires_at": "2027-01-31T11:25:07Z",
+      "workflow_run": {
+        "id": 41436675882,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "08719678bd6a25608b09064b1e3f987a0b4e36e2"
+      }
+    },
+    {
+      "id": 13137619066,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzYxOTA2Ng==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137619066",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137619066/zip",
+      "expired": false,
+      "digest": "sha256:6c4a390070e5e1d957cad9d1b8ce2f84b5f812802df9897eea96bcf4baa0728b",
+      "created_at": "2026-11-02T11:47:50Z",
+      "updated_at": "2026-11-02T11:47:50Z",
+      "expires_at": "2027-01-31T11:47:33Z",
+      "workflow_run": {
+        "id": 41439573495,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "edb7ded53d7b67657e051601e2d37b35b2314fa5"
+      }
+    },
+    {
+      "id": 13137558131,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzU1ODEzMQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137558131",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137558131/zip",
+      "expired": false,
+      "digest": "sha256:6109006aeed9c7b64a9ff59f29879c1cf4edccc63ae6433b749da7f6d3b6e91d",
+      "created_at": "2026-11-02T11:45:41Z",
+      "updated_at": "2026-11-02T11:45:41Z",
+      "expires_at": "2027-01-31T11:45:32Z",
+      "workflow_run": {
+        "id": 41439309688,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "a901e6d36954b3477642ece80bc9d36ef8207916"
+      }
+    },
+    {
+      "id": 13137375506,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzM3NTUwNg==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137375506",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137375506/zip",
+      "expired": false,
+      "digest": "sha256:acff47cff817325d4f0e9fc56dbe022bd98c1afbe0a40a16185349b7177dd4ee",
+      "created_at": "2026-11-02T11:27:09Z",
+      "updated_at": "2026-11-02T11:27:09Z",
+      "expires_at": "2027-01-31T11:26:56Z",
+      "workflow_run": {
+        "id": 41436916998,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "8ff2dfee897596d2c7b6592abf75f412df61a834"
+      }
+    },
+    {
+      "id": 13137335514,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzMzNTUxNA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1171,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137335514",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137335514/zip",
+      "expired": false,
+      "digest": "sha256:35319cb6991648b420774848acea439a88346a01f0e4803d99c83bff0e434472",
+      "created_at": "2026-11-02T11:27:27Z",
+      "updated_at": "2026-11-02T11:27:27Z",
+      "expires_at": "2027-01-31T11:22:34Z",
+      "workflow_run": {
+        "id": 41436334571,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "4eb788789a266073a558595374d280f2c83d9dd6"
+      }
+    },
+    {
+      "id": 13137299735,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzI5OTczNQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1171,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137299735",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137299735/zip",
+      "expired": false,
+      "digest": "sha256:b25e842241776ec3eea86cf82f05c09efc4fb7aa7d7aed06439cf6b13524fae5",
+      "created_at": "2026-11-02T11:53:45Z",
+      "updated_at": "2026-11-02T11:53:45Z",
+      "expires_at": "2027-01-31T11:47:33Z",
+      "workflow_run": {
+        "id": 41439573495,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "edb7ded53d7b67657e051601e2d37b35b2314fa5"
+      }
+    },
+    {
+      "id": 13137243300,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzI0MzMwMA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137243300",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137243300/zip",
+      "expired": false,
+      "digest": "sha256:87491956b6eaf9de5fc68ba64e460f5ac34a7e1b30b51df413f7eeef5ccb321f",
+      "created_at": "2026-11-02T11:39:14Z",
+      "updated_at": "2026-11-02T11:39:14Z",
+      "expires_at": "2027-01-31T11:39:06Z",
+      "workflow_run": {
+        "id": 41438490302,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "e3da380069139281ed0f37c48e9f53ba8693b6a5"
+      }
+    },
+    {
+      "id": 13137149592,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzE0OTU5Mg==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137149592",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137149592/zip",
+      "expired": false,
+      "digest": "sha256:d2f05ee6fb2c1d3b10a611cc9b4065d7abda7c6cfc9c100edd020dc5ef97f3f5",
+      "created_at": "2026-11-02T11:51:13Z",
+      "updated_at": "2026-11-02T11:51:13Z",
+      "expires_at": "2027-01-31T11:45:32Z",
+      "workflow_run": {
+        "id": 41439309688,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "a901e6d36954b3477642ece80bc9d36ef8207916"
+      }
+    },
+    {
+      "id": 13137132627,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzEzMjYyNw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137132627",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137132627/zip",
+      "expired": false,
+      "digest": "sha256:bb4c6552f4288df98d1ca344d9b070c832be4ae9ff2f2ddbe1cccd19cdf72a2c",
+      "created_at": "2026-11-02T11:33:51Z",
+      "updated_at": "2026-11-02T11:33:51Z",
+      "expires_at": "2027-01-31T11:26:56Z",
+      "workflow_run": {
+        "id": 41436916998,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "8ff2dfee897596d2c7b6592abf75f412df61a834"
+      }
+    },
+    {
+      "id": 13137120620,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzEyMDYyMA==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137120620",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137120620/zip",
+      "expired": false,
+      "digest": "sha256:80138582b2f7a4e4f1368d5d1b86656ad3c89b0697317bc08c8c3e093b193019",
+      "created_at": "2026-11-02T11:26:42Z",
+      "updated_at": "2026-11-02T11:26:42Z",
+      "expires_at": "2027-01-31T11:26:33Z",
+      "workflow_run": {
+        "id": 41436867116,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "428b3e54af8ee19d523e83b5dfc39fbe09af2a7e"
+      }
+    },
+    {
+      "id": 13137020398,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNzAyMDM5OA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137020398",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13137020398/zip",
+      "expired": false,
+      "digest": "sha256:a3c684019e1ab7102458a70324b8a4d057ba5e1ffff43632fbb667e7b422c3e7",
+      "created_at": "2026-11-02T11:22:44Z",
+      "updated_at": "2026-11-02T11:22:44Z",
+      "expires_at": "2027-01-31T11:22:34Z",
+      "workflow_run": {
+        "id": 41436334571,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "4eb788789a266073a558595374d280f2c83d9dd6"
+      }
+    },
+    {
+      "id": 13136753220,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNjc1MzIyMA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136753220",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136753220/zip",
+      "expired": false,
+      "digest": "sha256:55f026b1170bc9bbb9a57f9f44732838c0a2fbe6a7d17d7df386ab3bef874e46",
+      "created_at": "2026-11-02T11:34:50Z",
+      "updated_at": "2026-11-02T11:34:50Z",
+      "expires_at": "2027-01-31T11:26:33Z",
+      "workflow_run": {
+        "id": 41436867116,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "428b3e54af8ee19d523e83b5dfc39fbe09af2a7e"
+      }
+    },
+    {
+      "id": 13136443617,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNjQ0MzYxNw==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136443617",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136443617/zip",
+      "expired": false,
+      "digest": "sha256:fdb9c925727876364cda25f74ca78a43e38d323dc3b013add0dfd21221fabc5c",
+      "created_at": "2026-11-02T11:25:15Z",
+      "updated_at": "2026-11-02T11:25:15Z",
+      "expires_at": "2027-01-31T11:25:07Z",
+      "workflow_run": {
+        "id": 41436675882,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "08719678bd6a25608b09064b1e3f987a0b4e36e2"
+      }
+    },
+    {
+      "id": 13136089039,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEzNjA4OTAzOQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136089039",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13136089039/zip",
+      "expired": false,
+      "digest": "sha256:249a34ba954d4ca28d5fbad825c255208ed6ea62e2e13d32d56908f3d4f7d584",
+      "created_at": "2026-11-02T11:25:17Z",
+      "updated_at": "2026-11-02T11:25:17Z",
+      "expires_at": "2027-01-31T11:25:01Z",
+      "workflow_run": {
+        "id": 41436660096,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/debt-register-live-reconciliation-nov2026",
+        "head_sha": "5b4ccf6348c4b72bfe646578430c08aa5fec31a4"
+      }
+    },
+    {
+      "id": 13125166058,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyNTE2NjA1OA==",
+      "name": "pytest-output",
+      "size_in_bytes": 104139,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13125166058",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13125166058/zip",
+      "expired": false,
+      "digest": "sha256:eb49e0dfeaa4f1887b0f7e3a084b7f73345f1c092ec6e759927ea8c8bcdd508c",
+      "created_at": "2026-11-02T07:57:06Z",
+      "updated_at": "2026-11-02T07:57:06Z",
+      "expires_at": "2027-01-31T07:51:20Z",
+      "workflow_run": {
+        "id": 41408979390,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "a0c12b58b7d2329fdec30580d11acb84ec5279f6"
+      }
+    },
+    {
+      "id": 13124946159,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyNDk0NjE1OQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124946159",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124946159/zip",
+      "expired": false,
+      "digest": "sha256:864800ccba03b760cb11c0617e79d4a4a85c1ef68c33c0de84d84cc27355fecc",
+      "created_at": "2026-11-02T07:51:28Z",
+      "updated_at": "2026-11-02T07:51:28Z",
+      "expires_at": "2027-01-31T07:51:20Z",
+      "workflow_run": {
+        "id": 41408979390,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "a0c12b58b7d2329fdec30580d11acb84ec5279f6"
+      }
+    },
+    {
+      "id": 13124890181,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyNDg5MDE4MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1158,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124890181",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124890181/zip",
+      "expired": false,
+      "digest": "sha256:27628d5aec01e71526a3e433fb40bf74664876d1978f3aa78fb4ba56a22f6b5d",
+      "created_at": "2026-11-02T07:47:25Z",
+      "updated_at": "2026-11-02T07:47:25Z",
+      "expires_at": "2027-01-31T07:41:33Z",
+      "workflow_run": {
+        "id": 41407929737,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "3300f937d32079ad74322b6da90c5598a9c949dd"
+      }
+    },
+    {
+      "id": 13124760678,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyNDc2MDY3OA==",
+      "name": "pytest-output",
+      "size_in_bytes": 104612,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124760678",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124760678/zip",
+      "expired": false,
+      "digest": "sha256:abeb1c71daa268b98a579598f67515630849130e2a05e5bc179ee1579039da3c",
+      "created_at": "2026-11-02T07:46:13Z",
+      "updated_at": "2026-11-02T07:46:13Z",
+      "expires_at": "2027-01-31T07:39:32Z",
+      "workflow_run": {
+        "id": 41407716770,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "321e56ff335c629ccb0c092d85868f954ba25fc0"
+      }
+    },
+    {
+      "id": 13124515525,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyNDUxNTUyNQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124515525",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13124515525/zip",
+      "expired": false,
+      "digest": "sha256:d4536c570d99b7ea3f37fd41b2b4ab3bff29fdb6ba665833e28ab42d98bed513",
+      "created_at": "2026-11-02T07:39:42Z",
+      "updated_at": "2026-11-02T07:39:42Z",
+      "expires_at": "2027-01-31T07:39:32Z",
+      "workflow_run": {
+        "id": 41407716770,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "321e56ff335c629ccb0c092d85868f954ba25fc0"
+      }
+    },
+    {
+      "id": 13123249741,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEyMzI0OTc0MQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13123249741",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13123249741/zip",
+      "expired": false,
+      "digest": "sha256:3398ca8278890cbce19973c0bc02f1d947f68b8ec9c9345baf14d2ab3affffcb",
+      "created_at": "2026-11-02T07:41:42Z",
+      "updated_at": "2026-11-02T07:41:42Z",
+      "expires_at": "2027-01-31T07:41:33Z",
+      "workflow_run": {
+        "id": 41407929737,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "3300f937d32079ad74322b6da90c5598a9c949dd"
+      }
+    },
+    {
+      "id": 13104322184,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwNDMyMjE4NA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1157,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13104322184",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13104322184/zip",
+      "expired": false,
+      "digest": "sha256:67c6352042969798f6f3dbbe7154fdbea1cf69843045be86551343f8449c2c54",
+      "created_at": "2026-11-01T22:44:01Z",
+      "updated_at": "2026-11-01T22:44:01Z",
+      "expires_at": "2027-01-30T22:36:29Z",
+      "workflow_run": {
+        "id": 41357983540,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "aceb06c3bc479decd5d9b607ab63fa4c7846e321"
+      }
+    },
+    {
+      "id": 13103976454,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwMzk3NjQ1NA==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103976454",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103976454/zip",
+      "expired": false,
+      "digest": "sha256:d4e9aa5b7b8bd90ae9675167ec81869b9739b61aed4a7264cdc164cce53a5d9b",
+      "created_at": "2026-11-01T22:33:11Z",
+      "updated_at": "2026-11-01T22:33:11Z",
+      "expires_at": "2027-01-30T22:33:04Z",
+      "workflow_run": {
+        "id": 41357692628,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "d6d1f0c6c97de83a1e37eeaa8dd44f89cbb8f80d"
+      }
+    },
+    {
+      "id": 13103747290,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwMzc0NzI5MA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103747290",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103747290/zip",
+      "expired": false,
+      "digest": "sha256:058a37fa8c8f2833c5b8772ce968882418d31e7e9a9978b01f4cc2619f7a586a",
+      "created_at": "2026-11-01T22:36:39Z",
+      "updated_at": "2026-11-01T22:36:39Z",
+      "expires_at": "2027-01-30T22:36:29Z",
+      "workflow_run": {
+        "id": 41357983540,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "aceb06c3bc479decd5d9b607ab63fa4c7846e321"
+      }
+    },
+    {
+      "id": 13103554829,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwMzU1NDgyOQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1158,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103554829",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103554829/zip",
+      "expired": false,
+      "digest": "sha256:41163decfc9554d644d6901d63eb6dc0bc3547644f04c43df2ac6a6a25b63121",
+      "created_at": "2026-11-01T22:38:40Z",
+      "updated_at": "2026-11-01T22:38:40Z",
+      "expires_at": "2027-01-30T22:33:04Z",
+      "workflow_run": {
+        "id": 41357692628,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "d6d1f0c6c97de83a1e37eeaa8dd44f89cbb8f80d"
+      }
+    },
+    {
+      "id": 13103148151,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwMzE0ODE1MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 104396,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103148151",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103148151/zip",
+      "expired": false,
+      "digest": "sha256:8d9d5eace07e375a486067588a7070d8c7cc49c5cdd08944f5b5f24078c40e69",
+      "created_at": "2026-11-01T22:18:05Z",
+      "updated_at": "2026-11-01T22:18:05Z",
+      "expires_at": "2027-01-30T22:10:10Z",
+      "workflow_run": {
+        "id": 41355742895,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "e1e6393e5bacd89ca5623cec2b0ef718be77661b"
+      }
+    },
+    {
+      "id": 13103012595,
+      "node_id": "MDg6QXJ0aWZhY3QxMzEwMzAxMjU5NQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103012595",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13103012595/zip",
+      "expired": false,
+      "digest": "sha256:8c95e116073ab3b22d2479161442e9b17393ce1b27f212b37ae6c57e7bd8b138",
+      "created_at": "2026-11-01T22:10:21Z",
+      "updated_at": "2026-11-01T22:10:21Z",
+      "expires_at": "2027-01-30T22:10:10Z",
+      "workflow_run": {
+        "id": 41355742895,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ci-gate-r1a-hardening-oct2026",
+        "head_sha": "e1e6393e5bacd89ca5623cec2b0ef718be77661b"
+      }
+    },
+    {
+      "id": 13087980892,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4Nzk4MDg5Mg==",
+      "name": "pytest-output",
+      "size_in_bytes": 1159,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087980892",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087980892/zip",
+      "expired": false,
+      "digest": "sha256:5cea28089e7ca45ab30d7b81b0cb6f7653c6a6c58464c336d67bb040b421a8ab",
+      "created_at": "2026-11-01T14:42:04Z",
+      "updated_at": "2026-11-01T14:42:04Z",
+      "expires_at": "2027-01-30T14:33:06Z",
+      "workflow_run": {
+        "id": 41316753781,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "311793215ccbf612f981ecf99f39ccf058b7cdfd"
+      }
+    },
+    {
+      "id": 13087716691,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4NzcxNjY5MQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087716691",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087716691/zip",
+      "expired": false,
+      "digest": "sha256:2b8c52141bf48401893c71108458adfbad37d2b71bc38428ee89344e06e350ad",
+      "created_at": "2026-11-01T14:33:15Z",
+      "updated_at": "2026-11-01T14:33:15Z",
+      "expires_at": "2027-01-30T14:33:06Z",
+      "workflow_run": {
+        "id": 41316753781,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "311793215ccbf612f981ecf99f39ccf058b7cdfd"
+      }
+    },
+    {
+      "id": 13087225900,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4NzIyNTkwMA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087225900",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13087225900/zip",
+      "expired": false,
+      "digest": "sha256:cc83812788ed28f1b4d077578861346d5bb7ee29cf7fe0db87b58c984419240b",
+      "created_at": "2026-11-01T14:13:05Z",
+      "updated_at": "2026-11-01T14:13:05Z",
+      "expires_at": "2027-01-30T14:12:56Z",
+      "workflow_run": {
+        "id": 41315069928,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/g4-fts-correctness-handoff-rev3-oct2026",
+        "head_sha": "9407db5a01acea9684f158caa8107fb71611a102"
+      }
+    },
+    {
+      "id": 13086927400,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4NjkyNzQwMA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13086927400",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13086927400/zip",
+      "expired": false,
+      "digest": "sha256:7af01cbd006a1b3f2cfca24dc124821049744bc199d8a28fb63b9f0ccdd2fe46",
+      "created_at": "2026-11-01T14:18:37Z",
+      "updated_at": "2026-11-01T14:18:37Z",
+      "expires_at": "2027-01-30T14:12:56Z",
+      "workflow_run": {
+        "id": 41315069928,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/g4-fts-correctness-handoff-rev3-oct2026",
+        "head_sha": "9407db5a01acea9684f158caa8107fb71611a102"
+      }
+    },
+    {
+      "id": 13084000462,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4NDAwMDQ2Mg==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13084000462",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13084000462/zip",
+      "expired": false,
+      "digest": "sha256:c13d339a94f4c16c376f5c0b420631c5fd18cd46414be1f0938a1cc8686fc99c",
+      "created_at": "2026-11-01T12:31:40Z",
+      "updated_at": "2026-11-01T12:31:40Z",
+      "expires_at": "2027-01-30T12:31:31Z",
+      "workflow_run": {
+        "id": 41306902994,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "2491ae469edd6ef1267a14604c4f8f40d698f7ea"
+      }
+    },
+    {
+      "id": 13082899510,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA4Mjg5OTUxMA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13082899510",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13082899510/zip",
+      "expired": false,
+      "digest": "sha256:f6d97d2bcc6a17f2cfd7ccaf944e2a3306e401d0e7a2772a8e6967f867dc4010",
+      "created_at": "2026-11-01T12:37:35Z",
+      "updated_at": "2026-11-01T12:37:35Z",
+      "expires_at": "2027-01-30T12:31:31Z",
+      "workflow_run": {
+        "id": 41306902994,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "2491ae469edd6ef1267a14604c4f8f40d698f7ea"
+      }
+    },
+    {
+      "id": 13069490380,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2OTQ5MDM4MA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1171,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13069490380",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13069490380/zip",
+      "expired": false,
+      "digest": "sha256:404543f27a8dfc987b4ec25e93c802dbeecbb88517c9b82548b1878ac392d992",
+      "created_at": "2026-11-01T03:47:16Z",
+      "updated_at": "2026-11-01T03:47:16Z",
+      "expires_at": "2027-01-30T03:39:55Z",
+      "workflow_run": {
+        "id": 41270073020,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/ctx-auth-002-closure-oct2026",
+        "head_sha": "8ceadd1850f182e6b57ee0df1d2d95b54c301f4d"
+      }
+    },
+    {
+      "id": 13068786364,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2ODc4NjM2NA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068786364",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068786364/zip",
+      "expired": false,
+      "digest": "sha256:b9e6f981fa6611045d9dfda28c96e6c14c3af980680c5fa395c5e044344c59aa",
+      "created_at": "2026-11-01T03:29:08Z",
+      "updated_at": "2026-11-01T03:29:08Z",
+      "expires_at": "2027-01-30T03:23:50Z",
+      "workflow_run": {
+        "id": 41269007303,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "b742e4a2d5063094665b375da4746b23ff7421bc"
+      }
+    },
+    {
+      "id": 13068565369,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2ODU2NTM2OQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068565369",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068565369/zip",
+      "expired": false,
+      "digest": "sha256:5bff8afca229e6c398f91f3f28bd5324ef546eae3ec6b673bb0ad593ec8e5bf9",
+      "created_at": "2026-11-01T03:16:08Z",
+      "updated_at": "2026-11-01T03:16:08Z",
+      "expires_at": "2027-01-30T03:15:59Z",
+      "workflow_run": {
+        "id": 41268474113,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ctx-auth-002-reconciled-remediation-oct2026",
+        "head_sha": "396e374521a74b628cb8ad58116cefe54d76f624"
+      }
+    },
+    {
+      "id": 13068531491,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2ODUzMTQ5MQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068531491",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068531491/zip",
+      "expired": false,
+      "digest": "sha256:319f45c86f2bea2bd90b27076e127e41db8226cd42b8c6303d88db76b4adce7e",
+      "created_at": "2026-11-01T03:23:27Z",
+      "updated_at": "2026-11-01T03:23:27Z",
+      "expires_at": "2027-01-30T03:15:59Z",
+      "workflow_run": {
+        "id": 41268474113,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ctx-auth-002-reconciled-remediation-oct2026",
+        "head_sha": "396e374521a74b628cb8ad58116cefe54d76f624"
+      }
+    },
+    {
+      "id": 13068464052,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2ODQ2NDA1Mg==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068464052",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068464052/zip",
+      "expired": false,
+      "digest": "sha256:5627643a4270167251f580fa9ae95552d22f1547298ce0243e15f0e45b8fb0e0",
+      "created_at": "2026-11-01T03:40:06Z",
+      "updated_at": "2026-11-01T03:40:06Z",
+      "expires_at": "2027-01-30T03:39:55Z",
+      "workflow_run": {
+        "id": 41270073020,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "docs/ctx-auth-002-closure-oct2026",
+        "head_sha": "8ceadd1850f182e6b57ee0df1d2d95b54c301f4d"
+      }
+    },
+    {
+      "id": 13068023301,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA2ODAyMzMwMQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068023301",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13068023301/zip",
+      "expired": false,
+      "digest": "sha256:c81abb1af0dfe3374db9d078fa1d4b3ac8211f63196c7b279b5cf3daa8bc9833",
+      "created_at": "2026-11-01T03:24:01Z",
+      "updated_at": "2026-11-01T03:24:01Z",
+      "expires_at": "2027-01-30T03:23:50Z",
+      "workflow_run": {
+        "id": 41269007303,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "b742e4a2d5063094665b375da4746b23ff7421bc"
+      }
+    },
+    {
+      "id": 13048225166,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA0ODIyNTE2Ng==",
+      "name": "pytest-output",
+      "size_in_bytes": 1171,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13048225166",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13048225166/zip",
+      "expired": false,
+      "digest": "sha256:3aa6d2b7d039945b3cf729d12a55e1a3bd4e927ae8632dd86047b742369ad7f4",
+      "created_at": "2026-10-31T15:33:43Z",
+      "updated_at": "2026-10-31T15:33:43Z",
+      "expires_at": "2027-01-29T15:29:21Z",
+      "workflow_run": {
+        "id": 41215078418,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "ed3d141e4bbfd0231afb1104d0a7479419f9bbf1"
+      }
+    },
+    {
+      "id": 13047905527,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA0NzkwNTUyNw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13047905527",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13047905527/zip",
+      "expired": false,
+      "digest": "sha256:5c165cfceccb2d69f64a501d631e0812b3ddcda6ba459a62957eb4b1b6895d49",
+      "created_at": "2026-10-31T15:29:32Z",
+      "updated_at": "2026-10-31T15:29:32Z",
+      "expires_at": "2027-01-29T15:29:21Z",
+      "workflow_run": {
+        "id": 41215078418,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "ed3d141e4bbfd0231afb1104d0a7479419f9bbf1"
+      }
+    },
+    {
+      "id": 13046774268,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA0Njc3NDI2OA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13046774268",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13046774268/zip",
+      "expired": false,
+      "digest": "sha256:4e5a291d3c3fc5ce242212c05a0bed1e98d9470032f160fdd14a9b7e8d2d7ff0",
+      "created_at": "2026-10-31T15:25:02Z",
+      "updated_at": "2026-10-31T15:25:02Z",
+      "expires_at": "2027-01-29T15:21:31Z",
+      "workflow_run": {
+        "id": 41214472698,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/fz02-b2c-cancellation-terminal-oct2026",
+        "head_sha": "4891756b4864c15c4e8df534560a46f5ce7fe34c"
+      }
+    },
+    {
+      "id": 13046763861,
+      "node_id": "MDg6QXJ0aWZhY3QxMzA0Njc2Mzg2MQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2317,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13046763861",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13046763861/zip",
+      "expired": false,
+      "digest": "sha256:6e3df9c2eb79cd2e9fed0cc41118202071fff4dfc278bba0adaaaac6005f052f",
+      "created_at": "2026-10-31T15:21:41Z",
+      "updated_at": "2026-10-31T15:21:41Z",
+      "expires_at": "2027-01-29T15:21:31Z",
+      "workflow_run": {
+        "id": 41214472698,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/fz02-b2c-cancellation-terminal-oct2026",
+        "head_sha": "4891756b4864c15c4e8df534560a46f5ce7fe34c"
+      }
+    },
+    {
+      "id": 13038166514,
+      "node_id": "MDg6QXJ0aWZhY3QxMzAzODE2NjUxNA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1173,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13038166514",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13038166514/zip",
+      "expired": false,
+      "digest": "sha256:190f2cecc3da5da0604a310d0ecee63335ee6561d5308b59adf7e0520e1a11fd",
+      "created_at": "2026-10-31T09:19:39Z",
+      "updated_at": "2026-10-31T09:19:39Z",
+      "expires_at": "2027-01-29T09:16:49Z",
+      "workflow_run": {
+        "id": 41188044539,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/fz02-b2c-cancellation-terminal-oct2026",
+        "head_sha": "fc845d0c3ab085bd49d738da07fdca6519f0c7a2"
+      }
+    },
+    {
+      "id": 13037113737,
+      "node_id": "MDg6QXJ0aWZhY3QxMzAzNzExMzczNw==",
+      "name": "drift-report",
+      "size_in_bytes": 2319,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13037113737",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13037113737/zip",
+      "expired": false,
+      "digest": "sha256:bf486211734174a3137238039d6efa14239576798631f319a73ce31d6893eb04",
+      "created_at": "2026-10-31T09:16:58Z",
+      "updated_at": "2026-10-31T09:16:58Z",
+      "expires_at": "2027-01-29T09:16:49Z",
+      "workflow_run": {
+        "id": 41188044539,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/fz02-b2c-cancellation-terminal-oct2026",
+        "head_sha": "fc845d0c3ab085bd49d738da07fdca6519f0c7a2"
+      }
+    },
+    {
+      "id": 13013851593,
+      "node_id": "MDg6QXJ0aWZhY3QxMzAxMzg1MTU5Mw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13013851593",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13013851593/zip",
+      "expired": false,
+      "digest": "sha256:00a50748319b2bb267fab8059a7eba559f085d10017d524a85ddf7f9914dfca3",
+      "created_at": "2026-10-30T21:36:10Z",
+      "updated_at": "2026-10-30T21:36:10Z",
+      "expires_at": "2027-01-28T21:31:49Z",
+      "workflow_run": {
+        "id": 41131717985,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026",
+        "head_sha": "b83d9da910860fd54c6e74f0ef0212d2c5163b92"
+      }
+    },
+    {
+      "id": 13012514479,
+      "node_id": "MDg6QXJ0aWZhY3QxMzAxMjUxNDQ3OQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13012514479",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/13012514479/zip",
+      "expired": false,
+      "digest": "sha256:743fdc7936d2e6691177c726e73c02ab80176805e56a05aeb232fecaeabe46c5",
+      "created_at": "2026-10-30T21:31:57Z",
+      "updated_at": "2026-10-30T21:31:57Z",
+      "expires_at": "2027-01-28T21:31:49Z",
+      "workflow_run": {
+        "id": 41131717985,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026",
+        "head_sha": "b83d9da910860fd54c6e74f0ef0212d2c5163b92"
+      }
+    },
+    {
+      "id": 12972105794,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MjEwNTc5NA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1177,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12972105794",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12972105794/zip",
+      "expired": false,
+      "digest": "sha256:082530d4ae7dbf1100cd36a50d8d9a2b014db88a8a54e36a2166e691cfdc1c64",
+      "created_at": "2026-10-30T10:53:17Z",
+      "updated_at": "2026-10-30T10:53:17Z",
+      "expires_at": "2027-01-28T10:48:45Z",
+      "workflow_run": {
+        "id": 41043480495,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "74e6f0d6db1d3e68588e03ad3ee986fe1b088a84"
+      }
+    },
+    {
+      "id": 12971905506,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MTkwNTUwNg==",
+      "name": "pytest-output",
+      "size_in_bytes": 1176,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12971905506",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12971905506/zip",
+      "expired": false,
+      "digest": "sha256:17b9d9a1770c7c982db0a39104bb0d3fdc9010397cb7d77d00f601d01fe3fe72",
+      "created_at": "2026-10-30T10:47:56Z",
+      "updated_at": "2026-10-30T10:47:56Z",
+      "expires_at": "2027-01-28T10:44:16Z",
+      "workflow_run": {
+        "id": 41042925416,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "76f2fc26115306691e7b7f560b5999d542248d23"
+      }
+    },
+    {
+      "id": 12971655846,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MTY1NTg0Ng==",
+      "name": "drift-report",
+      "size_in_bytes": 2468,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12971655846",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12971655846/zip",
+      "expired": false,
+      "digest": "sha256:3b0438765de9d167596570b96c4886f1685a054ec163eda922a78837038467a6",
+      "created_at": "2026-10-30T10:48:56Z",
+      "updated_at": "2026-10-30T10:48:56Z",
+      "expires_at": "2027-01-28T10:48:45Z",
+      "workflow_run": {
+        "id": 41043480495,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "74e6f0d6db1d3e68588e03ad3ee986fe1b088a84"
+      }
+    },
+    {
+      "id": 12970697464,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MDY5NzQ2NA==",
+      "name": "pytest-output",
+      "size_in_bytes": 833,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970697464",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970697464/zip",
+      "expired": false,
+      "digest": "sha256:db53a260fe103da8cea16f24bad9244ab88259d2b5516e824e85e54c9478fbe7",
+      "created_at": "2026-10-30T10:43:21Z",
+      "updated_at": "2026-10-30T10:43:21Z",
+      "expires_at": "2027-01-28T10:39:59Z",
+      "workflow_run": {
+        "id": 41042407689,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "20e8bc892b02131d0be185bfea62d7885e1ddb66"
+      }
+    },
+    {
+      "id": 12970509873,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MDUwOTg3Mw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1176,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970509873",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970509873/zip",
+      "expired": false,
+      "digest": "sha256:62249bc9da8f773f1864dcad7607096b30a9401b4f7d88befbc4bf0ba6689a6d",
+      "created_at": "2026-10-30T10:48:24Z",
+      "updated_at": "2026-10-30T10:48:24Z",
+      "expires_at": "2027-01-28T10:43:54Z",
+      "workflow_run": {
+        "id": 41042881062,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "34f3998ac0be10b6c345ab702e4839e0dda0e432"
+      }
+    },
+    {
+      "id": 12970454500,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MDQ1NDUwMA==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970454500",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970454500/zip",
+      "expired": false,
+      "digest": "sha256:8c04105f68cbde85be4d8959286fe88ddadb6dfd992f8920b5844de3d448b3ab",
+      "created_at": "2026-10-30T10:44:28Z",
+      "updated_at": "2026-10-30T10:44:28Z",
+      "expires_at": "2027-01-28T10:44:16Z",
+      "workflow_run": {
+        "id": 41042925416,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "76f2fc26115306691e7b7f560b5999d542248d23"
+      }
+    },
+    {
+      "id": 12970304041,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MDMwNDA0MQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970304041",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970304041/zip",
+      "expired": false,
+      "digest": "sha256:c887caa60b7cb3292f1167bbc373cbcb80eccff3c0602756fd73f821d149588c",
+      "created_at": "2026-10-30T10:44:05Z",
+      "updated_at": "2026-10-30T10:44:05Z",
+      "expires_at": "2027-01-28T10:43:54Z",
+      "workflow_run": {
+        "id": 41042881062,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "34f3998ac0be10b6c345ab702e4839e0dda0e432"
+      }
+    },
+    {
+      "id": 12970144655,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk3MDE0NDY1NQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970144655",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12970144655/zip",
+      "expired": false,
+      "digest": "sha256:4b1a1d0e1149547f29b72417b349d8f5830c07d8e07edd56a4c2c9ef74ce42fb",
+      "created_at": "2026-10-30T10:40:10Z",
+      "updated_at": "2026-10-30T10:40:10Z",
+      "expires_at": "2027-01-28T10:39:59Z",
+      "workflow_run": {
+        "id": 41042407689,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-consolidated-oct2026",
+        "head_sha": "20e8bc892b02131d0be185bfea62d7885e1ddb66"
+      }
+    },
+    {
+      "id": 12966609786,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk2NjYwOTc4Ng==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12966609786",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12966609786/zip",
+      "expired": false,
+      "digest": "sha256:18ba1312549936a21e572555b6060afd4bb02343827dbecc01a63e4bea34ffaf",
+      "created_at": "2026-10-30T09:35:45Z",
+      "updated_at": "2026-10-30T09:35:45Z",
+      "expires_at": "2027-01-28T09:29:52Z",
+      "workflow_run": {
+        "id": 41033849763,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ctx-auth-002-reconciled-remediation-oct2026",
+        "head_sha": "ccf048919b321e421752bccfe71bbd091fd8551c"
+      }
+    },
+    {
+      "id": 12966594153,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk2NjU5NDE1Mw==",
+      "name": "drift-report",
+      "size_in_bytes": 2319,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12966594153",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12966594153/zip",
+      "expired": false,
+      "digest": "sha256:cf45c6611ea80e2b8c9b37342c5e09b995a435187ce952da8d6e051d31686dd8",
+      "created_at": "2026-10-30T09:30:01Z",
+      "updated_at": "2026-10-30T09:30:01Z",
+      "expires_at": "2027-01-28T09:29:52Z",
+      "workflow_run": {
+        "id": 41033849763,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/ctx-auth-002-reconciled-remediation-oct2026",
+        "head_sha": "ccf048919b321e421752bccfe71bbd091fd8551c"
+      }
+    },
+    {
+      "id": 12940256673,
+      "node_id": "MDg6QXJ0aWZhY3QxMjk0MDI1NjY3Mw==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12940256673",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12940256673/zip",
+      "expired": false,
+      "digest": "sha256:6270d49a85aab31eadcd3a9024c34932be404d834b416df6bdf688e5ded7b0ae",
+      "created_at": "2026-10-29T23:01:00Z",
+      "updated_at": "2026-10-29T23:01:00Z",
+      "expires_at": "2027-01-27T23:00:50Z",
+      "workflow_run": {
+        "id": 40970108926,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "16d663ac8449965f774033da46d5063506a772a7"
+      }
+    },
+    {
+      "id": 12939633983,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkzOTYzMzk4Mw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1170,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12939633983",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12939633983/zip",
+      "expired": false,
+      "digest": "sha256:e6905190630095c0538994ac83135eb6f0a5474439d788ab366082cd829c833d",
+      "created_at": "2026-10-29T23:05:24Z",
+      "updated_at": "2026-10-29T23:05:24Z",
+      "expires_at": "2027-01-27T23:00:50Z",
+      "workflow_run": {
+        "id": 40970108926,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "16d663ac8449965f774033da46d5063506a772a7"
+      }
+    },
+    {
+      "id": 12934804289,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkzNDgwNDI4OQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 1139,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12934804289",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12934804289/zip",
+      "expired": false,
+      "digest": "sha256:0aa3efa027112b2a011a64e0f93e529158e3bb25193774a730478a1af56dbe85",
+      "created_at": "2026-10-29T21:43:42Z",
+      "updated_at": "2026-10-29T21:43:42Z",
+      "expires_at": "2027-01-27T21:40:03Z",
+      "workflow_run": {
+        "id": 40959705028,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "967573fb346ce8829529935158685986d7e0de25"
+      }
+    },
+    {
+      "id": 12934224794,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkzNDIyNDc5NA==",
+      "name": "drift-report",
+      "size_in_bytes": 2318,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12934224794",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12934224794/zip",
+      "expired": false,
+      "digest": "sha256:30dcc4360a953b63481d9e7d3ccd37d4440686bf18841d2acfd4cf5066ff4a01",
+      "created_at": "2026-10-29T21:40:13Z",
+      "updated_at": "2026-10-29T21:40:13Z",
+      "expires_at": "2027-01-27T21:40:03Z",
+      "workflow_run": {
+        "id": 40959705028,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-025-api-auth-boundary-oct2026",
+        "head_sha": "967573fb346ce8829529935158685986d7e0de25"
+      }
+    },
+    {
+      "id": 12916495438,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNjQ5NTQzOA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1775,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12916495438",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12916495438/zip",
+      "expired": false,
+      "digest": "sha256:4a9fe771fc11a7171ffd9366628653c0b415fdaece7343983043521bb5a4e206",
+      "created_at": "2026-10-29T16:51:58Z",
+      "updated_at": "2026-10-29T16:51:58Z",
+      "expires_at": "2027-01-27T16:47:26Z",
+      "workflow_run": {
+        "id": 40915010274,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "268c1c41821da3c1a246898f7616b7187fdd4686"
+      }
+    },
+    {
+      "id": 12916055114,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNjA1NTExNA==",
+      "name": "drift-report",
+      "size_in_bytes": 2468,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12916055114",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12916055114/zip",
+      "expired": false,
+      "digest": "sha256:add18251c9e7bbeb97b822b444ec4649ebab8a0915f275a6c0735b922c4f1a12",
+      "created_at": "2026-10-29T16:43:28Z",
+      "updated_at": "2026-10-29T16:43:28Z",
+      "expires_at": "2027-01-27T16:43:16Z",
+      "workflow_run": {
+        "id": 40914335906,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "940d71efde8df52fa45ee0e29670edaf1236589b"
+      }
+    },
+    {
+      "id": 12915985495,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNTk4NTQ5NQ==",
+      "name": "pytest-output",
+      "size_in_bytes": 831,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915985495",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915985495/zip",
+      "expired": false,
+      "digest": "sha256:3696ffe399b38fd9f5184307e4b75f3f2e0688603a552672270019f3462b5187",
+      "created_at": "2026-10-29T16:44:51Z",
+      "updated_at": "2026-10-29T16:44:51Z",
+      "expires_at": "2027-01-27T16:41:55Z",
+      "workflow_run": {
+        "id": 40914119883,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "c2e66686bc58a0a4d5bcf539dad476a45726c00c"
+      }
+    },
+    {
+      "id": 12915487537,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNTQ4NzUzNw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1415,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915487537",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915487537/zip",
+      "expired": false,
+      "digest": "sha256:51c6788648b8fdb99efc6d34d8fbf1e60b3572c1a21d28e0e8ee480ab9e8f90e",
+      "created_at": "2026-10-29T16:47:42Z",
+      "updated_at": "2026-10-29T16:47:42Z",
+      "expires_at": "2027-01-27T16:43:16Z",
+      "workflow_run": {
+        "id": 40914335906,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "940d71efde8df52fa45ee0e29670edaf1236589b"
+      }
+    },
+    {
+      "id": 12915461771,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNTQ2MTc3MQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915461771",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915461771/zip",
+      "expired": false,
+      "digest": "sha256:074f3f25107740efa72af7127c017c92fcf2d6cebc819ce59dc6581734ea9a0b",
+      "created_at": "2026-10-29T16:42:05Z",
+      "updated_at": "2026-10-29T16:42:05Z",
+      "expires_at": "2027-01-27T16:41:55Z",
+      "workflow_run": {
+        "id": 40914119883,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "c2e66686bc58a0a4d5bcf539dad476a45726c00c"
+      }
+    },
+    {
+      "id": 12915190933,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNTE5MDkzMw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1474,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915190933",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12915190933/zip",
+      "expired": false,
+      "digest": "sha256:98b306695d76e43c34e6e9643f2929a37fdc29cc0a5955d118420c592d6910e0",
+      "created_at": "2026-10-29T16:34:53Z",
+      "updated_at": "2026-10-29T16:34:53Z",
+      "expires_at": "2027-01-27T16:30:16Z",
+      "workflow_run": {
+        "id": 40912213126,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "9f27704c2d9f575d00e952626bdbd93a3648185b"
+      }
+    },
+    {
+      "id": 12914802921,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDgwMjkyMQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914802921",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914802921/zip",
+      "expired": false,
+      "digest": "sha256:86417a4bde35c28b2787c39fe7c96f5b7e9a577d74dc1e2ed3352f9dcfefaedb",
+      "created_at": "2026-10-29T16:40:19Z",
+      "updated_at": "2026-10-29T16:40:19Z",
+      "expires_at": "2027-01-27T16:40:09Z",
+      "workflow_run": {
+        "id": 40913837984,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "a0b9a86b8cc50190a22444c05177549f1113205d"
+      }
+    },
+    {
+      "id": 12914791778,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDc5MTc3OA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1345,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914791778",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914791778/zip",
+      "expired": false,
+      "digest": "sha256:dcfa610cb55afaf0646d1557452a43380e8a7798df944020b667c2810f16a277",
+      "created_at": "2026-10-29T16:35:47Z",
+      "updated_at": "2026-10-29T16:35:47Z",
+      "expires_at": "2027-01-27T16:31:27Z",
+      "workflow_run": {
+        "id": 40912418061,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "db6bd98db6c5f7dbcb0a6566236c9a52168526d9"
+      }
+    },
+    {
+      "id": 12914675940,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDY3NTk0MA==",
+      "name": "pytest-output",
+      "size_in_bytes": 1341,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914675940",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914675940/zip",
+      "expired": false,
+      "digest": "sha256:2185462b998e6e17381d92b2950e131594068e692547439abcea14f44312570b",
+      "created_at": "2026-10-29T16:29:52Z",
+      "updated_at": "2026-10-29T16:29:52Z",
+      "expires_at": "2027-01-27T16:26:01Z",
+      "workflow_run": {
+        "id": 40911517400,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "0d1bfe84b76ac611859f2a82def992f5920281b4"
+      }
+    },
+    {
+      "id": 12914633127,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDYzMzEyNw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1413,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914633127",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914633127/zip",
+      "expired": false,
+      "digest": "sha256:db9428e3715e7c86a69a6bd62508a479bb4c2ccfd1f016312b6e28f00b955bd8",
+      "created_at": "2026-10-29T16:44:05Z",
+      "updated_at": "2026-10-29T16:44:05Z",
+      "expires_at": "2027-01-27T16:40:09Z",
+      "workflow_run": {
+        "id": 40913837984,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "a0b9a86b8cc50190a22444c05177549f1113205d"
+      }
+    },
+    {
+      "id": 12914534769,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDUzNDc2OQ==",
+      "name": "drift-report",
+      "size_in_bytes": 2518,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914534769",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914534769/zip",
+      "expired": false,
+      "digest": "sha256:dbf5f73ba264445a03b0effd4e4d5f03a401f6d4e7f903f01cd031411810f69a",
+      "created_at": "2026-10-29T16:47:38Z",
+      "updated_at": "2026-10-29T16:47:38Z",
+      "expires_at": "2027-01-27T16:47:26Z",
+      "workflow_run": {
+        "id": 40915010274,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "268c1c41821da3c1a246898f7616b7187fdd4686"
+      }
+    },
+    {
+      "id": 12914393187,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDM5MzE4Nw==",
+      "name": "pytest-output",
+      "size_in_bytes": 1173,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914393187",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914393187/zip",
+      "expired": false,
+      "digest": "sha256:1890b96f38ad18137a3cf0e22421db8364259bb2428b8cbca255943adbc36d14",
+      "created_at": "2026-10-29T16:37:17Z",
+      "updated_at": "2026-10-29T16:37:17Z",
+      "expires_at": "2027-01-27T16:33:37Z",
+      "workflow_run": {
+        "id": 40912773986,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "9ecc8ce01d12b2d0e15dc80ff97158b9cc6d467d"
+      }
+    },
+    {
+      "id": 12914301666,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDMwMTY2Ng==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914301666",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914301666/zip",
+      "expired": false,
+      "digest": "sha256:4c3f339c392ea8fcfdd1a0b4f2adac391891aa5db6be085906228c8b2bb01257",
+      "created_at": "2026-10-29T16:30:28Z",
+      "updated_at": "2026-10-29T16:30:28Z",
+      "expires_at": "2027-01-27T16:30:16Z",
+      "workflow_run": {
+        "id": 40912213126,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "9f27704c2d9f575d00e952626bdbd93a3648185b"
+      }
+    },
+    {
+      "id": 12914096523,
+      "node_id": "MDg6QXJ0aWZhY3QxMjkxNDA5NjUyMw==",
+      "name": "drift-report",
+      "size_in_bytes": 2467,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914096523",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12914096523/zip",
+      "expired": false,
+      "digest": "sha256:e51f33a769497cdedf790d14c91a76d5f4c840178d74a797107af27bd696c2e2",
+      "created_at": "2026-10-29T16:26:11Z",
+      "updated_at": "2026-10-29T16:26:11Z",
+      "expires_at": "2027-01-27T16:26:01Z",
+      "workflow_run": {
+        "id": 40911517400,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "fix/debt-014-final-deep-review-oct2026",
+        "head_sha": "0d1bfe84b76ac611859f2a82def992f5920281b4"
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105",
+  "repository_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1",
+  "labels_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105/labels{/name}",
+  "comments_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105/comments",
+  "events_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105/events",
+  "html_url": "https://github.com/1h0lde4/ocbrain-v4.1/issues/105",
+  "id": 6136557571,
+  "node_id": "I_kwDOSWs39c8AAAABbcRwAw",
+  "number": 105,
+  "title": "Worker.execute() turns task cancellation into a failed result; the workflow retries instead of stopping",
+  "user": {
+    "login": "1h0lde4",
+    "id": 196927701,
+    "node_id": "U_kgDOC7zg1Q",
+    "avatar_url": "https://avatars.githubusercontent.com/u/196927701?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/1h0lde4",
+    "html_url": "https://github.com/1h0lde4",
+    "followers_url": "https://api.github.com/users/1h0lde4/followers",
+    "following_url": "https://api.github.com/users/1h0lde4/following{/other_user}",
+    "gists_url": "https://api.github.com/users/1h0lde4/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/1h0lde4/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/1h0lde4/subscriptions",
+    "organizations_url": "https://api.github.com/users/1h0lde4/orgs",
+    "repos_url": "https://api.github.com/users/1h0lde4/repos",
+    "events_url": "https://api.github.com/users/1h0lde4/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/1h0lde4/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "labels": [
+
+  ],
+  "state": "open",
+  "locked": false,
+  "assignees": [
+
+  ],
+  "milestone": null,
+  "comments": 1,
+  "created_at": "2026-10-31T15:28:55Z",
+  "updated_at": "2026-11-02T11:23:53Z",
+  "closed_at": null,
+  "assignee": null,
+  "author_association": "OWNER",
+  "issue_field_values": [
+
+  ],
+  "type": null,
+  "active_lock_reason": null,
+  "sub_issues_summary": {
+    "total": 0,
+    "completed": 0,
+    "percent_completed": 0
+  },
+  "issue_dependencies_summary": {
+    "blocked_by": 0,
+    "total_blocked_by": 0,
+    "blocking": 0,
+    "total_blocking": 0
+  },
+  "body": "**Status:** OPEN. **Owner:** unassigned (to be named by the repo owner). **Branch:** none yet. **Decision needed:** the intended cancellation contract (below).\nFound while reviewing PR #104 (B2c). Separate from #104: #104 fixes router-level resource cleanup; this is a cancellation-semantics defect one layer above it.\n\n## Observed behaviour (verified at `main` 16d663a)\n`Worker.execute()` (`core/workers/base.py:293`) catches `asyncio.CancelledError`, emits `worker.cancelled`, and **returns** `WorkerResult(success=False, error=\"Worker cancelled\")`. The workflow retry loop (`core/workflow/runtime.py:865`) checks only the workflow token (`cancel_token.is_cancelled`), never whether the task was cancelled, so it treats that result as an ordinary node failure and may start another attempt. `WorkflowRuntime.execute()` then returns normally.\n\nProbe (real `WorkflowRuntime` + `ExecutionRuntime` + `Worker.execute` + `ModelRouter`; only the provider stream faked): the task running `execute()` was cancelled at 0.5 s with node retry policy `max_retries=1`. Result: `execute()` returned a result at ~2.5 s, `task.cancelled()` was `False`, and the node ran **twice** (attempts=2). Script: `docs/handoffs/fz02_gate_probe.py` on branch `follow-up/fz02-b2d-latent-token-cancellation-oct2026` (and `docs/handoffs/fz02_b2c/fz02_gate_probe.py` on `wip/fz02-b2c-cancellation-checkpoint-oct2026`); run with `OCROOT=<checkout> python3 <path>`.\n\n## Why this is not fixed by #104\n#104 guarantees provider-stream cleanup when the relevant task is cancelled. It does not make execution stop on cancellation. Successful cleanup must not be read as successful cancellation of the workflow.\n\n## Decision required before any fix (not taken)\nWhat is the cancellation contract for a worker? Options to decide, not a recommendation: (a) `Worker.execute()` re-raises `CancelledError` after emitting its event; (b) it keeps returning a result but marks it as cancelled (distinct from failure) and the workflow retry loop and other callers honour that; (c) a hybrid. Also decide: should a cancelled node ever be retried; what `worker.cancelled` and `WorkerResult` mean downstream; and how this interacts with `ExecutionRuntime.invoke()` and `WorkflowRuntime.execute()` (\"never raises\").\n\n## Required for this item\nIts own owner, its own branch, tests that fail on `main` and pass after (task cancel mid-node must not produce a retry; must not return as an ordinary failure), and an explicit owner decision on the contract recorded before implementation.\n\n## Related cancellation gaps that remain OPEN (not solved by #104)\n- The graph watchdog only sets the workflow token (`core/runtime/watchdog.py:180,196`); it does not cancel node tasks. A node hung in the router ran until the router's own deadline (probe 1, 2.03 s against a 0.3 s graph budget).\n- No production caller threads a cancellation token to the router or `AdapterRuntime` (`planner.py:321-345`, `capability_executor.py:116-121`, `orchestrator.py:923`); the token-driven work is preserved, unreviewed, on `follow-up/fz02-b2d-latent-token-cancellation-oct2026`.\n- Shutdown, Ctrl-C and client-disconnect cancellation are UNVERIFIED.\n- Physical provider-side termination on cancel is UNVERIFIED.\n",
+  "closed_by": null,
+  "reactions": {
+    "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105/reactions",
+    "total_count": 0,
+    "+1": 0,
+    "-1": 0,
+    "laugh": 0,
+    "hooray": 0,
+    "confused": 0,
+    "heart": 0,
+    "rocket": 0,
+    "eyes": 0
+  },
+  "timeline_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/issues/105/timeline",
+  "performed_via_github_app": null,
+  "state_reason": null,
+  "pinned_comment": null
+}

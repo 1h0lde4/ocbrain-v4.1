@@ -1,0 +1,3 @@
+# Revision 17 outline output (ME-05): ORIGINAL NOT FOUND; platform revision LOCATED
+
+Sought: the Docs outline output at platform revision 17 that the original author reports listing 49 revision-1 blocks. Searched: this package's source locations (S01-S06), the Q4-b brief text, handoff v4. Result: no preserved outline output. Platform state: revision 17 is readable (`view ... atRev: 17` returned rev 17, latest 19; transcription T03 in `acquisition_records/source_metadata/DOCS_READ_TRANSCRIPTIONS.md`). Any outline read made now would be a NEW supporting record, not the original; none was preserved because responses cannot be landed on disk (see EXPORT_CALL_LOG.md).

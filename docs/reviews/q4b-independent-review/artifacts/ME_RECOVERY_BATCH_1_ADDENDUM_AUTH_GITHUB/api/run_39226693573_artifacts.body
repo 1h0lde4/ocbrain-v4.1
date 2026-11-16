@@ -1,0 +1,45 @@
+{
+  "total_count": 2,
+  "artifacts": [
+    {
+      "id": 12174022650,
+      "node_id": "MDg6QXJ0aWZhY3QxMjE3NDAyMjY1MA==",
+      "name": "drift-report",
+      "size_in_bytes": 2319,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12174022650",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12174022650/zip",
+      "expired": false,
+      "digest": "sha256:3a0049d338dc22628501dde6351fe51e95902e2fdcf781016ec8b3d9cf0aba30",
+      "created_at": "2026-10-19T08:59:25Z",
+      "updated_at": "2026-10-19T08:59:25Z",
+      "expires_at": "2027-01-17T08:59:17Z",
+      "workflow_run": {
+        "id": 39226693573,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "f13bfdefcdd197ed1f966de0b1f93037a4168af4"
+      }
+    },
+    {
+      "id": 12173949037,
+      "node_id": "MDg6QXJ0aWZhY3QxMjE3Mzk0OTAzNw==",
+      "name": "pytest-output",
+      "size_in_bytes": 893,
+      "url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12173949037",
+      "archive_download_url": "https://api.github.com/repos/1h0lde4/ocbrain-v4.1/actions/artifacts/12173949037/zip",
+      "expired": false,
+      "digest": "sha256:7d63a9caa0f9e745d72f6d708d3b89c92db2af81c90cf466a30169cdd8566a06",
+      "created_at": "2026-10-19T09:03:25Z",
+      "updated_at": "2026-10-19T09:03:25Z",
+      "expires_at": "2027-01-17T08:59:17Z",
+      "workflow_run": {
+        "id": 39226693573,
+        "repository_id": 1231763445,
+        "head_repository_id": 1231763445,
+        "head_branch": "main",
+        "head_sha": "f13bfdefcdd197ed1f966de0b1f93037a4168af4"
+      }
+    }
+  ]
+}

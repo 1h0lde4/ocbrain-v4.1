@@ -1,0 +1,14 @@
+# filesystem search 2026-11-08T11:12:22Z
+## find: files whose NAME suggests probe outputs / logs for the two commits
+## grep: files under /mnt/user-data/uploads and /mnt/transcripts containing the two short SHAs
+(end)
+/mnt/transcripts:
+total 4
+drwxr-xr-x 1 claude ubuntu    0 Nov  8 11:12 .
+drwxr-xr-x 8 root   root   4096 Oct 30 09:12 ..
+
+/mnt/user-data/uploads:
+total 16
+drwxr-xr-x 1 claude ubuntu    0 Nov  8 11:12 .
+drwxr-xr-x 5 root   root   4096 Oct 30 09:12 ..
+-rw-r--r-- 1 claude ubuntu 8443 Oct 30 09:12 files.zip

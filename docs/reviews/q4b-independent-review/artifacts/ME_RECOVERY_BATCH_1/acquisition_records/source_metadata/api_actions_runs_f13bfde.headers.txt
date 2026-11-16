@@ -1,0 +1,22 @@
+HTTP/2 403 
+date: Sun, 08 Nov 2026 20:17:02 GMT
+server: Varnish
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-content-type-options: nosniff
+x-frame-options: deny
+x-xss-protection: 1; mode=block
+content-security-policy: default-src 'none'; style-src 'unsafe-inline'
+access-control-allow-origin: *
+access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-RateLimit-Used, X-RateLimit-Resource, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, Deprecation, Sunset
+content-type: application/json; charset=utf-8
+referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
+x-github-media-type: github.v3; format=json
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 0
+x-ratelimit-used: 60
+x-ratelimit-resource: core
+x-ratelimit-reset: 1794170234
+content-length: 278
+x-github-request-id: 3000:126064:5672C0C:11C33CC7:6AF0D8A9
+x-github-edge-region: iad
+
