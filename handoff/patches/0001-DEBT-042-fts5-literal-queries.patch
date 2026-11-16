@@ -1,0 +1,501 @@
+From 14481bfa27ba89c21c5f53cc401385a41798e425 Mon Sep 17 00:00:00 2001
+From: "Claude-claude.ai-sandbox" <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 09:32:50 +0000
+Subject: [PATCH] fix(memory): treat user search text as literal FTS5 content
+ (DEBT-042)
+
+Base: main f13bfdefcdd197ed1f966de0b1f93037a4168af4. Scope: FTS5 query construction only; DEBT-042's status is intentionally not touched here.
+
+Problem (reproduced before the fix, real SQLite FTS5 3.45.1): SQLiteStorageBackend._fts_escape quoted only tokens containing one of  " ' ( ) * ^ : - +.
+Ordinary punctuation (. , ? / % = & $ @ ;) reached MATCH raw and raised "fts5: syntax error" -- 9 of 14 representative queries failed, and
+UnifiedMemory.search only logged "L1 FTS5 search failed (non-blocking)", so the FTS5 leg silently contributed nothing. Embedded double quotes were not
+doubled, and bare uppercase AND/OR/NOT/NEAR acted as FTS5 operators.
+
+Fix: every whitespace-separated token becomes one double-quoted FTS5 string with embedded quotes doubled; NUL and lone surrogates (which break the FTS5
+parser / the sqlite3 binding and cannot occur in indexed text) are removed. The expression is still an SQL bound parameter; search_text, the schema, the
+triggers, ranking, filters, the empty-query contract and UnifiedMemory (incl. its existing non-blocking failure path and the vector leg) are unchanged.
+
+Semantics, documented in the docstring: tokens stay implicitly AND-ed; plain words match as before; a token that the tokenizer splits (file.txt, C++,
+state-of-the-art) matches as an adjacent phrase (as tokens already quoted for - : ' always did); punctuation-only tokens contribute no terms and a query
+with no terms matches nothing; empty/whitespace-only queries keep the established unfiltered contract. ONE intentional semantic change: AND/OR/NOT/NEAR are
+now literal terms, not operators.
+
+Tests: 61 new (tests/test_debt042_fts5_literal_queries.py) at three layers -- _fts_escape (exact outputs + a 2000-input fuzz against a real FTS5 table),
+SQLiteStorageBackend.search_text (assert which entries come back: operators, column filters, prefix, caret, negation, parentheses, quotes, Unicode, CJK,
+emoji, empty / punctuation-only, NUL / surrogate, 1000-token queries, SQL-injection payloads, filters/ordering/deprecation, a genuine DB failure still
+raises) and UnifiedMemory.search (FTS leg no longer fails, vector leg still receives the raw query, existing non-blocking failure path unchanged).
+37 of the 61 fail on the unmodified code (9 of the original 14 queries). One existing test is rewritten: test_fts5_question_mark_gap_is_pre_existing_and_
+unrelated asserted only that '?' was inside the escaped string, which holds for a broken and a fixed escaper alike; it now asserts the corrected behaviour
+against a real FTS5 table (renamed ..._is_a_literal_term_since_debt042).
+---
+ core/memory/backends/sqlite_storage.py     |  51 ++-
+ tests/test_debt042_fts5_literal_queries.py | 347 +++++++++++++++++++++
+ tests/test_session4b_memory_hardening.py   |  23 +-
+ 3 files changed, 404 insertions(+), 17 deletions(-)
+ create mode 100644 tests/test_debt042_fts5_literal_queries.py
+
+diff --git a/core/memory/backends/sqlite_storage.py b/core/memory/backends/sqlite_storage.py
+index ed0cbae..b6ce610 100644
+--- a/core/memory/backends/sqlite_storage.py
++++ b/core/memory/backends/sqlite_storage.py
+@@ -13,6 +13,7 @@ import asyncio
+ import json
+ import logging
+ import os
++import re
+ import sqlite3
+ import time
+ from contextlib import closing
+@@ -26,6 +27,13 @@ logger = logging.getLogger("ocbrain.memory.backends.sqlite_storage")
+ 
+ DEFAULT_DB_PATH = ".data/memory/unified.db"
+ 
++# Characters removed from user query text before it is turned into an FTS5 MATCH
++# expression (DEBT-042).  NUL ends the expression early inside SQLite's FTS5 parser
++# ("unterminated string") and a lone surrogate cannot be encoded to UTF-8 by the
++# sqlite3 parameter binding.  Neither can occur in indexed text, so dropping them
++# changes no match.
++_FTS_UNBINDABLE_CHARS = re.compile("[\x00\ud800-\udfff]")
++
+ 
+ class SQLiteStorageBackend(StorageBackend):
+     """
+@@ -361,12 +369,39 @@ class SQLiteStorageBackend(StorageBackend):
+ 
+     @staticmethod
+     def _fts_escape(query: str) -> str:
+-        """Escape FTS5 special chars to prevent query parse errors."""
+-        special = {'"', "'", '(', ')', '*', '^', ':', '-', '+'}
+-        tokens = []
++        """Turn free text into a *literal* FTS5 MATCH expression (DEBT-042).
++
++        Every whitespace-separated token becomes one double-quoted FTS5 string with
++        any embedded ``"`` doubled, so user text is never parsed as FTS5 query
++        syntax: no operators (``AND``/``OR``/``NOT``/``NEAR``), no column filters
++        (``col:term``), no prefix (``*``), initial-token (``^``), grouping or
++        negation characters, and no malformed expression from stray punctuation.
++        The expression is still bound as an SQL parameter by ``search_text``; the
++        two protections are independent.
++
++        Term-matching semantics:
++
++        * Tokens stay implicitly AND-ed, as before.
++        * A plain word matches exactly as it did when it was unquoted.
++        * A token that the tokenizer splits into several terms (``file.txt``,
++          ``C++``, ``state-of-the-art``) matches those terms as an adjacent
++          phrase.  This is what tokens already quoted for ``-``, ``:`` or ``'``
++          always did; it now also applies to ``.``, ``,``, ``?``, ``/`` and every
++          other punctuation character, which previously raised a syntax error.
++        * Intentional change: the uppercase words ``AND``/``OR``/``NOT``/``NEAR``
++          are now literal terms.  Before, a bare keyword acted as an FTS5
++          operator (``cats OR dogs`` widened the search, a trailing ``NOT`` was a
++          syntax error); user text must not select operator behaviour.
++        * Punctuation-only tokens contribute no terms (FTS5 treats an empty
++          phrase as neutral inside an AND); a query with no terms at all matches
++          nothing.  Empty and whitespace-only queries never reach this function:
++          ``search_text`` keeps its established unfiltered contract for them.
++        * NUL and lone surrogate characters are removed (see
++          ``_FTS_UNBINDABLE_CHARS``).
++        """
++        terms = []
+         for word in query.split():
+-            if any(c in word for c in special):
+-                tokens.append(f'"{word}"')
+-            else:
+-                tokens.append(word)
+-        return " ".join(tokens) if tokens else '""'
++            word = _FTS_UNBINDABLE_CHARS.sub("", word)
++            if word:
++                terms.append('"' + word.replace('"', '""') + '"')
++        return " ".join(terms) if terms else '""'
+diff --git a/tests/test_debt042_fts5_literal_queries.py b/tests/test_debt042_fts5_literal_queries.py
+new file mode 100644
+index 0000000..18d9f6a
+--- /dev/null
++++ b/tests/test_debt042_fts5_literal_queries.py
+@@ -0,0 +1,347 @@
++"""DEBT-042 -- user search text must reach FTS5 as LITERAL content.
++
++Before this fix ``SQLiteStorageBackend._fts_escape`` quoted only tokens containing a
++small set of syntax characters.  Ordinary punctuation (``. , ? / % = & $ @ ;``) reached
++``MATCH`` raw and raised ``fts5: syntax error`` (``UnifiedMemory.search`` then logged
++"L1 FTS5 search failed (non-blocking)" and the FTS5 leg contributed nothing), embedded
++double quotes were not doubled, and bare uppercase ``AND``/``OR``/``NOT``/``NEAR`` acted
++as FTS5 operators.
++
++Three layers are tested, each asserting search BEHAVIOUR (which entries come back), not
++merely the absence of an exception:
++
++1. ``_fts_escape`` itself (exact output, structural invariant, fuzz against a real FTS5
++   table);
++2. ``SQLiteStorageBackend.search_text`` against a real FTS5 database in the production
++   table shape;
++3. ``UnifiedMemory.search`` -- the production caller -- including that the FTS5 leg no
++   longer fails, the vector leg still receives the raw query, and a *genuine* database
++   failure still follows the pre-existing, unchanged path.
++
++SQL-parameter binding and FTS5 escaping are independent protections; the SQL-injection
++tests below pass because of the former and would still pass if the latter were wrong.
++"""
++import inspect
++import logging
++import random
++import re
++import sqlite3
++import string
++
++import pytest
++
++from core.memory.backends.sqlite_storage import SQLiteStorageBackend
++from core.memory.knowledge_entry import KnowledgeEntry
++from core.memory.unified_memory import UnifiedMemory
++
++# The 14 representative queries of the original DEBT-042 investigation (9 of them raised
++# "fts5: syntax error" before the fix).  The entry written for each one has exactly the
++# query text as its content, so a correct, literal search must find it.
++REPRO_QUERIES = [
++    "write a story",
++    "hello world",
++    "Write a 500 word story.",
++    "what's the capital of France?",
++    "tell me a joke, please",
++    "python 3.11 vs 3.12",
++    "C++ memory model",
++    "50% of users",
++    "cost = $5 & tax",
++    "path /home/user/file.txt",
++    "user@example.com",
++    "how do I fix this error: 'NoneType'",
++    "state-of-the-art models",
++    "re: meeting notes; agenda",
++]
++
++
++def _entry(entry_id, content, importance=0.5, tags=None, layer="l1", truth_status="unknown"):
++    return KnowledgeEntry(entry_id=entry_id, layer=layer, content=content, tags=tags or [],
++                          importance=importance, truth_status=truth_status,
++                          created_at=1.0, updated_at=1.0, accessed_at=1.0)
++
++
++BEHAVIOUR_CORPUS = [
++    _entry("b_cats_and_dogs", "cats and dogs together"),
++    _entry("b_dogs_and_cats", "dogs and cats"),
++    _entry("b_cats_or_dogs", "cats or dogs are pets"),
++    _entry("b_cats_not_dogs", "cats not dogs here"),
++    _entry("b_near", "near cats dogs"),
++    _entry("b_cats", "cats only"),
++    _entry("b_dogs", "dogs only"),
++    _entry("b_cat", "cat"),
++    _entry("b_content_cats", "content cats notes"),
++    _entry("b_tagged", "unrelated text", tags=["dragon"]),
++    _entry("b_unicode", "naïve café résumé"),
++    _entry("b_cjk", "日本語のテスト"),
++    _entry("b_emoji", "smile 😀 emoji"),
++    _entry("b_quote", 'she said "hello world" loudly'),
++    _entry("b_ab", "ab"),
++    _entry("b_xy", "xy"),
++    _entry("b_hi", "ranking probe term", importance=0.9),
++    _entry("b_lo", "ranking probe term", importance=0.1),
++    _entry("b_dep", "deprecated probe", truth_status="deprecated"),
++    _entry("b_l1", "layered probe", layer="l1"),
++    _entry("b_l2", "layered probe", layer="l2"),
++]
++
++
++async def _backend(tmp_path, extra=()):
++    backend = SQLiteStorageBackend(str(tmp_path / "debt042" / "unified.db"))
++    for i, q in enumerate(REPRO_QUERIES):
++        await backend.write(_entry(f"q{i:02d}", q))
++    for e in list(BEHAVIOUR_CORPUS) + list(extra):
++        await backend.write(e)
++    return backend
++
++
++def _ids(results):
++    return {r.entry_id for r in results}
++
++
++def _scratch_fts():
++    """A real FTS5 table in the production shape (external content, default tokenizer)."""
++    conn = sqlite3.connect(":memory:")
++    conn.executescript(
++        "CREATE TABLE ke(rowid INTEGER PRIMARY KEY, content TEXT, summary TEXT, tags TEXT);"
++        "CREATE VIRTUAL TABLE fts USING fts5(content, summary, tags, content='ke', content_rowid='rowid');"
++    )
++    conn.execute("INSERT INTO ke VALUES (1, 'alpha beta gamma', '', '')")
++    conn.execute("INSERT INTO fts(rowid, content, summary, tags) VALUES (1, 'alpha beta gamma', '', '')")
++    return conn
++
++
++def _match(conn, expr):
++    return conn.execute("SELECT rowid FROM fts WHERE fts MATCH ?", (expr,)).fetchall()
++
++
++# ── 1. _fts_escape -------------------------------------------------------------
++
++ESCAPE_TABLE = [
++    ("write a story", '"write" "a" "story"'),
++    ("cats OR dogs", '"cats" "OR" "dogs"'),
++    ('say "hi"', '"say" """hi"""'),
++    ('"', '""""'),
++    ("what's up?", '"what\'s" "up?"'),
++    ("file.txt C++", '"file.txt" "C++"'),
++    ("NEAR(a b)", '"NEAR(a" "b)"'),
++    ("content:cats", '"content:cats"'),
++    ("cat*", '"cat*"'),
++    ("^cats", '"^cats"'),
++    ("-dogs", '"-dogs"'),
++    ("(cats dogs)", '"(cats" "dogs)"'),
++    ("a\x00b", '"ab"'),
++    ("x\ud800y", '"xy"'),
++    ("\x00", '""'),
++    ("", '""'),
++    ("   \t\n", '""'),
++    ("日本語 café", '"日本語" "café"'),
++    ("\u00a0a\u2003b", '"a" "b"'),
++]
++
++
++@pytest.mark.parametrize("raw, expected", ESCAPE_TABLE)
++def test_escape_output_is_one_quoted_string_per_token(raw, expected):
++    assert SQLiteStorageBackend._fts_escape(raw) == expected
++
++
++_QUOTED_TERMS = re.compile(r'^"(?:[^"]|"")*"(?: "(?:[^"]|"")*")*$')
++
++
++def test_escape_fuzz_is_always_well_formed_and_accepted_by_real_fts5():
++    rng = random.Random(20261023)
++    alphabet = (string.ascii_letters + string.digits + string.punctuation + '""\'\'  \t'
++                + "\x00\ud800é日😀\u00a0")
++    conn = _scratch_fts()
++    inputs = [f"a{c}b" for c in string.punctuation] + [c * n for c in string.punctuation for n in (1, 2)]
++    inputs += ["".join(rng.choice(alphabet) for _ in range(rng.randint(1, 25))) for _ in range(2000)]
++    for raw in inputs:
++        expr = SQLiteStorageBackend._fts_escape(raw)
++        assert _QUOTED_TERMS.match(expr), f"not a sequence of fully quoted terms: {raw!r} -> {expr!r}"
++        _match(conn, expr)  # must not raise sqlite3.OperationalError
++
++
++# ── 2. SQLiteStorageBackend.search_text ----------------------------------------
++
++@pytest.mark.parametrize("index, query", list(enumerate(REPRO_QUERIES)))
++@pytest.mark.asyncio
++async def test_original_fourteen_queries_find_their_entry(tmp_path, index, query, record_property):
++    """The pre-fix reproduction set, re-run against the final implementation."""
++    record_property("sqlite_version", sqlite3.sqlite_version)
++    backend = await _backend(tmp_path)
++    assert f"q{index:02d}" in _ids(await backend.search_text(query, limit=50))
++
++
++@pytest.mark.asyncio
++async def test_boolean_keywords_are_literal_terms_not_operators(tmp_path):
++    b = await _backend(tmp_path)
++    # AND: terms cats, and, dogs -> only entries containing the word "and" qualify.
++    assert _ids(await b.search_text("cats AND dogs")) >= {"b_cats_and_dogs", "b_dogs_and_cats"}
++    assert not _ids(await b.search_text("cats AND dogs")) & {"b_near", "b_cats_or_dogs", "b_cats_not_dogs", "b_cats", "b_dogs"}
++    # OR must NOT widen the search to "cats OR dogs": it needs the literal word "or".
++    assert _ids(await b.search_text("cats OR dogs")) == {"b_cats_or_dogs"}
++    # NOT must not exclude: it needs the literal word "not".
++    assert _ids(await b.search_text("cats NOT dogs")) == {"b_cats_not_dogs"}
++    # A dangling operator used to be a syntax error; it is now just a word.
++    assert _ids(await b.search_text("cats AND")) >= {"b_cats_and_dogs", "b_dogs_and_cats"}
++    assert not _ids(await b.search_text("cats AND")) & {"b_cats", "b_near"}
++
++
++@pytest.mark.asyncio
++async def test_near_expression_is_literal(tmp_path):
++    b = await _backend(tmp_path)
++    # The expression is split on whitespace like any other text: the phrase "near cats" AND the term
++    # "dogs".  A NEAR-operator reading would match every entry with cats near dogs (e.g. "cats and dogs
++    # together"); the literal reading needs the words "near cats" to be adjacent.
++    assert _ids(await b.search_text("NEAR(cats dogs)")) == {"b_near"}
++    assert "b_cats_and_dogs" not in _ids(await b.search_text("NEAR(cats dogs)"))
++
++
++@pytest.mark.asyncio
++async def test_column_filters_prefix_caret_and_negation_are_literal(tmp_path):
++    b = await _backend(tmp_path)
++    assert _ids(await b.search_text("content:cats")) == {"b_content_cats"}   # phrase "content cats", no column filter
++    assert _ids(await b.search_text("tags:dragon")) == set()                 # the tags column is NOT filtered
++    assert _ids(await b.search_text("cat*")) == {"b_cat"}                    # no prefix expansion to "cats"
++    got = _ids(await b.search_text("^cats"))                                 # no initial-token anchoring
++    assert "b_dogs_and_cats" in got and "b_cats" in got
++    got = _ids(await b.search_text("-dogs"))                                 # no negation
++    assert "b_dogs" in got and "b_cats" not in got
++    got = _ids(await b.search_text("(cats dogs)"))                           # grouping characters are plain text
++    assert {"b_cats_and_dogs", "b_near", "b_dogs_and_cats"} <= got and not got & {"b_cats", "b_dogs"}
++
++
++@pytest.mark.asyncio
++async def test_quotes_whitespace_and_multiword_queries(tmp_path):
++    b = await _backend(tmp_path)
++    assert _ids(await b.search_text('she said "hello world" loudly')) == {"b_quote"}
++    assert await b.search_text('"') == []
++    assert await b.search_text('""""') == []
++    assert _ids(await b.search_text("  cats \t\n dogs  ")) >= {"b_cats_and_dogs", "b_near"}
++    assert not _ids(await b.search_text("cats dogs")) & {"b_cats", "b_dogs"}  # multiword = every term required (AND), as before
++
++
++@pytest.mark.asyncio
++async def test_unicode_queries(tmp_path):
++    b = await _backend(tmp_path)
++    for q in ("café", "cafe", "NAÏVE", "résumé."):
++        assert "b_unicode" in _ids(await b.search_text(q)), q
++    assert _ids(await b.search_text("日本語のテスト")) == {"b_cjk"}
++    assert await b.search_text("😀") == []          # no searchable term: matches nothing, no error
++
++
++@pytest.mark.asyncio
++async def test_empty_and_whitespace_queries_keep_the_unfiltered_contract(tmp_path):
++    """Established caller contract (unchanged): no text filter, ordered by importance."""
++    b = await _backend(tmp_path)
++    for q in ("", "   ", "\t\n"):
++        results = await b.search_text(q, limit=500)
++        assert results[0].entry_id == "b_hi"
++        assert "b_dep" not in _ids(results)                      # deprecated entries still excluded
++        assert len(results) == len(REPRO_QUERIES) + len(BEHAVIOUR_CORPUS) - 1
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("query", ["?", "...", "?!", "&", "$%^&*()", '"', "'", "--", "::", "= & ?"])
++async def test_punctuation_only_queries_match_nothing_without_error(tmp_path, query):
++    b = await _backend(tmp_path)
++    assert await b.search_text(query) == []
++
++
++@pytest.mark.asyncio
++async def test_unbindable_characters_are_dropped_not_fatal(tmp_path):
++    b = await _backend(tmp_path)
++    assert "b_ab" in _ids(await b.search_text("a\x00b"))
++    assert "b_xy" in _ids(await b.search_text("x\ud800y"))
++    assert await b.search_text("\x00") == []
++
++
++@pytest.mark.asyncio
++async def test_very_long_queries_do_not_hit_an_expression_limit(tmp_path):
++    b = await _backend(tmp_path)
++    assert await b.search_text(" ".join(f"w{i}" for i in range(1000))) == []
++    assert await b.search_text("cats " + " ".join(f"w{i}." for i in range(1000))) == []
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("payload", ["' OR 1=1 --", '"; DROP TABLE knowledge_entries; --',
++                                     "cats'); DELETE FROM knowledge_entries; --"])
++async def test_sql_injection_payloads_are_inert(tmp_path, payload):
++    """Independent of FTS5 escaping: the expression is a bound parameter."""
++    b = await _backend(tmp_path)
++    count = lambda: sqlite3.connect(b.db_path).execute("SELECT COUNT(*) FROM knowledge_entries").fetchone()[0]
++    before = count()
++    await b.search_text(payload)
++    assert count() == before
++
++
++def test_search_text_still_binds_the_expression_as_an_sql_parameter():
++    src = inspect.getsource(SQLiteStorageBackend.search_text)
++    assert "MATCH ?" in src and "self._fts_escape(query)" in src
++    assert "{query" not in src and "% query" not in src and "+ query" not in src
++
++
++@pytest.mark.asyncio
++async def test_filters_ordering_and_deprecation_unchanged_for_punctuated_queries(tmp_path):
++    b = await _backend(tmp_path)
++    assert [r.entry_id for r in await b.search_text("ranking probe term.")] == ["b_hi", "b_lo"]
++    assert [r.entry_id for r in await b.search_text("ranking probe term.", min_importance=0.5)] == ["b_hi"]
++    assert [r.entry_id for r in await b.search_text("layered probe.", layer="l2")] == ["b_l2"]
++    assert await b.search_text("deprecated probe.") == []
++    assert len(await b.search_text("ranking probe term.", limit=1)) == 1
++
++
++@pytest.mark.asyncio
++async def test_a_genuine_database_failure_is_not_swallowed(tmp_path):
++    """The fix must not add broad exception handling: a missing FTS table still raises."""
++    b = await _backend(tmp_path)
++    conn = sqlite3.connect(b.db_path)
++    conn.execute("DROP TABLE knowledge_entries_fts")
++    conn.commit()
++    conn.close()
++    with pytest.raises(sqlite3.OperationalError):
++        await b.search_text("hello world")
++
++
++# ── 3. UnifiedMemory.search (the production caller) -----------------------------
++
++@pytest.mark.asyncio
++async def test_unified_search_fts_leg_no_longer_fails_for_punctuated_queries(tmp_path, caplog):
++    memory = UnifiedMemory(db_prefix=str(tmp_path / "um1"))
++    for i, q in enumerate(REPRO_QUERIES):
++        await memory.write(content=q, content_type="note", entry_id=f"q{i:02d}")
++    with caplog.at_level(logging.WARNING, logger="ocbrain.memory.unified"):
++        for i, q in enumerate(REPRO_QUERIES):
++            results = await memory.search(q, limit=20)
++            assert f"q{i:02d}" in {r.entry.entry_id for r in results}, q
++    assert not [r for r in caplog.records if "FTS5 search failed" in r.getMessage()]
++
++
++@pytest.mark.asyncio
++async def test_unified_search_gives_the_vector_leg_the_raw_query(tmp_path, monkeypatch):
++    memory = UnifiedMemory(db_prefix=str(tmp_path / "um2"))
++    await memory.write(content="Write a 500 word story.", content_type="note", entry_id="e1")
++    seen = []
++    original = memory._vector.search_hybrid
++
++    async def spy(*args, **kwargs):
++        seen.append(kwargs.get("query", args[0] if args else None))
++        return await original(*args, **kwargs)
++    monkeypatch.setattr(memory._vector, "search_hybrid", spy)
++    await memory.search('Write a "500" word story. OR NEAR(x)')
++    assert seen == ['Write a "500" word story. OR NEAR(x)']      # escaping applies to the FTS5 leg only
++
++
++@pytest.mark.asyncio
++async def test_unified_search_keeps_its_existing_non_blocking_failure_path(tmp_path, caplog):
++    """A genuine L1 failure is still logged and non-fatal exactly as before (unchanged code)."""
++    memory = UnifiedMemory(db_prefix=str(tmp_path / "um3"))
++    await memory.write(content="hello world", content_type="note", entry_id="e1")
++    conn = sqlite3.connect(memory._storage.db_path)
++    conn.execute("DROP TABLE knowledge_entries_fts")
++    conn.commit()
++    conn.close()
++    with caplog.at_level(logging.WARNING, logger="ocbrain.memory.unified"):
++        results = await memory.search("hello world")           # must not raise
++    assert any("L1 FTS5 search failed (non-blocking)" in r.getMessage() for r in caplog.records)
++    assert isinstance(results, list)
+diff --git a/tests/test_session4b_memory_hardening.py b/tests/test_session4b_memory_hardening.py
+index 9352c40..9d802aa 100644
+--- a/tests/test_session4b_memory_hardening.py
++++ b/tests/test_session4b_memory_hardening.py
+@@ -634,16 +634,21 @@ class TestGoal7RetrievalQuality:
+         hit = next(r for r in results if r.entry.entry_id == "interaction:g7c")
+         assert hit.composite_score > 0.0
+ 
+-    def test_fts5_question_mark_gap_is_pre_existing_and_unrelated(self):
+-        """Documented finding (see SESSION4B_REPORT.md 'Remaining
+-        Limitations'): _fts_escape() does not escape '?', which raises an
+-        FTS5 syntax error for any query containing one. This is reproduced
+-        directly against the escaping function -- independent of anything
+-        written -- confirming it predates and is unrelated to this
+-        session's write-path changes, and is out of scope to fix here
+-        (it is a search-query-sanitization concern, not a write-path one)."""
++    def test_fts5_question_mark_is_a_literal_term_since_debt042(self):
++        """History: SESSION4B_REPORT.md 'Remaining Limitations' documented that
++        _fts_escape() did not escape '?', which raised an FTS5 syntax error. This
++        test originally pinned that gap -- but its ``"?" in escaped`` assertion held
++        for a broken AND a fixed escaper alike, so it protected nothing. DEBT-042
++        fixed the whole class of unescaped punctuation (see
++        tests/test_debt042_fts5_literal_queries.py); this now asserts the corrected
++        behaviour against a real FTS5 table."""
++        import sqlite3
+         escaped = SQLiteStorageBackend._fts_escape("what is OCBrain?")
+-        assert "?" in escaped  # passes through unescaped -> FTS5 MATCH syntax error
++        assert escaped == '"what" "is" "OCBrain?"'
++        conn = sqlite3.connect(":memory:")
++        conn.execute("CREATE VIRTUAL TABLE t USING fts5(content)")
++        conn.execute("INSERT INTO t(content) VALUES ('what is OCBrain')")
++        assert conn.execute("SELECT content FROM t WHERE t MATCH ?", (escaped,)).fetchall() == [("what is OCBrain",)]
+ 
+     @pytest.mark.asyncio
+     async def test_no_regression_for_realistic_question_free_queries(self, tmp_path):
+-- 
+2.43.0
+

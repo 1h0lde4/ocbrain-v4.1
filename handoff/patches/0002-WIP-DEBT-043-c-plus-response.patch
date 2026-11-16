@@ -1,0 +1,303 @@
+From 6d56b933d0cc3e95c96a65ccfa6788793dab617e Mon Sep 17 00:00:00 2001
+From: "Claude-claude.ai-sandbox" <noreply@anthropic.com>
+Date: Sat, 14 Nov 2026 21:23:08 +0000
+Subject: [PATCH] wip(DEBT-043): C-plus clarification response -- production
+ code only; NOT COMPLETE, NOT VERIFIED
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Checkpoint for a session handoff (PROJECT_INSTRUCTIONS §18.4.8.10). This commit is a recoverable state, not a finished change: the new regression and
+integration tests are NOT written, 16 existing tests FAIL (4 in tests/core/cognitive/test_creative_content_anchor.py that pin the old response text, 9 in
+tests/test_live_check_draft_plan.py and 3 in tests/test_live_check_repeat.py because the harness and the repeat tool call the changed builder API / cap -- see
+handoff.md), and the full suite has not been run on it. Base: main f13bfdefcdd197ed1f966de0b1f93037a4168af4. DEBT-043's status is intentionally untouched.
+
+core/cognitive/content_anchor.py
+- render_clarification_response() / ClarificationRendering: a detector-specific question is returned ONLY together with (1) a truthful intent statement
+  derived from the detector's own data (artifact kind + "no subject/premise") -- the raw request is no longer echoed as an "interpretation" -- and
+  (2) at most 3 genuine planner steps, on separate numbered lines, in plan order, labelled "Provisional draft plan (not checked or approved; ...)", with
+  omitted steps stated as omitted. Otherwise the generic SAFE_FAILURE_MESSAGE (proposed wording of the owner's directive §5.4, a proposed replacement for an
+  unrecovered original) is returned and `failure_reason` is set.
+- genuine_plan_steps(): skips non-string/empty/whitespace steps, strips list markers, and returns [] for the planner's degrade fallback (planner._decompose
+  answers a failed/unparsable model call with ONE step equal to the goal description or "unspecified").
+- build_clarification_question(): artifact-specific wording (story, poem, essay, song, joke + generic), no story-specific examples, no "is enough" promise
+  (the detector needs >= 2 content tokens), keeps the real "surprise me" way-out (backed by _DELEGATION) and the stateless "send it again" instruction.
+- build_clarification_response() kept as a thin string wrapper; its `interpretation` kwarg is replaced by `request_text` (used only to recognise the fallback).
+core/orchestrator.py (CRLF preserved)
+- the ESCALATE-surfacing block renders first: paired -> existing event orchestrator.clarification_requested (+ additive plan_steps_shown/plan_steps_total) and
+  the paired text; not paired -> existing event orchestrator.query_failed (error_type ClarificationPairingUnavailable, reason code only, no internals) and the
+  safe-failure text. No new governance evaluation, gate, model call or outcome type; the plan/governance sequence before this block is unchanged.
+---
+ core/cognitive/content_anchor.py | 171 +++++++++++++++++++++++++------
+ core/orchestrator.py             |  50 ++++++---
+ 2 files changed, 175 insertions(+), 46 deletions(-)
+
+diff --git a/core/cognitive/content_anchor.py b/core/cognitive/content_anchor.py
+index 259740b..f4c201b 100644
+--- a/core/cognitive/content_anchor.py
++++ b/core/cognitive/content_anchor.py
+@@ -275,51 +275,156 @@ async def observe_creative_content_anchors(
+ 
+ 
+ # ─────────────────────────────────────────────────────────────────────────
+-# Clarification response (post-ESCALATE)
++# Clarification response (post-ESCALATE) -- C-plus (DEBT-043, ADR-KERNEL-07 §10.5)
+ # ─────────────────────────────────────────────────────────────────────────
+-
+-_MAX_STEPS_SHOWN = 5
++#
++# K4.2 pairing is retained: a detector-specific question is surfaced ONLY together
++# with (1) a truthful representation of the intent and (2) a genuine provisional
++# plan.  If either cannot be produced, the response is the generic safe failure
++# below -- never an unpaired question.  Nothing here calls a model, validates the
++# quality of a planner step, or adds a governance decision: it only presents the
++# data the detector and the planner already produced.
++
++_MAX_STEPS_SHOWN = 3
+ _MAX_TEXT = 160
+ 
++SAFE_FAILURE_MESSAGE = (
++    "I couldn't form a reliable draft plan for this request. Please restate "
++    "what you'd like me to create and include any details you already know."
++)
++FAILURE_NO_USABLE_INTENT = "no_usable_intent"
++FAILURE_NO_USABLE_PLAN = "no_usable_plan"
++
++_STEP_MARKER = re.compile(r"^\s*(?:\d{1,3}[.)]|[-*\u2022])\s+")
++_DEGRADED_PLAN_WORD = "unspecified"   # planner._decompose's degrade placeholder
++_SURPRISE_WAY_OUT = 'or say "surprise me" and I\'ll choose'  # backed by _DELEGATION
++
+ 
+ def _one_line(text: Any, limit: int = _MAX_TEXT) -> str:
+     flat = " ".join(str(text or "").split())
+     return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "\u2026"
+ 
+ 
++def _normalized(text: Any) -> str:
++    return " ".join(str(text or "").casefold().split()).strip(" \t.,;:!?\"'")
++
++
++def genuine_plan_steps(plan_steps: Sequence[Any], request_text: str = "") -> list:
++    """The usable, displayable steps of a planner-produced plan, in plan order.
++
++    Skipped: non-string, empty or whitespace-only entries; a leading list marker
++    ("1.", "-", "*") is stripped so the display never shows "1. 2. step".
++    Returns [] -- no genuine plan -- when the plan is the planner's degrade
++    fallback: `planner._decompose` answers a failed or unparsable model call with
++    ONE step that is the goal description itself (or "unspecified").  That step
++    is the request echoed back, not a plan, and must not be presented as one.
++    """
++    steps = []
++    for raw in plan_steps or ():
++        if not isinstance(raw, str):
++            continue
++        text = _one_line(_STEP_MARKER.sub("", raw))
++        if text:
++            steps.append(text)
++    if len(steps) == 1 and _normalized(steps[0]) in (_normalized(request_text), _DEGRADED_PLAN_WORD):
++        return []
++    return steps
++
++
++def build_clarification_intent(assessment: Optional["ContentAnchorAssessment"]) -> Optional[str]:
++    """What the detector actually established, stated plainly -- or None.
++
++    The only intent data available here is the artifact kind the request names
++    and the fact that it carries no subject/premise content.  The user's own
++    words are deliberately NOT echoed as an "interpretation": by K4.2-H1 the
++    goal description IS the raw request, so echoing it would present the request
++    as if it were an independent reading of it.
++    """
++    if assessment is None or not getattr(assessment, "in_scope", False):
++        return None
++    kind = str(assessment.artifact or "").strip()
++    if not kind:
++        return None
++    article = "an" if kind[:1].lower() in "aeiou" else "a"
++    text = f"I understand this as a request for {article} {kind}."
++    if MISSING_SUBJECT in (assessment.missing or ()):
++        text += f" It doesn't say what the {kind} should be about."
++    return text
++
++
++_KIND_QUESTIONS = {
++    "story": "What should the story be about? A short description, such as a subject, genre or tone, helps",
++    "poem": "What should the poem be about? A subject, theme or mood helps",
++    "essay": "Which topic or question should the essay address?",
++    "song": "What should the song be about, or what mood should it have?",
++    "joke": "Is there a topic you'd like the joke to be about?",
++}
++
++
+ def build_clarification_question(assessment: "ContentAnchorAssessment") -> str:
+-    """Deterministic, specific question. Slice 1 is stateless, so it tells
+-    the user to resend the request with details (ADR-KERNEL-07 D-3)."""
+-    kind = assessment.artifact or "piece"
+-    return (
+-        f"Before I write this {kind}, what should it be about? A subject, "
+-        f"genre, or tone is enough (for example: a noir mystery, a cozy "
+-        f"fantasy, a funny office comedy) \u2014 or say \"surprise me\" and I'll "
+-        f"choose. Please send your request again with those details."
+-    )
++    """Deterministic, artifact-appropriate question.  It presupposes no subject,
++    genre or process, and promises nothing about the result.  Slice 1 is stateless,
++    so it tells the user to resend the request with the detail (ADR-KERNEL-07 D-3)."""
++    kind = str(getattr(assessment, "artifact", "") or "").strip() or "piece"
++    ask = _KIND_QUESTIONS.get(kind, f"What should the {kind} be about?")
++    if ask.endswith("?"):
++        way_out = f" {_SURPRISE_WAY_OUT[0].upper()}{_SURPRISE_WAY_OUT[1:]}."
++    else:
++        way_out = f" \u2014 {_SURPRISE_WAY_OUT}."
++    return f"{ask}{way_out} Please send your request again with that detail."
++
++
++@dataclass(frozen=True)
++class ClarificationRendering:
++    """Result of rendering the clarification.  `paired` is True only when the
++    intent statement, at least one genuine plan step and the detector-specific
++    question are all present; otherwise `text` is SAFE_FAILURE_MESSAGE."""
++    text: str
++    paired: bool
++    steps_shown: int = 0
++    steps_total: int = 0
++    failure_reason: Optional[str] = None
++
++
++def render_clarification_response(
++    assessment: Optional["ContentAnchorAssessment"],
++    *,
++    request_text: str = "",
++    plan_steps: Sequence[Any] = (),
++) -> ClarificationRendering:
++    """Render the paired clarification, or the safe failure (never an unpaired question).
++
++    `request_text` is used ONLY to recognize the planner's degrade fallback; it is
++    never displayed.  Planner steps are shown as separate numbered lines, in plan
++    order, at most _MAX_STEPS_SHOWN of them, labelled provisional.  The underlying
++    execution plan is not modified; omitted steps are stated as omitted.
++    """
++    intent = build_clarification_intent(assessment)
++    if intent is None:
++        return ClarificationRendering(SAFE_FAILURE_MESSAGE, False, failure_reason=FAILURE_NO_USABLE_INTENT)
++    steps = genuine_plan_steps(plan_steps, request_text)
++    if not steps:
++        return ClarificationRendering(SAFE_FAILURE_MESSAGE, False, failure_reason=FAILURE_NO_USABLE_PLAN)
++    shown = steps[:_MAX_STEPS_SHOWN]
++    notes = ["not checked or approved"]
++    if MISSING_SUBJECT in (assessment.missing or ()):
++        notes.append("not yet tailored to a subject")
++    if len(steps) > len(shown):
++        notes.append(f"first {len(shown)} of {len(steps)} steps")
++    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(shown, 1))
++    text = "\n\n".join([
++        intent,
++        f"Provisional draft plan ({'; '.join(notes)}):\n{listing}",
++        build_clarification_question(assessment),
++    ])
++    return ClarificationRendering(text, True, steps_shown=len(shown), steps_total=len(steps))
+ 
+ 
+ def build_clarification_response(
+-    assessment: "ContentAnchorAssessment",
++    assessment: Optional["ContentAnchorAssessment"],
+     *,
+-    interpretation: str = "",
+-    plan_steps: Sequence[str] = (),
++    request_text: str = "",
++    plan_steps: Sequence[Any] = (),
+ ) -> str:
+-    """Detector-specific question paired with the concrete interpreted
+-    plan/intent K4.2 expects to be surfaced (not an abstract question alone).
+-
+-    `interpretation` and `plan_steps` are model-derived text echoed to the
+-    user, so they are flattened to one line and truncated; at most
+-    _MAX_STEPS_SHOWN steps are shown.
+-    """
+-    parts = []
+-    if interpretation and str(interpretation).strip():
+-        parts.append(f"Here's how I read your request: {_one_line(interpretation)}")
+-    steps = [_one_line(s) for s in plan_steps if s and str(s).strip()]
+-    if steps:
+-        shown = steps[:_MAX_STEPS_SHOWN]
+-        listing = "; ".join(f"{i}. {t}" for i, t in enumerate(shown, 1))
+-        more = f" (+{len(steps) - len(shown)} more)" if len(steps) > len(shown) else ""
+-        parts.append(f"My draft plan: {listing}{more}")
+-    parts.append(build_clarification_question(assessment))
+-    return "\n\n".join(parts)
++    """Text of `render_clarification_response` (kept for callers that need only the string)."""
++    return render_clarification_response(assessment, request_text=request_text, plan_steps=plan_steps).text
+diff --git a/core/orchestrator.py b/core/orchestrator.py
+index f4d44d3..0ee492d 100644
+--- a/core/orchestrator.py
++++ b/core/orchestrator.py
+@@ -291,7 +291,7 @@ class Orchestrator:
+                 try:
+                     from core.cognitive.compiler import CompilationStatus
+                     from core.cognitive.content_anchor import (
+-                        anchor_missing, build_clarification_response,
++                        anchor_missing, render_clarification_response,
+                     )
+                     from core.cognitive.compiler import compile as compile_plan
+                     from core.cognitive.intent import (
+@@ -496,22 +496,46 @@ class Orchestrator:
+                                 and _gr is not None
+                                 and _gr.governor == "OrchestrationGovernor"
+                                 and anchor_missing(anchor_assessment)):
+-                            await self._emit_event(
+-                                "orchestrator.clarification_requested", {
+-                                    "interaction_id": interaction_id,
+-                                    "goal_id": goal.resource_id,
+-                                    "status": compilation_result.status,
+-                                    "missing": list(
+-                                        anchor_assessment.missing),
+-                                })
+                             _sf = getattr(goal, "structured_form", None) or {}
+-                            return build_clarification_response(
++                            _rendering = render_clarification_response(
+                                 anchor_assessment,
+-                                interpretation=str(
++                                request_text=str(
+                                     _sf.get("description") or ""),
+                                 plan_steps=[
+-                                    st.description
+-                                    for st in execution_plan.steps])
++                                    getattr(st, "description", None)
++                                    for st in list(getattr(
++                                        execution_plan, "steps", None)
++                                        or [])])
++                            if _rendering.paired:
++                                await self._emit_event(
++                                    "orchestrator.clarification_requested", {
++                                        "interaction_id": interaction_id,
++                                        "goal_id": goal.resource_id,
++                                        "status": compilation_result.status,
++                                        "missing": list(
++                                            anchor_assessment.missing),
++                                        "plan_steps_shown":
++                                            _rendering.steps_shown,
++                                        "plan_steps_total":
++                                            _rendering.steps_total,
++                                    })
++                                return _rendering.text
++                            # The K4.2 pairing (intent + a genuine plan) could
++                            # not be produced: a presentation failure, NOT a
++                            # completed clarification and NEVER an unpaired
++                            # detector-specific question (ADR-KERNEL-07 §10.5).
++                            await self._emit_event(
++                                "orchestrator.query_failed", {
++                                    "interaction_id": interaction_id,
++                                    "error": (
++                                        "content-anchor clarification could "
++                                        "not be paired with a usable intent "
++                                        "and plan "
++                                        f"({_rendering.failure_reason})"),
++                                    "error_type":
++                                        "ClarificationPairingUnavailable",
++                                })
++                            return _rendering.text
+                         await self._emit_event("orchestrator.query_failed", {
+                             "interaction_id": interaction_id,
+                             "error": compilation_result.status,
+-- 
+2.43.0
+
