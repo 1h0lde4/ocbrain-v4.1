@@ -1,0 +1,1 @@
+case "$URL" in git@github.com:*) URL=https://github.com/${URL#git@github.com:};; ssh://git@github.com/*) URL=https://github.com/${URL#ssh://git@github.com/};; https://*) rest=${URL#https://}; auth=${rest%%/*}; URL=https://${auth##*@}${rest#"$auth"};; esac   # credentials in the host part are dropped, so they are neither compared nor printed

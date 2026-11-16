@@ -1,0 +1,5 @@
+https://github.com/1h0lde4/ocbrain-v4.1                        parsed=https://github.com/1h0lde4/ocbrain-v4.1 -> ACCEPT
+https://127.0.0.1:8443?@github.com/1h0lde4/ocbrain-v4.1        parsed=https://github.com/1h0lde4/ocbrain-v4.1 -> ACCEPT
+https://127.0.0.1:8443#@github.com/1h0lde4/ocbrain-v4.1        parsed=https://github.com/1h0lde4/ocbrain-v4.1 -> ACCEPT
+https://127.0.0.1:8443/1h0lde4/ocbrain-v4.1                    parsed=https://127.0.0.1:8443/1h0lde4/ocbrain-v4.1 -> REJECT
+https://127.0.0.1:8443/?@github.com/1h0lde4/ocbrain-v4.1       parsed=https://127.0.0.1:8443/?@github.com/1h0lde4/ocbrain-v4.1 -> REJECT

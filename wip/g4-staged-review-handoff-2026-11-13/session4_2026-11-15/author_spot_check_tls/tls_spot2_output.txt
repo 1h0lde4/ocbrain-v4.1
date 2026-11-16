@@ -1,0 +1,73 @@
+leak guard ok: 1.1.1.1:443 -> OSError
+T=ddb9921086fa354f3f1fa7af52c7d36276e5b2e0 H=44ccfc31bd57596a19a8b9b7190a86af9c889862 tip=53e753eddcc4240eb8de5600c83ce3eb42b44bc6
+block copy differs from pristine in 2 line(s) (expect 2: T and H only); CANON line unchanged: 1
+
+=== F15a_tokenuser_401
+(a) url: https://DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1
+(b) block line 15+16 parse: 
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz present | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz present | 401
+    requests: CANON443=6 EVIL8443=0
+(d) block stdout (last 2 lines):
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+    block stderr:
+fatal: could not read Password for 'https://DUMMYTOKEN-xyz@github.com': terminal prompts disabled
+fatal: could not read Password for 'https://DUMMYTOKEN-xyz@github.com': terminal prompts disabled
+    token occurrences: block stdout=0 stderr=3
+      3 fatal: could not read Password for 'https://DUMMYTOKEN-xyz@github.com': terminal prompts disabled
+
+=== F15b_tokenuser_ok
+(a) url: https://DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1
+(b) block line 15+16 parse: 
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 200
+    requests: CANON443=7 EVIL8443=0
+(d) block stdout (last 2 lines):
+PASS at 2026-11-15T15:00:16Z: remote tip 53e753eddcc4240eb8de5600c83ce3eb42b44bc6; handoff commit 44ccfc31bd57596a19a8b9b7190a86af9c889862 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-pa
+exit=0
+    block stderr:
+From https://github.com/1h0lde4/ocbrain-v4.1
+ * [new branch]      docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026
+    token occurrences: block stdout=0 stderr=0
+
+=== F15c_query_token_ok
+(a) url: https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz
+(b) block line 15+16 parse: 
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz/info/refs&service=git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz/info/refs&service=git-upload-pack HTTP/1.1 | authz absent | 200
+    requests: CANON443=7 EVIL8443=0
+(d) block stdout (last 2 lines):
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+    block stderr:
+From https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz
+ * [new branch]      docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026
+    token occurrences: block stdout=0 stderr=1
+      1 From https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz
+
+=== F15d_userpass_401
+(a) url: https://dummyuser:DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1
+(b) block line 15+16 parse: 
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz present | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 401
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz present | 401
+    requests: CANON443=6 EVIL8443=0
+(d) block stdout (last 2 lines):
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+    block stderr:
+fatal: Authentication failed for 'https://github.com/1h0lde4/ocbrain-v4.1/'
+fatal: Authentication failed for 'https://github.com/1h0lde4/ocbrain-v4.1/'
+    token occurrences: block stdout=0 stderr=0

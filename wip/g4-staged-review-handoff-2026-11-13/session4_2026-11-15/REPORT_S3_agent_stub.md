@@ -1,0 +1,3 @@
+STAGE S3: COMPLETE
+The complete final report (package integrity, harness and proof, F14 and F15 tables, criteria B and E, findings register, discrepancies, unreviewed list, declaration, reproducibility) was delivered as the final message of the stage. Per-row raw evidence: evidence/rows/<row>/; tables: evidence/f14_table.txt, evidence/f15_table.txt; scans: evidence/f15_scan.txt; progress: evidence/PROGRESS_F14.txt, evidence/PROGRESS_F15.txt; scripts: scripts/.
+G4 remains OPEN · High · freeze-blocking unless separately resolved through the required owner decisions and verification process. G5–G8 remain HELD. Freeze readiness is NOT DECLARED.
