@@ -6,6 +6,8 @@
 **Inventory timing:** branch names and heads were read before the three documentation commits on this reconciliation branch; its inventory row records the branch's creation ref (`2491ae46`) rather than the later self-modifying tip. All other refs are the read-time branch heads.
 **Purpose:** one operational map of debt status, active review targets, preserved work and ownership gaps. This is a documentation/governance record, not implementation authorization.
 
+**Status update — Nov 17, 2026:** this register is the Nov 2 snapshot, kept as dated history; it has not been re-inventoried. Changes known since the snapshot: PR #94 (row DEBT-025, branch `fix/debt-025-api-auth-boundary-oct2026`) merged on the owner's explicit instruction (merge `ce5c3f8`), which supersedes this register's "merge not requested" disposition for #94; the rule in the later section against merging PRs by inference from this register still applies to the other PRs it lists, and was never an objection to an explicit owner instruction. PR #109 (ADR-KERNEL-08 owner-acceptance sync) and PR #110 (ADR-KERNEL-09, PROPOSED) post-date the snapshot, are not in the inventory, and both merged. A fresh authenticated read of `main`'s branch protection on Nov 17 (about 22:57 UTC) returned `enforce_admins: true`, confirming PR #87's claim for DEBT-033 as of that read. 19 PRs were open on Nov 17 (live read). DEBT-025 remains OPEN.
+
 ## 1. Ownership rules
 
 1. **Main is the only implementation baseline.** A branch, green CI run, PR description or local review report does not constitute merged product behavior.

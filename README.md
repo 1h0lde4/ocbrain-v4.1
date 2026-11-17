@@ -7,6 +7,8 @@
 OCBrain is being built as a **cognitive operating system and kernel**, not as another chatbot, thin LLM wrapper, or standalone RAG framework. It coordinates capabilities, workflows, memory, model providers, and specialist workers through explicit contracts and governance. The user retains control of data, providers, permissions, and consequential actions.
 
 > **Engineering status snapshot — November 2, 2026.** The product baseline described here is `main` at `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (PR #106). This is a point-in-time status, not a release-readiness statement. Check the linked live registers before making implementation or merge decisions.
+>
+> **Update — November 17, 2026:** since this snapshot, PR #109, PR #110 and PR #94 merged. The API authentication boundary (DEBT-025) is now implemented on `main`, but DEBT-025 remains open: authorization and durable authentication audit are unresolved, and ADR-KERNEL-09 (control-plane authorization) exists as a PROPOSED design only. `KNOWN_ISSUES.md` and `CURRENT_STATE.md` are the current status record; the snapshot in this README is kept as dated history and was not otherwise re-verified.
 
 ---
 

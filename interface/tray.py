@@ -31,12 +31,32 @@ def _make_icon_image() -> "Image.Image":
     return img
 
 
+def _port() -> int:
+    """The port the server binds (main.py: global.web_ui_port), not a hard-coded 7437."""
+    try:
+        return int(config.get("global.web_ui_port") or PORT)
+    except (TypeError, ValueError):
+        return PORT
+
+
+def _ui_url(path: str = "") -> str:
+    """UI URL.  It never carries the API token.
+
+    Handing the token to the browser through its command line would expose it to
+    every local user for as long as the launcher process lives (``ps`` and
+    ``/proc/<pid>/cmdline`` are world-readable on most systems), defeating the
+    owner-only token file.  The page asks for the token once per tab instead;
+    ``ocbrain token --show`` prints it.
+    """
+    return f"http://localhost:{_port()}{path}"
+
+
 def _open_ui(icon, item):
-    webbrowser.open(f"http://localhost:{PORT}")
+    webbrowser.open(_ui_url())
 
 
 def _open_settings(icon, item):
-    webbrowser.open(f"http://localhost:{PORT}/static/settings.html")
+    webbrowser.open(_ui_url("/static/settings.html"))
 
 
 def _toggle_learning(icon, item):
