@@ -1,5 +1,7 @@
 # K4.2 Dynamic Cognitive Pipeline — Contract, Evolution, Parallel-Milestone & OCBrain Diagnostic Architecture Specification
 
+> **Supersession note (added Nov 2, 2026; the specification body below is unchanged).** The statement marked **[FACT]** that `build_planner_request()` and `build_capability_discovery_request()` are "already canonical in practice", with no inline `PlannerRequest(...)` or `CapabilityDiscoveryRequest(...)` construction outside them, does not describe the code at `main` `2491ae4`. `core/orchestrator.py` has constructed `PlannerRequest` inline since Aug 8, 2026 (before this specification, dated Aug 14), and `_decompose()` constructs `CapabilityDiscoveryRequest` inline per generated step; `scripts/check_drift.py` (DRIFT-14, K4.2-H2 D10) records both as intended construction sites. The two helpers have no production call site at that revision. See ADR-KERNEL-08 §8.3.5.
+
 **Repository audited:** `github.com/1h0lde4/ocbrain-v4.1` @ `main` (HEAD `2778b26`, unchanged — verified clean before and after this audit)
 **Audit type:** Read-only architectural study. No files modified, no branches created, no commits made.
 **Author role:** Principal Architect / Systems Integration Lead / Reliability Architect, per session task specification
