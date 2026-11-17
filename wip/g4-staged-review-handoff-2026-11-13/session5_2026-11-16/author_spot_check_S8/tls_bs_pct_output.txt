@@ -1,0 +1,61 @@
+leak guard ok: 1.1.1.1:443 -> OSError
+T=ddb9921086fa354f3f1fa7af52c7d36276e5b2e0 H=44ccfc31bd57596a19a8b9b7190a86af9c889862 tip=53e753eddcc4240eb8de5600c83ce3eb42b44bc6
+block copy differs from pristine in 2 line(s) (expect 2: T and H only); CANON line unchanged: 1
+
+=== Z00_baseline
+(a) url: https://github.com/1h0lde4/ocbrain-v4.1
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | POST /1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 200
+    requests: CANON443=7 EVIL8443=0
+(d) block stdout (last 2 lines):
+PASS at 2026-11-17T07:18:45Z: remote tip 53e753eddcc4240eb8de5600c83ce3eb42b44bc6; handoff commit 44ccfc31bd57596a19a8b9b7190a86af9c889862 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-pa
+exit=0
+    block stderr:
+From https://github.com/1h0lde4/ocbrain-v4.1
+ * [new branch]      docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026
+
+=== Z01_backslash_at
+(a) url: https://127.0.0.1:8443\@github.com/1h0lde4/ocbrain-v4.1
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    requests: CANON443=3 EVIL8443=0
+(d) block stdout (last 2 lines):
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+    block stderr:
+fatal: repository 'https://github.com/1h0lde4/ocbrain-v4.1/' not found
+fatal: repository 'https://github.com/1h0lde4/ocbrain-v4.1/' not found
+
+=== Z02_pct2f_at
+(a) url: https://127.0.0.1:8443%2f@github.com/1h0lde4/ocbrain-v4.1
+(c) server log (who answered):
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    CANON443 127.0.0.1:443 Host: github.com | GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1 | authz absent | 404
+    requests: CANON443=3 EVIL8443=0
+(d) block stdout (last 2 lines):
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+    block stderr:
+fatal: repository 'https://github.com/1h0lde4/ocbrain-v4.1/' not found
+fatal: repository 'https://github.com/1h0lde4/ocbrain-v4.1/' not found
+
+=== Z03_query_at
+(a) url: https://127.0.0.1:8443?@github.com/1h0lde4/ocbrain-v4.1
+(c) server log (who answered):
+    EVIL8443 127.0.0.1:8443 Host: 127.0.0.1:8443 | GET /?@github.com/1h0lde4/ocbrain-v4.1/info/refs&service=git-upload-pack HTTP/1.1 | authz absent | 200
+    EVIL8443 127.0.0.1:8443 Host: 127.0.0.1:8443 | POST /?@github.com/1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    EVIL8443 127.0.0.1:8443 Host: 127.0.0.1:8443 | POST /?@github.com/1h0lde4/ocbrain-v4.1/git-upload-pack HTTP/1.1 | authz absent | 200
+    EVIL8443 127.0.0.1:8443 Host: 127.0.0.1:8443 | GET /?@github.com/1h0lde4/ocbrain-v4.1/info/refs&service=git-upload-pack HTTP/1.1 | authz absent | 200
+    requests: CANON443=0 EVIL8443=7
+(d) block stdout (last 2 lines):
+PASS at 2026-11-17T07:18:49Z: remote tip 53e753eddcc4240eb8de5600c83ce3eb42b44bc6; handoff commit 44ccfc31bd57596a19a8b9b7190a86af9c889862 on docs/g4-fts-errata-handoff-oct2026; 1 follow-up(s), each a single-pa
+exit=0
+    block stderr:
+From https://github.com/1h0lde4/ocbrain-v4.1
+ * [new branch]      docs/g4-fts-errata-handoff-oct2026 -> origin/docs/g4-fts-errata-handoff-oct2026

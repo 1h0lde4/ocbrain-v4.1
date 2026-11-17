@@ -1,0 +1,11 @@
+tip root handoff.md entry: 100755 blob 6e9f0da13f19b444ec3a9c3d6e79; docs/handoff.md entry: 100644 blob 467c809795c2a9fd3e8cd937f2ba
+block differs from pristine in 3 line(s) (CANON, T, H)
+== from clone root (contract violated: root handoff.md is 100755) expected FAIL
+FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tree
+follow-up: e37b8e27596c9aeca17e5746e5da46e0a8976333 root handoff.md made executable
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+== from clone/docs (subdirectory)
+follow-up: e37b8e27596c9aeca17e5746e5da46e0a8976333 root handoff.md made executable
+PASS at 2026-11-16T23:17:58Z: remote tip e37b8e27596c9aeca17e5746e5da46e0a8976333; handoff commit cd173d18523777d3a20b7ab64939eebf4013ebb8 on docs/g4-fts-errata-handoff-o
+exit=0

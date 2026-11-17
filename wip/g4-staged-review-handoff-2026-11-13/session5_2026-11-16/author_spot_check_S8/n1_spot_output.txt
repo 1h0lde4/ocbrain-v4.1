@@ -1,0 +1,23 @@
+leak guard ok: OSError
+block differs from pristine in 2 line(s)
+block stdout:
+FAIL: origin is not the canonical repository (https://github.com/1h0lde4/ocbrain-v4.1); the configured URL is not printed because it may carry credent
+FAIL: fetch of the remote branch failed
+FAIL: git ls-remote failed or did not return exactly one matching ref
+FAIL: no fetched remote-tracking ref
+FAIL: live remote tip (none) differs from the fetched tip (none)
+FAIL: handoff.md is not a regular file (mode 100644, blob) in the remote tree
+FAIL: the transfer commit is not an ancestor of the remote tip
+FAIL: the handoff commit is not an ancestor of the remote tip
+FAIL: the parents of the handoff commit are not exactly the transfer commit
+FAIL: handoff.md was not added by the handoff commit
+FAIL: the follow-up sequence does not end at the remote tip
+FAIL: the final git ls-remote failed or did not return exactly one matching ref
+TRANSFER INCOMPLETE — REMOTE CHECKPOINT NOT VERIFIED
+exit=1
+requests at the non-canonical listener 127.0.0.1:18401: 6; with Authorization present: 3
+{"line": "GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1", "authorization": "absent"}
+{"line": "GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.0", "authorization": "present"}
+{"line": "GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.1", "authorization": "absent"}
+{"line": "GET /1h0lde4/ocbrain-v4.1/info/refs?service=git-upload-pack HTTP/1.0", "authorization": "present"}
+first stdout line is the identity FAIL: 1
