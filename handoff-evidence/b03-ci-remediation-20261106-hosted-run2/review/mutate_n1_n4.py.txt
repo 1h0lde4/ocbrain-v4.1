@@ -1,0 +1,31 @@
+# usage: python mutate_n1_n4.py <repo checkout> <empty scratch dir> <python with pytest+pyyaml>   (stored as .py.txt so the B03 inertness pin does not scan it)
+import pathlib, re, shutil, subprocess, sys, tarfile, io
+repo, scratch, py = map(pathlib.Path, sys.argv[1:4])
+def fresh():
+    d = scratch / "repo_copy"
+    if d.exists(): shutil.rmtree(d)
+    d.mkdir(parents=True)
+    out = subprocess.run(["git","-C",str(repo),"archive","HEAD"],capture_output=True,check=True).stdout
+    tarfile.open(fileobj=io.BytesIO(out)).extractall(d, filter="data")
+    return d
+def run(d):
+    r = subprocess.run([str(py),"-m","pytest","tests/test_ci_workflow_config.py","-q","-p","no:cacheprovider","-x","--no-header"],cwd=d,capture_output=True,text=True)
+    tail = [l for l in r.stdout.splitlines() if l.strip()][-1]
+    return r.returncode, tail
+UP = "Upload Docker preflight report\n        if: always()\n"
+mutants = {
+ "M0 baseline (no change)": lambda t: t,
+ "M1 drop if: always() on docker-preflight upload": lambda t: t.replace(UP, "Upload Docker preflight report\n",1),
+ "M2 if: ${{ always() }} on docker-preflight upload": lambda t: t.replace(UP, "Upload Docker preflight report\n        if: ${{ always() }}\n",1),
+ "M3 if: always() && false on docker-preflight upload": lambda t: t.replace(UP, "Upload Docker preflight report\n        if: always() && false\n",1),
+ "M4 N4: delete the missing/empty-output guard": lambda t: t.replace('if [ ! -s /tmp/pytest-output.txt ]; then','if false; then',1),
+ "M5 N4: drop 'requires the test image' from the regex": lambda t: t.replace('|requires the test image)',')',1),
+ "M6 N4: regex matches nothing": lambda t: t.replace("requires a reachable Docker daemon|requires the test image","zzz-never-matches",1),
+ "M7 N4: grep reads a different file": lambda t: t.replace("/tmp/pytest-output.txt\n          then","x",1).replace("' /tmp/pytest-output.txt; then","' /tmp/other.txt; then",1),
+}
+for name, fn in mutants.items():
+    d = fresh(); p = d/".github/workflows/ci.yml"; t = p.read_text(); m = fn(t)
+    if name[:2] != "M0" and m == t:
+        print(f"{name}: NOT APPLIED (pattern not found)"); continue
+    p.write_text(m); rc, tail = run(d)
+    print(f"{name}: {'KILLED' if rc!=0 else 'SURVIVED'} (rc={rc}) | {tail}")

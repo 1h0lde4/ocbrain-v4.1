@@ -1,0 +1,8 @@
+M0 baseline (no change): SURVIVED (rc=0) | 31 passed, 1 warning in 1.22s
+M1 drop if: always() on docker-preflight upload: KILLED (rc=1) | 1 failed, 6 passed, 1 warning in 0.13s
+M2 if: ${{ always() }} on docker-preflight upload: KILLED (rc=1) | 1 failed, 5 passed, 1 warning in 0.11s
+M3 if: always() && false on docker-preflight upload: KILLED (rc=1) | 1 failed, 5 passed, 1 warning in 0.12s
+M4 N4: delete the missing/empty-output guard: KILLED (rc=1) | 1 failed, 22 passed, 1 warning in 0.99s
+M5 N4: drop 'requires the test image' from the regex: KILLED (rc=1) | 1 failed, 18 passed, 1 warning in 0.86s
+M6 N4: regex matches nothing: KILLED (rc=1) | 1 failed, 18 passed, 1 warning in 0.91s
+M7 N4: grep reads a different file: KILLED (rc=1) | 1 failed, 19 passed, 1 warning in 0.87s

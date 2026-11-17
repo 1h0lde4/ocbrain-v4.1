@@ -1,0 +1,7 @@
+== sha256sum -c against GitHub's digests ==
+artifacts/run-43644902316-pytest-output.zip: OK
+artifacts/run-43644902316-drift-report.zip: OK
+artifacts/run-43644902316-docker-preflight.zip: OK
+artifacts/run-43644902316-mypy-b03.zip: OK
+outer bundle sha256 (as attached by the user): ce6763ea0556b720beb73e51d33c742ba2d3e6b1beb270c2ffa1f61354404bda
+inner zips equal the unpacked copies' source: docker-preflight/docker-preflight.json=same pytest-output/pytest-exit-code.txt=same pytest-output/pytest-output.txt=same drift-report/drift-report.json=same mypy-b03/mypy-b03.txt=same 

@@ -1,0 +1,4 @@
+# the run: block of the step 'Assert the Docker-backed tests ran' (ci.yml at a1aaffc), executed with bash -e on the hosted output
+no Docker-prerequisite skips
+
+skip-step exit = 0

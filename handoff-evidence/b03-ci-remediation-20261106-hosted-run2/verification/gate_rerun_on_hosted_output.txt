@@ -1,0 +1,6 @@
+# python3 scripts/ci_test_gate.py on the HOSTED pytest output of run 43644902316 (D10 list unchanged)
+pytest exit code: 0
+pytest summary:   2400 passed, 19 skipped, 9 xfailed, 2 warnings in 209.80s (0:03:29)
+Known environmental failures still failing (expected, not gated):
+Test gate passed: no unlisted failures, no errors, exit code acceptable.
+gate exit=0

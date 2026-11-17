@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Version 5 (workstream: B03 CI and security verification remediation, PR #86).** Version 4 is in git history (`git show 32b8f65:handoff.md`); section 0 below lists what changed. It supersedes version 3
+> **Version 5.1 (workstream: B03 CI and security verification remediation, PR #86): version 5 plus the 2026-11-17 update in section 0a.** Version 4 is in git history (`git show 32b8f65:handoff.md`); section 0 below lists what changed in v5, section 0a what changed in v5.1. Version 5 itself is `git show 7e50dee:handoff.md`. It supersedes version 3
 > (the DockerBackend closure and the DEBT-039 study), which is in git history: `git show 1b829fc:handoff.md`
 > (it is also the `handoff.md` at the PR #86 head `a887e148`). Version 3's workstreams are closed and are not
 > touched by this one.
@@ -9,7 +9,7 @@
 > (PROJECT_INSTRUCTIONS 18.4.9): verify it against the live repository first (section 18).
 >
 > Scope warning (updated in v5): the remediation branch **has now run twice on GitHub Actions** (section 0). Sections 5 to 15 are
-> the v4 text and still describe the lab evidence; where section 0 contradicts them, **section 0 wins**. The merge decision is **NO-GO**.
+> the v4 text and still describe the lab evidence; where section 0 contradicts them, **section 0 wins**, and where section 0a contradicts section 0, **section 0a wins**. The merge decision is **NO-GO**.
 
 ## 0. Version 5 update (2026-11-15): what changed since version 4
 
@@ -33,9 +33,44 @@ Facts established (evidence: the GitHub API and the hosted job logs; run pages a
 
 Ledger changes (these supersede the v4 rows): **D-1 APPROVED by the user** (was PROPOSED); **U1 closed**; **U2 closed** (the busybox risk materialized and was fixed by D-1); **U3, U6, U7 observed**: contract suite ran, no XPASS (9 xfailed); A2 passed under the hosted runner; the production AF_ALG test was not in the skip list, so it ran; **U4**: `test_a9` is skipped hosted (`gcc-multilib`), N2 stays an open owner decision; **R10/U8**: re-review of `164a078` done by a fresh static reviewer, APPROVE WITH CONDITIONS (`independent_review_report_164a078.md`, kept outside the repository), `0bee402`/`a1aaffc` not reviewed; **D-14**: F1 is *partially* fixed and F11's PATH nit is *unreachable*, not *handled*; **"87/87 mutants killed"** covers the mutants tried only (N1 had survived); **D-12** superseded: the push to `integration/**` was authorized and done. New open items: N2, N3, N5, N6 (pin the image digest after a stable run), U5 (Docker Hub rate limits not yet seen), and the security-alert classification. **No GO until** the section 17 steps 5 to 9 below are decided/done by the owner.
 
+## 0a. Version 5.1 update (2026-11-17): the hosted artifacts are verified; this session's files are preserved
+
+Everything the continuing session produced or received is in the repository, in `handoff-evidence/b03-ci-remediation-20261106-hosted-run2/` (its `README.md` is the index; `second_session_notes_20261117.md` holds the detail). No code file was changed, nothing was pushed to `integration/**`, PR #86 was not touched. Where this section contradicts section 0 or the v4 text below, **this section wins**.
+
+User instructions in this period (verbatim where wording matters):
+- 2026-11-15 16:37: "Read Handoff v5 at branch tmp/b03-ci-remediation-handoff-20261112 And continue".
+- Bare "Continue" on 2026-11-16 00:15, 08:25, 13:33, 23:15 and 2026-11-17 09:21. No new instruction.
+- 2026-11-17 10:09: an attachment with no text, `PR86_run2_43644902316_artifacts_bundle.zip` (the four artifacts of run 2 plus a manifest; the session's proxy cannot download them, so the user supplied them).
+- 2026-11-17 10:11, verbatim: "All files must be available for next session". Interpretation taken (not confirmed): everything produced or received in this session is to be committed and pushed so that the next session finds it. Acted on by one docs-and-evidence commit to the existing temporary branch `tmp/b03-ci-remediation-handoff-20261112` (it matches no workflow push trigger, so it starts no CI run). Section 0's authorization to push `integration/**` was not used.
+
+Facts established (evidence: the files named in the right column):
+
+| Item | Result | Evidence |
+|---|---|---|
+| Handoff v5 against the live repository | Consistent: remote tips, commit trees, scope diff vs `a887e148`, PR #86 (open, head `a887e148`, base `e2266603`, `updated_at` 2026-11-02), the two hosted runs. One expected mismatch: the CRLF hash of `local/T1_test_suite_side_effect_config_diff.patch` (section 8). | notes, 2.1 |
+| **R12: artifacts of run 2 downloaded, inspected and hashed** | **VERIFIED for run 2 only.** The four zips (904, 1459, 2318, 331 bytes) have SHA-256 equal to the digests GitHub's API lists for run 43644902316 (docker-preflight `68c5a838…164a`, pytest-output `4c84c860…e018`, drift-report `51ade113…6167`, mypy-b03 `5d0a1c41…5e33`). Run 1's artifacts were not collected. | `…hosted-run2/GITHUB_DIGESTS.sha256`, `verification/artifact_hash_check.txt` |
+| Contents | Preflight `passed` (`python:3.12-slim` = `sha256:5e2bdb1b…4fa5b`, 19 executables, probes on); pytest `2400 passed, 19 skipped, 9 xfailed`, exit code 0, no FAILED/ERROR line; the 19 skips are 18 cgroup-v1 and 1 gcc-multilib; drift 15/15 PASS; mypy default and strict clean. The D10 list was not used by this run (nothing failed). | `unpacked/` |
+| Gate and skip step re-run locally on the hosted output | Both exit 0 (the repo's `scripts/ci_test_gate.py` with the unchanged D10 list; the real `run:` block of the skip step extracted from `ci.yml`). | `verification/` |
+| **U8 / R10: independent review of `0bee402` and `a1aaffc`** | **INCOMPLETE.** Five attempts with a fresh agent (2026-11-15 to 2026-11-16) each ended at once with HTTP 429, "5-hour limit"; retries after each stated reset failed again. No review exists. The brief is stored verbatim for reuse. | `review/review_request_b0a1143_a1aaffc.md`, notes section 1 |
+| Targeted checks by the continuing session (**not independent**) | The skip-assertion regex matches the real reasons in the tests (file:line in the notes); the N1/N4 tests killed 7 of 7 mutants tried; 100 CI tests passed in a scratch venv (Python 3.13). Three NITs, none blocking: stale "busybox" wording at `.github/workflows/ci.yml:108`, `scripts/ci_docker_preflight.py:193`, `tests/test_ci_docker_preflight.py:612` (CI has been Debian since `0bee402`). Not edited: a comment change needs a new push and a new hosted run, beyond D-1's scope. | notes, 2.2 to 2.5; `review/n1_n4_mutation_output.txt` |
+| Network | The artifact endpoint answers unauthenticated with a 302 to a signed `blob.core.windows.net` URL; the sandbox proxy refuses the connection (403). Not worked around. Code scanning and Dependabot alerts: still not read (403), so the 7 default-branch vulnerabilities (3 critical, 4 high) are still unclassified. | notes, 4 |
+
+Ledger changes (these supersede earlier rows): **R12** INCOMPLETE to VERIFIED for run 2 (not for PR #86's head). The hosted parts of evidence items 4 to 7, 9 and 11 to 13 now exist for run 2 (head `a1aaffc`); none exists for PR #86's own head. **U7** observed: the production AF_ALG test is in none of the 19 skip lines and nothing failed. **U11** (authenticated download) closed by the user's bundle. **U8** stays open. New: **U17** the three stale-wording NITs above (owner's call, with F8/D-15); **U18** state that exists only outside this repository: (a) `independent_review_report_164a078.md` (section 0 says it was kept outside the repository; this session never had it; only the `b0a1143` report is committed), (b) the final report A to J delivered on 2026-11-15, (c) the original assignment text (U15). If the user still holds (a) and (b), adding them to the new evidence directory removes that dependency.
+
+Decision: still **NO-GO**. Closed since the 2026-11-15 report: artifacts retrievable (for run 2). Moot: the local real-image preflight (the hosted preflight on the real image passed). Still open: F12/U9 (the exact PR head `a887e148` has never run the remediated workflow, and the CI fix lives on another branch), the security alerts, U8 (and so "no unresolved blocking findings" cannot be affirmed), plus the open items N2, N3, N5 and N6 from section 0 (it describes N2 and N6 only) and the owner decisions D-13 and F8/D-15 from the v4 ledger.
+
+The GitHub token the user pasted earlier (section 3, item 1) is still present in clear text in the user's saved Claude preferences, which this session can see. It was not used and is not stored here. It should be revoked and removed from the preferences.
+
+Next steps (these supersede section 17 where they differ):
+1. Verify the transfer as in section 18, then `cd handoff-evidence/b03-ci-remediation-20261106-hosted-run2 && sha256sum -c SHA256SUMS && sha256sum -c GITHUB_DIGESTS.sha256` (both must pass). `sha256sum -c` of the OLD evidence directory must show only the known CRLF mismatch.
+2. Re-send the stored brief to a fresh agent for the independent review (step 6 of section 17). Check the account's usage first. If the agent is again unavailable, record INCOMPLETE; do not substitute a self-review.
+3. OWNER decisions, unchanged: D-13 and U9 (how the CI fix reaches PR #86's head or `b01-base`, and the PR-event proof); the open items N2, N3, N5 and N6 of section 0 (N6: pin the image digest); F8/D-15 and U17 (a docs/comment round: a push to `integration/**` would start a new hosted run), the security-alert classification (needs working API access or an export from the owner).
+4. Refresh the final report A to J with the run-2 evidence (the 2026-11-15 report predates it). The label stays NO-GO / INCOMPLETE while F12/U9, the alerts and U8 are open.
+5. Do not merge, close or retarget anything.
+
 ## 1. Handoff Metadata
 
-- Handoff version: 5
+- Handoff version: 5.1 (version 5 plus section 0a, 2026-11-17)
 - Created at: 2026-11-12 (UTC). The session ran 2026-11-06 through 2026-11-12 and survived several context compactions and container resets.
 - Workstream: `sandbox-network-isolation`, PR #86 (B03 inert capacity and IPv6 guard primitives): CI and security verification remediation.
 - Task identifier: "Independent Remediation Assignment: PR #86 B03 CI and Security Verification" (user attachment, 2026-11-06 21:53).
@@ -354,6 +389,6 @@ First actions of the next session:
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING** (v5: unchanged; the same single reason, U15)
+**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING** (v5.1: unchanged status. U15 is still the reason named in v5; section 0a adds U18, two further items that exist only outside the repository and that this session could not preserve. Until the user supplies or explicitly accepts the loss of those, they are part of the reason too.)
 
-Reason, exactly one: the verbatim text of the original assignment attachment is not available to this session (section 2, U15). Everything else the completeness gate requires is satisfied: the implementation checkpoint `164a078` is committed and pushed to `tmp/b03-ci-remediation-handoff-20261112` and the remote tip was verified; this file and the evidence directory are committed and pushed; requirement, decision and investigation ledgers, failed attempts, verification evidence, environment assumptions and an exact next action are recorded; no material work exists only in the local working tree. The status becomes TRANSFER READY when the user attaches the original assignment text (replace section 2 with it and compare against section 5). Separately, and independent of this status: **the remediation itself is not complete and has no hosted-CI evidence.**
+Reason in v5, exactly one: the verbatim text of the original assignment attachment is not available to this session (section 2, U15). Everything else the completeness gate requires is satisfied: the implementation checkpoint `164a078` is committed and pushed to `tmp/b03-ci-remediation-handoff-20261112` and the remote tip was verified; this file and the evidence directory are committed and pushed; requirement, decision and investigation ledgers, failed attempts, verification evidence, environment assumptions and an exact next action are recorded; no material work exists only in the local working tree. The status becomes TRANSFER READY when the user attaches the original assignment text (replace section 2 with it and compare against section 5). Separately, and independent of this status: **the remediation itself is not complete and has no hosted-CI evidence.**

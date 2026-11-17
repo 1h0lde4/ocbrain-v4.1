@@ -1,0 +1,61 @@
+{
+  "daemon": {
+    "context": "default",
+    "docker_host": null,
+    "id": "2e9a7954-494c-4cfc-bff9-50a0425c70dc",
+    "platform": "linux/x86_64",
+    "version": "29.4.2"
+  },
+  "failed_stage": null,
+  "finished_at": "2026-11-14T21:53:08+00:00",
+  "image": {
+    "id": "sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b",
+    "ref": "python:3.12-slim",
+    "resolved_digest": "python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+  },
+  "image_ref": "python:3.12-slim",
+  "message": null,
+  "provision": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "output_tail": "...2d0a39: Download complete\n37fb86c2a767: Download complete\nf26199dfe4a6: Download complete\ne0a5f9afcd02: Download complete\n68bced9e0afa: Pull complete\n37fb86c2a767: Pull complete\n05e0eee5572e: Pull complete\n2dc99d2d0a39: Pull complete\nDigest: sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b\nStatus: Downloaded newer image for python:3.12-slim\ndocker.io/library/python:3.12-slim",
+        "rc": 0
+      }
+    ],
+    "status": "pulled"
+  },
+  "result": "passed",
+  "schema": "ocbrain.ci.docker-preflight/1",
+  "smoke": {
+    "capabilities_rc": 0,
+    "capability_probes": true,
+    "command": "docker run --rm --pull never --network none -e PATH=<container PATH> python:3.12-slim true",
+    "digest_ref": "python@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b",
+    "digest_run_rc": 0,
+    "executables_rc": 0,
+    "rc": 0,
+    "required_executables": [
+      "python3",
+      "sh",
+      "sleep",
+      "true",
+      "echo",
+      "printenv",
+      "yes",
+      "head",
+      "grep",
+      "date",
+      "mv",
+      "rm",
+      "cat",
+      "ln",
+      "mkdir",
+      "mkfifo",
+      "hostname",
+      "readlink",
+      "ls"
+    ]
+  },
+  "started_at": "2026-11-14T21:52:51+00:00"
+}
