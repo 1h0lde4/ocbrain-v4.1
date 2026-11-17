@@ -667,13 +667,15 @@ class TestWorkflowRuntimeCheckpointResume:
         assert result.node_results["a"].output == "done:a"
 
     @pytest.mark.asyncio
-    async def test_resume_survives_a_real_process_restart(self):
-        """The actual point of DEBT-003: prove durability across a genuine
-        process boundary, not just within one Python process's memory.
-        Two entirely separate WorkflowRuntime/EventStream/SQLiteEventStore
-        instances, sharing only an on-disk file path -- the second one is
-        constructed with no reference to any object the first one created,
-        the same way a freshly-restarted process would be."""
+    async def test_resume_loads_checkpoint_into_freshly_constructed_objects_over_same_db(self):
+        """Resume works on freshly *constructed* runtime/stream/store objects that share only an on-disk
+        SQLite file -- the second set is built with no reference to anything the first created.
+
+        This is NOT a process restart: it is one Python process, and ``CountingNodeWorker.invocations`` is
+        a class-level list that both phases share. Its "crash" is a complete, shorter workflow that runs to
+        success, so no node is ever interrupted mid-execution. The literal acceptance criterion (kill the
+        process mid-execution, restart, resume) is covered by
+        tests/test_workflow_crash_restart_subprocess.py. (Renamed Oct 28, 2026; the old name overstated this.)"""
         CountingNodeWorker.reset()
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "events.db")
