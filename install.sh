@@ -197,7 +197,7 @@ post_install() {
     echo "  ║                                         ║"
     echo "  ║   Start:    ocbrain-start              ║"
     echo "  ║   Web UI:   http://localhost:7437       ║"
-    echo "  ║   Docs:     http://localhost:7437/docs  ║"
+    echo "  ║   Token:    ocbrain token --show        ║"
     echo "  ║   CLI:      ocbrain \"your question\"   ║"
     echo "  ║                                         ║"
     echo "  ║   GitHub:                               ║"
