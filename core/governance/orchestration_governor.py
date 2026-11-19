@@ -77,6 +77,22 @@ risked exactly the field-conflation "reuse... rather than inventing a
 second one" is trying to prevent, not the behavior it endorses. Documented
 here as a deliberate implementation choice, not a silent assumption.
 
+Scope addition (ADR-KERNEL-07, PROPOSED; D-5 resolved as Option C,
+2026-09-29): a fourth, independent question -- whether a creative request
+carries any content anchor (`metadata["content_anchor_score"]`, evaluated by
+`_evaluate_content_anchor_policy()`). Slice 1 of a future intent-sufficiency
+capability; named for the narrow signal it applies to. It is evaluated at the
+EXISTING Plan Compilation boundary: compile() merges the pre-plan detector's
+keys into its own "plan_compile" action, so there is no new gate and no new
+governance boundary (K4.2: "no dedicated clarification gate"). It is a sibling
+of the ClarificationPolicy question above, not an extension of it: the two
+rules read different keys (`content_anchor_score` vs `confidence`) from the
+same action, so neither -- nor ADR-K4.2-H-13's general_purpose_only exemption,
+which applies only to ClarificationPolicy -- can fire on or swallow the
+other's decision. ESCALATE below threshold only; no attempt bound (no attempt
+state exists in slice 1); still no rule-registration API, no new governor, no
+cognitive-layer type imported. Absent key -> this rule is inert.
+
 Default policy: permissive. All worker types are authorized unless
 explicitly denied at construction — matching the permissive-default risk
 mitigation in K2_IMPLEMENTATION_PLAN.md's K2.4 risk assessment ("New
@@ -124,6 +140,10 @@ class OrchestrationGovernor(Governor):
         self.deny_worker_types: FrozenSet[str] = deny_worker_types or frozenset()
 
     def evaluate(self, action: GovernanceAction) -> GovernanceResult:
+        anchor_result = self._evaluate_content_anchor_policy(action)
+        if anchor_result is not None:
+            return anchor_result
+
         clarification_result = self._evaluate_clarification_policy(action)
         if clarification_result is not None:
             return clarification_result
@@ -153,6 +173,58 @@ class OrchestrationGovernor(Governor):
 
         return GovernanceResult(
             verdict=GovernanceVerdict.APPROVE, governor=self.name,
+        )
+
+    def _evaluate_content_anchor_policy(
+        self, action: GovernanceAction,
+    ) -> Optional[GovernanceResult]:
+        """Evaluates the creative content-anchor policy (ADR-KERNEL-07, PROPOSED).
+
+        Slice 1 of a *future* intent-sufficiency capability -- deliberately
+        NOT named "sufficiency": the signal behind it is a narrow lexical
+        detector, and this rule must not freeze that heuristic as the
+        canonical definition of sufficiency. Semantic ownership: the
+        cognitive layer's detector produces the score and decides what it
+        means; this method only applies a threshold to it, the same
+        mechanism role this governor already plays for ClarificationPolicy.
+
+        A sibling of ClarificationPolicy, not an extension of it. Both may be
+        present on the same compile-time action: this rule reads only
+        `content_anchor_score`, ClarificationPolicy reads only `confidence`, so
+        neither -- nor ADR-K4.2-H-13's general_purpose_only exemption -- can
+        fire on or swallow the other's decision. This rule is evaluated first;
+        when it passes (or is inert) ClarificationPolicy is evaluated as before.
+
+        Returns None (defer to the remaining checks) when the score key is
+        absent or meets the threshold -- permissive-on-absence.
+
+        Deliberately has NO attempt/max_escalations bound (unlike
+        ClarificationPolicy): slice 1 keeps no attempt state across turns
+        (ADR-KERNEL-07 D-3), so a bound could never be reached in real use
+        and would be unreachable governance logic. It belongs with a real
+        attempt carrier, when one exists.
+
+        Metadata keys (plain values; no cognitive-layer type imported):
+            content_anchor_score (float): 0..1, from the detector.
+            content_anchor_threshold (float, default 0.5).
+        """
+        score = action.metadata.get("content_anchor_score")
+        if score is None:
+            return None
+
+        threshold = action.metadata.get(
+            "content_anchor_threshold", _DEFAULT_CONFIDENCE_THRESHOLD,
+        )
+        if score >= threshold:
+            return None
+
+        return GovernanceResult(
+            verdict=GovernanceVerdict.ESCALATE,
+            reason=(
+                f"Content-anchor score {score:.2f} below threshold "
+                f"{threshold:.2f}."
+            ),
+            governor=self.name,
         )
 
     def _evaluate_clarification_policy(

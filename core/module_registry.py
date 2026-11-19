@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from core.module_paths import module_child
 from modules.base import BaseModule
 
 MODULES_DIR = Path(__file__).parent.parent / "modules"
@@ -56,7 +57,7 @@ def load_all() -> dict[str, BaseModule]:
 
 def reload_module(module_name: str, existing: dict) -> Optional[BaseModule]:
     """Hot-reload a single module after weight update."""
-    path = MODULES_DIR / module_name / "module.py"
+    path = module_child(MODULES_DIR, module_name) / "module.py"
     if not path.exists():
         return None
     try:

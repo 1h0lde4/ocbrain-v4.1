@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -94,6 +95,17 @@ class InstallResult:
 
 # ── Check ─────────────────────────────────────────────────────────────────────
 
+def _log_and_ref(context: str, exc: BaseException) -> str:
+    """Log exc (message + traceback) under a fresh id; return only the id.
+
+    Same shape as core/error_ref.log_and_ref. Kept file-local so this module
+    does not depend on a helper that lives on a different branch/PR; unify
+    later if both land."""
+    ref = str(uuid.uuid4())
+    log.error("%s failed; error_id=%s", context, ref, exc_info=exc)
+    return ref
+
+
 def check() -> UpdateResult:
     cv = current_version()
     try:
@@ -115,14 +127,22 @@ def check() -> UpdateResult:
             )
         return UpdateResult(available=False, version=latest, current=cv)
     except requests.RequestException as e:
+        # check_error is returned verbatim by GET /updates and
+        # POST /update/install. requests' messages carry the connection
+        # target (proxy host/port, resolver errors, URLs), so the detail goes
+        # to the log under a ref and the caller gets the class + ref only.
+        ref = _log_and_ref("[updater] GitHub release check", e)
         return UpdateResult(
             available=False, current=cv,
-            check_failed=True, check_error=f"Could not reach GitHub: {e}",
+            check_failed=True,
+            check_error=f"Could not reach GitHub: {type(e).__name__} (ref {ref})",
         )
     except Exception as e:
+        ref = _log_and_ref("[updater] update check", e)
         return UpdateResult(
             available=False, current=cv,
-            check_failed=True, check_error=str(e),
+            check_failed=True,
+            check_error=f"Update check failed: {type(e).__name__} (ref {ref})",
         )
 
 

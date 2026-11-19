@@ -122,10 +122,17 @@ class TestPlannerWorkerDirect:
         assert result.output == "still works"
 
     @pytest.mark.asyncio
-    async def test_module_dispatch_exception_contained(self):
+    async def test_module_dispatch_exception_contained(self, caplog):
         """A module raising during dispatch must be contained the same way
         the legacy Orchestrator.handle() contained it: folded into the
-        merged answer as an error entry, not raised past _run()."""
+        merged answer as an error entry, not raised past _run().
+
+        The entry is "[Error in <module>: <ExceptionClass> (ref <uuid>)]";
+        the raw message ("module exploded") is in the server log under that
+        ref, not in the answer, because merger.merge() returns this text to
+        the caller (CWE-209). This test used to assert the message itself
+        was in the answer."""
+        import re
         router = MagicMock()
         router.route = AsyncMock(side_effect=RuntimeError("module exploded"))
         worker = PlannerWorker(modules={"web_search": object()},
@@ -135,7 +142,12 @@ class TestPlannerWorkerDirect:
         result = await worker.execute(WorkerContext(query="trigger failure"))
         # merger.merge() with only error entries returns the error text
         # directly (see core/merger.py) rather than raising.
-        assert "module exploded" in (result.output or result.error or "")
+        text = result.output or result.error or ""
+        m = re.search(r"\[Error in \w+: RuntimeError \(ref ([0-9a-f-]{36})\)\]", text)
+        assert m, text
+        assert "module exploded" not in text
+        assert "module exploded" in caplog.text
+        assert m.group(1) in caplog.text
 
     @pytest.mark.asyncio
     async def test_unclassified_query_returns_friendly_message(self):

@@ -70,3 +70,13 @@ Branch reconciliation surfaced `fix/debt-020-completion-semantics-sep2026` — a
 **One piece adopted on its own merits, independent of the above:** their fix to `WorkflowRuntime._run()`'s aggregation step — `success = last_result.success if last_result is not None else True` changed to `else False`. Not proven reachable via today's call graph, but not provably unreachable either (a node whose `state.status` is already `COMPLETED`/`FAILED` with no corresponding `node_results[node_id]` entry — e.g. a malformed external checkpoint write — falls through exactly this branch), and the safe default is `False`. Regression-tested (`tests/test_workflow_runtime.py::TestWorkflowRuntimeCheckpointResume::test_resume_with_inconsistent_completed_state_and_no_result_fails_closed`, constructing the inconsistency directly since `_save_checkpoint` cannot produce it on its own). Full suite after this change: 1,456 passed / 35 failed (34 environmental + `CTX-AUTH-001b`), one new test, zero regressions.
 
 The `CompletionStatus` design itself is not discarded — left on its own branch, unmerged, as strong prior art for the Verification track this account will build after freeze.
+
+## Addendum, Oct 2, 2026: correction -- the prior-art branch no longer exists as a branch
+
+The Sept 13 addendum above says the `CompletionStatus` design was "left on its own branch, unmerged". That was true when written and is no longer true of that ref. A read-only forensic pass on Oct 2, 2026 found:
+
+- `fix/debt-020-completion-semantics-sep2026` is not among `origin`'s branches. When it was deleted, and by what action, is **UNKNOWN**; nothing in the repository establishes it.
+- The work was not lost. Its three commits (`a5883fc`, `809fa53`, `fcd3700`; merge-base with `main` is `f7058d3`, matching the "branched from `f7058d3`" statement above) remain reachable at `refs/pull/16/head` (PR #16, state CLOSED, never merged). The `CompletionStatus` implementation and `tests/test_debt_020_completion_semantics.py` exist only in those commits; none of it is on `main`, consistent with the decision above.
+- At Moncif's instruction the commits are now also preserved on a branch ref: `archive/fix-debt-020-completion-semantics-sep2026` (tip `fcd3700`, created Oct 2, 2026). `git ls-remote` confirms its tip equals PR #16's head. Retrieve with `git fetch origin archive/fix-debt-020-completion-semantics-sep2026`.
+
+Nothing in the decision above changes: this ADR's fix remains the shipped DEBT-020 resolution, and the `CompletionStatus` design remains prior art for the Verification track. A PR ref is GitHub-managed rather than a repository-owned branch, so the archive branch should not be deleted without an explicit decision.

@@ -29,6 +29,7 @@ from core.workers.base import (
     WorkerContext,
     WorkerResult,
 )
+from core.error_ref import log_and_ref
 from core.runtime.execution_context import ExecutionContext
 
 logger = logging.getLogger("ocbrain.workers.planner")
@@ -171,10 +172,14 @@ class PlannerWorker(AbstractCognitiveWorker):
             for i, res in enumerate(results):
                 mod_name = labels[i]["module"]
                 if isinstance(res, Exception):
-                    logger.error("[PlannerWorker] Module %s failed: %s",
-                                 mod_name, res)
+                    # Same as Orchestrator: merger.merge() puts this text in
+                    # the answer the caller reads, so the detail stays in the
+                    # log under a ref instead.
+                    ref = log_and_ref(
+                        logger, f"[PlannerWorker] Module {mod_name}", res)
                     processed_results.append(RouteResult(
-                        answer=f"[Error in {mod_name}: {res}]",
+                        answer=(f"[Error in {mod_name}: "
+                                f"{type(res).__name__} (ref {ref})]"),
                         source="error",
                     ))
                 else:
@@ -230,7 +235,18 @@ class PlannerWorker(AbstractCognitiveWorker):
                     "languages": parsed.entities.get("languages", []),
                     "filenames": parsed.entities.get("filenames", []),
                 }
-                self._context_memory.save(query, modules_used, answer, entities, scope=scope)
+                # Only the persistence operation is best-effort; entity
+                # preparation above remains part of the execution pipeline.
+                try:
+                    self._context_memory.save(
+                        query, modules_used, answer, entities, scope=scope
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "[PlannerWorker] Context save failed "
+                        "(non-blocking; error_type=%s)",
+                        type(e).__name__,
+                    )
 
             await self.emit_progress(context, "Complete", percent=100.0)
 

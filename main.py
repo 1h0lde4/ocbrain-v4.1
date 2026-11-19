@@ -36,10 +36,18 @@ Architecture:
            OllamaAdapter/OpenAICompatAdapter register alongside it as the
            "pure" capability path with no maturity-tracking layer.
 """
+
+import sys
+
+# `ocbrain token [--show|--rotate]`: in a packaged install this binary IS `ocbrain`.
+# Answer before importing anything heavy or starting anything (interface/token_cli.py).
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "token":
+    from interface.token_cli import main as _token_main
+    sys.exit(_token_main(sys.argv[2:]))
+
 import asyncio
 import logging
 import signal
-import sys
 from pathlib import Path
 
 import uvicorn
@@ -397,6 +405,9 @@ async def main():
     from core.config import config
     use_k42_frontend = config.get("runtime.use_k42_frontend", False)
     max_recovery_attempts = config.get("runtime.max_recovery_attempts", 3)
+    # ADR-KERNEL-07 (PROPOSED): creative content-anchor detector (narrow slice), default off.
+    creative_content_anchor_enabled = config.get(
+        "runtime.creative_content_anchor_enabled", False)
     orchestrator = Orchestrator(modules, context_memory, model_router,
                                  memory=memory,
                                  governance=governance_kernel,
@@ -405,7 +416,8 @@ async def main():
                                  workflow_runtime=workflow_runtime,
                                  capability_registry=capability_registry,
                                  use_k42_frontend=use_k42_frontend,
-                                 max_recovery_attempts=max_recovery_attempts)
+                                 max_recovery_attempts=max_recovery_attempts,
+                                 creative_content_anchor_enabled=creative_content_anchor_enabled)
     log.info("Orchestrator ready (WorkflowRuntime: production execution owner, "
              f"K4.2 frontend: {'ON' if use_k42_frontend else 'off'})")
 

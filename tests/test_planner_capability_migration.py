@@ -92,10 +92,18 @@ class TestPlannerWorkerCapabilityDispatch:
         mock_router.route.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_capability_failure_folded_into_merged_error_like_legacy(self):
+    async def test_capability_failure_folded_into_merged_error_like_legacy(self, caplog):
         """Matches the legacy path's own containment: a dispatch failure
         becomes part of the merged answer text, not an unhandled
-        exception reaching the caller."""
+        exception reaching the caller.
+
+        The answer carries an error *entry* (module, exception class, ref),
+        not the raw exception message: merger.merge() hands that text to the
+        caller, so the message ("fake adapter failure") stays in the server
+        log under the same ref instead (CWE-209). This test used to assert
+        the message was in the answer; the containment it protects is
+        unchanged."""
+        import re
         worker = PlannerWorker(
             modules={"web_search": object()},
             context_memory=_make_context(),
@@ -103,14 +111,24 @@ class TestPlannerWorkerCapabilityDispatch:
             memory=_make_memory(),
         )
         result = await worker.execute(WorkerContext(query="trigger a failure"))
-        assert "fake adapter failure" in (result.output or result.error or "")
+        text = result.output or result.error or ""
+        m = re.search(r"\[Error in \w+: (\w+) \(ref ([0-9a-f-]{36})\)\]", text)
+        assert m, text
+        assert "fake adapter failure" not in text
+        assert "fake adapter failure" in caplog.text
+        assert m.group(2) in caplog.text
 
     @pytest.mark.asyncio
-    async def test_no_adapter_runtime_and_no_model_router_is_contained_not_raised(self):
+    async def test_no_adapter_runtime_and_no_model_router_is_contained_not_raised(self, caplog):
         """Regression check for the latent-bug fix in _dispatch_module:
         previously this path returned a bare WorkerResult that leaked
         into merger.merge() uncaught; now it raises, which the existing
-        gather(return_exceptions=True) containment already handles."""
+        gather(return_exceptions=True) containment already handles.
+
+        The "No adapter_runtime or model_router" message used to be asserted
+        in the answer; it now lives in the server log under the answer's
+        ref, since the answer text reaches the caller (CWE-209)."""
+        import re
         worker = PlannerWorker(
             modules={"web_search": object()},
             context_memory=_make_context(),
@@ -120,7 +138,12 @@ class TestPlannerWorkerCapabilityDispatch:
         # Must not raise past execute() -- AbstractCognitiveWorker's
         # template method contains it, same as any other worker failure.
         assert isinstance(result.success, bool)
-        assert "No adapter_runtime or model_router" in (result.output or result.error or "")
+        text = result.output or result.error or ""
+        m = re.search(r"\[Error in \w+: (\w+) \(ref ([0-9a-f-]{36})\)\]", text)
+        assert m, text
+        assert "No adapter_runtime or model_router" not in text
+        assert "No adapter_runtime or model_router" in caplog.text
+        assert m.group(2) in caplog.text
 
 
 class TestBackwardCompatibilityModelRouterOnly:

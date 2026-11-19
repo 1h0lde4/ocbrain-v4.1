@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # check_packet_ownership.py diffs against main's merge-base
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
@@ -36,7 +36,7 @@ jobs:
 
       - name: Upload drift report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: drift-report
           path: /tmp/drift-report.json
@@ -64,10 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -78,41 +78,56 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run test suite
-        # Deliberately not gated on pytest's own exit code: this repository
-        # has a documented, stable set of environment-only failures (HF Hub
-        # connectivity -- docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt)
-        # that a CI runner without a configured HF mirror will also hit. Gating
-        # on raw exit code would make this job permanently red and thus
-        # useless as a signal (K4.2-H2 D10's own "the checker must be
-        # actionable, not opaque" requirement). The actual gate is the next
-        # step: any failure NOT already in that known list fails the build.
+        # This step records pytest's REAL exit code and never fails by itself;
+        # the gate step below decides. It must not discard the exit code (the
+        # previous `... | tee ... || true` did, which let collection errors,
+        # setup errors, INTERNALERROR and zero-collected runs pass -- FZ-07).
+        # `tee` would hide it as the pipeline's status, so read PIPESTATUS.
+        #
+        # The repository still has a documented set of known-failing tests
+        # (docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt); the gate
+        # tolerates ONLY those, only with pytest exit code 1.
         run: |
-          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest-output.txt || true
+          set +e
+          pytest tests/ -q --tb=short 2>&1 | tee /tmp/pytest-output.txt
+          echo "${PIPESTATUS[0]}" > /tmp/pytest-exit-code.txt
+          exit 0
 
       - name: Upload full test output
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pytest-output
-          path: /tmp/pytest-output.txt
+          path: |
+            /tmp/pytest-output.txt
+            /tmp/pytest-exit-code.txt
 
-      - name: Gate on new (unlisted) failures only
+      - name: Gate on pytest exit code, errors and unlisted failures
+        # Fails on: any pytest exit code other than 0/1, a missing summary
+        # line, ERROR/INTERNALERROR entries, zero passed tests, and any FAILED
+        # test that is not already in the known-failure list. Logic and its
+        # contract: scripts/ci_test_gate.py (unit-tested in
+        # tests/test_ci_test_gate.py). Do not widen it silently.
         run: |
-          grep '^FAILED ' /tmp/pytest-output.txt | sed 's/^FAILED //; s/ - .*//' | sort -u > /tmp/actual-failures.txt || true
-          grep -v '^#' docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt | grep -v '^$' | sort -u > /tmp/known-failures.txt
-          NEW_FAILURES=$(comm -23 /tmp/actual-failures.txt /tmp/known-failures.txt)
-          echo "Known environmental failures still failing (expected, not gated):"
-          comm -12 /tmp/actual-failures.txt /tmp/known-failures.txt || true
-          if [ -n "$NEW_FAILURES" ]; then
-            echo ""
-            echo "=========================================================="
-            echo "NEW test failure(s) not in the known-environmental list:"
-            echo "$NEW_FAILURES"
-            echo "=========================================================="
-            echo "If this is genuinely a new environmental class (not a real"
-            echo "regression), add it explicitly to"
-            echo "docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt with a"
-            echo "comment explaining why -- do not just widen this gate silently."
-            exit 1
-          fi
-          echo "No new failures beyond the known environmental set."
+          python3 scripts/ci_test_gate.py \
+            --output /tmp/pytest-output.txt \
+            --exit-code-file /tmp/pytest-exit-code.txt \
+            --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
+
+  token-acl-windows:
+    # DEBT-025: the API token file must be owner-only.  POSIX modes prove nothing on NTFS and
+    # the unit tests stub icacls, so this job runs the real icacls on a Windows runner
+    # (scripts/check_token_acl_windows.py; stdlib only, no dependency install).
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate the owner-only ACL on the API token file (real icacls)
+        run: python scripts/check_token_acl_windows.py

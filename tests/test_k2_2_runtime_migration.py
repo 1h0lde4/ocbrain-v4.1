@@ -143,10 +143,17 @@ class TestOrchestratorRoutesThroughWorkflowRuntime:
         context.save.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_workflow_failure_returns_error_not_crash(self):
+    async def test_workflow_failure_returns_error_not_crash(self, caplog):
         """If the underlying module dispatch fails entirely, the workflow
         path must degrade the same way the legacy path always has: a
-        user-facing message, never an unhandled exception."""
+        user-facing message, never an unhandled exception.
+
+        The message is "[Error in <module>: <ExceptionClass> (ref <uuid>)]";
+        the raw exception text ("downstream provider unavailable") is in the
+        server log under that ref, not in the answer, because the answer is
+        returned to the caller (CWE-209). This test used to assert the raw
+        text was in the answer; the no-crash property is unchanged."""
+        import re
         failing_router = MagicMock()
         failing_router.route = AsyncMock(
             side_effect=RuntimeError("downstream provider unavailable"))
@@ -161,7 +168,11 @@ class TestOrchestratorRoutesThroughWorkflowRuntime:
         # legacy behaviour) -- assert we got a real answer back, not a
         # raised exception reaching the caller.
         assert isinstance(answer, str)
-        assert "downstream provider unavailable" in answer
+        m = re.search(r"\[Error in \w+: RuntimeError \(ref ([0-9a-f-]{36})\)\]", answer)
+        assert m, answer
+        assert "downstream provider unavailable" not in answer
+        assert "downstream provider unavailable" in caplog.text
+        assert m.group(1) in caplog.text
 
     @pytest.mark.asyncio
     async def test_orchestrator_level_governance_still_enforced(self):

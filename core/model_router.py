@@ -13,6 +13,7 @@ import logging
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from typing import AsyncGenerator, Optional, Tuple
 
@@ -52,6 +53,42 @@ class RouteResult:
     similarity: Optional[float] = None
     latency_ms: int = 0
     execution_detail: Optional[ExecutionOutcome] = None
+
+
+class ProviderStreamError(str):
+    """FZ-02 (B2a): the in-band error token yielded by _ollama_stream().
+
+    It is a plain str to every consumer -- identical "[Error: ...]" text, so the
+    SSE endpoint, stream_route() and anything joining tokens see exactly what
+    they saw before -- but it carries its type, so _call_monitored_streaming()
+    can tell "the provider failed" from "the model happened to emit text that
+    looks like an error". The signal travels with the token itself: no shared
+    mutable state, safe under concurrent streams. error_id is the same opaque
+    reference that is already in the token text and in the server log.
+    """
+
+    error_id: str
+
+    def __new__(cls, text: str, error_id: str = "") -> "ProviderStreamError":
+        obj = super().__new__(cls, text)
+        obj.error_id = error_id
+        return obj
+
+
+async def _stop_generation(watchdog, watchdog_task, consumer_task) -> None:
+    """B2c: stop a monitored generation whose CALLER was cancelled.
+
+    asyncio.wait() does not cancel the tasks it was given, so a cancelled caller
+    used to leave the provider stream being consumed in the background (and the
+    watchdog polling). Cancel both and wait for them, so the stream generator's
+    `finally` runs and no task outlives the request. The caller then re-raises
+    its own CancelledError; this never converts it into a result.
+    """
+    watchdog.stop()
+    for task in (consumer_task, watchdog_task):
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(consumer_task, watchdog_task, return_exceptions=True)
 
 
 async def _maybe_await(value):
@@ -301,8 +338,24 @@ class ModelRouter:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.error("[model_router] stream error (%s): %s", model, e)
-            yield f"[Error: {e}]"
+            # SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): this
+            # token is forwarded verbatim to the SSE client by
+            # interface/api.py's _stream_response, so exception text here
+            # (transport errors carry host/URL detail) reached the caller
+            # in-band. Full detail stays in the server log, tagged with an
+            # opaque id the caller can quote. Keeps the "[Error: ...]"
+            # shape so anything reading the stream still sees an error token.
+            #
+            # FZ-02 (B2a): the token is a ProviderStreamError -- same text, but
+            # typed, so the monitored-streaming consumer can classify the
+            # failure as PROVIDER_FAILURE instead of reading it as model output.
+            error_id = str(uuid.uuid4())
+            log.error(
+                "[model_router] stream error (%s); error_id=%s",
+                model, error_id, exc_info=e,
+            )
+            yield ProviderStreamError(
+                f"[Error: model request failed (ref {error_id})]", error_id)
 
     @staticmethod
     async def _collect(gen: AsyncGenerator[str, None]) -> str:
@@ -369,12 +422,22 @@ class ModelRouter:
 
         chunks: list[str] = []
         provider_failure = False
+        provider_error_id = ""
 
         async def _consume() -> None:
-            nonlocal provider_failure
+            nonlocal provider_failure, provider_error_id
             try:
                 async for piece in stream_fn(module_name, subtask, context, scope=scope):
                     chunks.append(piece)
+                    if isinstance(piece, ProviderStreamError):
+                        # FZ-02 (B2a): _ollama_stream swallowed a transport/HTTP
+                        # error into this token and returned normally, so the
+                        # `except Exception` below never fired and the attempt
+                        # classified as SUCCESS. The token stays in the text
+                        # (consumers are unchanged) but is not progress.
+                        provider_failure = True
+                        provider_error_id = piece.error_id
+                        continue
                     if piece.strip():
                         monitor.report_progress(units=len(piece))
                     else:
@@ -396,9 +459,15 @@ class ModelRouter:
         # actually interrupts a hung stream (propagates asyncio.CancelledError
         # into _ollama_stream's httpx read, which re-raises it rather than
         # swallowing it).
-        done, _pending = await asyncio.wait(
-            {watchdog_task, consumer_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        try:
+            done, _pending = await asyncio.wait(
+                {watchdog_task, consumer_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+        except asyncio.CancelledError:
+            # B2c: the CALLER was cancelled while we waited. Stop the generation
+            # (see _stop_generation), then let the cancellation propagate.
+            await _stop_generation(watchdog, watchdog_task, consumer_task)
+            raise
 
         if consumer_task in done:
             watchdog.stop()
@@ -406,12 +475,24 @@ class ModelRouter:
         else:
             consumer_task.cancel()
             try:
-                await consumer_task
+                # Wait for OUR cancellation of the consumer to finish. This uses
+                # asyncio.wait() on purpose: `await consumer_task` inside
+                # `except CancelledError: pass` would also swallow a cancellation
+                # of the CALLER arriving at this await (B2c).
+                await asyncio.wait({consumer_task})
             except asyncio.CancelledError:
-                pass
+                await _stop_generation(watchdog, watchdog_task, consumer_task)
+                raise
+            if not consumer_task.cancelled():
+                consumer_task.result()  # surfaces a non-cancellation error, as before
 
         full_answer = "".join(chunks)
-        has_output = bool(full_answer.strip())
+        # FZ-02 (B2a): the provider's own error token is part of full_answer
+        # (text unchanged for every consumer) but is not generated content, so
+        # it counts neither as output nor as partial output. With no marker,
+        # `generated == full_answer` and behaviour is exactly as before.
+        generated = "".join(p for p in chunks if not isinstance(p, ProviderStreamError))
+        has_output = bool(generated.strip())
 
         if provider_failure:
             failure_type = FailureType.PROVIDER_FAILURE
@@ -440,10 +521,11 @@ class ModelRouter:
             provider=module_name,
             model=model_label,
             last_progress_at=snap.last_progress_at,
-            partial_output=full_answer if (failure_type != FailureType.SUCCESS and has_output) else None,
+            partial_output=generated if (failure_type != FailureType.SUCCESS and has_output) else None,
             watchdog_verdict=watchdog.last_verdict.value,
             recovery_action="bounded_extension" if watchdog.last_verdict.value == "extended" else "",
             retryable=failure_type in (FailureType.STALLED, FailureType.PROVIDER_FAILURE, FailureType.EMPTY_RESPONSE),
+            detail={"error_id": provider_error_id} if provider_error_id else {},
         )
         return full_answer, outcome
 

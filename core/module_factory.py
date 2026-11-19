@@ -5,6 +5,7 @@ Called by CLI wizard and Web UI form.
 import shutil
 from pathlib import Path
 from core.config import config
+from core.module_paths import module_child
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "modules" / "_template"
 MODULES_DIR  = Path(__file__).parent.parent / "modules"
@@ -41,9 +42,12 @@ def create(
     if not name.isidentifier():
         raise ValueError(f"Invalid module name: '{name}'. Use only letters, digits, underscores.")
 
-    dest = MODULES_DIR / name
+    dest = module_child(MODULES_DIR, name)  # .isidentifier() above is the naming rule
     if dest.exists():
-        raise ValueError(f"Module '{name}' already exists at {dest}")
+        # This message is returned verbatim in the 400 body of POST
+        # /modules/new (HTTPException(400, str(e))), so it must not carry the
+        # absolute install path. The module name is enough for the caller.
+        raise ValueError(f"Module '{name}' already exists.")
 
     # 1. Copy template folder
     shutil.copytree(TEMPLATE_DIR, dest)
