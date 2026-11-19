@@ -23,12 +23,20 @@ filesystem path with zero validation), same fix (.isidentifier()):
    below.
 """
 import json
+import os
 import zipfile
 from pathlib import Path
 
 import pytest
 
 import core.brain_export as be
+
+
+def _import_root_at(monkeypatch, directory) -> None:
+    """The /import boundary (issue #54) refuses unless a root is configured.
+    These tests exercise other properties, so point the root at the directory
+    where they keep their bundles."""
+    monkeypatch.setattr(be, "import_root", lambda: os.path.realpath(directory))
 
 
 def _make_bundle(path: Path, module_name: str) -> Path:
@@ -62,6 +70,7 @@ def test_path_traversal_module_name_cannot_delete_outside_modules_dir(tmp_path, 
     assert decoy.exists()
 
     bundle = _make_bundle(tmp_path / "malicious.ocbrain", "../../victim_area/decoy_dir")
+    _import_root_at(monkeypatch, tmp_path)
 
     # Deliberately not asserting on a specific exception type here: with
     # the pre-fix brain_export.py, the deletion happens, then a *different*
@@ -101,6 +110,7 @@ def test_legitimate_module_name_still_imports(tmp_path, monkeypatch):
     monkeypatch.setattr(config_module.config, "set_module_state", lambda *a, **k: None)
 
     bundle = _make_bundle(tmp_path / "legit.ocbrain", "finance_helper")
+    _import_root_at(monkeypatch, tmp_path)
     name = be.import_module(bundle, overwrite=True)
     assert name == "finance_helper"
     assert (fake_repo / "modules" / "finance_helper").exists()
@@ -226,8 +236,11 @@ class TestZipSlipExtraction:
         decoy = tmp_path / "victim_area"
         decoy.mkdir()
         bundle = self._malicious_bundle(tmp_path / "evil.ocbrain")
+        _import_root_at(monkeypatch, tmp_path)
 
-        with pytest.raises(ValueError):
+        # BundlePathError is a ValueError too, so a bare ValueError could pass
+        # for the wrong reason; require the zip-slip refusal specifically.
+        with pytest.raises(ValueError, match="resolves outside"):
             be.import_module(bundle)
 
         assert not (decoy / "evil.txt").exists()

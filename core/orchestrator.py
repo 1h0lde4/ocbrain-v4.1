@@ -9,7 +9,7 @@ import time
 from typing import Dict, Any, Optional
 
 from . import parser, merger
-from .error_ref import log_and_ref
+from .error_ref import log_and_ref, log_text_and_ref
 from .context import ContextMemory
 from .model_router import ModelRouter, RouteResult
 from .classifier_v3 import classify
@@ -613,7 +613,15 @@ class Orchestrator:
                     # conversational continuity, while every K2.2-processed
                     # query is not. This mirrors PlannerWorker's own pattern
                     # exactly, including non-blocking failure handling.
-                    self.context.save(query, capability_types, answer, {}, scope=execution_id)
+                    try:
+                        self.context.save(query, capability_types, answer, {}, scope=execution_id)
+                    except Exception as e:
+                        logger.warning(
+                            "[Orchestrator] Context save failed "
+                            "(non-blocking; error_type=%s)",
+                            type(e).__name__,
+                        )
+
                     try:
                         await self.memory.write(
                             content=answer,
@@ -713,15 +721,23 @@ class Orchestrator:
                     )
 
                     if not wf_result.success:
-                        logger.error("[Orchestrator] Workflow execution "
-                                     "failed: %s", wf_result.error)
+                        # wf_result.error is the failing worker's own string
+                        # (PlannerWorker: "PlannerWorker pipeline error:
+                        # <exception text>"). The caller reads this answer,
+                        # so log the text under an opaque ref and return only
+                        # the ref (CWE-209; core/error_ref.py). The event
+                        # payload below is an internal channel and keeps the
+                        # raw text.
+                        ref = log_text_and_ref(
+                            logger, "[Orchestrator] Workflow execution",
+                            wf_result.error)
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": wf_result.error,
                             "error_type": "WorkflowFailure",
                         })
-                        return (f"Sorry, I encountered an internal error: "
-                                f"{wf_result.error}")
+                        return ("Sorry, I encountered an internal error: "
+                                f"WorkflowFailure (ref {ref})")
 
                     answer = wf_result.output or ""
                     planner_result = wf_result.node_results.get(
@@ -834,7 +850,14 @@ class Orchestrator:
                     "languages": parsed.entities.get("languages", []),
                     "filenames": parsed.entities.get("filenames", []),
                 }
-                self.context.save(query, modules_used, answer, entities, scope=execution_id)
+                try:
+                    self.context.save(query, modules_used, answer, entities, scope=execution_id)
+                except Exception as e:
+                    logger.warning(
+                        "[Orchestrator] Context save failed "
+                        "(non-blocking; error_type=%s)",
+                        type(e).__name__,
+                    )
 
                 # 6b. Persist interaction to UnifiedMemory.
                 #
