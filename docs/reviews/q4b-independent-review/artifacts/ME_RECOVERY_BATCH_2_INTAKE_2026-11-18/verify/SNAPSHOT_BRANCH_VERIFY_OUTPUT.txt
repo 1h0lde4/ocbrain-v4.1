@@ -1,0 +1,27 @@
+# Snapshot-branch verification. Commit pinned: 3146c647a4ba6af186f6c3931fe2cdb840054865 (branch docs/verification-3cb-evidence-snapshots-nov2026, fetched read-only)
+# commands: git archive 3146c647a4ba6af186f6c3931fe2cdb840054865 docs/architecture/verification-3cb-evidence-snapshots | tar -x -C <scratch>; (cd <scratch>/docs/architecture/verification-3cb-evidence-snapshots && sha256sum -c SHA256SUMS)
+q2-q5-decision-pack.rev28.md: OK
+q2-q5-decision-pack.rev28.docx: OK
+q4-queryable-non-conclusion-brief.rev13.md: OK
+q4-queryable-non-conclusion-brief.rev13.docx: OK
+q4b-trigger-boundary-of-d6.rev19.md: OK
+q4b-trigger-boundary-of-d6.rev19.docx: OK
+-- sizes (bytes) and full sha256 of the six files --
+26238 cff38e1da17d67c0fda0bdcf8c68d2d6a787b31a107b2828991a525aa698f2b2 q2-q5-decision-pack.rev28.md
+15843 4ed5c2c6433693fc79f0492a79112ad609d3de5f16099b2343213620c4b721da q2-q5-decision-pack.rev28.docx
+54262 cb171f72ef0c0df24379de353095235b4314f110b8f787ceda7fa56777c29641 q4-queryable-non-conclusion-brief.rev13.md
+26408 e92ab6f67efcbc9a1920f19bb0c8e495134ca2e55b225e3461a46f37dd5e72b9 q4-queryable-non-conclusion-brief.rev13.docx
+71911 886a208246dd3f8319c4cc4fc1d5a46f147eb3e2fd9c8bd76769cabb7445ef4a q4b-trigger-boundary-of-d6.rev19.md
+36774 3d849bd8c0e94a885d6179b25fc5f89e6b1f672cb60e3dbc2fe3476175dfaed1 q4b-trigger-boundary-of-d6.rev19.docx
+
+# Hashes the Q4-b brief (rev19 snapshot, docs/architecture/verification-3cb-evidence-snapshots/q4b-trigger-boundary-of-d6.rev19.md) carries for the probe scripts
+line 404:**Where the probes are.** Four throw-away scripts, not in the repository, delivered wi
+# (probe_main5.py 403f6c37... and README.md fc5ba8ae... : full-hash occurrences in the brief: 0)
+
+# per-hash full-hash occurrence counts in the brief rev19 snapshot (same pinned commit)
+probe_main.py occurrences=1
+probe_main2.py occurrences=1
+probe_main3.py occurrences=1
+probe_main4.py occurrences=1
+probe_main5.py occurrences=0
+README.md occurrences=0

@@ -1,0 +1,26 @@
+# command: python3 docs/reviews/q4b-independent-review/artifacts/ME_RECOVERY_BATCH_2_INTAKE_2026-11-18/verify/verify_intake.py   (from repo root, branch HEAD at run time: 27c595d + uncommitted package)
+== received files
+I001 ME07_CI_ARTIFACTS_PARTIAL_RECOVERY.zip 23283B sha256=3519af68f418d46d63ddc0ea77572b3541301cee50cf7ff725077807d19af0ef testzip=None
+I002 ME06_PROBE_SCRIPTS_MEMBER_VERIFIED.zip 9342B sha256=0a024a85a2f95df1c4c72cb8869db56521d88e89e15860081438c27ff3b7c4dc testzip=None
+I003 drift-report.zip 2318B sha256=6651320038614d52604eabdf505e88b36cb7b5f0a9826acd51cdc168c6cc4301 testzip=None
+I004 pytest-output.zip 1164B sha256=0a271629118a2b5005756bf81a75f4284cdb126869d694ef99b7b01e23bba52e testzip=None
+
+== I001 CI package vs GitHub digests (captured earlier via authenticated API) and run->commit
+run 40781867485: head_sha=4a4783c47a attempt=1 event=push branch=main conclusion=success
+  pytest-output.zip 1164B (GitHub 1164B) GitHub-digest-match=True sender-SHA256SUMS-match=True inner-testzip=None members-match-extracted=True
+    I004 outer bytes identical to this copy: True
+  drift-report.zip 2318B (GitHub 2318B) GitHub-digest-match=True sender-SHA256SUMS-match=True inner-testzip=None members-match-extracted=True
+    I003 outer bytes identical to this copy: True
+run 39226693573: head_sha=f13bfdefcd attempt=1 event=push branch=main conclusion=success
+  pytest-output.zip 893B (GitHub 893B) GitHub-digest-match=True sender-SHA256SUMS-match=True inner-testzip=None members-match-extracted=True
+  drift-report.zip 2319B (GitHub 2319B) GitHub-digest-match=True sender-SHA256SUMS-match=True inner-testzip=None members-match-extracted=True
+
+== I002 probe scripts vs Batch 1 S05 record of the original files.zip
+  probe_main.py 8419B a761827d450591dd.. in S05 record: True
+  probe_main2.py 3343B dc69e68f7818a77b.. in S05 record: True
+  probe_main3.py 2279B e1aee93306461167.. in S05 record: True
+  probe_main4.py 4668B 5ef869ee74f6749e.. in S05 record: True
+  probe_main5.py 1676B 403f6c37853fe8db.. in S05 record: True
+  README.md 1309B fc5ba8aeb31db4a4.. in S05 record: True
+  members checked: 6 (expected 6)
+# exit status: 0

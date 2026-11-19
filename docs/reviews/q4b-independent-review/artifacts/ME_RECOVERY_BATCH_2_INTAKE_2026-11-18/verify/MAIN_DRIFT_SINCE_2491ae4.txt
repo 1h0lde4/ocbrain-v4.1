@@ -1,0 +1,79 @@
+# git log --oneline 2491ae4..origin/main   (origin/main = 6f93444769587a62fd79279fff6de3f140600222)
+6f93444 Merge pull request #87 from 1h0lde4/docs/register-debt033-debt030-oct2026
+03780c9 Merge main (f239185) into docs/register-debt033-debt030-oct2026 and reconcile DEBT-033 / DEBT-030 with the live state
+f239185 Merge pull request #108 from 1h0lde4/docs/debt-register-live-reconciliation-nov2026
+ec95df5 Merge main (ce5c3f8) into docs/debt-register-live-reconciliation-nov2026 and reconcile the Nov 2 snapshot with PRs #109, #110 and #94
+ce5c3f8 Merge pull request #94 from 1h0lde4/fix/debt-025-api-auth-boundary-oct2026
+594060f Merge main (abd6c4b, includes PR #109 and PR #110) into fix/debt-025-api-auth-boundary-oct2026
+abd6c4b Merge pull request #110 from 1h0lde4/docs/debt-025-control-plane-authorization-design-nov2026
+48bb472 docs(adr-kernel-09): correct evidence rows F4 and F5 found during PR #110 reconciliation
+f9cf110 Merge main (63eea60, PR #109) into docs/debt-025-control-plane-authorization-design-nov2026
+63eea60 Merge pull request #109 from 1h0lde4/docs/adr-kernel-08-owner-acceptance-sync-nov2026
+79354c8 docs(adr-kernel-08): clarify §9 promotion/acceptance sequence and Nov 2 snapshot vs Nov 3 publication
+3be0652 docs(adr): ADR-KERNEL-09 PROPOSED, control-plane authorization through the GovernanceKernel (DEBT-025)
+c50caa9 fix(api-auth): security headers on rejected responses; private token directory when rotation runs first
+023918c docs(adr-kernel-08): record owner acceptance of §8.1 item 1, verified chronology, evidence scope
+8552ca6 docs(DEBT-025): record what the real Windows run showed (E12) and correct A12
+ce32d90 docs(readme): separate existing adaptive primitives from resource policy target
+db56299 docs(readme): document system-wide adaptability and resource policy
+677c155 docs(readme): correct C-MoE design property numbering
+edb7ded docs(readme): clarify goal mutation and work reuse in C-MoE
+b2cf646 docs(readme): add self-model, decision memory and world-model direction
+13619d2 docs(readme): add Studio vision and architecture research references
+a901e6d docs(readme): clarify C-MoE architecture and AGI research vision
+6557ccb docs(readme): render code references and commands as Markdown
+e3da380 docs(readme): align project overview, status and roadmap with Nov 2026 baseline
+8ff2dfe docs(debt): avoid stale self-referential commit count
+428b3e5 docs(debt): account for remaining register items without active PRs
+0871967 docs(debt): record reconciliation PR in live PR inventory
+5b4ccf6 docs(state): include reconciliation PR in current open count
+75df8c0 docs(debt): include reconciliation PR in live inventory count
+4eb7887 docs(debt): clarify branch inventory snapshot timing
+0aff6e3 docs(debt): advance register synchronization header to live snapshot
+cdba61a docs(debt): add complete branch and PR ownership inventory
+152dc22 docs(state): record live debt and branch reconciliation
+383dbb6 docs(debt): reconcile live debt status against main and open PRs
+3300f93 fix(windows): the ACL invariant is 'no other principal', and /reset is needed to repair a loosened ACL
+aceb06c ci(windows): observe how icacls behaves; put the offending ACL listing in the auth error
+d6d1f0c ci(windows): make the ACL validator report diagnostics and crashes as annotations
+3117932 Merge main (2491ae4, includes PR #93 and #106) into fix/debt-025-api-auth-boundary-oct2026
+089f34a docs(DEBT-025): revise the report and register row after the review remediation
+0301b44 Merge main (ed3d141, includes PR #104) into fix/debt-025-api-auth-boundary-oct2026
+e55514a ci(windows): validate the real owner-only ACL on the API token file
+e79a46d fix(api-auth): remediate the PR #94 review findings (owner-authorised plan)
+5a89938 Merge main (16d663a, includes PR #97) into fix/debt-025-api-auth-boundary-oct2026
+967573f test(api-auth): cover the unreadable-token-file path; make the CI-gate test unable to pass by skipping
+c015963 Merge main (7bb0ce2, includes PR #95 and #96) into fix/debt-025-api-auth-boundary-oct2026
+5996af3 test(ci): the live auth.js test fails in CI when Node is missing instead of skipping
+4493b10 docs(DEBT-025): record owner decision A1 ACCEPT; DEBT-025 stays OPEN; add review residuals
+176d65b fix(api-auth): fail closed on an unusable token file, tray uses the configured port, spec-compliant ASGI test helper
+4f3dc6e Merge main (6e41187, includes PR #89) into fix/debt-025-api-auth-boundary-oct2026
+2be0da9 fix(web): one prompt for concurrent 401s; run auth.js against a live server in CI
+b927cf4 feat(api): default-on bearer-token authentication boundary (DEBT-025)
+917bb37 docs(register): DEBT-033 -- live enforce_admins is true; DEBT-030 -- link to the Oct 1 audit's FZ-06
+
+# git diff --stat 2491ae4 origin/main -- . ':!docs' ':!*.md'   (non-doc, non-markdown changes)
+ .github/workflows/ci.yml           |   18 +
+ .gitignore                         |    1 +
+ core/event_bus.py                  |    4 +
+ install.sh                         |    2 +-
+ interface/api.py                   |   47 +-
+ interface/auth.py                  |  671 ++++++++++++++++++++
+ interface/cli.py                   |   89 ++-
+ interface/headers.py               |   58 ++
+ interface/token_cli.py             |   70 +++
+ interface/tray.py                  |   24 +-
+ interface/web/auth.js              |  121 ++++
+ interface/web/index.html           |   22 +-
+ interface/web/settings.html        |    7 +-
+ main.py                            |   10 +-
+ scripts/check_token_acl_windows.py |  180 ++++++
+ setup.sh                           |    2 +-
+ tests/conftest.py                  |   15 +
+ tests/js/auth_js_live.js           |   85 +++
+ tests/test_api_auth_boundary.py    | 1208 ++++++++++++++++++++++++++++++++++++
+ tests/test_web_auth_js.py          |   94 +++
+ 20 files changed, 2691 insertions(+), 37 deletions(-)
+
+# does main touch the review directory? (git diff --name-only 2491ae4 origin/main -- docs/reviews)
+(end)
