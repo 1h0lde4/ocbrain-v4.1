@@ -1,0 +1,406 @@
+# Raw probe output -- CPython 3.11.15 -- throwaway copy of ocbrain-v4.1 @ 2491ae4 (current main) -- 2026-11-03T22:28:42Z
+
+## probes_a.py
+python 3.11.15 | repo /tmp/probe/repo2
+=== p1_h1_workflow_retry_after_native_cancel ===
+{
+  "how": "returned",
+  "value_type": "WorkflowResult",
+  "success": true,
+  "error": "",
+  "task_cancelled": false,
+  "cancelling": 1,
+  "elapsed_s": 2.42,
+  "node_executions": 2,
+  "events": [
+    "execution.node.status",
+    "workflow.started",
+    "execution.node.status",
+    "worker.started",
+    "worker.cancelled",
+    "execution.completed",
+    "worker.started",
+    "worker.completed",
+    "execution.completed",
+    "execution.node.completed",
+    "execution.node.status",
+    "execution.completed",
+    "workflow.completed"
+  ]
+}
+=== p2_h2_cancel_during_worker_started_emit ===
+{
+  "how": "raised CancelledError",
+  "task_cancelled": true,
+  "cancelling": 1,
+  "worker_state": "running",
+  "total_failures": 0,
+  "events": []
+}
+=== p3_h3_cancel_during_worker_completed_emit ===
+{
+  "how": "returned",
+  "value_type": "WorkerResult",
+  "success": false,
+  "error": "Worker cancelled",
+  "task_cancelled": false,
+  "cancelling": 1,
+  "worker_state": "cancelled",
+  "total_failures": 1,
+  "events": [
+    "worker.started",
+    "worker.cancelled"
+  ],
+  "note": "_run() had already returned success=True before the cancel arrived"
+}
+=== p4_h4_runtime_cleanup_on_escaping_cancel ===
+{
+  "escaping_cancel(during worker.started)": {
+    "how": "raised CancelledError",
+    "task_cancelled": true,
+    "cancelling": 1,
+    "working_memory_after": "present",
+    "runtime_event_emitted": false
+  },
+  "cancel_during__run": {
+    "how": "returned",
+    "value_type": "WorkerResult",
+    "success": false,
+    "error": "Worker cancelled",
+    "task_cancelled": false,
+    "cancelling": 1,
+    "working_memory_after": "<cleared>",
+    "runtime_event_emitted": true
+  }
+}
+=== p5_second_cancel_during_cancelled_event ===
+{
+  "how": "raised CancelledError",
+  "working_memory_after": "present",
+  "events": [
+    "worker.started"
+  ]
+}
+=== p6_h5_workflow_watchdog_lifetime ===
+{
+  "cancel_during_workflow.started": {
+    "how": "raised CancelledError",
+    "task_cancelled": true,
+    "cancelling": 1,
+    "leaked_watchdog_tasks": 1,
+    "graph_root_status": "running",
+    "terminal_events": []
+  },
+  "cancel_during_execution.completed(terminal event)": {
+    "how": "raised CancelledError",
+    "task_cancelled": true,
+    "cancelling": 1,
+    "leaked_watchdog_tasks": 1,
+    "graph_root_status": "running",
+    "terminal_events": []
+  }
+}
+=== p7_h6_watchdog_stop_swallows_caller_cancel ===
+{
+  "how": "returned",
+  "value": "stop() returned normally; caller continues running",
+  "caller_task_cancelled": false,
+  "cancelling": 1,
+  "watchdog_task_cleared": true
+}
+=== p8_h7_graph_failed_before_termination ===
+{
+  "elapsed_s": 2.63,
+  "workflow_success": true,
+  "workflow_error": "",
+  "worker_ran_to_completion": true,
+  "node_status_final": "completed",
+  "node_failure_type": "hard_deadline",
+  "root_status_final": "completed",
+  "execution_events": [
+    [
+      "execution.node.status",
+      {
+        "node_id": "p8-exec",
+        "status": "running",
+        "summary": "Execution started"
+      }
+    ],
+    [
+      "execution.node.status",
+      {
+        "node_id": "n",
+        "status": "running",
+        "summary": "Running Sleeper"
+      }
+    ],
+    [
+      "execution.node.failed",
+      {
+        "node_id": "p8-exec",
+        "status": "failed",
+        "summary": "Execution failed"
+      }
+    ],
+    [
+      "execution.node.failed",
+      {
+        "node_id": "n",
+        "status": "failed",
+        "summary": "Execution failed"
+      }
+    ],
+    [
+      "execution.completed",
+      {
+        "success": true,
+        "error": ""
+      }
+    ],
+    [
+      "execution.node.completed",
+      {
+        "node_id": "n",
+        "status": "completed",
+        "summary": "Sleeper completed"
+      }
+    ],
+    [
+      "execution.node.status",
+      {
+        "node_id": "p8-exec",
+        "status": "completed",
+        "summary": "Execution completed"
+      }
+    ],
+    [
+      "execution.completed",
+      {
+        "node_id": "p8-exec",
+        "status": "completed",
+        "summary": "Execution completed"
+      }
+    ]
+  ]
+}
+=== p9_h9_token_cancel_retry_and_error_branch ===
+{
+  "elapsed_s": 1.83,
+  "success": false,
+  "error": "Workflow cancelled",
+  "coop_worker_executions": 1,
+  "recovery_executions": 0,
+  "node_results": {
+    "n": [
+      false,
+      "Cancelled during retry"
+    ]
+  },
+  "execution_events": [
+    [
+      "execution.node.status",
+      {
+        "node_id": "p9-exec",
+        "status": "running",
+        "summary": "Execution started"
+      }
+    ],
+    [
+      "execution.node.status",
+      {
+        "node_id": "n",
+        "status": "running",
+        "summary": "Running Coop"
+      }
+    ],
+    [
+      "execution.completed",
+      {
+        "success": false,
+        "error": "Cancelled (cooperative)"
+      }
+    ],
+    [
+      "execution.node.failed",
+      {
+        "node_id": "n",
+        "status": "failed",
+        "summary": "Execution failed"
+      }
+    ],
+    [
+      "execution.node.status",
+      {
+        "node_id": "p9-exec",
+        "status": "failed",
+        "summary": "Execution failed"
+      }
+    ],
+    [
+      "execution.failed",
+      {
+        "node_id": "p9-exec",
+        "status": "failed",
+        "summary": "Execution failed"
+      }
+    ]
+  ]
+}
+
+## probes_b.py
+python 3.11.15
+=== p6b_cancel_during_workflow_terminal_event ===
+{
+  "how": "raised CancelledError",
+  "task_cancelled": true,
+  "cancelling": 1,
+  "leaked_watchdog_tasks": 1,
+  "graph_root_status": "completed",
+  "node_status": "completed",
+  "workflow_level_terminal_events": []
+}
+=== p10_native_cancel_enters_error_branch ===
+{
+  "how": "returned",
+  "value_type": "WorkflowResult",
+  "success": true,
+  "error": "",
+  "task_cancelled": false,
+  "cancelling": 1,
+  "sleeper_executions": 1,
+  "recovery_executions": 1
+}
+=== p11_planner_gather_child_vs_parent_cancel ===
+{
+  "child_cancelled": {
+    "how": "returned",
+    "success": true,
+    "output": "answer-from-beta\n\n",
+    "error": ""
+  },
+  "parent_cancelled": {
+    "how": "raised CancelledError",
+    "children_ran_to_completion_after_parent_cancel": {
+      "alpha": false,
+      "beta": false
+    }
+  }
+}
+=== p11b_gather_semantics_isolated ===
+{
+  "results": [
+    "CancelledError('')",
+    "'ok'"
+  ],
+  "isinstance_Exception": [
+    false,
+    false
+  ],
+  "isinstance_BaseException": [
+    true,
+    false
+  ]
+}
+=== p12_token_cancel_from_other_thread ===
+{
+  "normal": {
+    "wait_returned": true,
+    "woke_after_s": 3.0,
+    "is_cancelled_flag": true,
+    "exception_in_thread": null
+  },
+  "asyncio_debug": {
+    "wait_returned": "NO WAKEUP within 8s (waiter never resumed)",
+    "woke_after_s": null,
+    "is_cancelled_flag": true,
+    "exception_in_thread": "RuntimeError: Non-thread-safe operation invoked on an event loop other than the current one"
+  }
+}
+=== p13_voice_callback_from_non_loop_thread ===
+{
+  "called_from_non_loop_thread": {
+    "outcome": "RuntimeError: no running event loop"
+  },
+  "control_called_on_loop_thread": {
+    "outcome": "scheduled (no error)"
+  }
+}
+=== p15_eventstream_cancel_mid_append ===
+{
+  "awaiter": "raised CancelledError",
+  "persisted_rows": 1,
+  "subscribers_notified": []
+}
+
+## probes_c.py
+python 3.11.15
+=== c1_nonstream_query_client_disconnect ===
+{
+  "orchestrator_log": [
+    "handle:start",
+    "handle:COMPLETED (logical operation ran to the end)"
+  ]
+}
+=== c2_sse_query_client_disconnect ===
+{
+  "got_first_bytes": true,
+  "provider_log": [
+    "provider-stream:start",
+    "provider-stream:CancelledError"
+  ],
+  "graph_nodes": {
+    "c2-exec": [
+      "OCBrain execution",
+      "pending"
+    ],
+    "c6fb4cbc-741c-4ac1-97d9-3dbcce6f0653": [
+      "Generate response",
+      "running"
+    ]
+  },
+  "execution_events": []
+}
+=== c3_execution_events_terminal_gap ===
+{
+  "events_received_by_subscriber_before_manual_terminal": [
+    "execution.node.status"
+  ],
+  "subscriber_still_waiting_3s_after_cancel": true,
+  "after_manually_emitting_execution.cancelled": [
+    "<<response ended (chunked terminator)>>",
+    "execution.cancelled"
+  ],
+  "reader_done_after_control": false
+}
+=== c4_graceful_shutdown_with_inflight_request ===
+{
+  "server_exit_took_s": 4.67,
+  "orchestrator_log": [
+    "handle:start",
+    "handle:COMPLETED (logical operation ran to the end)"
+  ],
+  "client_got_response": "HTTP/1.1 200 OK\r\ndate: Tue, 03 Nov 2026 22:29:30 GMT\r\nserver"
+}
+=== c4b_graceful_shutdown_with_timeout ===
+{
+  "server_exit_took_s": 1.16,
+  "orchestrator_log": [
+    "handle:start",
+    "handle:CANCELLED"
+  ]
+}
+=== c5_terminal_event_persisted_but_not_broadcast ===
+{
+  "graph_snapshot_root_status": "cancelled",
+  "terminal_event_persisted_rows": 1,
+  "subscriber_saw_before": [
+    "execution.node.status"
+  ],
+  "subscriber_saw_total": [
+    "execution.node.status"
+  ],
+  "subscriber_terminated": false
+}
+
+## probe_reason.py
+graph-watchdog token.reason = 'execution hard_deadline' | CancelReason.HARD_DEADLINE.value = 'hard_deadline' | equal: False
