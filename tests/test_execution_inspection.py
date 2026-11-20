@@ -1,11 +1,14 @@
 import asyncio
 
 import pytest
+from fastapi import HTTPException
 
 from core.events.event_stream import EventStream, StreamEvent
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
-from core.runtime.execution_graph import ExecutionGraph, ExecutionStatus
+from core.runtime.execution_graph import (
+    ExecutionGraph, ExecutionRegistry, ExecutionRegistryFull, ExecutionStatus,
+)
 from core.runtime.progress import ProgressMonitor
 from core.runtime.projection import project_graph
 from core.runtime.watchdog import GraphExecutionWatchdog
@@ -205,3 +208,65 @@ async def test_watchdog_does_not_expire_during_gap_between_nodes():
 
     assert verdict == "idle"
     assert not token.is_cancelled
+
+
+@pytest.mark.asyncio
+async def test_registry_evicts_terminal_records_at_capacity_but_not_active_ones():
+    registry = ExecutionRegistry(max_entries=1, retention_seconds=60)
+    completed = registry.create("completed")
+    await completed.update(completed.root.node_id, status=ExecutionStatus.COMPLETED)
+
+    registry.create("next")
+    assert registry.get("completed") is None
+    assert registry.get("next") is not None
+
+    with pytest.raises(ExecutionRegistryFull):
+        registry.create("third")
+    assert registry.get("next") is not None
+
+
+@pytest.mark.asyncio
+async def test_registry_expires_terminal_records_after_retention():
+    registry = ExecutionRegistry(max_entries=2, retention_seconds=0)
+    graph = registry.create("completed")
+    await graph.update(graph.root.node_id, status=ExecutionStatus.COMPLETED)
+
+    assert registry.get("completed") is None
+    assert list(registry.ids()) == []
+
+
+@pytest.mark.asyncio
+async def test_registry_does_not_evict_a_terminal_record_with_an_event_subscriber():
+    registry = ExecutionRegistry(max_entries=1, retention_seconds=60)
+    graph = registry.create("subscribed")
+    events = registry.events("subscribed")
+    waiting = asyncio.create_task(events.__anext__())
+    await asyncio.sleep(0)
+    await graph.update(graph.root.node_id, status=ExecutionStatus.COMPLETED)
+    graph.root.completed_at -= 61
+
+    with pytest.raises(ExecutionRegistryFull):
+        registry.create("replacement")
+
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["get_execution", "execution_events"])
+async def test_unknown_execution_inspection_does_not_create_registry_state(
+    monkeypatch, endpoint,
+):
+    import interface.api as api
+    from core.runtime.execution_graph import execution_registry
+
+    monkeypatch.setattr(execution_registry, "get", lambda _execution_id: None)
+    monkeypatch.setattr(
+        execution_registry, "create",
+        lambda *args, **kwargs: pytest.fail("unknown inspection created state"),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await getattr(api, endpoint)("unknown-execution")
+    assert error.value.status_code == 404

@@ -27,6 +27,7 @@ from core.governance.governance_kernel import GovernanceKernel, get_governance_k
 from core.events.event_stream import EventStream, get_event_stream
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_context import ExecutionContext
+from core.runtime.execution_outcome import FailureType
 from core.runtime.worker_registry import WorkerRegistry
 from core.runtime.working_memory import WorkingMemory
 from core.workers.base import WorkerResult
@@ -121,6 +122,11 @@ class ExecutionRuntime:
         """
         start_time = time.time()
         self._total_invocations += 1
+        execution_id = (
+            (metadata or {}).get("execution_id")
+            or (context.execution_id if context is not None else "")
+            or str(uuid.uuid4())
+        )
 
         # ── Step 1: Resolve worker type ──────────────────────────────────
         worker_cls = self._registry.get(worker_type)
@@ -129,10 +135,16 @@ class ExecutionRuntime:
             logger.error("ExecutionRuntime: unknown worker type '%s'. "
                          "Registered: %s", worker_type,
                          self._registry.list_types())
+            error = f"Unknown worker type: '{worker_type}'"
+            duration_ms = (time.time() - start_time) * 1000
+            await self._emit_failure_event(
+                worker_type, error, duration_ms,
+                execution_id=execution_id,
+            )
             return WorkerResult(
                 success=False,
-                error=f"Unknown worker type: '{worker_type}'",
-                duration_ms=(time.time() - start_time) * 1000,
+                error=error,
+                duration_ms=duration_ms,
                 metadata={"worker_type": worker_type},
             )
 
@@ -148,10 +160,16 @@ class ExecutionRuntime:
             self._total_failures += 1
             logger.error("ExecutionRuntime: failed to construct '%s': %s",
                          worker_type, e, exc_info=True)
+            error = f"Worker construction failed: {e}"
+            duration_ms = (time.time() - start_time) * 1000
+            await self._emit_failure_event(
+                worker_type, error, duration_ms,
+                execution_id=execution_id,
+            )
             return WorkerResult(
                 success=False,
-                error=f"Worker construction failed: {e}",
-                duration_ms=(time.time() - start_time) * 1000,
+                error=error,
+                duration_ms=duration_ms,
                 metadata={"worker_type": worker_type},
             )
 
@@ -178,11 +196,13 @@ class ExecutionRuntime:
                         "cost": (metadata or {}).get("budget", {}).get("cost", 0.0),
                     },
                     **(metadata or {}),
+                    "execution_id": execution_id,
                 },
             )
         else:
             # Ensure worker_id is set on the context
             context.worker_id = worker.worker_id
+            context.metadata["execution_id"] = execution_id
 
         # ── Step 4: Execute via template method ──────────────────────────
         # Worker.execute() handles governance + events internally.
@@ -206,11 +226,20 @@ class ExecutionRuntime:
             )
 
         # ── Step 5: Emit runtime event ───────────────────────────────────
+        cancelled = (
+            result.execution_detail is not None
+            and result.execution_detail.failure_type == FailureType.CANCELLED
+        )
         try:
             await self._event_stream.append(
-                event_type="execution.completed",
+                event_type=(
+                    "execution.cancelled" if cancelled else
+                    "execution.completed" if result.success else
+                    "execution.failed"
+                ),
                 source="ExecutionRuntime",
                 payload={
+                    "execution_id": context.execution_id,
                     "request_id": context.request_id,
                     "worker_type": worker_type,
                     "worker_id": worker.worker_id,
@@ -234,8 +263,28 @@ class ExecutionRuntime:
 
         result.metadata["worker_type"] = worker_type
         result.metadata["request_id"] = context.request_id
+        result.metadata["execution_id"] = execution_id
 
         return result
+
+    async def _emit_failure_event(
+        self, worker_type: str, error: str, duration_ms: float,
+        *, execution_id: str = "",
+    ) -> None:
+        try:
+            await self._event_stream.append(
+                event_type="execution.failed",
+                source="ExecutionRuntime",
+                payload={
+                    "execution_id": execution_id,
+                    "worker_type": worker_type,
+                    "success": False,
+                    "duration_ms": duration_ms,
+                    "error": error,
+                },
+            )
+        except Exception as e:
+            logger.warning("ExecutionRuntime: event emission failed: %s", e)
 
     def stats(self) -> Dict[str, Any]:
         """Return runtime statistics for observability."""

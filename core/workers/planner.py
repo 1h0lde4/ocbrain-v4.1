@@ -320,6 +320,7 @@ class PlannerWorker(AbstractCognitiveWorker):
 
             request = CapabilityRequest(
                 capability_type=CapabilityType.LLM_COMPLETION,
+                execution_id=context.metadata.get("execution_id", ""),
                 payload={
                     "module_name": mod_name,
                     "subtask": query,
@@ -342,7 +343,8 @@ class PlannerWorker(AbstractCognitiveWorker):
 
         if self._model_router:
             return await self._model_router.route(
-                mod_name, query, self._context_memory, scope=scope)
+                mod_name, query, self._context_memory, scope=scope,
+                execution_id=context.metadata.get("execution_id", ""))
 
         raise RuntimeError(
             f"No adapter_runtime or model_router available for module "

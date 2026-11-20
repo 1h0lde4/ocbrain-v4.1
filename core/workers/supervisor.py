@@ -88,6 +88,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from core.cognitive.compiler import CompilationResult, CompilationStatus
+from core.runtime.execution_outcome import FailureType
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.runtime.execution_context import ExecutionContext
@@ -105,6 +106,7 @@ class SupervisorOutcome:
     REJECTED = "rejected"
     RETRY_INITIATED = "retry_initiated"
     RETRY_EXHAUSTED = "retry_exhausted"
+    CANCELLED = "cancelled"
     NO_ACTION = "no_action"
 
 
@@ -267,6 +269,18 @@ class SupervisorWorker(AbstractCognitiveWorker):
         unchanged byte-for-byte — this preserves exact backward
         compatibility for every existing caller and test.
         """
+        if (
+            isinstance(failed_result, WorkerResult)
+            and failed_result.execution_detail is not None
+            and failed_result.execution_detail.failure_type == FailureType.CANCELLED
+        ):
+            return WorkerResult(
+                success=False,
+                error=failed_result.error or "Cancelled worker results are not retried.",
+                output={"outcome": SupervisorOutcome.CANCELLED},
+                execution_detail=failed_result.execution_detail,
+            )
+
         attempt = int(context.parameters.get("supervisor_retry_attempt", 0))
         budget = context.parameters.get("recovery_budget")
 

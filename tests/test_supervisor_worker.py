@@ -28,6 +28,7 @@ from core.cognitive.compiler import CompilationResult, CompilationStatus
 from core.cognitive.recovery import OperationRecoveryBudget
 from core.governance.governance_kernel import GovernanceResult, GovernanceVerdict
 from core.runtime.execution_runtime import ExecutionRuntime
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 from core.workers.base import WorkerContext, WorkerResult
 from core.workers.supervisor import (
     SupervisorOutcome,
@@ -207,6 +208,41 @@ class TestSupervisorCompilationPath:
 
 
 class TestSupervisorRetryPath:
+    @pytest.mark.asyncio
+    async def test_cancelled_result_is_terminal_and_does_not_consume_retry_budget(self):
+        execution_runtime = AsyncMock(spec=ExecutionRuntime)
+
+        class _Budget:
+            remaining = 1
+
+            def consume(self):
+                raise AssertionError("cancelled result must not consume retry budget")
+
+        cancelled_detail = ExecutionOutcome.failure(FailureType.CANCELLED)
+        worker = SupervisorWorker(
+            event_stream=FakeEventStream(),
+            execution_runtime=execution_runtime,
+        )
+        context = WorkerContext(
+            query="supervise",
+            parameters={
+                "failed_worker_result": WorkerResult(
+                    success=False,
+                    error="Worker cancelled",
+                    execution_detail=cancelled_detail,
+                ),
+                "retry_worker_type": "SomeWorker",
+                "recovery_budget": _Budget(),
+            },
+        )
+
+        result = await worker._run(context)
+
+        assert result.success is False
+        assert result.output["outcome"] == SupervisorOutcome.CANCELLED
+        assert result.execution_detail is cancelled_detail
+        execution_runtime.invoke.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_missing_execution_runtime_errors(self):
         worker = SupervisorWorker(event_stream=FakeEventStream())  # no execution_runtime

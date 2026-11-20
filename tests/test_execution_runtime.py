@@ -298,6 +298,65 @@ class TestExecutionRuntime:
         assert "deliberate failure" in result.error
 
     @pytest.mark.asyncio
+    async def test_invoke_failure_emits_failed_terminal_event(self):
+        class RecordingEventStream:
+            def __init__(self):
+                self.events = []
+
+            async def append(self, **event):
+                self.events.append(event)
+
+        event_stream = RecordingEventStream()
+        registry = WorkerRegistry()
+        registry.register(FailingWorker)
+        runtime = ExecutionRuntime(
+            worker_registry=registry,
+            governance=get_governance_kernel(),
+            event_stream=event_stream,
+        )
+
+        result = await runtime.invoke("FailingWorker", query="test")
+
+        assert not result.success
+        runtime_events = [
+            event for event in event_stream.events
+            if event["source"] == "ExecutionRuntime"
+        ]
+        assert [event["event_type"] for event in runtime_events] == ["execution.failed"]
+
+    @pytest.mark.asyncio
+    async def test_pre_execution_failures_emit_failed_terminal_events(self):
+        class RecordingEventStream:
+            def __init__(self):
+                self.events = []
+
+            async def append(self, **event):
+                self.events.append(event)
+
+        event_stream = RecordingEventStream()
+        registry = WorkerRegistry()
+        registry.register(EchoWorker)
+        registry.register(BadConstructorWorker)
+        runtime = ExecutionRuntime(
+            worker_registry=registry,
+            governance=get_governance_kernel(),
+            event_stream=event_stream,
+        )
+
+        unknown = await runtime.invoke("NotRegistered", query="test")
+        constructor = await runtime.invoke("BadConstructorWorker", query="test")
+
+        assert not unknown.success and not constructor.success
+        failures = [
+            event for event in event_stream.events
+            if event["source"] == "ExecutionRuntime"
+            and event["event_type"] == "execution.failed"
+        ]
+        assert [event["payload"]["worker_type"] for event in failures] == [
+            "NotRegistered", "BadConstructorWorker",
+        ]
+
+    @pytest.mark.asyncio
     async def test_invoke_bad_constructor(self):
         """Worker construction failure is contained."""
         runtime = self._make_runtime(BadConstructorWorker)

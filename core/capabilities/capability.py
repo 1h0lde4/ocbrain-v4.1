@@ -92,6 +92,7 @@ class CapabilityRequest:
     payload: Dict[str, Any] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_id: str = ""
 
 
 @dataclass

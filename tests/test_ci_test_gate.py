@@ -134,8 +134,16 @@ def test_summary_parser_uses_last_summary_line() -> None:
 def test_allowlist_semantics_unchanged() -> None:
     text = "# comment\n\n" + KNOWN_A + "\n" + KNOWN_A + "\n  indented::never\n" + KNOWN_B + "\n"
     assert gate.parse_allowlist(text) == {KNOWN_A, KNOWN_B, "  indented::never"}
-    # "id - reason" is cut at the first " - " exactly like the previous sed.
-    assert gate.parse_failed_ids("FAILED a::b[x - y] - reason\n") == {"a::b[x"}
+    assert gate.parse_failed_ids("FAILED a::b[x - y] - reason\n") == {"a::b[x - y]"}
+
+
+def test_parametrize_id_with_reason_separator_text_matches_only_full_allowlist_entry() -> None:
+    node_id = "tests/test_known.py::test_a[left - right]"
+    output = f"FAILED {node_id} - AssertionError\n1 failed, 5 passed in 1.0s\n"
+
+    assert gate.parse_failed_ids(output) == {node_id}
+    assert gate.evaluate(output, 1, {node_id}).ok
+    assert not gate.evaluate(output, 1, {node_id.split(" - ", 1)[0]}).ok
 
 
 def test_real_allowlist_file_parses_to_node_ids() -> None:

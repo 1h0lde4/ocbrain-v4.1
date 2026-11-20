@@ -40,6 +40,7 @@ from core.runtime.worker_registry import WorkerRegistry
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
+from core.runtime.execution_outcome import FailureType
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.governance.governance_kernel import get_governance_kernel
 from core.events.event_stream import EventStream, SQLiteEventStore, get_event_stream
@@ -69,6 +70,26 @@ class RecoveryNodeWorker(AbstractCognitiveWorker):
     worker_type = "RecoveryNodeWorker"
 
     async def _run(self, context: WorkerContext) -> WorkerResult:
+        return WorkerResult(success=True, output="recovered")
+
+
+class BlockingCancellationWorker(AbstractCognitiveWorker):
+    worker_type = "BlockingCancellationWorker"
+    started: asyncio.Event
+    invocations = 0
+
+    async def _run(self, context: WorkerContext) -> WorkerResult:
+        type(self).invocations += 1
+        type(self).started.set()
+        await asyncio.Event().wait()
+
+
+class CountingRecoveryNodeWorker(AbstractCognitiveWorker):
+    worker_type = "CountingRecoveryNodeWorker"
+    invocations = 0
+
+    async def _run(self, context: WorkerContext) -> WorkerResult:
+        type(self).invocations += 1
         return WorkerResult(success=True, output="recovered")
 
 
@@ -275,13 +296,60 @@ class TestWorkflowRuntimeLinearExecution:
         assert result.output == "recovered"
 
     @pytest.mark.asyncio
-    async def test_invalid_definition_fails_fast(self):
-        runtime = _make_workflow_runtime(EchoNodeWorker)
+    async def test_invalid_definition_fails_fast_and_marks_execution_terminal(self, tmp_path):
+        stream = EventStream(SQLiteEventStore(db_path=str(tmp_path / "events.db")))
+        runtime = _make_workflow_runtime(EchoNodeWorker, event_stream=stream)
         d = WorkflowDefinition(workflow_id="w1", nodes=[], entry_node="")
         result = await runtime.execute(d, query="hi")
+
+        from core.runtime.execution_graph import ExecutionStatus, execution_registry
+
         assert result.success is False
         assert "Invalid workflow" in result.error
         assert result.node_results == {}
+        graph = execution_registry.get(result.instance_id)
+        assert graph.root.status == ExecutionStatus.FAILED
+        failures = await stream.query(
+            event_type="execution.failed", payload_workflow_id=None,
+        )
+        assert any(
+            event.payload.get("execution_id") == result.instance_id
+            for event in failures
+        )
+
+    @pytest.mark.asyncio
+    async def test_unexpected_runtime_error_marks_execution_terminal(self, tmp_path, monkeypatch):
+        stream = EventStream(SQLiteEventStore(db_path=str(tmp_path / "events.db")))
+        runtime = _make_workflow_runtime(EchoNodeWorker, event_stream=stream)
+        definition = WorkflowDefinition(
+            workflow_id="w-runtime-error",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+
+        async def explode(**kwargs):
+            raise RuntimeError("unexpected failure")
+
+        monkeypatch.setattr(runtime, "_execute_node_with_retry", explode)
+        result = await runtime.execute(definition, query="hi")
+
+        from core.runtime.execution_graph import ExecutionStatus, execution_registry
+
+        assert not result.success
+        graph = execution_registry.get(result.instance_id)
+        assert graph.root.status == ExecutionStatus.FAILED
+        assert (await graph.get("a")).status == ExecutionStatus.FAILED
+        failures = await stream.query(event_type="execution.failed")
+        completions = await stream.query(event_type="workflow.completed")
+        assert any(
+            event.payload.get("execution_id") == result.instance_id
+            for event in failures
+        )
+        assert any(
+            event.payload.get("instance_id") == result.instance_id
+            and event.payload.get("success") is False
+            for event in completions
+        )
 
     @pytest.mark.asyncio
     async def test_unknown_worker_type_contained_as_failure(self):
@@ -401,6 +469,72 @@ class TestWorkflowRuntimeCancellation:
         token.cancel("test cancellation")
         result = await runtime.execute(d, query="hi", cancellation_token=token)
         assert result.success is False
+        assert result.cancelled is True
+        assert result.error == "Workflow cancelled"
+
+    @pytest.mark.asyncio
+    async def test_task_cancellation_is_terminal_and_not_retried(self):
+        BlockingCancellationWorker.started = asyncio.Event()
+        BlockingCancellationWorker.invocations = 0
+        CountingRecoveryNodeWorker.invocations = 0
+        runtime = _make_workflow_runtime(
+            BlockingCancellationWorker, CountingRecoveryNodeWorker)
+        definition = WorkflowDefinition(
+            workflow_id="cancel-retry",
+            nodes=[
+                WorkflowNode(
+                    node_id="blocked",
+                    worker_type="BlockingCancellationWorker",
+                    retry_policy=RetryPolicy(
+                        max_retries=1, backoff_seconds=0, max_backoff_seconds=0),
+                    error_branch="recovery",
+                ),
+                WorkflowNode(
+                    node_id="recovery",
+                    worker_type="CountingRecoveryNodeWorker",
+                ),
+            ],
+            entry_node="blocked",
+        )
+
+        task = asyncio.create_task(runtime.execute(definition, query="hi"))
+        await asyncio.wait_for(BlockingCancellationWorker.started.wait(), timeout=2)
+        task.cancel()
+        result = await asyncio.wait_for(task, timeout=2)
+
+        assert not task.cancelled()
+        assert result.success is False and result.cancelled is True
+        assert result.error == "Workflow cancelled"
+        assert BlockingCancellationWorker.invocations == 1
+        assert CountingRecoveryNodeWorker.invocations == 0
+        assert result.node_results["blocked"].execution_detail.failure_type \
+            == FailureType.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_unexpected_task_cancellation_marks_running_graph_nodes_cancelled(
+        self, tmp_path, monkeypatch,
+    ):
+        stream = EventStream(SQLiteEventStore(db_path=str(tmp_path / "events.db")))
+        runtime = _make_workflow_runtime(EchoNodeWorker, event_stream=stream)
+        definition = WorkflowDefinition(
+            workflow_id="cancel-running-graph-node",
+            nodes=[WorkflowNode(node_id="a", worker_type="EchoNodeWorker")],
+            entry_node="a",
+        )
+
+        async def cancel_from_traversal(**kwargs):
+            kwargs["node_states"]["a"].status = NodeStatus.RUNNING
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr(runtime, "_execute_from", cancel_from_traversal)
+        result = await runtime.execute(definition, query="hi")
+
+        from core.runtime.execution_graph import ExecutionStatus, execution_registry
+
+        graph = execution_registry.get(result.instance_id)
+        assert result.cancelled and not result.success
+        assert (await graph.get("a")).status == ExecutionStatus.CANCELLED
+        assert graph.root.status == ExecutionStatus.CANCELLED
 
 
 class TestWorkflowRuntimeWatchdogReconciliation:

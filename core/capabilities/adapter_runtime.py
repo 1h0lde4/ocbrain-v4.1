@@ -28,11 +28,13 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from typing import List, Optional
 
 from core.capabilities.capability import Adapter, CapabilityRequest, CapabilityResult
 from core.capabilities.registry import CapabilityRegistry
 from core.capabilities.resource import ResourceManager
+from core.runtime.execution_outcome import FailureType
 
 logger = logging.getLogger("ocbrain.capabilities.adapter_runtime")
 
@@ -60,7 +62,10 @@ class AdapterRuntime:
 
         if request is None:
             request = CapabilityRequest(capability_type=capability_type,
-                                         payload=payload)
+                                         payload=payload,
+                                         execution_id=str(uuid.uuid4()))
+        elif not request.execution_id:
+            request.execution_id = str(uuid.uuid4())
 
         contract = self._registry.get_contract(capability_type)
         if contract is None:
@@ -98,10 +103,26 @@ class AdapterRuntime:
                     "adapter": adapter_name,
                     "error": last_error,
                     "trace_id": request.trace_id,
+                    "execution_id": request.execution_id,
                 })
                 continue
 
             duration_ms = (time.time() - attempt_start) * 1000
+            if (
+                not result.success
+                and (result.metadata or {}).get("failure_type")
+                == FailureType.CANCELLED.value
+            ):
+                result.adapter_used = result.adapter_used or adapter_name
+                result.duration_ms = result.duration_ms or duration_ms
+                await self._emit_event("adapter.cancelled", {
+                    "capability_type": capability_type,
+                    "adapter": adapter_name,
+                    "trace_id": request.trace_id,
+                    "execution_id": request.execution_id,
+                })
+                return result
+
             if result.success:
                 self._mark_success(adapter)
                 result.adapter_used = result.adapter_used or adapter_name
@@ -111,6 +132,7 @@ class AdapterRuntime:
                     "adapter": adapter_name,
                     "duration_ms": duration_ms,
                     "trace_id": request.trace_id,
+                    "execution_id": request.execution_id,
                 })
                 return result
 
@@ -121,6 +143,7 @@ class AdapterRuntime:
                 "adapter": adapter_name,
                 "error": last_error,
                 "trace_id": request.trace_id,
+                "execution_id": request.execution_id,
             })
 
         self._total_failures += 1

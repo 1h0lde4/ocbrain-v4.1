@@ -213,10 +213,17 @@ async def query(req: QueryRequest):
 
     try:
         if req.stream:
-            from core.runtime.execution_graph import execution_registry
+            from core.runtime.execution_graph import (
+                ExecutionRegistryFull, execution_registry,
+            )
             from core.events.event_stream import get_event_stream
             execution_id = req.execution_id or str(uuid.uuid4())
-            execution_registry.create(execution_id, title="OCBrain execution")
+            try:
+                execution_registry.create(
+                    execution_id, title="OCBrain execution"
+                )
+            except ExecutionRegistryFull as error:
+                raise HTTPException(503, str(error)) from error
             execution_registry.attach_event_stream(get_event_stream())
             return StreamingResponse(
                 _stream_response(_orchestrator, req.query, execution_id),
@@ -228,21 +235,26 @@ async def query(req: QueryRequest):
             )
 
         execution_id = req.execution_id or str(uuid.uuid4())
-        answer = await _orchestrator.handle(req.query, execution_id=execution_id)
+        result = await _orchestrator.handle_with_result(
+            req.query, execution_id=execution_id)
         
         # Standardized Response Contract
         return QueryResponse(
-            success=True,
-            answer=answer,
+            success=result.success,
+            answer=result.answer,
+            error=result.error,
             data={"query": req.query},
             meta={
                 "version": "3.01",
                 "orchestrator": "v3",
                 "phase": 4,
                 "execution_id": execution_id,
+                "outcome": "completed" if result.success else result.error,
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         error_id = _log_and_redact("POST /query", e)
         return QueryResponse(
@@ -258,12 +270,10 @@ async def get_execution(execution_id: str):
     """Return the user-safe snapshot of one live or recent execution."""
     from core.runtime.execution_graph import execution_registry
     from core.runtime.projection import project_graph
-    from core.events.event_stream import get_event_stream
 
     graph = execution_registry.get(execution_id)
     if graph is None:
-        graph = execution_registry.create(execution_id, title="OCBrain execution")
-        execution_registry.attach_event_stream(get_event_stream())
+        raise HTTPException(404, "Execution not found")
     return project_graph(await graph.snapshot())
 
 
@@ -273,9 +283,7 @@ async def execution_events(execution_id: str):
     from core.runtime.execution_graph import execution_registry
 
     if execution_registry.get(execution_id) is None:
-        execution_registry.create(execution_id, title="OCBrain execution")
-        from core.events.event_stream import get_event_stream
-        execution_registry.attach_event_stream(get_event_stream())
+        raise HTTPException(404, "Execution not found")
 
     async def stream():
         async for event in execution_registry.events(execution_id):
@@ -335,11 +343,12 @@ async def _stream_response(
     orchestrator: Orchestrator, query: str, execution_id: str = ""
 ) -> AsyncGenerator[str, None]:
     """
-    True token streaming: feeds Ollama stream tokens directly to the SSE client.
-    The orchestrator handle() still collects the full answer for context saving,
-    but the client sees tokens as they arrive from the model.
+    Stream a single module's tokens directly; multi-module requests use the
+    orchestrator's structured result and stream only successful output.
     """
-    from core.model_router import model_router
+    from core.model_router import (
+        MAX_STREAM_BUFFER_CHARS, ExecutionStreamError, model_router,
+    )
     from core import classifier, decomposer, parser
     from core.events.event_stream import get_event_stream
     from core.runtime.execution_graph import execution_registry, ExecutionStatus
@@ -348,13 +357,42 @@ async def _stream_response(
     graph = execution_registry.get(execution_id)
     monitor = None
     node_id = ""
+    root_node_id = ""
     if graph is not None:
+        root_node = getattr(graph, "root", None)
+        root_node_id = getattr(root_node, "node_id", "")
         node = await graph.add_node(title="Generate response", operation_type="capability")
         node_id = node.node_id
         monitor = ProgressMonitor(graph)
+        if root_node_id:
+            await monitor.record_status(
+                root_node_id, ExecutionStatus.RUNNING,
+                summary="Execution started",
+                current_action="Preparing response",
+            )
         await monitor.record_status(node_id, ExecutionStatus.RUNNING,
                                     summary="Generating response",
                                     current_action="Receiving model output")
+
+    async def _record_cancelled() -> None:
+        if monitor is not None:
+            await monitor.record_status(
+                node_id, ExecutionStatus.CANCELLED,
+                summary="Streaming response cancelled",
+            )
+            if root_node_id:
+                await monitor.record_status(
+                    root_node_id, ExecutionStatus.CANCELLED,
+                    summary="Execution cancelled",
+                )
+        await get_event_stream().append(
+            event_type="execution.cancelled", source="StreamingAPI",
+            payload={
+                "execution_id": execution_id,
+                "node_id": node_id,
+                "status": "cancelled",
+            },
+        )
 
     # Parse + classify (fast — typically < 10ms)
     # CTX-SCOPE-001: classifier.label() forwards scope into
@@ -363,15 +401,44 @@ async def _stream_response(
     # Audit's row 9 attributed core/classifier.py:45 to a dormant
     # Legacy-Bridge-only classify(), which is a different function in a
     # different module, core/classifier_v3.py).
-    parsed = parser.parse(query)
-    labels = await classifier.label(parsed, orchestrator.context, scope=execution_id)
-    tasks  = decomposer.build(parsed, labels)
+    try:
+        parsed = parser.parse(query)
+        labels = await classifier.label(parsed, orchestrator.context, scope=execution_id)
+        tasks  = decomposer.build(parsed, labels)
+    except asyncio.CancelledError:
+        await _record_cancelled()
+        raise
+    except Exception as error:
+        error_id = _log_and_redact("Streaming query preprocessing", error)
+        if monitor is not None:
+            await monitor.record_failure(
+                node_id, str(error), failure_type=type(error).__name__,
+            )
+            if root_node_id:
+                await monitor.record_status(
+                    root_node_id, ExecutionStatus.FAILED,
+                    summary="Execution failed",
+                )
+            await get_event_stream().append(
+                event_type="execution.failed", source="StreamingAPI",
+                payload={"execution_id": execution_id, "node_id": node_id,
+                         "status": "failed"},
+            )
+        yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
 
     # For single-module queries: stream tokens directly
     if len(tasks) == 1:
         task        = tasks[0]
         module_name = task.module
-        collected   = []
+        stream_error: Optional[ExecutionStreamError] = None
+        generated: list[str] = []
+        generated_chars = 0
+        stream_chunks = 0
+        has_generated_content = False
+        buffer_truncated = False
+        completed = False
 
         try:
             # CTX-SCOPE-001: this call bypasses PlannerWorker entirely (the
@@ -379,30 +446,95 @@ async def _stream_response(
             # wiring rather than inheriting PlannerWorker's -- found during
             # this fix's own verification, not in the original audit's list.
             async for token in model_router.stream_route(
-                module_name, task.subtask, orchestrator.context, scope=execution_id
+                module_name, task.subtask, orchestrator.context,
+                scope=execution_id, execution_id=execution_id,
             ):
-                collected.append(token)
-                if monitor is not None and len(collected) % 32 == 0:
+                stream_chunks += 1
+                if isinstance(token, ExecutionStreamError):
+                    stream_error = token
+                else:
+                    if token.strip():
+                        has_generated_content = True
+                    if not buffer_truncated:
+                        remaining = MAX_STREAM_BUFFER_CHARS - generated_chars
+                        if len(token) <= remaining:
+                            generated.append(token)
+                            generated_chars += len(token)
+                        else:
+                            generated.clear()
+                            buffer_truncated = True
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if monitor is not None and stream_chunks % 32 == 0:
                     await monitor.report_progress(
                         node_id, summary="Model output is advancing",
                         current_action="Receiving model output",
-                        progress_units={"chunks": len(collected)},
+                        progress_units={"chunks": stream_chunks},
                     )
-                yield f"data: {json.dumps({'token': token})}\n\n"
 
-            if monitor is not None:
-                await monitor.record_completion(node_id, summary="Response generated")
-                await get_event_stream().append(
-                    event_type="execution.completed", source="StreamingAPI",
-                    payload={"execution_id": execution_id, "node_id": node_id,
-                             "status": "completed"},
-                )
+            if stream_error is not None:
+                failure_type = stream_error.failure_type.value
+                failure_message = failure_type.replace("_", " ")
+            elif not has_generated_content:
+                failure_type = "empty_response"
+                failure_message = "model returned no output"
+            else:
+                failure_type = ""
+                failure_message = ""
+
+            if failure_type:
+                if monitor is not None:
+                    await monitor.record_failure(
+                        node_id, failure_message, failure_type=failure_type,
+                    )
+                    if root_node_id:
+                        await monitor.record_status(
+                            root_node_id, ExecutionStatus.FAILED,
+                            summary="Execution failed",
+                        )
+                    payload = {
+                        "execution_id": execution_id,
+                        "node_id": node_id,
+                        "status": "failed",
+                        "error_type": failure_type,
+                    }
+                    if stream_error is not None and stream_error.error_id:
+                        payload["error_id"] = stream_error.error_id
+                    await get_event_stream().append(
+                        event_type="execution.failed", source="StreamingAPI",
+                        payload=payload,
+                    )
+                failure = {"error": failure_type}
+                if stream_error is not None and stream_error.error_id:
+                    failure["error_id"] = stream_error.error_id
+                yield f"data: {json.dumps(failure)}\n\n"
+            else:
+                if monitor is not None:
+                    await monitor.record_completion(node_id, summary="Response generated")
+                    if root_node_id:
+                        await monitor.record_status(
+                            root_node_id, ExecutionStatus.COMPLETED,
+                            summary="Execution completed",
+                        )
+                    await get_event_stream().append(
+                        event_type="execution.completed", source="StreamingAPI",
+                        payload={"execution_id": execution_id, "node_id": node_id,
+                                 "status": "completed"},
+                    )
+                completed = True
             yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            await _record_cancelled()
+            raise
         except Exception as error:
             error_id = _log_and_redact("Streaming query (single-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
+                if root_node_id:
+                    await monitor.record_status(
+                        root_node_id, ExecutionStatus.FAILED,
+                        summary="Execution failed",
+                    )
                 await get_event_stream().append(
                     event_type="execution.failed", source="StreamingAPI",
                     payload={"execution_id": execution_id, "node_id": node_id,
@@ -411,25 +543,69 @@ async def _stream_response(
             yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
 
-        # Save full collected answer to context (non-blocking)
-        asyncio.create_task(
-            _save_context_background(
-                orchestrator, query, [module_name], "".join(collected), execution_id
-            )
-        )
+        if completed:
+            if buffer_truncated:
+                log.info(
+                    "Streaming context save skipped: response exceeded buffer limit"
+                )
+            else:
+                asyncio.create_task(
+                    _save_context_background(
+                        orchestrator, query, [module_name],
+                        "".join(generated), execution_id,
+                    )
+                )
 
     else:
         # Multi-module: collect all, then stream the merged result in chunks
         try:
-            answer = await orchestrator.handle(query, execution_id=execution_id)
+            result = await orchestrator.handle_with_result(
+                query, execution_id=execution_id)
         except Exception as error:
             error_id = _log_and_redact("Streaming query (multi-module)", error)
             if monitor is not None:
                 await monitor.record_failure(node_id, str(error),
                                              failure_type=type(error).__name__)
+                if root_node_id:
+                    await monitor.record_status(
+                        root_node_id, ExecutionStatus.FAILED,
+                        summary="Execution failed",
+                    )
+                await get_event_stream().append(
+                    event_type="execution.failed", source="StreamingAPI",
+                    payload={"execution_id": execution_id, "node_id": node_id,
+                             "status": "failed"},
+                )
             yield f"data: {json.dumps({'error': 'internal_error', 'error_id': error_id})}\n\n"
             yield "data: [DONE]\n\n"
             return
+        if not result.success:
+            if monitor is not None:
+                await monitor.record_failure(
+                    node_id, result.error or "execution failed",
+                    failure_type=result.error or "execution_failed",
+                )
+                if root_node_id:
+                    await monitor.record_status(
+                        root_node_id, ExecutionStatus.FAILED,
+                        summary="Execution failed",
+                    )
+                await get_event_stream().append(
+                    event_type="execution.failed", source="StreamingAPI",
+                    payload={"execution_id": execution_id, "node_id": node_id,
+                             "status": "failed"},
+                )
+            failure: dict[str, Any] = {
+                "error": result.error or "execution_failed",
+                "answer": result.answer,
+            }
+            partial_output = result.metadata.get("partial_output")
+            if partial_output is not None:
+                failure["partial_output"] = partial_output
+            yield f"data: {json.dumps(failure)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        answer = result.answer
         if monitor is not None:
             await monitor.record_completion(node_id, summary="Response generated")
             await get_event_stream().append(

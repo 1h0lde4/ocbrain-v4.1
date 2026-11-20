@@ -53,20 +53,6 @@ from core.capabilities.resource import ResourceManager
 from core.model_router import ModelRouter
 from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 
-# FZ-02 (batches B2a + B2b). Outcomes whose adapter-level result is deliberately
-# left exactly as it was (success=True, no new metadata). The adapter turns
-# provider failures (B2a) and stalled / hard-deadline generations (B2b, decision
-# D2=(i)) into failures; it establishes no other outcome contract:
-#   * COMPLETED_WITH_PARTIAL_OUTPUT: defined, but route() never produces it, and
-#     D2=(i) does not cover it;
-#   * EMPTY_RESPONSE: the stream finished without producing output. Whether that
-#     is a failure belongs to the later outcome-policy work, not to FZ-02.
-# tests/test_fz02_provider_failure.py pins both.
-_PINNED_UNCHANGED = frozenset({
-    FailureType.COMPLETED_WITH_PARTIAL_OUTPUT,
-    FailureType.EMPTY_RESPONSE,
-})
-
 # Fixed, opaque messages: this string can reach end users (the planner raises it
 # and the orchestrator renders it), so it never carries exception text, hosts or
 # URLs. The provider's own opaque error reference is appended when present.
@@ -77,6 +63,8 @@ _FAILURE_MESSAGES = {
     # window, external cancel), so this message does not claim a specific cause.
     FailureType.HARD_DEADLINE: "model generation was stopped before it completed",
     FailureType.CANCELLED: "model execution was cancelled",
+    FailureType.EMPTY_RESPONSE: "model returned no output",
+    FailureType.COMPLETED_WITH_PARTIAL_OUTPUT: "model generation completed with partial output",
     FailureType.VALIDATION_ERROR: "model request failed validation",
     FailureType.OTHER_FAILURE: "model execution failed",
 }
@@ -113,22 +101,21 @@ class ModelRouterAdapter(BaseAdapter):
             )
 
         start = time.time()
-        route_result = await self._model_router.route(module_name, subtask, context, scope=scope)
+        route_result = await self._model_router.route(
+            module_name, subtask, context, scope=scope,
+            execution_id=request.execution_id,
+        )
         duration_ms = (time.time() - start) * 1000
 
         # FZ-02 / B2a: this used to return success=True unconditionally and never
         # read execution_detail, so a failed generation completed as a success.
         # Only a real ExecutionOutcome is classified; a RouteResult without one
         # (every route() branch except the monitored long-form stream) is
-        # unchanged. Fail closed: anything that is not SUCCESS and not in the
-        # pinned set is a failure, including types route() cannot emit today.
-        # (The pinned set -- EMPTY_RESPONSE, COMPLETED_WITH_PARTIAL_OUTPUT -- keeps
-        # success=True here. STALLED / HARD_DEADLINE fail and carry their partial
-        # text in metadata["partial_output"], never in `output`.)
+        # unchanged. Any non-success outcome fails closed. Incomplete text, when
+        # present, is kept in metadata["partial_output"], never in `output`.
         detail = route_result.execution_detail
         if (isinstance(detail, ExecutionOutcome)
-                and detail.failure_type != FailureType.SUCCESS
-                and detail.failure_type not in _PINNED_UNCHANGED):
+                and detail.failure_type != FailureType.SUCCESS):
             return self._failure_result(route_result, detail, duration_ms)
 
         return CapabilityResult(

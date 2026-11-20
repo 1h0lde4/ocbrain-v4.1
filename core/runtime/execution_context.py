@@ -79,6 +79,11 @@ class ExecutionContext:
         return self.request_id
 
     @property
+    def execution_id(self) -> str:
+        """Canonical ID shared by the workflow, worker, and capability call."""
+        return str(self.metadata.get("execution_id", ""))
+
+    @property
     def query(self) -> str:
         """Backward-compatible alias reading query from metadata.
 

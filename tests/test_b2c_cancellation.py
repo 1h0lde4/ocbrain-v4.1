@@ -32,10 +32,14 @@ from core.capabilities import (
     AdapterRuntime, CapabilityContract, CapabilityRegistry, CapabilityType,
     ResourceManager,
 )
+from core.capabilities.capability import CapabilityResult
 from core.capabilities.adapters.model_router_adapter import ModelRouterAdapter
 from core.capabilities.adapters.ollama_adapter import OllamaAdapter
-from core.model_router import ModelRouter
+from core.model_router import ModelRouter, RouteResult
 from core.runtime.execution_budget import ExecutionBudget
+from core.runtime.execution_context import ExecutionContext
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
+from core.workers.capability_executor import CapabilityExecutorWorker
 
 # An explicit word count sends route() down the monitored-streaming branch.
 LONG = "write a short story of 1000 words, fantasy type"
@@ -124,6 +128,11 @@ async def _hangs_after_one_token(module_name, subtask, context, scope=""):
 
 async def _complete(module_name, subtask, context, scope=""):
     yield "A complete story."
+
+
+async def _empty(module_name, subtask, context, scope=""):
+    for token in ():
+        yield token
 
 
 # --- helpers ---------------------------------------------------------------
@@ -298,6 +307,159 @@ async def test_cancelling_one_request_does_not_affect_a_concurrent_request(route
     assert mra.consecutive_failures == 0 and mra.health_score == 100
     assert calls == []
     await _wait_for(ev, "a_closed", timeout=2)            # the cancelled request's stream was stopped
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [_provider_error, _empty, _hangs_after_one_token])
+async def test_failed_monitored_generation_is_not_learned(router, stream):
+    r, spies = router
+    r._stream_external = stream
+
+    result = await r.route("coding", LONG, _Ctx())
+
+    assert result.execution_detail.failure_type != FailureType.SUCCESS
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_stream_route_provider_failure_is_not_learned(router):
+    r, spies = router
+    r._stream_external = _provider_error()
+
+    tokens = [token async for token in r.stream_route("coding", LONG, _Ctx())]
+
+    assert len(tokens) == 1
+    assert isinstance(tokens[0], mr.ProviderStreamError)
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_stream_route_empty_response_is_not_learned(router):
+    r, spies = router
+    r._stream_external = _empty
+
+    tokens = [token async for token in r.stream_route("coding", LONG, _Ctx())]
+
+    assert len(tokens) == 1
+    assert isinstance(tokens[0], mr.ExecutionStreamError)
+    assert tokens[0].failure_type == FailureType.EMPTY_RESPONSE
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_stream_route_stall_is_supervised_and_not_learned(router):
+    r, spies = router
+    r._stream_external = _hangs_after_one_token
+
+    tokens = [token async for token in r.stream_route("coding", LONG, _Ctx())]
+
+    assert tokens[0] == "Beginning the tale"
+    assert isinstance(tokens[-1], mr.ExecutionStreamError)
+    assert tokens[-1].failure_type == FailureType.STALLED
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_stream_route_honors_hard_deadline_while_tokens_keep_arriving(
+    router, monkeypatch,
+):
+    r, spies = router
+    ev = {}
+    r._stream_external = _endless(ev)
+    budget = ExecutionBudget(
+        startup_deadline_s=1.0,
+        progress_deadline_s=1.0,
+        hard_ceiling_s=0.12,
+        absolute_ceiling_s=0.12,
+        max_extension_s=0.0,
+    )
+    monkeypatch.setattr(
+        mr.ExecutionPolicy, "for_generation",
+        classmethod(lambda cls, **kwargs: budget),
+    )
+
+    tokens = await asyncio.wait_for(
+        _collect_stream(r.stream_route("coding", LONG, _Ctx())),
+        timeout=2.0,
+    )
+
+    assert tokens[-1].failure_type == FailureType.HARD_DEADLINE
+    assert ev["closed"] is True
+    assert spies == {"pairs": [], "counts": [], "promoted": []}
+
+
+@pytest.mark.asyncio
+async def test_stream_route_bounds_retained_training_text(router, monkeypatch):
+    r, spies = router
+    monkeypatch.setattr(mr, "MAX_STREAM_BUFFER_CHARS", 4)
+
+    async def _large_stream(module_name, subtask, context, scope=""):
+        yield "1234"
+        yield "5678"
+
+    r._stream_external = _large_stream
+    tokens = [token async for token in r.stream_route("coding", "short", _Ctx())]
+
+    assert tokens == ["1234", "5678"]
+    assert spies["pairs"] == []
+    assert spies["counts"] == ["coding"]
+    assert spies["promoted"] == [1]
+
+
+async def _collect_stream(stream):
+    return [token async for token in stream]
+
+
+@pytest.mark.asyncio
+async def test_typed_router_cancellation_is_terminal_across_adapter_runtime():
+    class _CancelledRouter:
+        async def route(self, *args, **kwargs):
+            return RouteResult(
+                answer="",
+                source="external",
+                execution_detail=ExecutionOutcome.failure(FailureType.CANCELLED),
+            )
+
+    fallback_calls = []
+    runtime, model_adapter, ollama_adapter, second_adapter = _runtime(
+        _CancelledRouter(),
+        _ok("OLLAMA", fallback_calls),
+        _ok("SECOND", fallback_calls),
+    )
+
+    result = await _invoke(runtime, _Ctx())
+
+    assert result.success is False
+    assert result.metadata["failure_type"] == FailureType.CANCELLED.value
+    assert result.adapter_used == model_adapter.adapter_name
+    assert fallback_calls == []
+    assert model_adapter.consecutive_failures == 0
+    assert ollama_adapter.consecutive_failures == 0
+    assert second_adapter.consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+async def test_capability_executor_preserves_typed_cancellation():
+    class _CancelledRuntime:
+        async def invoke(self, capability_type, request=None, **payload):
+            return CapabilityResult(
+                success=False,
+                error="model execution was cancelled",
+                metadata={
+                    "failure_type": FailureType.CANCELLED.value,
+                    "partial_output": "partial",
+                },
+            )
+
+    worker = CapabilityExecutorWorker(adapter_runtime=_CancelledRuntime())
+    result = await worker._run(ExecutionContext(
+        metadata={"query": LONG, "node_config": {"description": LONG}},
+    ))
+
+    assert result.success is False
+    assert result.execution_detail.failure_type == FailureType.CANCELLED
+    assert result.execution_detail.retryable is False
+    assert result.execution_detail.partial_output == "partial"
 
 
 @pytest.mark.asyncio

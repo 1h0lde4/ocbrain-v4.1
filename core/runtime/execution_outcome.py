@@ -95,29 +95,23 @@ class ExecutionOutcome:
 
         Traced (not assumed) while fixing this: is_success has zero
         callers anywhere in production code, and COMPLETED_WITH_PARTIAL_
-        OUTPUT is never actually constructed by the one real call site
-        that builds an ExecutionOutcome (core/model_router.py's
-        _call_monitored_streaming -- its failure_type branches produce
-        SUCCESS, PROVIDER_FAILURE, STALLED, HARD_DEADLINE, or
-        EMPTY_RESPONSE, never COMPLETED_WITH_PARTIAL_OUTPUT). That
-        ExecutionOutcome only reaches production code via RouteResult.
-        execution_detail, which nothing in the live worker path
-        (core/workers/capability_executor.py -> core/capabilities/
-        adapter_runtime.py) reads -- CapabilityExecutorWorker determines
-        WorkerResult.success from AdapterRuntime.invoke()'s own result
-        independently, never touching execution_detail. So this specific
-        conflation is real, but currently isolated to model_router.py's
-        stream_route() (the interface/api.py streaming-endpoint bypass,
-        KNOWN_ISSUES.md DEBT-017) and manual diagnostics (validate_live.py)
-        -- not, as the originating false-completion report's phrasing
-        could be read to imply, a mechanism actively feeding the
-        WorkflowRuntime/Orchestrator false-success path the rest of this
-        fix targets (core/workflow/runtime.py's _check_constraints,
-        core/orchestrator.py's response-acceptance check). Fixed anyway,
-        both because it's explicitly named in this fix's approved scope
-        and because leaving is_success conflated is a live hazard for
-        whichever future caller eventually does wire execution_detail into
-        a success decision -- expecting it to mean "fully succeeded" would
-        silently inherit this exact bug.
+        OUTPUT is never constructed by ModelRouter's
+        _call_monitored_streaming() path. That path produces SUCCESS,
+        PROVIDER_FAILURE, STALLED, HARD_DEADLINE, or EMPTY_RESPONSE.
+        ModelRouterAdapter.execute() reads RouteResult.execution_detail
+        and converts non-success outcomes to CapabilityResult(success=False),
+        so monitored long-form failures do reach the live workflow path.
+        However, AdapterRuntime may try fallback adapters and its final
+        all-failed result currently retains only adapters_tried metadata;
+        CapabilityExecutorWorker preserves the typed CANCELLED outcome
+        but not other failure subtypes or partial output. The separate
+        The direct stream_route() endpoint now uses the same monitored
+        outcome internally, forwards tokens through a bounded queue, and
+        emits a typed terminal error marker on failure; its public contract
+        remains a token stream rather than an ExecutionOutcome. Typed-outcome
+        propagation is still incomplete across adapter fallback and
+        CapabilityExecutorWorker for non-cancellation failure subtypes.
+        Keeping is_success distinct from is_fully_satisfied prevents future
+        callers from silently treating incomplete work as fully complete.
         """
         return self.failure_type == FailureType.SUCCESS

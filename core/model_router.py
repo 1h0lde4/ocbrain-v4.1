@@ -15,7 +15,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import AsyncGenerator, Optional, Tuple
+from typing import AsyncGenerator, Awaitable, Callable, Optional, Tuple
 
 import httpx
 
@@ -43,6 +43,7 @@ REGRESSION_WINDOW = 100
 # this is disclosed as a v1 placeholder, not a complexity estimator.
 _WORD_COUNT_PATTERN = re.compile(r"(\d{2,5})\s*[-]?\s*words?\b", re.IGNORECASE)
 _LONG_FORM_TOKEN_THRESHOLD = 400
+MAX_STREAM_BUFFER_CHARS = 262_144
 
 
 @dataclass
@@ -53,26 +54,43 @@ class RouteResult:
     similarity: Optional[float] = None
     latency_ms: int = 0
     execution_detail: Optional[ExecutionOutcome] = None
+    execution_id: str = ""
 
 
-class ProviderStreamError(str):
-    """FZ-02 (B2a): the in-band error token yielded by _ollama_stream().
+@dataclass
+class _MonitoredStreamResult:
+    answer: str
+    outcome: ExecutionOutcome
 
-    It is a plain str to every consumer -- identical "[Error: ...]" text, so the
-    SSE endpoint, stream_route() and anything joining tokens see exactly what
-    they saw before -- but it carries its type, so _call_monitored_streaming()
-    can tell "the provider failed" from "the model happened to emit text that
-    looks like an error". The signal travels with the token itself: no shared
-    mutable state, safe under concurrent streams. error_id is the same opaque
-    reference that is already in the token text and in the server log.
-    """
+
+@dataclass
+class _MonitoredStreamError:
+    error: Exception
+
+
+class ExecutionStreamError(str):
+    """Typed terminal marker for a failed direct streaming attempt."""
 
     error_id: str
+    failure_type: FailureType
 
-    def __new__(cls, text: str, error_id: str = "") -> "ProviderStreamError":
+    def __new__(
+        cls, text: str, error_id: str = "",
+        failure_type: FailureType = FailureType.OTHER_FAILURE,
+    ) -> "ExecutionStreamError":
         obj = super().__new__(cls, text)
         obj.error_id = error_id
+        obj.failure_type = failure_type
         return obj
+
+
+class ProviderStreamError(ExecutionStreamError):
+    """Provider-error marker retaining the legacy string-compatible shape."""
+
+    def __new__(cls, text: str, error_id: str = "") -> "ProviderStreamError":
+        return super().__new__(
+            cls, text, error_id, FailureType.PROVIDER_FAILURE,
+        )
 
 
 async def _stop_generation(watchdog, watchdog_task, consumer_task) -> None:
@@ -158,7 +176,11 @@ class ModelRouter:
     def __init__(self):
         self._recent_scores: dict[str, list[float]] = {}
 
-    async def route(self, module_name: str, subtask: str, context, scope: str = "") -> RouteResult:
+    async def route(
+        self, module_name: str, subtask: str, context, scope: str = "",
+        execution_id: str = "",
+    ) -> RouteResult:
+        execution_id = execution_id or str(uuid.uuid4())
         state = config.get_module_state(module_name)
         stage = state.get("stage", "bootstrap")
         t0 = time.monotonic()
@@ -191,15 +213,19 @@ class ModelRouter:
                 stream_fn, module_name, subtask, context,
                 model_label=model_label, estimated_output_tokens=estimated_tokens,
                 scope=scope,
+                execution_id=execution_id,
             )
-            await _maybe_await(self._record_training_pair(module_name, subtask, answer))
-            count = self._increment_query_count(module_name)
-            self._maybe_promote(module_name, count=count)
+            if outcome.failure_type == FailureType.SUCCESS:
+                await _maybe_await(
+                    self._record_training_pair(module_name, subtask, answer))
+                count = self._increment_query_count(module_name)
+                self._maybe_promote(module_name, count=count)
             return RouteResult(
                 answer=answer,
                 source=source,
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 execution_detail=outcome,
+                execution_id=execution_id,
             )
 
         if stage == "bootstrap":
@@ -211,6 +237,7 @@ class ModelRouter:
                 answer=answer,
                 source="external",
                 latency_ms=int((time.monotonic() - t0) * 1000),
+                execution_id=execution_id,
             )
 
         if stage == "shadow":
@@ -243,6 +270,7 @@ class ModelRouter:
                 shadow_answer=own_answer,
                 similarity=round(similarity, 4),
                 latency_ms=int((time.monotonic() - t0) * 1000),
+                execution_id=execution_id,
             )
 
         answer = await self._call_own_model(module_name, subtask, context, scope)
@@ -256,34 +284,107 @@ class ModelRouter:
             answer=answer,
             source="native",
             latency_ms=int((time.monotonic() - t0) * 1000),
+            execution_id=execution_id,
         )
 
     async def stream_route(
-        self, module_name: str, subtask: str, context, scope: str = ""
+        self, module_name: str, subtask: str, context, scope: str = "",
+        execution_id: str = "",
     ) -> AsyncGenerator[str, None]:
         """
         Streaming entry point used by the SSE endpoint and voice output.
         """
+        execution_id = execution_id or str(uuid.uuid4())
         state = config.get_module_state(module_name)
         stage = state.get("stage", "bootstrap")
-
         if stage == "native":
-            gen = self._stream_own(module_name, subtask, context, scope)
+            stream_fn = self._stream_own
+            model_label = state.get("own_model_tag") or state.get("bootstrap_model", "mistral")
         else:
-            gen = self._stream_external(module_name, subtask, context, scope)
+            stream_fn = self._stream_external
+            model_label = state.get("bootstrap_model", "mistral")
 
-        full: list[str] = []
-        async for token in gen:
-            full.append(token)
-            yield token
+        long_form, estimated_tokens = _estimate_long_form(subtask)
+        queue: asyncio.Queue[object] = asyncio.Queue(maxsize=64)
 
-        full_answer = "".join(full)
-        if stage in ("bootstrap", "shadow"):
-            await _maybe_await(
-                self._record_training_pair(module_name, subtask, full_answer)
-            )
-        count = self._increment_query_count(module_name)
-        self._maybe_promote(module_name, count=count)
+        async def _publish(piece: str) -> None:
+            await queue.put(piece)
+
+        async def _run_monitored() -> None:
+            try:
+                answer, outcome = await self._call_monitored_streaming(
+                    stream_fn,
+                    module_name,
+                    subtask,
+                    context,
+                    model_label=model_label,
+                    estimated_output_tokens=estimated_tokens,
+                    scope=scope,
+                    execution_id=execution_id,
+                    long_form=long_form,
+                    on_token=_publish,
+                    max_buffer_chars=MAX_STREAM_BUFFER_CHARS,
+                )
+            except Exception as exc:
+                await queue.put(_MonitoredStreamError(exc))
+            else:
+                await queue.put(_MonitoredStreamResult(answer, outcome))
+
+        producer = asyncio.create_task(_run_monitored())
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, str):
+                    yield item
+                elif isinstance(item, _MonitoredStreamError):
+                    await producer
+                    raise item.error
+                elif isinstance(item, _MonitoredStreamResult):
+                    await producer
+                    result = item
+                    break
+                else:
+                    raise RuntimeError("unexpected monitored stream item")
+
+            outcome = result.outcome
+            if outcome.failure_type != FailureType.SUCCESS:
+                if outcome.failure_type == FailureType.PROVIDER_FAILURE:
+                    error_id = str(outcome.detail.get("error_id", ""))
+                    yield ProviderStreamError(
+                        f"[Error: model request failed"
+                        f"{f' (ref {error_id})' if error_id else ''}]",
+                        error_id,
+                    )
+                else:
+                    failure_messages = {
+                        FailureType.STALLED: "model generation stalled",
+                        FailureType.HARD_DEADLINE: "model generation deadline exceeded",
+                        FailureType.EMPTY_RESPONSE: "model returned an empty response",
+                    }
+                    message = failure_messages.get(
+                        outcome.failure_type, "model generation failed"
+                    )
+                    yield ExecutionStreamError(
+                        f"[Error: {message}]", failure_type=outcome.failure_type
+                    )
+                return
+
+            if result.answer.strip():
+                if (
+                    stage in ("bootstrap", "shadow")
+                    and not outcome.detail.get("buffer_truncated", False)
+                ):
+                    await _maybe_await(
+                        self._record_training_pair(
+                            module_name, subtask, result.answer
+                        )
+                    )
+                count = self._increment_query_count(module_name)
+                self._maybe_promote(module_name, count=count)
+        finally:
+            if not producer.done():
+                producer.cancel()
+                await asyncio.gather(producer, return_exceptions=True)
 
     async def _stream_external(
         self, module_name: str, subtask: str, context, scope: str = ""
@@ -338,17 +439,9 @@ class ModelRouter:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            # SECURITY (CodeQL py/stack-trace-exposure, CWE-209/497): this
-            # token is forwarded verbatim to the SSE client by
-            # interface/api.py's _stream_response, so exception text here
-            # (transport errors carry host/URL detail) reached the caller
-            # in-band. Full detail stays in the server log, tagged with an
-            # opaque id the caller can quote. Keeps the "[Error: ...]"
-            # shape so anything reading the stream still sees an error token.
-            #
-            # FZ-02 (B2a): the token is a ProviderStreamError -- same text, but
-            # typed, so the monitored-streaming consumer can classify the
-            # failure as PROVIDER_FAILURE instead of reading it as model output.
+            # Keep transport details in the server log; the stream carries
+            # only an opaque reference. The SSE handler recognizes this typed
+            # marker and reports a terminal provider failure, not model text.
             error_id = str(uuid.uuid4())
             log.error(
                 "[model_router] stream error (%s); error_id=%s",
@@ -395,25 +488,27 @@ class ModelRouter:
         model_label: str,
         estimated_output_tokens: Optional[int],
         scope: str = "",
+        execution_id: str = "",
+        long_form: bool = True,
+        on_token: Optional[Callable[[str], Awaitable[None]]] = None,
+        max_buffer_chars: Optional[int] = None,
     ) -> Tuple[str, ExecutionOutcome]:
         """Drains an existing streaming generator (_stream_external /
         _stream_own, themselves unmodified) under ExecutionBudget +
         ProgressMonitor + ExecutionWatchdog supervision.
 
-        On healthy completion, returns the full generated text -- same
-        shape as generate_with_fallback's return, from the caller's point
-        of view. On a watchdog-triggered cancellation (stall or hard
-        deadline), returns whatever partial output had been generated
-        rather than discarding it, paired with a structured
-        ExecutionOutcome the caller (route()) attaches to RouteResult, so a
-        partial answer is always distinguishable from a complete one --
-        never silently passed off as a full response.
+        On healthy completion, returns the generated text, paired with a
+        structured ExecutionOutcome. Direct streaming callers can provide
+        an on_token callback and a max_buffer_chars limit to deliver tokens
+        with bounded backpressure and avoid retaining the complete response.
+        On watchdog cancellation, the bounded partial output and outcome
+        remain distinguishable from a complete response.
         """
         budget = ExecutionPolicy.for_generation(
             provider=module_name,
             model=model_label,
             estimated_output_tokens=estimated_output_tokens,
-            long_form=True,
+            long_form=long_form,
         )
         monitor = ProgressMonitor()
         monitor.start()
@@ -423,12 +518,31 @@ class ModelRouter:
         chunks: list[str] = []
         provider_failure = False
         provider_error_id = ""
+        retained_chars = 0
+        buffer_truncated = False
+        has_output = False
 
         async def _consume() -> None:
             nonlocal provider_failure, provider_error_id
+            nonlocal retained_chars, buffer_truncated, has_output
+
+            def _retain(piece: str, *, is_provider_error: bool = False) -> None:
+                nonlocal retained_chars, buffer_truncated
+                if max_buffer_chars is None:
+                    chunks.append(piece)
+                elif is_provider_error:
+                    return
+                else:
+                    remaining = max_buffer_chars - retained_chars
+                    if remaining > 0:
+                        retained = piece[:remaining]
+                        chunks.append(retained)
+                        retained_chars += len(retained)
+                    if len(piece) > max(remaining, 0):
+                        buffer_truncated = True
+
             try:
                 async for piece in stream_fn(module_name, subtask, context, scope=scope):
-                    chunks.append(piece)
                     if isinstance(piece, ProviderStreamError):
                         # FZ-02 (B2a): _ollama_stream swallowed a transport/HTTP
                         # error into this token and returned normally, so the
@@ -437,11 +551,16 @@ class ModelRouter:
                         # (consumers are unchanged) but is not progress.
                         provider_failure = True
                         provider_error_id = piece.error_id
+                        _retain(piece, is_provider_error=True)
                         continue
+                    _retain(piece)
                     if piece.strip():
+                        has_output = True
                         monitor.report_progress(units=len(piece))
                     else:
                         monitor.report_activity()
+                    if on_token is not None:
+                        await on_token(piece)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -492,7 +611,6 @@ class ModelRouter:
         # it counts neither as output nor as partial output. With no marker,
         # `generated == full_answer` and behaviour is exactly as before.
         generated = "".join(p for p in chunks if not isinstance(p, ProviderStreamError))
-        has_output = bool(generated.strip())
 
         if provider_failure:
             failure_type = FailureType.PROVIDER_FAILURE
@@ -518,6 +636,7 @@ class ModelRouter:
 
         outcome = ExecutionOutcome(
             failure_type=failure_type,
+            execution_id=execution_id,
             provider=module_name,
             model=model_label,
             last_progress_at=snap.last_progress_at,
@@ -525,7 +644,10 @@ class ModelRouter:
             watchdog_verdict=watchdog.last_verdict.value,
             recovery_action="bounded_extension" if watchdog.last_verdict.value == "extended" else "",
             retryable=failure_type in (FailureType.STALLED, FailureType.PROVIDER_FAILURE, FailureType.EMPTY_RESPONSE),
-            detail={"error_id": provider_error_id} if provider_error_id else {},
+            detail={
+                **({"error_id": provider_error_id} if provider_error_id else {}),
+                **({"buffer_truncated": True} if buffer_truncated else {}),
+            },
         )
         return full_answer, outcome
 

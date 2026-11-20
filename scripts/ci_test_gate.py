@@ -30,10 +30,11 @@ PASS only if ALL of the following hold:
 
 What this deliberately does NOT do
 ----------------------------------
-* It does not change the known-failure list or how it is matched: one node ID
-  per line, ``#`` comment lines and blank lines ignored, exact match, an entry
-  that no longer fails is fine.  The list is neither widened nor re-validated
-  here.
+* It does not change the known-failure list or broaden its contents: one node ID
+  per line, ``#`` comment lines and blank lines ignored, exact match after
+  removing pytest's reason suffix, and an entry that no longer fails is fine.
+  The reason separator is recognized only outside parametrized-ID brackets.
+  The list is neither widened nor re-validated here.
 * It does not re-label a failure as environmental.  A failure is tolerated only
   if its exact node ID is already listed.
 
@@ -103,11 +104,26 @@ def parse_allowlist(text: str) -> set[str]:
 
 
 def parse_failed_ids(output: str) -> set[str]:
-    """Node IDs of ``FAILED`` short-summary lines (text after '- ' reason stripped)."""
+    """Node IDs of ``FAILED`` short-summary lines, excluding the reason suffix.
+
+    Pytest separates a node ID from its reason with `` - ``. Parametrize IDs
+    are bracketed and may themselves contain that text, so only split outside
+    brackets.
+    """
     ids: set[str] = set()
     for ln in output.split("\n"):
         if ln.startswith("FAILED "):
-            ids.add(ln[len("FAILED "):].split(" - ", 1)[0])
+            failed_id = ln[len("FAILED "):]
+            bracket_depth = 0
+            for index in range(len(failed_id) - 2):
+                if failed_id[index] == "[":
+                    bracket_depth += 1
+                elif failed_id[index] == "]" and bracket_depth:
+                    bracket_depth -= 1
+                elif bracket_depth == 0 and failed_id.startswith(" - ", index):
+                    failed_id = failed_id[:index]
+                    break
+            ids.add(failed_id)
     return ids
 
 

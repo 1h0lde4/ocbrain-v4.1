@@ -28,7 +28,8 @@ from core.runtime.execution_context import ExecutionContext
 from core.runtime.execution_runtime import ExecutionRuntime
 from core.runtime.cancellation import CancellationToken
 from core.runtime.execution_budget import ExecutionBudget
-from core.runtime.execution_graph import ExecutionStatus
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
+from core.runtime.execution_graph import ExecutionRegistryFull, ExecutionStatus
 from core.runtime.execution_graph import execution_registry
 from core.runtime.progress import ProgressMonitor
 from core.runtime.watchdog import GraphExecutionWatchdog
@@ -43,6 +44,14 @@ from core.workflow.definition import (
 )
 
 logger = logging.getLogger("ocbrain.workflow.runtime")
+
+
+def _cancelled_result() -> WorkerResult:
+    return WorkerResult(
+        success=False,
+        error="Workflow cancelled",
+        execution_detail=ExecutionOutcome.failure(FailureType.CANCELLED),
+    )
 
 
 # ── Workflow Instance ─────────────────────────────────────────────────────────
@@ -227,6 +236,7 @@ class WorkflowResult:
     constraint_violations: List[str] = field(default_factory=list)
     duration_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    cancelled: bool = False
 
 
 # ── Workflow Runtime ──────────────────────────────────────────────────────────
@@ -482,9 +492,26 @@ class WorkflowRuntime:
         self._total_executions += 1
         cancel_token = cancellation_token or CancellationToken()
         execution_id = (metadata or {}).get("execution_id") or instance_id
-        graph = execution_registry.create(
-            execution_id, title=(metadata or {}).get("execution_title") or definition.name
-        )
+        try:
+            graph = execution_registry.create(
+                execution_id,
+                title=(metadata or {}).get("execution_title") or definition.name,
+            )
+        except ExecutionRegistryFull as error:
+            self._total_failures += 1
+            await self._emit_event("execution.failed", {
+                "execution_id": execution_id,
+                "status": ExecutionStatus.FAILED.value,
+                "error_type": type(error).__name__,
+            })
+            return WorkflowResult(
+                success=False,
+                workflow_id=definition.workflow_id,
+                instance_id=instance_id,
+                error=str(error),
+                duration_ms=(time.time() - start_time) * 1000,
+                metadata={"execution_id": execution_id},
+            )
         execution_registry.attach_event_stream(self._event_stream)
         monitor = ProgressMonitor(graph, self._event_stream)
         budget = (metadata or {}).get("execution_budget")
@@ -514,6 +541,11 @@ class WorkflowRuntime:
                     await monitor.record_completion(node_id, summary="Restored from checkpoint")
                 elif state.status == NodeStatus.FAILED:
                     await monitor.record_failure(node_id, (state.result.error if state.result else "") or "Restored from checkpoint (failed)")
+                elif state.status == NodeStatus.CANCELLED:
+                    await monitor.record_status(
+                        node_id, ExecutionStatus.CANCELLED,
+                        summary="Restored from cancelled execution",
+                    )
         watchdog.start()
 
         # ── Step 1: Validate ─────────────────────────────────────────────
@@ -521,11 +553,21 @@ class WorkflowRuntime:
         if errors:
             self._total_failures += 1
             await watchdog.stop()
+            error = f"Invalid workflow: {'; '.join(errors)}"
+            await monitor.record_failure(
+                graph.root.node_id, error, failure_type="WorkflowValidationError",
+            )
+            await self._emit_event("execution.failed", {
+                "execution_id": execution_id,
+                "node_id": graph.root.node_id,
+                "status": ExecutionStatus.FAILED.value,
+                "error_type": "WorkflowValidationError",
+            })
             return WorkflowResult(
                 success=False,
                 workflow_id=definition.workflow_id,
                 instance_id=instance_id,
-                error=f"Invalid workflow: {'; '.join(errors)}",
+                error=error,
                 duration_ms=(time.time() - start_time) * 1000,
             )
 
@@ -533,6 +575,7 @@ class WorkflowRuntime:
         await self._emit_event("workflow.resumed" if resumed_from else "workflow.started", {
             "workflow_id": definition.workflow_id,
             "instance_id": instance_id,
+            "execution_id": execution_id,
             "name": definition.name,
             "entry_node": definition.entry_node,
             "node_count": len(definition.nodes),
@@ -560,12 +603,52 @@ class WorkflowRuntime:
                 metadata=run_metadata,
                 cancel_token=cancel_token,
             )
+        except asyncio.CancelledError:
+            cancel_token.cancel("Workflow task cancelled")
+            last_result = _cancelled_result()
+            for state in node_states.values():
+                if state.status == NodeStatus.RUNNING:
+                    state.status = NodeStatus.CANCELLED
+                    state.result = last_result
+                    state.completed_at = time.time()
+                    node_results[state.node_id] = last_result
+                    await monitor.record_status(
+                        state.node_id, ExecutionStatus.CANCELLED,
+                        summary="Execution cancelled",
+                    )
         except Exception as e:
             # Should never happen — _execute_from contains failures.
             # But if it does, we contain it here.
             logger.error("WorkflowRuntime: unexpected error: %s", e, exc_info=True)
             self._total_failures += 1
             await watchdog.stop()
+            for node_id, state in node_states.items():
+                if state.status == NodeStatus.RUNNING:
+                    state.status = NodeStatus.FAILED
+                    state.completed_at = time.time()
+                    await monitor.record_failure(
+                        node_id, "Unexpected workflow runtime error",
+                        failure_type="WorkflowRuntimeError",
+                    )
+            await monitor.record_failure(
+                graph.root.node_id, "Unexpected workflow runtime error",
+                failure_type="WorkflowRuntimeError",
+            )
+            await self._emit_event("execution.failed", {
+                "execution_id": execution_id,
+                "node_id": graph.root.node_id,
+                "status": ExecutionStatus.FAILED.value,
+                "error_type": "WorkflowRuntimeError",
+            })
+            await self._emit_event("workflow.completed", {
+                "workflow_id": definition.workflow_id,
+                "instance_id": instance_id,
+                "execution_id": execution_id,
+                "success": False,
+                "cancelled": False,
+                "duration_ms": (time.time() - start_time) * 1000,
+                "nodes_executed": len(node_results),
+            })
             return WorkflowResult(
                 success=False,
                 workflow_id=definition.workflow_id,
@@ -584,10 +667,9 @@ class WorkflowRuntime:
         # that redirection is the entire point of error_branch, and a
         # workflow that recovered must not be reported as failed).
         #
-        # This also correctly handles the cancellation case: a pre-
-        # cancelled token makes _execute_from return
-        # WorkerResult(success=False, error="Workflow cancelled") before
-        # touching node_states/node_results at all, so those two
+        # This also correctly handles cancellation: a pre-cancelled token
+        # makes _execute_from return a typed CANCELLED result before
+        # touching node_states/node_results, so those two
         # collections stay empty/PENDING -- checking them (as an earlier
         # version of this method did) reports success=True for a workflow
         # that never ran. Checking last_result.success avoids that: an
@@ -607,7 +689,14 @@ class WorkflowRuntime:
         # evidence of success -- assume systems fail under scale, per this
         # project's own engineering standards, and fail closed instead of
         # open on a case that was never meant to be reachable.
-        success = last_result.success if last_result is not None else False
+        cancelled = bool(
+            last_result is not None
+            and last_result.execution_detail is not None
+            and last_result.execution_detail.failure_type == FailureType.CANCELLED
+        )
+        success = (
+            last_result.success if last_result is not None else False
+        ) and not cancelled
         duration_ms = (time.time() - start_time) * 1000
 
         # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06): a node
@@ -630,25 +719,34 @@ class WorkflowRuntime:
         if not success:
             self._total_failures += 1
 
+        root_status = (
+            ExecutionStatus.CANCELLED if cancelled else
+            ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED
+        )
+        root_summary = (
+            "Execution cancelled" if cancelled else
+            "Execution completed" if success else "Execution failed"
+        )
         await monitor.record_status(
-            graph.root.node_id,
-            ExecutionStatus.COMPLETED if success else ExecutionStatus.FAILED,
-            summary="Execution completed" if success else "Execution failed",
-            current_action="",
+            graph.root.node_id, root_status,
+            summary=root_summary, current_action="",
         )
         await self._emit_event(
+            "execution.cancelled" if cancelled else
             "execution.completed" if success else "execution.failed",
             {
                 "execution_id": execution_id,
                 "node_id": graph.root.node_id,
-                "status": "completed" if success else "failed",
-                "summary": "Execution completed" if success else "Execution failed",
+                "status": root_status.value,
+                "summary": root_summary,
                 **({"constraint_violations": constraint_violations} if constraint_violations else {}),
             },
         )
         await watchdog.stop()
 
-        if constraint_violations:
+        if cancelled:
+            error_text = "Workflow cancelled"
+        elif constraint_violations:
             error_text = "Output did not satisfy constraints: " + "; ".join(constraint_violations)
         elif last_result and not last_result.success:
             error_text = last_result.error
@@ -667,13 +765,16 @@ class WorkflowRuntime:
             metadata={"query": query, "session_id": session_id,
                       "execution_id": execution_id,
                       "budget": budget},
+            cancelled=cancelled,
         )
 
         # ── Step 5: Emit workflow.completed ──────────────────────────────
         await self._emit_event("workflow.completed", {
             "workflow_id": definition.workflow_id,
             "instance_id": instance_id,
+            "execution_id": execution_id,
             "success": success,
+            "cancelled": cancelled,
             "duration_ms": duration_ms,
             "nodes_executed": len(node_results),
         })
@@ -721,7 +822,7 @@ class WorkflowRuntime:
         if visited is None:
             visited = set()
         if cancel_token.is_cancelled:
-            return WorkerResult(success=False, error="Workflow cancelled")
+            return _cancelled_result()
 
         node = definition.get_node(node_id)
         if node is None:
@@ -736,6 +837,8 @@ class WorkflowRuntime:
                 # Genuine diamond-merge revisit: successors already
                 # reached via whichever path got here first.
                 return node_results.get(node_id)
+            if state.status == NodeStatus.CANCELLED:
+                return node_results.get(node_id) or _cancelled_result()
             # First time this traversal has reached this node, but it's
             # already done -- a checkpoint-restored node (DEBT-003). Reuse
             # its cached result, but still continue into its successors,
@@ -780,6 +883,10 @@ class WorkflowRuntime:
         state.completed_at = time.time()
         node_results[node_id] = result
 
+        cancelled = (
+            result.execution_detail is not None
+            and result.execution_detail.failure_type == FailureType.CANCELLED
+        )
         if result.success:
             state.status = NodeStatus.COMPLETED
             if graph is not None:
@@ -792,10 +899,19 @@ class WorkflowRuntime:
             # leaves this one correctly recorded as done.
             await self._save_checkpoint(instance_id, definition.workflow_id, node_states)
         else:
-            state.status = NodeStatus.FAILED
+            state.status = NodeStatus.CANCELLED if cancelled else NodeStatus.FAILED
             if graph is not None:
-                await monitor.record_failure(node_id, result.error or "Execution failed")
+                if cancelled:
+                    await monitor.record_status(
+                        node_id, ExecutionStatus.CANCELLED,
+                        summary="Execution cancelled",
+                    )
+                else:
+                    await monitor.record_failure(
+                        node_id, result.error or "Execution failed")
             await self._save_checkpoint(instance_id, definition.workflow_id, node_states)
+            if cancelled:
+                return result
             # Route to error branch if defined
             if node.error_branch:
                 logger.info("WorkflowRuntime: node '%s' failed, routing to "
@@ -863,7 +979,7 @@ class WorkflowRuntime:
             state.attempt_id = str(uuid.uuid4())
 
             if cancel_token.is_cancelled:
-                return WorkerResult(success=False, error="Cancelled during retry")
+                return _cancelled_result()
 
             # Build context for this node
             # workflow_id = definition.workflow_id (canonical, matches
@@ -892,6 +1008,11 @@ class WorkflowRuntime:
             last_result = result
 
             if result.success:
+                return result
+            if (
+                result.execution_detail is not None
+                and result.execution_detail.failure_type == FailureType.CANCELLED
+            ):
                 return result
 
             # Check if retryable

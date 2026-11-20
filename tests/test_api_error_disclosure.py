@@ -33,10 +33,12 @@ exception-detail class extends to interface/updater.py's /updates /
 CodeQL-flagged and not fixed by this pass -- a different feature area,
 left for its own explicit disposition rather than folded in here).
 """
+import asyncio
 import json
 import logging
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -72,7 +74,7 @@ def test_log_and_redact_returns_opaque_uuid_and_logs_real_detail(caplog):
 @pytest.mark.asyncio
 async def test_query_endpoint_redacts_exception_details(monkeypatch):
     class ExplodingOrchestrator:
-        async def handle(self, *a, **kw):
+        async def handle_with_result(self, *a, **kw):
             raise RuntimeError(
                 "psycopg2: connection to 10.0.0.5 failed, password=hunter2"
             )
@@ -88,6 +90,113 @@ async def test_query_endpoint_redacts_exception_details(monkeypatch):
     assert "traceback" not in resp.meta
     assert "hunter2" not in json.dumps(resp.meta)
     assert "10.0.0.5" not in json.dumps(resp.meta)
+
+
+@pytest.mark.asyncio
+async def test_query_endpoint_preserves_structured_workflow_failure(monkeypatch):
+    from core.orchestrator import OrchestratorResult
+
+    class FailedOrchestrator:
+        async def handle_with_result(self, *a, **kw):
+            return OrchestratorResult(
+                answer="Partial answer. (Note: processing did not complete successfully.)",
+                success=False,
+                error="workflow_failed",
+                metadata={"partial_output": "Partial answer."},
+            )
+
+    monkeypatch.setattr(api_module, "_orchestrator", FailedOrchestrator())
+    response = await api_module.query(api_module.QueryRequest(query="hi"))
+    assert response.success is False
+    assert response.error == "workflow_failed"
+    assert response.answer.startswith("Partial answer.")
+    assert response.meta["outcome"] == "workflow_failed"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_emits_workflow_failure_instead_of_tokens(monkeypatch):
+    from types import SimpleNamespace
+    from core.orchestrator import OrchestratorResult
+
+    monkeypatch.setattr(
+        "core.runtime.execution_graph.execution_registry.get", lambda _id: None
+    )
+    monkeypatch.setattr("core.parser.parse", lambda query: query)
+
+    async def labels(*args, **kwargs):
+        return ["one", "two"]
+
+    monkeypatch.setattr("core.classifier.label", labels)
+    monkeypatch.setattr(
+        "core.decomposer.build",
+        lambda parsed, result: [
+            SimpleNamespace(module="one"), SimpleNamespace(module="two")
+        ],
+    )
+    orchestrator = SimpleNamespace(
+        context=SimpleNamespace(),
+        handle_with_result=AsyncMock(return_value=OrchestratorResult(
+            answer="Partial answer.",
+            success=False,
+            error="workflow_failed",
+            metadata={"partial_output": "Partial answer."},
+        )),
+    )
+
+    chunks = [chunk async for chunk in api_module._stream_response(
+        orchestrator, "hi", execution_id="failed-execution"
+    )]
+    stream = "".join(chunks)
+    assert '"error": "workflow_failed"' in stream
+    assert '"partial_output": "Partial answer."' in stream
+    assert '"token":' not in stream
+
+
+@pytest.mark.asyncio
+async def test_brain_v2_query_exposes_structured_workflow_failure():
+    from fastapi import FastAPI
+    from core.brain_api import QueryRequest, register, router
+    from core.orchestrator import OrchestratorResult
+
+    class FailedOrchestrator:
+        async def handle_with_result(self, *a, **kw):
+            return OrchestratorResult(
+                answer="I'm sorry, I wasn't able to complete your request.",
+                success=False,
+                error="workflow_failed",
+            )
+
+    app = FastAPI()
+    register(app, {"orchestrator": FailedOrchestrator()})
+    endpoint = next(
+        route.endpoint for route in reversed(router.routes)
+        if route.path == "/brain/v2/query"
+    )
+    response = await endpoint(QueryRequest(query="hi"))
+    assert response.success is False
+    assert response.error == "workflow_failed"
+
+
+@pytest.mark.asyncio
+async def test_brain_api_stream_query_emits_workflow_failure():
+    from core.orchestrator import OrchestratorResult
+
+    class FailedOrchestrator:
+        async def handle_with_result(self, *a, **kw):
+            return OrchestratorResult(
+                answer="Partial answer.",
+                success=False,
+                error="workflow_failed",
+                metadata={"partial_output": "Partial answer."},
+            )
+
+    chunks = [chunk async for chunk in brain_api_module._stream_query(
+        FailedOrchestrator(), "hi"
+    )]
+    stream = "".join(chunks)
+    assert '"error": "workflow_failed"' in stream
+    assert '"partial_output": "Partial answer."' in stream
+    assert '"token":' not in stream
 
 
 # ── _stream_response single-module path (interface/api.py) ─────────────
@@ -128,12 +237,113 @@ async def test_stream_response_single_module_redacts_exception(monkeypatch):
     assert "error_id" in joined
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure_type", ["provider_failure", "empty_response", "cancelled"])
+async def test_stream_response_single_module_failure_is_terminal(monkeypatch, failure_type):
+    from core.model_router import ProviderStreamError
+
+    class FakeGraph:
+        async def add_node(self, **kwargs):
+            return SimpleNamespace(node_id="stream-node")
+
+    class FakeMonitor:
+        def __init__(self, _graph):
+            self.failures = []
+            self.completions = []
+            self.statuses = []
+
+        async def record_status(self, *args, **kwargs):
+            self.statuses.append((args, kwargs))
+
+        async def report_progress(self, *args, **kwargs):
+            pass
+
+        async def record_failure(self, *args, **kwargs):
+            self.failures.append((args, kwargs))
+
+        async def record_completion(self, *args, **kwargs):
+            self.completions.append((args, kwargs))
+
+    class FakeEventStream:
+        def __init__(self):
+            self.events = []
+
+        async def append(self, *, event_type, source, payload):
+            self.events.append((event_type, source, payload))
+
+    class FakeRouter:
+        async def stream_route(self, *args, **kwargs):
+            if failure_type == "provider_failure":
+                yield "partial output"
+                yield ProviderStreamError(
+                    "[Error: model request failed (ref opaque)]", "opaque")
+            elif failure_type == "cancelled":
+                yield "partial output"
+                raise asyncio.CancelledError
+
+    graph = FakeGraph()
+    monitor = FakeMonitor(graph)
+    event_stream = FakeEventStream()
+    save_calls = []
+
+    async def fake_save(*args, **kwargs):
+        save_calls.append((args, kwargs))
+
+    monkeypatch.setattr("core.runtime.execution_graph.execution_registry.get", lambda _id: graph)
+    monkeypatch.setattr("core.runtime.progress.ProgressMonitor", lambda _graph: monitor)
+    monkeypatch.setattr("core.events.event_stream.get_event_stream", lambda: event_stream)
+    monkeypatch.setattr("core.parser.parse", lambda query: query)
+
+    async def labels(*args, **kwargs):
+        return ["test_module"]
+
+    monkeypatch.setattr("core.classifier.label", labels)
+    monkeypatch.setattr(
+        "core.decomposer.build",
+        lambda parsed, result: [
+            SimpleNamespace(module="test_module", subtask="hello")
+        ],
+    )
+    monkeypatch.setattr("core.model_router.model_router", FakeRouter())
+    monkeypatch.setattr(api_module, "_save_context_background", fake_save)
+
+    stream_response = api_module._stream_response(
+        SimpleNamespace(context=SimpleNamespace()), "hello", execution_id="exec-1"
+    )
+    if failure_type == "cancelled":
+        with pytest.raises(asyncio.CancelledError):
+            [chunk async for chunk in stream_response]
+        assert monitor.statuses[-1][0][1].value == "cancelled"
+        assert [event[0] for event in event_stream.events] == ["execution.cancelled"]
+        assert save_calls == []
+        return
+
+    chunks = [chunk async for chunk in stream_response]
+    await asyncio.sleep(0)
+    stream = "".join(chunks)
+
+    assert f'"error": "{failure_type}"' in stream
+    if failure_type == "provider_failure":
+        assert '"token": "partial output"' in stream
+        assert "model request failed" not in stream
+        assert '"error_id": "opaque"' in stream
+    else:
+        assert '"token":' not in stream
+    assert monitor.failures and not monitor.completions
+    assert [event[0] for event in event_stream.events] == ["execution.failed"]
+    assert event_stream.events[0][2]["error_type"] == failure_type
+    if failure_type == "provider_failure":
+        assert event_stream.events[0][2]["error_id"] == "opaque"
+    assert save_calls == []
+
+
 # ── core/brain_api.py _stream_query ─────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_brain_api_stream_query_redacts_exception(caplog):
     class ExplodingOrchestrator:
-        async def handle(self, *a, **kw):
+        async def handle_with_result(self, *a, **kw):
             raise RuntimeError("internal: /data/ocbrain/secrets.db unreachable")
 
     chunks = []
@@ -153,6 +363,28 @@ async def test_brain_api_stream_query_redacts_exception(caplog):
     # rendered record text (message + traceback), unlike
     # record.getMessage() which is the format string alone.
     assert "/data/ocbrain/secrets.db" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_brain_api_stream_query_preserves_workflow_failure():
+    class FailedOrchestrator:
+        async def handle_with_result(self, *args, **kwargs):
+            return SimpleNamespace(
+                success=False,
+                error="workflow_failed",
+                answer="The workflow did not complete.",
+                metadata={"partial_output": "partial result"},
+            )
+
+    chunks = [chunk async for chunk in brain_api_module._stream_query(
+        FailedOrchestrator(), "hi"
+    )]
+    stream = "".join(chunks)
+
+    assert '"error": "workflow_failed"' in stream
+    assert '"answer": "The workflow did not complete."' in stream
+    assert '"partial_output": "partial result"' in stream
+    assert stream.endswith("data: [DONE]\n\n")
 
 
 # ── Remaining flows found via CodeQL's own source-to-sink paths ─────────

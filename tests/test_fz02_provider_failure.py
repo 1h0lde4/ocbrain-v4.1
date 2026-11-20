@@ -140,7 +140,7 @@ class _StubRouter:
     def __init__(self, route_result):
         self._route_result = route_result
 
-    async def route(self, module_name, subtask, context, scope=""):
+    async def route(self, module_name, subtask, context, scope="", execution_id=""):
         return self._route_result
 
 
@@ -251,7 +251,7 @@ async def test_a_healthy_stream_still_succeeds_unchanged(router, monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# Pinned: behaviour deliberately UNCHANGED by B2a (changed by B2b under D2)
+# Incomplete outcomes must not be reported as successful completions.
 # --------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -259,31 +259,30 @@ async def test_a_healthy_stream_still_succeeds_unchanged(router, monkeypatch):
     (FailureType.COMPLETED_WITH_PARTIAL_OUTPUT, "partial text"),
     (FailureType.EMPTY_RESPONSE, ""),
 ])
-async def test_outcomes_outside_b2a_scope_are_pinned_unchanged(failure_type, answer):
+async def test_incomplete_outcomes_fail_without_exposing_partial_as_output(failure_type, answer):
     rr = RouteResult(
         answer=answer, source="external",
         execution_detail=ExecutionOutcome.failure(failure_type, partial_output=answer or None))
     result = await _adapter_result_for(rr)
-    assert result.success is True                       # today's behaviour, unchanged by B2a
-    assert result.output == answer
-    assert set(result.metadata) == UNCHANGED_SUCCESS_METADATA   # no new keys either
-    assert not result.error
+    assert result.success is False
+    assert result.output is None
+    assert result.metadata["failure_type"] == failure_type.value
+    assert result.metadata.get("partial_output") == (answer or None)
+    assert result.error
 
 
 @pytest.mark.asyncio
-async def test_an_empty_stream_keeps_todays_success_through_the_real_router(router, monkeypatch):
-    """End to end: a provider that completes the stream without producing output
-    is classified EMPTY_RESPONSE by route() and still returns success=True at the
-    adapter -- exactly as before B2a. Whether that should be a failure is the
-    later outcome-policy work, not FZ-02."""
+async def test_an_empty_stream_is_a_failure_through_the_real_router(router, monkeypatch):
+    """A provider that completes without output must not become a successful
+    capability invocation."""
     _install_fake_ollama(monkeypatch, tokens=())
     routed = await router.route("coding", LONG_FORM, _FakeContext())
     assert routed.execution_detail.failure_type == FailureType.EMPTY_RESPONSE
     result = await _execute(router, _FakeContext())
-    assert result.success is True
-    assert result.output == ""
-    assert set(result.metadata) == UNCHANGED_SUCCESS_METADATA
-    assert not result.error
+    assert result.success is False
+    assert result.output is None
+    assert result.metadata["failure_type"] == FailureType.EMPTY_RESPONSE.value
+    assert result.error == "model returned no output"
 
 
 @pytest.mark.asyncio

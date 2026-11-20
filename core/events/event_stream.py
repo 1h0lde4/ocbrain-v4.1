@@ -1,7 +1,7 @@
 """
 core/events/event_stream.py — EventStream (v4.3.5)
 
-Immutable, append-only event log with pub/sub and replay.
+Immutable event records with pub/sub and bounded-retention replay.
 
 Architecture references:
   - PI LAW 2: "All meaningful cognitive activity must emit immutable events."
@@ -11,10 +11,10 @@ Architecture references:
   - FA §8 Risk 5: "Implement EventStream-based checkpoint first (v4.4.8)"
 
 Design:
-  - SQLite WAL-mode backend for single-node durability.
+  - SQLite WAL-mode backend with a bounded 90-day retention window.
   - Abstract EventStore interface for future migration to Redpanda (v4.5.5).
   - Async pub/sub: subscribers receive events in order of emission.
-  - Replay: reconstruct system state from any checkpoint.
+  - Replay: reconstruct system state within the retention window.
   - Checkpoint markers: named timestamps for durable execution (v4.4.8).
 
 Integration:
@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -135,7 +136,7 @@ class EventStore(ABC):
 
     @abstractmethod
     async def replay(self, since_sequence: int = 0) -> AsyncIterator[StreamEvent]:
-        """Replay all events from a given sequence number."""
+        """Replay retained events from a given sequence number."""
         ...
 
     @abstractmethod
@@ -167,8 +168,19 @@ class SQLiteEventStore(EventStore):
     All writes are through a single connection to maintain sequence ordering.
     """
 
-    def __init__(self, db_path: str = ".data/events/stream.db") -> None:
+    DEFAULT_RETENTION_SECONDS = 90 * 24 * 60 * 60
+    RETENTION_CHECK_INTERVAL_SECONDS = 60 * 60
+
+    def __init__(
+        self, db_path: str = ".data/events/stream.db", *,
+        retention_seconds: float = DEFAULT_RETENTION_SECONDS,
+    ) -> None:
+        if retention_seconds <= 0:
+            raise ValueError("retention_seconds must be greater than zero")
         self._db_path = db_path
+        self._retention_seconds = retention_seconds
+        self._last_retention_check = time.monotonic()
+        self._maintenance_lock = threading.Lock()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self._sequence: int = 0
         self._init_db()
@@ -177,6 +189,7 @@ class SQLiteEventStore(EventStore):
         """Initialize schema and recover sequence counter."""
         with closing(sqlite3.connect(self._db_path)) as conn:
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA auto_vacuum=INCREMENTAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     sequence   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,11 +220,18 @@ class SQLiteEventStore(EventStore):
             """)
             conn.commit()
 
+            auto_vacuum = conn.execute("PRAGMA auto_vacuum").fetchone()
+            if auto_vacuum and auto_vacuum[0] != 2:
+                conn.execute("VACUUM")
+
             # Recover sequence counter
             row = conn.execute(
                 "SELECT MAX(sequence) FROM events"
             ).fetchone()
             self._sequence = (row[0] or 0) if row else 0
+        self._prune_expired_sync(
+            time.time() - self._retention_seconds
+        )
         logger.info("SQLiteEventStore ready: %s (seq=%d)",
                      self._db_path, self._sequence)
 
@@ -240,7 +260,43 @@ class SQLiteEventStore(EventStore):
             conn.commit()
             seq = cursor.lastrowid or 0
             self._sequence = seq
-            return seq
+        now = time.monotonic()
+        if now - self._last_retention_check >= self.RETENTION_CHECK_INTERVAL_SECONDS:
+            with self._maintenance_lock:
+                now = time.monotonic()
+                if now - self._last_retention_check >= self.RETENTION_CHECK_INTERVAL_SECONDS:
+                    self._prune_expired_sync(
+                        time.time() - self._retention_seconds
+                    )
+                    self._last_retention_check = now
+        return seq
+
+    async def prune_expired(self) -> int:
+        """Apply the retention cutoff immediately and return deleted rows."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._prune_expired_locked,
+            time.time() - self._retention_seconds,
+        )
+
+    def _prune_expired_locked(self, cutoff: float) -> int:
+        with self._maintenance_lock:
+            deleted = self._prune_expired_sync(cutoff)
+            self._last_retention_check = time.monotonic()
+            return deleted
+
+    def _prune_expired_sync(self, cutoff: float) -> int:
+        with closing(sqlite3.connect(self._db_path)) as conn:
+            cursor = conn.execute(
+                "DELETE FROM events WHERE timestamp < ?", (cutoff,)
+            )
+            deleted = cursor.rowcount
+            conn.commit()
+            if deleted:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.execute("PRAGMA incremental_vacuum")
+            return deleted
 
     async def query(self, *,
                     event_type: Optional[str] = None,
@@ -287,10 +343,10 @@ class SQLiteEventStore(EventStore):
             return [StreamEvent.from_dict(dict(r)) for r in rows]
 
     async def replay(self, since_sequence: int = 0) -> AsyncIterator[StreamEvent]:
-        """Replay events from a sequence number.
+        """Replay retained events from a sequence number.
 
         Architecture:
-            PI LAW 2 — "replayable"
+            PI LAW 2 — "replayable" within the configured retention window
             FA §4.1 — "EventStream (replay, checkpoints)"
         """
         loop = asyncio.get_event_loop()
@@ -351,7 +407,7 @@ Subscriber = Callable[[StreamEvent], Any]
 
 
 class EventStream:
-    """Immutable event stream with pub/sub and durable persistence.
+    """Immutable event stream with pub/sub and bounded durable persistence.
 
     Architecture:
         PI LAW 2: "All meaningful cognitive activity must emit immutable events."
@@ -360,7 +416,8 @@ class EventStream:
                         workflow execution."
 
     Combines:
-      1. Persistent storage via EventStore (SQLite WAL, future Redpanda).
+      1. Persistent storage via EventStore (SQLite WAL, future Redpanda)
+         within the configured retention window.
       2. In-process pub/sub for real-time subscribers.
       3. Replay capability for debugging and state reconstruction.
       4. Checkpoint markers for durable execution (v4.4.8).

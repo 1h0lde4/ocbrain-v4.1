@@ -56,6 +56,7 @@ from typing import Any, Dict
 
 from core.capabilities.adapter_runtime import AdapterRuntime
 from core.capabilities.capability import CapabilityRequest, CapabilityType
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 from core.workers.base import AbstractCognitiveWorker, WorkerContext, WorkerResult
 from core.runtime.execution_context import ExecutionContext
 
@@ -115,6 +116,7 @@ class CapabilityExecutorWorker(AbstractCognitiveWorker):
         # the repository, reuse it").
         request = CapabilityRequest(
             capability_type=capability_type,
+            execution_id=context.execution_id,
             payload={
                 "module_name": "k4.2_capability_step",
                 "subtask": description,
@@ -124,9 +126,20 @@ class CapabilityExecutorWorker(AbstractCognitiveWorker):
         result = await self._adapter_runtime.invoke(capability_type, request=request)
 
         if not result.success:
+            metadata = result.metadata or {}
+            execution_detail = None
+            if metadata.get("failure_type") == FailureType.CANCELLED.value:
+                partial_output = metadata.get("partial_output")
+                execution_detail = ExecutionOutcome.failure(
+                    FailureType.CANCELLED,
+                    retryable=False,
+                    execution_id=context.execution_id,
+                    partial_output=partial_output if isinstance(partial_output, str) else None,
+                )
             return WorkerResult(
                 success=False,
                 error=result.error or f"capability invocation failed for '{capability_type}'",
+                execution_detail=execution_detail,
             )
         return WorkerResult(
             success=True,

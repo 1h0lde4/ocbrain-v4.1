@@ -6,6 +6,9 @@ import asyncio
 import hashlib
 import logging
 import time
+import uuid
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 
 from . import parser, merger
@@ -39,6 +42,17 @@ logger = logging.getLogger("ocbrain.orchestrator")
 # event-emission wrapper. See the governance block and _emit_event() in
 # handle() below.
 ORCHESTRATOR_ACTION_TYPE = "orchestrator_handle"
+_CURRENT_EXECUTION_ID: ContextVar[str] = ContextVar(
+    "ocbrain_execution_id", default=""
+)
+
+
+@dataclass(frozen=True)
+class OrchestratorResult:
+    answer: str
+    success: bool = True
+    error: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _interaction_id(query: str) -> str:
@@ -174,6 +188,9 @@ class Orchestrator:
         Mirrors AbstractCognitiveWorker._emit_event() (core/workers/base.py)
         exactly: event emission failure must NEVER break query handling.
         """
+        execution_id = _CURRENT_EXECUTION_ID.get()
+        if execution_id:
+            payload.setdefault("execution_id", execution_id)
         try:
             await self._event_stream.append(
                 event_type=event_type,
@@ -184,9 +201,35 @@ class Orchestrator:
             logger.warning("[Orchestrator] Event emission failed for %s: %s",
                             event_type, e)
 
-    @async_trace_function(name="orchestrator_v3")
     async def handle(self, query: str, max_iterations: int = 5, *,
                      execution_id: str = "") -> str:
+        """Return the user-facing answer, preserving the legacy string contract."""
+        result = await self.handle_with_result(
+            query, max_iterations=max_iterations, execution_id=execution_id)
+        return result.answer
+
+    @async_trace_function(name="orchestrator_v3")
+    async def handle_with_result(
+        self, query: str, max_iterations: int = 5, *,
+        execution_id: str = "",
+    ) -> OrchestratorResult:
+        canonical_execution_id = execution_id or str(uuid.uuid4())
+        token = _CURRENT_EXECUTION_ID.set(canonical_execution_id)
+        try:
+            result = await self._handle_with_result(
+                query,
+                max_iterations=max_iterations,
+                execution_id=canonical_execution_id,
+            )
+            result.metadata.setdefault("execution_id", canonical_execution_id)
+            return result
+        finally:
+            _CURRENT_EXECUTION_ID.reset(token)
+
+    async def _handle_with_result(
+        self, query: str, max_iterations: int = 5, *,
+        execution_id: str = "",
+    ) -> OrchestratorResult:
         """
         Main entry point for query processing.
         Uses semantic classification and parallel module dispatching.
@@ -231,6 +274,7 @@ class Orchestrator:
             recursion_depth=0,
             metadata={
                 "interaction_id": interaction_id,
+                "execution_id": execution_id,
                 # K3.5: Budget context for BudgetGovernor activation.
                 # Values are 0 at orchestrator level (first evaluation in chain).
                 # Accumulated budget propagates at worker level via ExecutionContext.
@@ -248,8 +292,12 @@ class Orchestrator:
             })
             logger.warning("[Orchestrator] Query rejected by %s: %s",
                             gov_result.governor, gov_result.reason)
-            return (f"This request was blocked by governance "
-                    f"({gov_result.governor}): {gov_result.reason}")
+            return OrchestratorResult(
+                answer=(f"This request was blocked by governance "
+                        f"({gov_result.governor}): {gov_result.reason}"),
+                success=False,
+                error="governance_rejected",
+            )
 
         if gov_result.verdict == GovernanceVerdict.ESCALATE:
             await self._emit_event("orchestrator.escalated", {
@@ -259,8 +307,12 @@ class Orchestrator:
             })
             logger.info("[Orchestrator] Query escalated by %s: %s",
                         gov_result.governor, gov_result.reason)
-            return (f"This request requires human approval "
-                    f"({gov_result.governor}): {gov_result.reason}")
+            return OrchestratorResult(
+                answer=(f"This request requires human approval "
+                        f"({gov_result.governor}): {gov_result.reason}"),
+                success=False,
+                error="approval_required",
+            )
 
         async with BackpressureGuard():
             await self._emit_event("orchestrator.query_started", {
@@ -427,10 +479,14 @@ class Orchestrator:
                                     },
                                 })
                             # Public-user safe: no internal status enum.
-                            return ("I'm sorry, I wasn't able to find a "
-                                    "suitable approach for this request. "
-                                    "Could you try rephrasing it or "
-                                    "breaking it into smaller steps?")
+                            return OrchestratorResult(
+                                answer=("I'm sorry, I wasn't able to find a "
+                                        "suitable approach for this request. "
+                                        "Could you try rephrasing it or "
+                                        "breaking it into smaller steps?"),
+                                success=False,
+                                error="planner_impasse",
+                            )
                         planner_result = await plan_fn(
                             planner_request, self._capability_registry,
                             event_stream=self._event_stream)
@@ -444,9 +500,13 @@ class Orchestrator:
                             "error_type": "PlannerRejection",
                         })
                         # Public-user safe: no internal status enum.
-                        return ("I found conflicting requirements in your "
-                                "request that I can't resolve. Could you "
-                                "clarify what you'd like me to do?")
+                        return OrchestratorResult(
+                            answer=("I found conflicting requirements in your "
+                                    "request that I can't resolve. Could you "
+                                    "clarify what you'd like me to do?"),
+                            success=False,
+                            error="planner_rejected",
+                        )
 
                     execution_plan = planner_result.execution_plan
                     # content_anchor is passed ONLY when the feature is on,
@@ -505,21 +565,27 @@ class Orchestrator:
                                         anchor_assessment.missing),
                                 })
                             _sf = getattr(goal, "structured_form", None) or {}
-                            return build_clarification_response(
-                                anchor_assessment,
-                                interpretation=str(
-                                    _sf.get("description") or ""),
-                                plan_steps=[
-                                    st.description
-                                    for st in execution_plan.steps])
+                            return OrchestratorResult(
+                                answer=build_clarification_response(
+                                    anchor_assessment,
+                                    interpretation=str(
+                                        _sf.get("description") or ""),
+                                    plan_steps=[
+                                        st.description
+                                        for st in execution_plan.steps]),
+                            )
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": compilation_result.status,
                             "error_type": "CompilationRejected",
                         })
-                        return ("I'm sorry, I wasn't able to prepare your "
-                                "request for execution. Please try "
-                                "rephrasing or simplifying your request.")
+                        return OrchestratorResult(
+                            answer=("I'm sorry, I wasn't able to prepare your "
+                                    "request for execution. Please try "
+                                    "rephrasing or simplifying your request."),
+                            success=False,
+                            error="compilation_rejected",
+                        )
 
                     workflow_definition = compilation_result.workflow_definition
                     wf_result = await self._workflow_runtime.execute(
@@ -530,41 +596,49 @@ class Orchestrator:
                                   "execution_id": execution_id},
                     )
                     answer = wf_result.output or ""
-
-                    # DEBT-020 (Kernel freeze blocker, fixed 2026-09-06):
-                    # this is "final response acceptance" -- the point
-                    # after which `answer` is what the user receives.
-                    # Before this, wf_result.success was never read on
-                    # this branch at all: a workflow that under-delivered
-                    # against an explicit constraint (WorkflowRuntime now
-                    # detects this, see core/workflow/runtime.py's
-                    # _check_constraints) would still have its partial
-                    # output silently presented as if it fully satisfied
-                    # the request. The output itself is kept, not
-                    # discarded -- partial work usually still has real
-                    # value to the person who asked -- but the system
-                    # must not silently claim it satisfied a constraint it
-                    # didn't. Genuine node errors (success=False with no
-                    # constraint_violations) are deliberately left exactly
-                    # as before: still not checked on this branch. That is
-                    # a real, separate gap (this K4.2 branch has no
-                    # equivalent of the legacy branch's `if not
-                    # wf_result.success` handling below at all), but it is
-                    # not what DEBT-020 is about and pulling it in here
-                    # would be exactly the kind of unrelated-scope
-                    # expansion this fix was explicitly asked not to do.
-                    if wf_result.constraint_violations:
-                        answer = (
-                            answer.rstrip() + "\n\n"
-                            "(Note: this response may not fully satisfy "
-                            "your request -- " +
-                            "; ".join(wf_result.constraint_violations) + ".)"
-                        )
-                        await self._emit_event("orchestrator.response_incomplete", {
+                    if not wf_result.success:
+                        if wf_result.cancelled:
+                            error_code = "cancelled"
+                            answer = (
+                                answer.rstrip() +
+                                "\n\n(Note: processing was cancelled.)"
+                                if answer else
+                                "This request was cancelled before it could complete."
+                            )
+                        elif wf_result.constraint_violations:
+                            answer = (
+                                answer.rstrip() + "\n\n"
+                                "(Note: this response may not fully satisfy "
+                                "your request -- " +
+                                "; ".join(wf_result.constraint_violations) +
+                                ".)"
+                            )
+                            error_code = "constraints_not_satisfied"
+                            await self._emit_event(
+                                "orchestrator.response_incomplete", {
+                                    "interaction_id": interaction_id,
+                                    "execution_id": execution_id,
+                                    "constraint_violations":
+                                        wf_result.constraint_violations,
+                                })
+                        else:
+                            error_code = "workflow_failed"
+                            answer = (
+                                answer.rstrip() +
+                                "\n\n(Note: processing did not complete successfully.)"
+                                if answer else
+                                "I'm sorry, I wasn't able to complete your request."
+                            )
+                        await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
-                            "execution_id": execution_id,
-                            "constraint_violations": wf_result.constraint_violations,
+                            "error_type": error_code,
                         })
+                        return OrchestratorResult(
+                            answer=answer,
+                            success=False,
+                            error=error_code,
+                            metadata={"partial_output": wf_result.output},
+                        )
 
                     # Task 5 — post-execution hooks. Same governed
                     # ExecutionRuntime.invoke() path as the SupervisorWorker
@@ -654,7 +728,7 @@ class Orchestrator:
                         "outcome": "success",
                         "execution_path": "k42_cognitive_frontend",
                     })
-                    return answer
+                    return OrchestratorResult(answer=answer)
 
                 except Exception as e:
                     # Mirrors the existing workflow-runtime branch's own
@@ -670,8 +744,12 @@ class Orchestrator:
                         "error": str(e),
                         "error_type": type(e).__name__,
                     })
-                    return ("I'm sorry, something went wrong while "
-                            "processing your request. Please try again.")
+                    return OrchestratorResult(
+                        answer=("I'm sorry, something went wrong while "
+                                "processing your request. Please try again."),
+                        success=False,
+                        error="internal_error",
+                    )
 
             # ── K2.2 — LEGACY: Production Runtime Migration ─────────────────
             # Classification: COMPATIBILITY (K4.2 completion, G7)
@@ -721,6 +799,17 @@ class Orchestrator:
                     )
 
                     if not wf_result.success:
+                        if wf_result.cancelled:
+                            await self._emit_event("orchestrator.query_failed", {
+                                "interaction_id": interaction_id,
+                                "error_type": "Cancelled",
+                            })
+                            return OrchestratorResult(
+                                answer="This request was cancelled.",
+                                success=False,
+                                error="cancelled",
+                                metadata={"partial_output": wf_result.output},
+                            )
                         # wf_result.error is the failing worker's own string
                         # (PlannerWorker: "PlannerWorker pipeline error:
                         # <exception text>"). The caller reads this answer,
@@ -736,8 +825,13 @@ class Orchestrator:
                             "error": wf_result.error,
                             "error_type": "WorkflowFailure",
                         })
-                        return ("Sorry, I encountered an internal error: "
-                                f"WorkflowFailure (ref {ref})")
+                        return OrchestratorResult(
+                            answer=("Sorry, I encountered an internal error: "
+                                    f"WorkflowFailure (ref {ref})"),
+                            success=False,
+                            error="workflow_failed",
+                            metadata={"partial_output": wf_result.output},
+                        )
 
                     answer = wf_result.output or ""
                     planner_result = wf_result.node_results.get(
@@ -764,7 +858,7 @@ class Orchestrator:
                         "modules_used": modules_used,
                         "execution_path": "workflow_runtime",
                     })
-                    return answer
+                    return OrchestratorResult(answer=answer)
 
                 except Exception as e:
                     # Should not happen -- WorkflowRuntime.execute() never
@@ -778,8 +872,12 @@ class Orchestrator:
                         "error": str(e),
                         "error_type": type(e).__name__,
                     })
-                    return (f"Sorry, I encountered an internal error: "
-                            f"{type(e).__name__}")
+                    return OrchestratorResult(
+                        answer=(f"Sorry, I encountered an internal error: "
+                                f"{type(e).__name__}"),
+                        success=False,
+                        error="internal_error",
+                    )
 
             # ── Legacy Compatibility Bridge ─────────────────────────────────
             # Reached only when workflow_runtime is None. main.py's
@@ -814,7 +912,12 @@ class Orchestrator:
                         "interaction_id": interaction_id,
                         "outcome": "unclassified",
                     })
-                    return "I'm not sure which module should handle this. Could you rephrase?"
+                    return OrchestratorResult(
+                        answer=("I'm not sure which module should handle this. "
+                                "Could you rephrase?"),
+                        success=False,
+                        error="unclassified",
+                    )
 
                 # 4. Dispatch (Execute modules in parallel)
                 tasks = [
@@ -904,7 +1007,7 @@ class Orchestrator:
                     "outcome": "success",
                     "modules_used": modules_used,
                 })
-                return answer
+                return OrchestratorResult(answer=answer)
 
             except Exception as e:
                 logger.error(f"Orchestrator error: {e}", exc_info=True)
@@ -913,14 +1016,21 @@ class Orchestrator:
                     "error": str(e),
                     "error_type": type(e).__name__,
                 })
-                return f"Sorry, I encountered an internal error: {type(e).__name__}"
+                return OrchestratorResult(
+                    answer=f"Sorry, I encountered an internal error: {type(e).__name__}",
+                    success=False,
+                    error="internal_error",
+                )
 
     @async_trace_function(name="module_execution")
     async def _run_module(self, label: Dict[str, Any], query: str, parsed: Any) -> RouteResult:
         """Execute a single module via the router."""
         mod_name = label["module"]
         # Use the router to handle shadow promotion / maturity
-        return await self.router.route(mod_name, query, self.context)
+        return await self.router.route(
+            mod_name, query, self.context,
+            execution_id=_CURRENT_EXECUTION_ID.get(),
+        )
 
     def status(self) -> dict:
         return {

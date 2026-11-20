@@ -25,6 +25,10 @@ class ExecutionStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class ExecutionRegistryFull(RuntimeError):
+    """Raised when the registry is full of executions that are still active."""
+
+
 @dataclass
 class ExecutionNode:
     node_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -135,11 +139,29 @@ class ExecutionRegistry:
 
     Queues are fed from the canonical EventStream by ``attach_event_stream``;
     they are a bounded delivery adapter for SSE, not a second event bus.
+    Terminal records expire after ``retention_seconds`` and the registry
+    enforces ``max_entries`` without evicting active executions.
     """
 
-    def __init__(self) -> None:
+    _TERMINAL_STATUSES = frozenset({
+        ExecutionStatus.COMPLETED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.CANCELLED,
+    })
+
+    def __init__(
+        self, *, max_entries: int = 1024, retention_seconds: float = 3600,
+    ) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries must be at least 1")
+        if retention_seconds < 0:
+            raise ValueError("retention_seconds cannot be negative")
+        self._max_entries = max_entries
+        self._retention_seconds = retention_seconds
         self._graphs: Dict[str, ExecutionGraph] = {}
         self._queues: Dict[str, asyncio.Queue] = {}
+        self._created_at: Dict[str, float] = {}
+        self._subscribers: Dict[str, int] = {}
         self._stream = None
 
     def attach_event_stream(self, stream: Any) -> None:
@@ -151,17 +173,26 @@ class ExecutionRegistry:
         stream.subscribe("*", self._on_event)
 
     def create(self, execution_id: str, *, title: str = "Execution") -> ExecutionGraph:
+        self._prune_expired()
         existing = self._graphs.get(execution_id)
         if existing is not None:
             if title and existing.root.title == "Execution":
                 existing.root.title = title
             return existing
+        if len(self._graphs) >= self._max_entries:
+            self._evict_oldest_terminal()
+        if len(self._graphs) >= self._max_entries:
+            raise ExecutionRegistryFull(
+                "Execution registry is full of active executions"
+            )
         graph = ExecutionGraph(execution_id, title=title)
         self._graphs[execution_id] = graph
         self._queues[execution_id] = asyncio.Queue(maxsize=256)
+        self._created_at[execution_id] = time.time()
         return graph
 
     def get(self, execution_id: str) -> Optional[ExecutionGraph]:
+        self._prune_expired()
         return self._graphs.get(execution_id)
 
     async def _on_event(self, event: Any) -> None:
@@ -181,14 +212,64 @@ class ExecutionRegistry:
             queue.put_nowait(item)
 
     async def events(self, execution_id: str):
+        self._prune_expired()
         queue = self._queues.get(execution_id)
         if queue is None:
             return
-        while True:
-            yield await queue.get()
+        self._subscribers[execution_id] = self._subscribers.get(execution_id, 0) + 1
+        try:
+            while True:
+                yield await queue.get()
+        finally:
+            remaining = self._subscribers.get(execution_id, 1) - 1
+            if remaining:
+                self._subscribers[execution_id] = remaining
+            else:
+                self._subscribers.pop(execution_id, None)
+            self._prune_expired()
 
     def ids(self) -> Iterable[str]:
+        self._prune_expired()
         return self._graphs.keys()
+
+    def _prune_expired(self) -> None:
+        now = time.time()
+        expired = [
+            execution_id
+            for execution_id, graph in self._graphs.items()
+            if (
+                (
+                    graph.root.status in self._TERMINAL_STATUSES
+                    and graph.root.completed_at
+                    and now - graph.root.completed_at >= self._retention_seconds
+                )
+                or (
+                    graph.root.status == ExecutionStatus.PENDING
+                    and now - self._created_at.get(execution_id, now)
+                    >= self._retention_seconds
+                )
+            )
+            and self._subscribers.get(execution_id, 0) == 0
+        ]
+        for execution_id in expired:
+            self._remove(execution_id)
+
+    def _evict_oldest_terminal(self) -> None:
+        terminal = [
+            (graph.root.completed_at or self._created_at.get(execution_id, 0.0), execution_id)
+            for execution_id, graph in self._graphs.items()
+            if graph.root.status in self._TERMINAL_STATUSES
+            and self._subscribers.get(execution_id, 0) == 0
+        ]
+        if terminal:
+            _, execution_id = min(terminal)
+            self._remove(execution_id)
+
+    def _remove(self, execution_id: str) -> None:
+        self._graphs.pop(execution_id, None)
+        self._queues.pop(execution_id, None)
+        self._created_at.pop(execution_id, None)
+        self._subscribers.pop(execution_id, None)
 
 
 execution_registry = ExecutionRegistry()

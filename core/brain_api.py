@@ -10,7 +10,7 @@ Versions:
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, AsyncGenerator
+from typing import Any, Optional, AsyncGenerator
 import asyncio
 import json
 import logging
@@ -32,6 +32,8 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
+    success: bool = True
+    error: Optional[str] = None
     modules_used: list[str] = []
     latency_ms: int = 0
     brain_version: str = BRAIN_API_VERSION
@@ -119,10 +121,12 @@ def register(app, orchestrator_ref: dict):
             )
 
         t0     = time.monotonic()
-        answer = await orch.handle(req.query)
+        result = await orch.handle_with_result(req.query)
         brain_version_manager.record_query()
         return QueryResponse(
-            answer=answer,
+            answer=result.answer,
+            success=result.success,
+            error=result.error,
             latency_ms=int((time.monotonic() - t0) * 1000),
         )
 
@@ -178,7 +182,19 @@ async def _stream_query(orchestrator, query: str) -> AsyncGenerator[str, None]:
     requires Ollama streaming mode — wired in V2.1).
     """
     try:
-        answer = await orchestrator.handle(query)
+        result = await orchestrator.handle_with_result(query)
+        if not result.success:
+            failure: dict[str, Any] = {
+                "error": result.error or "execution_failed",
+                "answer": result.answer,
+            }
+            partial_output = result.metadata.get("partial_output")
+            if partial_output is not None:
+                failure["partial_output"] = partial_output
+            yield f"data: {json.dumps(failure)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        answer = result.answer
         if not answer:
             answer = ""
         # Yield in ~50-char chunks to simulate streaming

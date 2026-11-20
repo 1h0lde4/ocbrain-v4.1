@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from core.runtime.execution_outcome import ExecutionOutcome
+from core.runtime.execution_outcome import ExecutionOutcome, FailureType
 from core.runtime.execution_context import ExecutionContext
 
 from core.governance.governance_kernel import (
@@ -298,6 +298,7 @@ class AbstractCognitiveWorker(ABC):
                 success=False,
                 error="Worker cancelled",
                 duration_ms=(time.time() - start_time) * 1000,
+                execution_detail=ExecutionOutcome.failure(FailureType.CANCELLED),
             )
 
         except Exception as e:
@@ -423,6 +424,9 @@ class AbstractCognitiveWorker(ABC):
         """
         payload["task_id"] = context.task_id
         payload["worker_id"] = self._id
+        execution_id = context.metadata.get("execution_id", "")
+        if execution_id:
+            payload["execution_id"] = execution_id
         if context.workflow_id:
             payload["workflow_id"] = context.workflow_id
 

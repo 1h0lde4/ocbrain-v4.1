@@ -117,6 +117,39 @@ async def test_c_k42_orchestrator_save_failure_keeps_mocked_success(caplog):
     for secret in (E,Q,A,S): assert secret not in caplog.text
     assert "OperationalError" in caplog.text
 
+
+@pytest.mark.asyncio
+async def test_c2_k42_workflow_failure_is_terminal_and_retains_partial_output(caplog):
+    from core.orchestrator import Orchestrator
+    from core.workflow.runtime import WorkflowResult
+    ctx=MagicMock(spec=ContextMemory)
+    runtime=AsyncMock()
+    runtime.execute.return_value=WorkflowResult(
+        instance_id="i",workflow_id="w",success=False,output=A,error=E,node_results={})
+    events=[]
+    async def emit(kind,payload): events.append((kind,payload))
+    orch=Orchestrator(modules={"knowledge":MagicMock()},context=ctx,router=MagicMock(),
+       memory=AsyncMock(),workflow_runtime=runtime,capability_registry=MagicMock(),use_k42_frontend=True)
+    orch._emit_event=emit
+    goal=MagicMock(resource_id="goal")
+    plan=MagicMock(resource_id="plan",confidence=0.9,steps=[MagicMock(capability_type="llm_completion")])
+    compiled=MagicMock(status="compiled")
+    compiled.workflow_definition=WorkflowDefinition(workflow_id="w")
+    with patch("core.cognitive.intent.load_known_categories",AsyncMock(return_value=[])), \
+         patch("core.cognitive.intent.interpret_request",AsyncMock(return_value=[goal])), \
+         patch("core.cognitive.planner.plan",AsyncMock(return_value=MagicMock(status="ready_for_compilation",execution_plan=plan))), \
+         patch("core.cognitive.compiler.compile",AsyncMock(return_value=compiled)), \
+         patch("core.shadow.shadow_learner.shadow_learner.record_interaction"),caplog.at_level(logging.ERROR):
+        result=await orch.handle_with_result(Q,execution_id=S)
+    assert not result.success and result.error=="workflow_failed"
+    assert result.answer.startswith(A) and "did not complete successfully" in result.answer
+    assert result.metadata["partial_output"]==A
+    assert any(kind=="orchestrator.query_failed" for kind,_ in events)
+    assert not any(kind=="orchestrator.query_completed" for kind,_ in events)
+    assert ctx.save.call_count==0
+    assert E not in caplog.text
+
+
 # D: Legacy Orchestrator path also contains persistence failure.
 @pytest.mark.asyncio
 async def test_d_legacy_orchestrator_save_failure_is_non_blocking_and_sanitized(caplog):
