@@ -360,10 +360,12 @@ Web search and browser page requests use a public-egress client that blocks
 private/local IP addresses, non-standard ports, credentials in URLs, and
 non-GET browser actions. The sandboxed browser has only an isolated loopback
 interface and no external network route, so raw UDP and other direct browser
-networking cannot bypass the egress client. Rendering has request, timeout, and
-output limits, but no hard per-render CPU or memory quota; do not treat it as a
-complete denial-of-service boundary for hostile pages. Browser interaction,
-form submission, and authenticated profiles are not enabled.
+networking cannot bypass the egress client. Individual requests, navigation,
+extracted text/title, and request count are bounded, but there is no hard CPU or
+memory quota, per-process concurrency cap, or separately bounded shutdown. Do
+not treat it as a complete denial-of-service boundary for hostile pages.
+Browser interaction, form submission, and authenticated profiles are not
+enabled.
 
 The package exposes two entry points:
 

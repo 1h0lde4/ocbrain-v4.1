@@ -76,12 +76,25 @@ async def _read_bounded_page_text(page, max_text_chars: int, timeout_seconds: fl
     )
 
 
+async def _read_bounded_page_title(
+    page, max_title_chars: int, timeout_seconds: float
+) -> str:
+    return await asyncio.wait_for(
+        page.evaluate(
+            "(limit) => document.title.slice(0, limit)",
+            max_title_chars,
+        ),
+        timeout=timeout_seconds,
+    )
+
+
 async def render_page(
     url: str,
     client: PublicWebClient,
     *,
     timeout_seconds: float = 15.0,
     max_text_chars: int = 12_000,
+    max_title_chars: int = 512,
 ) -> BrowserPage:
     """Render a public page without exposing click, form, or script APIs."""
     validated_url = validate_public_url(url)
@@ -197,9 +210,12 @@ async def render_page(
                 text = await _read_bounded_page_text(
                     page, max_text_chars, timeout_seconds
                 )
+                title = await _read_bounded_page_title(
+                    page, max_title_chars, timeout_seconds
+                )
                 return BrowserPage(
                     url=page.url,
-                    title=await page.title(),
+                    title=title,
                     text=text[:max_text_chars],
                 )
             finally:

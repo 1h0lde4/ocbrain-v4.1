@@ -209,6 +209,21 @@ async def test_browser_bounds_text_before_returning_it_from_the_renderer():
 
 
 @pytest.mark.asyncio
+async def test_browser_bounds_title_before_returning_it_from_the_renderer():
+    class FakePage:
+        async def evaluate(self, expression, limit):
+            assert "document.title.slice(0, limit)" in expression
+            self.limit = limit
+            return "x" * limit
+
+    page = FakePage()
+    title = await browser._read_bounded_page_title(page, 32, 1)
+
+    assert len(title) == 32
+    assert page.limit == 32
+
+
+@pytest.mark.asyncio
 async def test_browser_text_extraction_obeys_its_timeout():
     class FakeLocator:
         async def evaluate(self, expression, limit):
