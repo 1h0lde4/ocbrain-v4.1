@@ -1,0 +1,39 @@
+# git log --oneline 6f93444..origin/main   (origin/main = 2ebf76a39f03055a5dad7cddcb14e7d8890425b3; 6f93444 was main at handoff v1.1)
+2ebf76a Merge pull request #79 from 1h0lde4/security/privacy-wipe-containment-oct2026
+8c13f7d Merge main (1753b10) into security/privacy-wipe-containment-oct2026 and renumber the wipe-sink debt row DEBT-042 -> DEBT-045
+1753b10 Merge pull request #103 from 1h0lde4/architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026
+9d2bbe5 Merge branch 'main' into architecture/ocbrain-v2-unified-cognitive-runtime-roadmap-oct2026
+7f943b9 Merge pull request #27 from 1h0lde4/dependabot/github_actions/softprops/action-gh-release-3.0.3
+78f2d62 Merge branch 'main' into dependabot/github_actions/softprops/action-gh-release-3.0.3
+8247e74 Merge pull request #76 from 1h0lde4/dependabot/github_actions/actions/download-artifact-8.0.2
+b76aa60 Merge branch 'main' into dependabot/github_actions/actions/download-artifact-8.0.2
+f3215a6 Merge pull request #30 from 1h0lde4/dependabot/github_actions/actions/checkout-7.0.1
+c0bf205 ci: bump the token-acl-windows job's actions/checkout pin to v7.0.1 to match the other pins
+98b9a08 Merge branch 'main' into dependabot/github_actions/actions/checkout-7.0.1
+94d1150 Merge pull request #77 from 1h0lde4/dependabot/github_actions/actions/upload-artifact-7.0.2
+430c780 Merge branch 'main' into dependabot/github_actions/actions/upload-artifact-7.0.2
+2b1bfc2 Merge pull request #92 from 1h0lde4/dependabot/github_actions/actions/setup-python-7.1.0
+f977132 Merge branch 'main' into dependabot/github_actions/actions/setup-python-7.1.0
+e6d581d Merge pull request #111 from 1h0lde4/docs/nov19-pr93-wording-debt037-038-baseline
+e5060d2 docs: refine PR #93 wording in DEBT-033, note DEBT-037/038 pre-#94 authentication wording, add Nov 19 baseline entry
+77e69fe build(deps): bump actions/setup-python from 5.6.0 to 7.1.0
+b83d9da docs(architecture): propose OCBrain v2 unified cognitive runtime roadmap
+bcbe574 Merge origin/main into security/privacy-wipe-containment-oct2026 (sync with the current baseline before merge; the 22-commits-behind concern)
+e54b2c6 docs(register): DEBT-042 -- record the PrivacyGuard.wipe_module_data() sink fixed in this PR
+ee1f6ed fix(privacy): route wipe_module_data() through module_child() -- close an unguarded rmtree sink
+47b0b8e test(privacy): real tests for wipe_module_data, incl. exploit-first containment (RED against current code)
+53a6e82 build(deps): bump actions/upload-artifact from 4.6.2 to 7.0.2
+1291f99 build(deps): bump actions/download-artifact from 4.3.0 to 8.0.2
+fe93a40 build(deps): bump actions/checkout from 4.4.0 to 7.0.1
+bfa83b4 Merge branch 'main' into dependabot/github_actions/softprops/action-gh-release-3.0.3
+494a7b0 build(deps): bump softprops/action-gh-release from 2.6.2 to 3.0.3
+
+# git diff --stat 6f93444 origin/main -- . ':!docs' ':!*.md'   (non-doc, non-markdown changes)
+ .github/workflows/ci.yml      |  16 +++---
+ .github/workflows/release.yml |  34 +++++------
+ core/privacy.py               |   7 ++-
+ tests/test_privacy.py         | 129 +++++++++++++++++++++++++++++++++++-------
+ 4 files changed, 139 insertions(+), 47 deletions(-)
+
+# git diff --name-only 6f93444 origin/main -- docs/reviews  (does main touch the review directory?)
+(end)

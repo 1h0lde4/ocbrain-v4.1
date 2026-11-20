@@ -1,0 +1,47 @@
+# command: python3 docs/reviews/q4b-independent-review/artifacts/ME_RECOVERY_BATCH_3_LOGS_INTAKE_2026-11-20/verify/verify_logs_intake.py   (from repo root; branch HEAD at run time 766610b + uncommitted package)
+== received files
+I005 workflow-logs.zip 60308B sha256=d19632ef317a4a0466ea122ca9ee34a718da45475b9982cb13e3b5bd9cc059f8
+I006 workflow-logs_1.zip 29923B sha256=a0f3f3d5f2e87b7e3c948676befd14f685ad92d297ac06378f0a3b93e03240cb
+I007 workflow-logs-39226693573.zip 28934B sha256=c1a9ef268ba848d876645030beba01f523df967ff8b336aa44d79186c2668cd0
+
+== I005: damaged upload (PowerShell '>' re-encoding)
+[PASS] starts with the UTF-16LE byte-order mark FF FE
+[PASS] every character maps back to one cp850 byte  (30153 bytes)
+[PASS] not readable as a zip as delivered
+[PASS] I005 central-directory CRC32 and size values equal I006's members  (4 members)
+[PASS] recovery script (fast mode) exits 0
+[PASS] exactly the two small members were derived  (['VERIFIED_drift-and-ownership__system.txt', 'VERIFIED_tests__system.txt'])
+[PASS] derived members are byte-identical to I006's clean members
+
+== I006: run 40781867485
+[PASS] zip opens and every member's data matches its CRC32 (testzip)  (4 members)
+[PASS] exactly four members: two job logs and two system logs
+[PASS] tests: full head_sha 4a4783c... appears in the log
+[PASS] tests: runner in system.txt equals API runner_id 1000001879  (log says ['1000001879'])
+[PASS] tests: log timestamps fall inside the API job window (created .. completed+5s)  (2026-10-28T22:41:20..2026-10-28T22:44:54 vs 2026-10-28T22:41:18Z..2026-10-28T22:44:55Z)
+[PASS] pytest summary equals expected (2073, 14, 1)  (2073 passed, 14 skipped, 1 xfailed)
+[PASS] test step is 'pytest tests/ -q --tb=short' (whole tests/ directory, quiet mode)
+[PASS] CI gate reports it passed
+[PASS] every non-empty line of the earlier pytest-output artifact appears verbatim in this log  (41 lines)
+[PASS] no per-file attestation: 'test_verification' never named, no PASSED/FAILED markers
+[PASS] drift-and-ownership: full head_sha 4a4783c... appears in the log
+[PASS] drift-and-ownership: runner in system.txt equals API runner_id 1000001878  (log says ['1000001878'])
+[PASS] drift-and-ownership: log timestamps fall inside the API job window (created .. completed+5s)  (2026-10-28T22:41:20..2026-10-28T22:41:28 vs 2026-10-28T22:41:18Z..2026-10-28T22:41:30Z)
+
+== I007: run 39226693573
+[PASS] zip opens and every member's data matches its CRC32 (testzip)  (4 members)
+[PASS] exactly four members: two job logs and two system logs
+[PASS] tests: full head_sha f13bfde... appears in the log
+[PASS] tests: runner in system.txt equals API runner_id 1000001425  (log says ['1000001425'])
+[PASS] tests: log timestamps fall inside the API job window (created .. completed+5s)  (2026-10-19T08:59:21..2026-10-19T09:03:25 vs 2026-10-19T08:59:17Z..2026-10-19T09:03:28Z)
+[PASS] pytest summary equals expected (2058, 14, 1)  (2058 passed, 14 skipped, 1 xfailed)
+[PASS] test step is 'pytest tests/ -q --tb=short' (whole tests/ directory, quiet mode)
+[PASS] CI gate reports it passed
+[PASS] every non-empty line of the earlier pytest-output artifact appears verbatim in this log  (38 lines)
+[PASS] no per-file attestation: 'test_verification' never named, no PASSED/FAILED markers
+[PASS] drift-and-ownership: full head_sha f13bfde... appears in the log
+[PASS] drift-and-ownership: runner in system.txt equals API runner_id 1000001426  (log says ['1000001426'])
+[PASS] drift-and-ownership: log timestamps fall inside the API job window (created .. completed+5s)  (2026-10-19T08:59:20..2026-10-19T08:59:25 vs 2026-10-19T08:59:17Z..2026-10-19T08:59:27Z)
+
+checks run: 33; passed: 33; failed: 0
+# exit status: 0

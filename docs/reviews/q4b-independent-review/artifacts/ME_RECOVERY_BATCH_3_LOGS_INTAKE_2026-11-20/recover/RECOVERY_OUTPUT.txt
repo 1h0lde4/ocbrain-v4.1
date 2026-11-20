@@ -1,0 +1,18 @@
+# command: python3 recover/recover_ps_redirect_members.py <I005 damaged upload> <outdir>   (default --large-budget 3000000)
+# input sha256: d19632ef317a4a0466ea122ca9ee34a718da45475b9982cb13e3b5bd9cc059f8
+observed bytes 30151; members 4; central directory region free of CR/LF: yes
+
+0_tests.txt: central directory says csize=18142 usize=87837 crc=a1556ede; data region 18284 observed bytes, ambiguous CRLF positions 142
+  search nodes 3000042, candidates examined 0, 90.6s -> NOT RECOVERED (search budget exhausted)
+
+tests/system.txt: central directory says csize=271 usize=569 crc=354d3af6; data region 274 observed bytes, ambiguous CRLF positions 3
+  search nodes 9, candidates examined 4, 0.0s -> VERIFIED against central directory
+
+1_drift-and-ownership.txt: central directory says csize=10674 usize=43614 crc=6b304cb8; data region 10755 observed bytes, ambiguous CRLF positions 81
+  search nodes 1438, candidates examined 1, 0.0s -> NOT RECOVERED (no candidate matched size and CRC32)
+
+drift-and-ownership/system.txt: central directory says csize=282 usize=583 crc=e5cea529; data region 283 observed bytes, ambiguous CRLF positions 1
+  search nodes 4, candidates examined 2, 0.0s -> VERIFIED against central directory
+
+members verified: 2 of 4
+# exit status: 0
