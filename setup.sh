@@ -452,8 +452,8 @@ PATCH
 #   - tight upper-bound pins (<4.42, <0.19, <0.25) blocked trl 1.2.0 from
 #     getting transformers>=4.56.2, leaving the stack in a broken mixed state
 #   - split pip calls allowed partial upgrades that left incompatible combinations
-# Fix: install the ENTIRE ecosystem in ONE pip call with no artificial upper caps.
-#   Let pip's resolver find a consistent set satisfying ALL constraints at once.
+# Fix: install the ENTIRE ecosystem in ONE pip call while retaining the
+# security-reviewed major-version bounds used by pyproject.toml.
 step_sentence_transformers() {
     info "Installing sentence-transformers + huggingface ecosystem..."
 
@@ -469,22 +469,38 @@ step_sentence_transformers() {
     fi
 
     # ONE pip call for the entire huggingface ecosystem.
-    # Constraints:
-    #   transformers>=4.56.2  — satisfies trl 1.2.0 AND sentence-transformers
-    #   tokenizers>=0.21      — required by transformers 4.56+
-    #   huggingface_hub>=0.26 — required by transformers 4.56+
-    #   sentence-transformers>=3.0.1 — the target package
-    # NO upper-bound caps — let pip find a consistent set.
+    # Keep these bounds aligned with pyproject.toml so this early install
+    # cannot select an advisory-affected model library version.
     info "  Resolving huggingface ecosystem in single pass..."
-    if pip_install "huggingface ecosystem"         "huggingface_hub>=0.26"         "tokenizers>=0.21"         "transformers>=4.56.2"         "sentence-transformers>=3.0.1"         --quiet; then
+    if pip_install "huggingface ecosystem" \
+        "huggingface_hub>=0.26" \
+        "tokenizers>=0.23" \
+        "transformers>=5.10.0,<6.0.0" \
+        "sentence-transformers>=6.0.0,<7.0.0" \
+        --quiet; then
         : # success path below
     else
         # Retry without --prefer-binary (tokenizers may need source build)
         warn "  Retrying without binary restriction..."
-        "$PIP" install             --no-cache-dir             --timeout 180             "huggingface_hub>=0.26"             "tokenizers>=0.21"             "transformers>=4.56.2"             "sentence-transformers>=3.0.1"             || {
+        "$PIP" install \
+            --no-cache-dir \
+            --timeout 180 \
+            "huggingface_hub>=0.26" \
+            "tokenizers>=0.23" \
+            "transformers>=5.10.0,<6.0.0" \
+            "sentence-transformers>=6.0.0,<7.0.0" \
+            || {
                 # Final fallback: force-compile tokenizers from source
                 warn "  Final fallback: source build for tokenizers..."
-                "$PIP" install                     --no-cache-dir                     --timeout 300                     --no-binary tokenizers                     "huggingface_hub>=0.26"                     "tokenizers>=0.21"                     "transformers>=4.56.2"                     "sentence-transformers>=3.0.1"                     || die "sentence-transformers install failed after all attempts.\nEnsure Rust is installed: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\nThen re-run: RESET_INSTALL=1 bash setup.sh"
+                "$PIP" install \
+                    --no-cache-dir \
+                    --timeout 300 \
+                    --no-binary tokenizers \
+                    "huggingface_hub>=0.26" \
+                    "tokenizers>=0.23" \
+                    "transformers>=5.10.0,<6.0.0" \
+                    "sentence-transformers>=6.0.0,<7.0.0" \
+                    || die "sentence-transformers install failed after all attempts.\nEnsure Rust is installed: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh\nThen re-run: RESET_INSTALL=1 bash setup.sh"
             }
     fi
 
@@ -572,11 +588,11 @@ step_training() {
     [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env" || true
     unset PIP_ONLY_BINARY 2>/dev/null || true
 
-    # trl 1.2.0 needs transformers>=4.56.2
-    # Install in ONE call — single resolver pass prevents conflicts
+    # Keep the training path on the same security-reviewed Transformers range.
+    # Install in ONE call — single resolver pass prevents conflicts.
     pip_install "training stack" \
         "trl>=1.2.0" \
-        "transformers>=4.56.2" \
+        "transformers>=5.10.0,<6.0.0" \
         "peft>=0.11.1" \
         "datasets>=2.19.2" \
         --quiet \

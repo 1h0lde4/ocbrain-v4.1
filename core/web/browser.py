@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import sys
@@ -63,6 +64,16 @@ class BrowserPage:
 
 class BrowserSandboxUnavailableError(RuntimeError):
     """Raised when the required OS-level browser sandbox is unavailable."""
+
+
+async def _read_bounded_page_text(page, max_text_chars: int, timeout_seconds: float) -> str:
+    return await asyncio.wait_for(
+        page.locator("body").evaluate(
+            "(body, limit) => body.innerText.slice(0, limit)",
+            max_text_chars,
+        ),
+        timeout=timeout_seconds,
+    )
 
 
 async def render_page(
@@ -183,8 +194,8 @@ async def render_page(
                     wait_until="domcontentloaded",
                     timeout=int(timeout_seconds * 1000),
                 )
-                text = await page.locator("body").inner_text(
-                    timeout=int(timeout_seconds * 1000)
+                text = await _read_bounded_page_text(
+                    page, max_text_chars, timeout_seconds
                 )
                 return BrowserPage(
                     url=page.url,

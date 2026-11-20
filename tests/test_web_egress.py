@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import socket
 import subprocess
@@ -182,6 +183,44 @@ async def test_browser_fails_closed_without_bubblewrap(monkeypatch):
 
     with pytest.raises(BrowserSandboxUnavailableError, match="Bubblewrap"):
         await browser.render_page("https://example.com", None)
+
+
+@pytest.mark.asyncio
+async def test_browser_bounds_text_before_returning_it_from_the_renderer():
+    class FakeLocator:
+        async def evaluate(self, expression, limit):
+            assert "body.innerText.slice(0, limit)" in expression
+            self.limit = limit
+            return "x" * limit
+
+    class FakePage:
+        def __init__(self):
+            self.body = FakeLocator()
+
+        def locator(self, selector):
+            assert selector == "body"
+            return self.body
+
+    page = FakePage()
+    text = await browser._read_bounded_page_text(page, 12, 1)
+
+    assert len(text) == 12
+    assert page.body.limit == 12
+
+
+@pytest.mark.asyncio
+async def test_browser_text_extraction_obeys_its_timeout():
+    class FakeLocator:
+        async def evaluate(self, expression, limit):
+            await asyncio.sleep(1)
+
+    class FakePage:
+        def locator(self, selector):
+            assert selector == "body"
+            return FakeLocator()
+
+    with pytest.raises(TimeoutError):
+        await browser._read_bounded_page_text(FakePage(), 12, 0.01)
 
 
 @pytest.mark.skipif(
