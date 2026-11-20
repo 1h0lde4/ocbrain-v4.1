@@ -32,6 +32,9 @@ class ContextMemory:
         self._lock = threading.RLock()
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        # A rollback failure makes this connection unsafe to reuse. Store only
+        # a constant status, not raw SQLite diagnostics.
+        self._connection_error: Optional[str] = None
 
         # V2.1 FIX: WAL mode — 3-5× faster for concurrent reads
         self._conn.execute("PRAGMA journal_mode=WAL")
@@ -77,9 +80,17 @@ class ContextMemory:
         self._turns_cache_dirty = True
         self._prompt_cache.clear()
 
+    def _require_connection(self) -> sqlite3.Connection:
+        """Return the live connection or fail closed after rollback failure."""
+        if self._conn is None:
+            reason = self._connection_error or "unavailable"
+            raise sqlite3.ProgrammingError(f"ContextMemory connection {reason}")
+        return self._conn
+
     def _init_db(self):
         with self._lock:
-            cur = self._conn.cursor()
+            conn = self._require_connection()
+            cur = conn.cursor()
             cur.executescript("""
                 CREATE TABLE IF NOT EXISTS turns (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +125,7 @@ class ContextMemory:
             existing_cols = {row[1] for row in cur.execute("PRAGMA table_info(turns)").fetchall()}
             if "scope" not in existing_cols:
                 cur.execute("ALTER TABLE turns ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
-            self._conn.commit()
+            conn.commit()
 
     def save(self, query: str, modules_used: list[str], answer: str,
              entities: Optional[dict] = None, scope: str = ""):
@@ -131,23 +142,48 @@ class ContextMemory:
         if not privacy.can_save_history():
             return
         with self._lock:
-            cur = self._conn.cursor()
-            cur.execute(
-                "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
-                "VALUES (?,?,?,?,?)",
-                (time.time(), query, json.dumps(modules_used), answer, scope),
-            )
-            turn_id = cur.lastrowid
-            if entities:
-                for etype, values in entities.items():
-                    vals = values if isinstance(values, list) else [values]
-                    for v in vals:
-                        cur.execute(
-                            "INSERT INTO entities (turn_id, type, value) VALUES (?,?,?)",
-                            (turn_id, etype, str(v)),
+            conn = self._require_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO turns (timestamp, query, modules_used, answer, scope) "
+                    "VALUES (?,?,?,?,?)",
+                    (time.time(), query, json.dumps(modules_used), answer, scope),
+                )
+                turn_id = cur.lastrowid
+                if entities:
+                    for etype, values in entities.items():
+                        vals = values if isinstance(values, list) else [values]
+                        for v in vals:
+                            cur.execute(
+                                "INSERT INTO entities (turn_id, type, value) VALUES (?,?,?)",
+                                (turn_id, etype, str(v)),
+                            )
+                conn.commit()
+            except BaseException:
+                # Preserve the primary exception and traceback. If rollback
+                # fails, the transaction state is unknown; disable the connection.
+                try:
+                    conn.rollback()
+                except BaseException as rollback_exc:
+                    log.warning(
+                        "[ContextMemory] Rollback failed after save error "
+                        "(error_type=%s)",
+                        type(rollback_exc).__name__,
+                    )
+                    self._connection_error = "disabled after rollback failure"
+                    self._conn = None
+                    try:
+                        conn.close()
+                    except BaseException as close_exc:
+                        log.warning(
+                            "[ContextMemory] Connection close failed after "
+                            "rollback failure (error_type=%s)",
+                            type(close_exc).__name__,
                         )
-            self._conn.commit()
-            # Invalidate caches on write
+                raise
+
+            # Invalidate caches on write only after commit succeeds
             self._turns_cache_dirty = True
             self._prompt_cache.clear()
             self._prompt_cache_turn = turn_id
@@ -158,7 +194,8 @@ class ContextMemory:
         explicit scope to restrict results to turns saved with that same
         scope (CTX-SCOPE-001)."""
         with self._lock:
-            cur = self._conn.cursor()
+            conn = self._require_connection()
+            cur = conn.cursor()
             if scope is None:
                 cur.execute(
                     "SELECT id, timestamp, query, modules_used, answer "
@@ -177,7 +214,8 @@ class ContextMemory:
 
     def get_entity(self, etype: str, limit: int = 5) -> list[str]:
         with self._lock:
-            cur = self._conn.cursor()
+            conn = self._require_connection()
+            cur = conn.cursor()
             cur.execute(
                 "SELECT value FROM entities WHERE type=? "
                 "ORDER BY id DESC LIMIT ?", (etype, limit)
@@ -231,6 +269,8 @@ class ContextMemory:
         interactions system-wide, regardless of who produced them.
         """
         with self._lock:
+            # Validate store health even before returning a cached prompt.
+            self._require_connection()
             cache_key = (n, scope)
             if cache_key in self._prompt_cache and not self._turns_cache_dirty:
                 return self._prompt_cache[cache_key]
