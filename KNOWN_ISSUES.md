@@ -208,6 +208,12 @@ Runtime Integration (Aug 8, 2026; see `CURRENT_STATE.md`'s Cognitive
 Workers table). Moved out of the table below accordingly. `CoderWorker` and
 `BrowserWorker` remain genuinely unbuilt.
 
+**Update (Nov 20, 2026):** the legacy `modules/web_search` route now has
+public-only HTTP egress and a read-only Playwright fallback for JavaScript-
+heavy pages. This does not implement `BrowserWorker` or register K4.2 web
+capability adapters; the table below describes the capability registry, not
+the legacy module system.
+
 ### Future Cognitive Workers
 
 | Worker | Purpose | Phase |
@@ -220,7 +226,7 @@ Workers table). Moved out of the table below accordingly. `CoderWorker` and
 | Capability | Status | Phase |
 |---|---|---|
 | `embedding` | Declared in `CapabilityType`, no adapter registered | Cognitive Phase |
-| `web_search` | Declared, no adapter | Cognitive Phase |
+| `web_search` | Declared, no K4.2 adapter; legacy module exists | Cognitive Phase |
 | `browser_automation` | Declared, no adapter | Cognitive Phase |
 | `file_access` | Declared, no adapter | Cognitive Phase |
 | `memory_search` | Declared, no adapter | Cognitive Phase |

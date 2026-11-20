@@ -4,16 +4,22 @@
 Status:              PROPOSAL — NOT AUTHORITATIVE
 Repository basis:    1h0lde4/ocbrain-v4.1 @ 79c84d5
                       (re-checked against 25ad85b before push prep -- see Part 0.5)
-Implementation:      NOT STARTED
-Scheduling:          NOT SCHEDULED
+Implementation:      SCOPED LEGACY WEB-SEARCH PATH IMPLEMENTED (Nov 20, 2026)
+Scheduling:          READ-ONLY PUBLIC WEB-ACCESS SLICE AUTHORIZED (Nov 20, 2026)
 Current priority:    Kernel v1.0 / Verification
-Browser:              FUTURE MILESTONE
+Browser:              READ-ONLY PLAYWRIGHT FALLBACK EXISTS; BrowserWorker REMAINS FUTURE
 User Behavioral Learning Extension:
                         SEPARATE LATER STUDY
 Supersedes:           v1 (research/contract detail, still referenced) and v2 (hardening pass, corrections carried forward and in one case reversed — see Correction Ledger #9-11 and Part 0.5)
 ```
 
-> **Architecture approved ≠ implementation prerequisites satisfied ≠ implementation scheduled.** These are three separate determinations. This document makes the first one. The Dependency Gate (Part D) shows the second is mostly unmet today. Nobody has made the third, and nothing here should read as though they have.
+> **Architecture approved ≠ implementation prerequisites satisfied ≠ implementation scheduled.** These are three separate determinations. This document makes the first one. The Dependency Gate (Part D) records the study-time prerequisite assessment. On Nov 20, 2026, a scoped public-only, read-only web-search implementation was authorized and added through the existing legacy module path. That does not accept this proposal wholesale, implement `BrowserWorker`, or register K4.2 web/browser adapters.
+
+## Implementation addendum (Nov 20, 2026)
+
+The legacy `modules/web_search` path now uses `core/web/egress.py` for public-only HTTP retrieval and can invoke `core/web/browser.py`'s headless Playwright renderer when static extraction yields too little content. The renderer exposes page content only; it does not offer click, form, login, download, or other user-directed actions. The legacy `core/web/fetcher.py` helper also uses the same egress client.
+
+This is a deliberately bounded implementation of web search and read-only page rendering, not the separate `BrowserWorker` architecture described below. No K4.2 `web_search` or `browser_automation` adapter has been registered. The user deferred interactive and autonomous actions. See `CURRENT_STATE.md` and `KNOWN_ISSUES.md` for the live implementation status.
 
 ---
 

@@ -514,6 +514,18 @@ step_project() {
         || die "Failed to install OCBrain. Check that pyproject.toml is valid."
 }
 
+# ── Read-only browser runtime ──────────────────────────────────────────────────
+step_browser_runtime() {
+    if [[ "$PKG_MANAGER" == "apt" ]]; then
+        sudo "$PYTHON" -m playwright install-deps chromium \
+            || { fail "Chromium system dependencies could not be installed"; return 1; }
+    fi
+    info "Installing Chromium for read-only web browsing..."
+    "$PYTHON" -m playwright install --only-shell chromium \
+        || { fail "Playwright Chromium installation failed"; return 1; }
+    ok "Playwright Chromium ready"
+}
+
 # ── spaCy model ───────────────────────────────────────────────────────────────
 step_spacy_model() {
     if "$PYTHON" -c "import en_core_web_sm" &>/dev/null 2>&1; then
@@ -656,6 +668,7 @@ step_verify() {
     _check "fastapi"               fastapi
     _check "uvicorn"               uvicorn
     _check "httpx"                 httpx
+    _check "playwright"            playwright
     _check "chromadb"              chromadb
     _check "sentence_transformers" sentence_transformers
     _check "pydantic"              pydantic
@@ -699,6 +712,7 @@ run_step "s9_torch"     "torch (CPU — always required)"     step_torch_cpu
 run_step "s9_chromadb"   "chromadb + sqlite3 check"          step_chromadb
 run_step "s10_sentrans"  "sentence-transformers stack"       step_sentence_transformers
 run_step "s11_project"   "OCBrain package install"           step_project
+run_step "s11b_browser"  "Playwright Chromium runtime"       step_browser_runtime
 run_step "s12_spacy"     "spaCy language model"              step_spacy_model
 step_training   # optional — not wrapped in run_step (interactive prompt)
 step_voice      # optional — not wrapped in run_step (interactive prompt)

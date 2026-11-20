@@ -9,6 +9,8 @@ OCBrain is being built as a **cognitive operating system and kernel**, not as an
 > **Engineering status snapshot — November 2, 2026.** The product baseline described here is `main` at `2491ae469edd6ef1267a14604c4f8f40d698f7ea` (PR #106). This is a point-in-time status, not a release-readiness statement. Check the linked live registers before making implementation or merge decisions.
 >
 > **Update — November 17, 2026:** since this snapshot, PR #109, PR #110 and PR #94 merged. The API authentication boundary (DEBT-025) is now implemented on `main`, but DEBT-025 remains open: authorization and durable authentication audit are unresolved, and ADR-KERNEL-09 (control-plane authorization) exists as a PROPOSED design only. `KNOWN_ISSUES.md` and `CURRENT_STATE.md` are the current status record; the snapshot in this README is kept as dated history and was not otherwise re-verified.
+>
+> **Update — November 20, 2026:** the legacy web-search route now uses public-only HTTP egress and a read-only Playwright fallback for JavaScript-heavy pages. The separate `BrowserWorker` and K4.2 web/browser capability adapters remain unimplemented. See `CURRENT_STATE.md` and `KNOWN_ISSUES.md` for scope and limitations.
 
 ---
 
@@ -338,6 +340,23 @@ Optional extras are defined for training and voice features:
 python -m pip install -e ".[training]"
 python -m pip install -e ".[voice]"
 ```
+
+Read-only web browsing uses Playwright with Chromium. The repository setup
+script installs Chromium automatically; on Debian/Ubuntu it also installs the
+required system libraries. After a manual package install, run:
+
+```bash
+python -m playwright install-deps chromium  # Debian/Ubuntu; requires admin privileges
+python -m playwright install --only-shell chromium
+```
+
+Web search and browser page requests use a public-egress client that blocks
+private/local IP addresses, non-standard ports, credentials in URLs, and
+non-GET browser actions. The renderer also blocks Chromium DNS lookups and
+routes any unhandled browser networking to a local dead-end proxy. Browser
+interaction, form submission, and authenticated profiles are not enabled.
+This is not an OS-level network sandbox; do not treat it as isolation from a
+hostile page's non-HTTP browser capabilities or raw UDP traffic.
 
 The package exposes two entry points:
 
