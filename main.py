@@ -36,10 +36,18 @@ Architecture:
            OllamaAdapter/OpenAICompatAdapter register alongside it as the
            "pure" capability path with no maturity-tracking layer.
 """
+
+import sys
+
+# `ocbrain token [--show|--rotate]`: in a packaged install this binary IS `ocbrain`.
+# Answer before importing anything heavy or starting anything (interface/token_cli.py).
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "token":
+    from interface.token_cli import main as _token_main
+    sys.exit(_token_main(sys.argv[2:]))
+
 import asyncio
 import logging
 import signal
-import sys
 from pathlib import Path
 
 import uvicorn
