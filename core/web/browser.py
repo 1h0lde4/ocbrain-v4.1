@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 from core.web.egress import (
+    PublicEgressError,
     PublicWebClient,
     validate_public_url,
 )
@@ -20,6 +21,7 @@ logger = logging.getLogger("ocbrain.web.browser")
 
 _ALLOWED_RESOURCE_TYPES = {"document", "script", "stylesheet", "xhr", "fetch"}
 _MAX_BROWSER_REQUESTS = 64
+_MAX_BROWSER_URL_CHARS = 2_048
 _MASKED_PATHS = (
     "/home",
     "/root",
@@ -88,6 +90,23 @@ async def _read_bounded_page_title(
     )
 
 
+async def _read_bounded_page_url(
+    page, max_url_chars: int, timeout_seconds: float
+) -> str | None:
+    """Return a short HTTP(S) location, or None for unsupported/oversized URLs."""
+    return await asyncio.wait_for(
+        page.evaluate(
+            "(limit) => {"
+            "const url = window.location.href;"
+            "return url.length <= limit && "
+            "(url.startsWith('http://') || url.startsWith('https://')) ? url : null;"
+            "}",
+            max_url_chars,
+        ),
+        timeout=timeout_seconds,
+    )
+
+
 async def render_page(
     url: str,
     client: PublicWebClient,
@@ -95,6 +114,7 @@ async def render_page(
     timeout_seconds: float = 15.0,
     max_text_chars: int = 12_000,
     max_title_chars: int = 512,
+    max_url_chars: int = _MAX_BROWSER_URL_CHARS,
 ) -> BrowserPage:
     """Render a public page without exposing click, form, or script APIs."""
     validated_url = validate_public_url(url)
@@ -213,8 +233,16 @@ async def render_page(
                 title = await _read_bounded_page_title(
                     page, max_title_chars, timeout_seconds
                 )
+                page_url = await _read_bounded_page_url(
+                    page, max_url_chars, timeout_seconds
+                )
+                if page_url is not None:
+                    try:
+                        page_url = str(validate_public_url(page_url))
+                    except PublicEgressError:
+                        page_url = None
                 return BrowserPage(
-                    url=page.url,
+                    url=page_url or str(validated_url),
                     title=title,
                     text=text[:max_text_chars],
                 )

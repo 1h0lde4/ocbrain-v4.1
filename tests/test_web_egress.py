@@ -50,6 +50,11 @@ def test_validate_public_url_allows_public_https_url():
     assert url.port == 443
 
 
+def test_validate_public_url_rejects_oversized_url():
+    with pytest.raises(PublicEgressError, match="size limit"):
+        validate_public_url(f"https://example.com/{'a' * 8_192}")
+
+
 def test_resolver_rejects_a_mixed_public_and_private_dns_answer():
     with pytest.raises(PublicEgressError, match="non-public"):
         _validate_resolved_addresses(
@@ -221,6 +226,22 @@ async def test_browser_bounds_title_before_returning_it_from_the_renderer():
 
     assert len(title) == 32
     assert page.limit == 32
+
+
+@pytest.mark.asyncio
+async def test_browser_only_returns_bounded_http_page_url():
+    class FakePage:
+        async def evaluate(self, expression, limit):
+            assert "url.length <= limit" in expression
+            assert "url.startsWith('http://')" in expression
+            self.limit = limit
+            return None
+
+    page = FakePage()
+    url = await browser._read_bounded_page_url(page, 2_048, 1)
+
+    assert url is None
+    assert page.limit == 2_048
 
 
 @pytest.mark.asyncio

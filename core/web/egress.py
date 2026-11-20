@@ -20,6 +20,7 @@ logger = logging.getLogger("ocbrain.web.egress")
 _ALLOWED_PORTS = {"http": 80, "https": 443}
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _MAX_REDIRECTS = 5
+_MAX_URL_CHARS = 8_192
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _SENSITIVE_REQUEST_HEADERS = {
     "authorization",
@@ -44,11 +45,15 @@ class ResponseTooLargeError(ValueError):
 def validate_public_url(value: str) -> URL:
     if not isinstance(value, str):
         raise PublicEgressError("URL must be text")
+    if len(value) > _MAX_URL_CHARS:
+        raise PublicEgressError("URL exceeds the size limit")
     try:
         url = URL(value)
     except (TypeError, ValueError) as exc:
         raise PublicEgressError("Invalid URL") from exc
 
+    if len(str(url)) > _MAX_URL_CHARS:
+        raise PublicEgressError("URL exceeds the size limit")
     if url.scheme not in _ALLOWED_PORTS or not url.host:
         raise PublicEgressError("Only HTTP and HTTPS URLs are allowed")
     if url.user is not None or url.password is not None:
