@@ -1,5 +1,7 @@
 # OCBrain — Known Issues & Technical Debt Register
 
+**Last synchronized:** Nov 20, 2026, dependency advisory remediation. `pyproject.toml` and `requirements.txt` now require `sentence-transformers>=6.0.0,<7.0.0` (the model-loading gate behavior fix is in 6.0.0) and `transformers>=5.10.0,<6.0.0` (the local OSV advisories' newest fixed floor is 5.10.0). The post-change `pip-audit` reports only three ChromaDB advisories; the previous Sentence Transformers and Transformers findings are no longer reported. The Dependabot alert API returned 403 with the available integration token, so the exact seven alert records could not be confirmed. ChromaDB's current PyPI latest is 1.5.9 and OSV marks versions through 1.5.9 affected; no patched release is published. The owner-approved `chromadb==0.5.3` pin and embedded-only boundary remain in place (`modules/base.py` uses `PersistentClient`, not a Chroma server). The three ChromaDB alerts therefore remain open pending an upstream fix or an explicitly approved backend migration; they are not dismissed or claimed as fixed.
+
 **Last synchronized:** Nov 17, 2026, documentation reconciliation of PR #108's Nov 2 live-state snapshot against `main` after three merges on Nov 17, 2026, each on the owner's explicit instruction: PR #109 (ADR-KERNEL-08 owner-acceptance documentation sync, merge `63eea60`), PR #110 (ADR-KERNEL-09 control-plane authorization design, status PROPOSED: a design record, not accepted, merge `abd6c4b`) and PR #94 (DEBT-025 authentication boundary, merge `ce5c3f8`). Documentation only; no code, test, contract or policy change in this PR; `main` was `ce5c3f807e7f` at the time. DEBT-025 remains OPEN: authentication is IMPLEMENTED, not closed (see the Addendum in its row); control-plane authorization and durable authentication events remain open. CTX-AUTH-001b remains OPEN; CTX-AUTH-002 remains CLOSED (qualified); ADR-KERNEL-08 remains IMPLEMENTED, not FINAL. The Nov 2 snapshot below keeps its own date and baseline (`main` `2491ae4`); where it differs from this entry, this entry governs. Only the items named here were re-verified in this pass.
 
 **Last synchronized:** Nov 2, 2026, ADR-KERNEL-08 documentation reconciliation (documentation only): the owner's explicit acceptance (Nov 1, 2026, after PR #93 merged) of the delegated harness review as satisfying §8.1 item 1 is recorded; the Nov 1 events' dates were corrected from Oct 31 (ADR §8.3.6); the experiment is restated with its limits (one local model; harness ESCALATED=0 is not a compiler-ESCALATE count; R3 is 10 of 30 trials, cost unassessed; commit and exit status not captured); R1 narrowed to the audited call graph. Every "ESCALATED" figure in the entries below is the harness-defined measure (ADR-KERNEL-08 §8.3.4), never a count of Plan Compiler `GovernanceVerdict.ESCALATE` verdicts. Percentages quoted for R3 in the entries below are shares of 30 trials (10 prompts x 3 trials: 20 `request_grounded`, 10 `open_category_fallback`), not of independent user requests and not task-failure rates. No debt status changes: CTX-AUTH-002 stays CLOSED (qualified); CTX-AUTH-001b stays OPEN; REM-004, REM-002 and DEBT-025 untouched. Details: `CURRENT_STATE.md` and ADR-KERNEL-08 §8.3.
@@ -210,9 +212,10 @@ Workers table). Moved out of the table below accordingly. `CoderWorker` and
 
 **Update (Nov 20, 2026):** the legacy `modules/web_search` route now has
 public-only HTTP egress and a read-only Playwright fallback for JavaScript-
-heavy pages. This does not implement `BrowserWorker` or register K4.2 web
-capability adapters; the table below describes the capability registry, not
-the legacy module system.
+heavy pages. On Linux, Chromium runs in a Bubblewrap network/PID namespace;
+rendering fails closed if Bubblewrap is unavailable. This does not implement
+`BrowserWorker` or register K4.2 web capability adapters; the table below
+describes the capability registry, not the legacy module system.
 
 ### Future Cognitive Workers
 

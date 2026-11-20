@@ -117,7 +117,7 @@ step_sysdeps() {
         apt)
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends \
-                build-essential curl git ca-certificates \
+                bubblewrap build-essential curl git ca-certificates \
                 python3-dev \
                 libssl-dev libffi-dev \
                 zlib1g-dev libbz2-dev \
@@ -129,20 +129,20 @@ step_sysdeps() {
                 ;;
         dnf)
             sudo dnf install -y \
-                gcc gcc-c++ curl git ca-certificates \
+                bubblewrap gcc gcc-c++ curl git ca-certificates \
                 python3-devel openssl-devel libffi-devel \
                 zlib-devel bzip2-devel readline-devel sqlite-devel \
                 xz-devel libgomp portaudio-devel \
                 ;;
         pacman)
             sudo pacman -S --noconfirm --needed \
-                base-devel curl git ca-certificates \
+                bubblewrap base-devel curl git ca-certificates \
                 python openssl libffi zlib bzip2 readline sqlite \
                 xz libgomp portaudio \
                 ;;
         zypper)
             sudo zypper install -y \
-                gcc gcc-c++ curl git ca-certificates \
+                bubblewrap gcc gcc-c++ curl git ca-certificates \
                 python3-devel libopenssl-devel libffi-devel \
                 zlib-devel libbz2-devel libreadline-devel sqlite3-devel \
                 xz-devel libgomp1 portaudio-devel \
@@ -516,6 +516,14 @@ step_project() {
 
 # ── Read-only browser runtime ──────────────────────────────────────────────────
 step_browser_runtime() {
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        warn "Browser rendering requires Linux Bubblewrap isolation; skipping Chromium."
+        return 0
+    fi
+    if ! command -v bwrap &>/dev/null; then
+        fail "Bubblewrap is required for isolated browser rendering"
+        return 1
+    fi
     if [[ "$PKG_MANAGER" == "apt" ]]; then
         sudo "$PYTHON" -m playwright install-deps chromium \
             || { fail "Chromium system dependencies could not be installed"; return 1; }

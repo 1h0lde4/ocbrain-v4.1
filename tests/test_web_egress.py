@@ -1,4 +1,7 @@
+import shutil
 import socket
+import subprocess
+import sys
 from unittest.mock import AsyncMock, Mock
 
 import aiohttp
@@ -13,7 +16,12 @@ from core.web.egress import (
     _validate_resolved_addresses,
     validate_public_url,
 )
-from core.web.browser import _allows_browser_request, _header_value
+from core.web import browser
+from core.web.browser import (
+    BrowserSandboxUnavailableError,
+    _allows_browser_request,
+    _header_value,
+)
 
 
 @pytest.mark.parametrize(
@@ -165,6 +173,64 @@ async def test_browser_refuses_private_destination_before_startup():
 
     with pytest.raises(PublicEgressError):
         await render_page("http://127.0.0.1", None)
+
+
+@pytest.mark.asyncio
+async def test_browser_fails_closed_without_bubblewrap(monkeypatch):
+    monkeypatch.setattr(browser.sys, "platform", "linux")
+    monkeypatch.setattr(browser.shutil, "which", lambda _: None)
+
+    with pytest.raises(BrowserSandboxUnavailableError, match="Bubblewrap"):
+        await browser.render_page("https://example.com", None)
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux") or shutil.which("bwrap") is None,
+    reason="Bubblewrap network namespace is only available on supported Linux hosts",
+)
+def test_bubblewrap_wrapper_isolates_network_namespace(tmp_path):
+    system_python = shutil.which("python3", path="/usr/bin:/bin")
+    if system_python is None:
+        pytest.skip("A system Python interpreter is required for the sandbox probe")
+
+    browser_root = tmp_path / "chromium"
+    browser_root.mkdir()
+    probe = browser_root / "probe"
+    probe.write_text(
+        f"#!{system_python}\n"
+        "import socket\n"
+        "names = {name for _, name in socket.if_nameindex()}\n"
+        "assert names <= {'lo'}, names\n"
+        "print('network namespace isolated')\n"
+    )
+    probe.chmod(0o700)
+
+    wrapper = tmp_path / "chromium-sandbox"
+    wrapper.write_text(browser._sandbox_wrapper_source(sys.executable))
+    wrapper.chmod(0o700)
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": "/tmp",
+        "TMPDIR": "/tmp",
+        "LANG": "C.UTF-8",
+        "OCBRAIN_BWRAP": shutil.which("bwrap"),
+        "OCBRAIN_CHROMIUM": str(probe),
+        "OCBRAIN_CHROMIUM_ROOT": str(browser_root),
+    }
+
+    result = subprocess.run(
+        [str(wrapper)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=15,
+    )
+    if result.returncode and "Operation not permitted" in result.stderr:
+        pytest.skip("This Linux host does not permit network namespaces")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "network namespace isolated"
 
 
 @pytest.mark.asyncio

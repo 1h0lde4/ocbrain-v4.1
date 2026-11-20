@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import shutil
+import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 from core.web.egress import (
-    PublicEgressError,
     PublicWebClient,
     validate_public_url,
 )
@@ -16,6 +19,19 @@ logger = logging.getLogger("ocbrain.web.browser")
 
 _ALLOWED_RESOURCE_TYPES = {"document", "script", "stylesheet", "xhr", "fetch"}
 _MAX_BROWSER_REQUESTS = 64
+_MASKED_PATHS = (
+    "/home",
+    "/root",
+    "/tmp",
+    "/run",
+    "/var",
+    "/mnt",
+    "/media",
+    "/workspaces",
+    "/workspace",
+    "/opt",
+    "/srv",
+)
 _STRIPPED_RESPONSE_HEADERS = {
     "connection",
     "content-encoding",
@@ -45,6 +61,10 @@ class BrowserPage:
     text: str
 
 
+class BrowserSandboxUnavailableError(RuntimeError):
+    """Raised when the required OS-level browser sandbox is unavailable."""
+
+
 async def render_page(
     url: str,
     client: PublicWebClient,
@@ -56,97 +76,203 @@ async def render_page(
     validated_url = validate_public_url(url)
     from playwright.async_api import async_playwright
 
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-background-networking",
-                "--disable-component-update",
-                "--disable-default-apps",
-                "--disable-extensions",
-                "--disable-sync",
-                "--no-first-run",
-                "--host-resolver-rules=MAP * ~NOTFOUND",
-                "--proxy-server=http://127.0.0.1:9",
-                "--proxy-bypass-list=<-loopback>",
-            ],
+    if not sys.platform.startswith("linux"):
+        raise BrowserSandboxUnavailableError(
+            "Read-only browser rendering requires Linux Bubblewrap isolation"
         )
-        try:
-            context = await browser.new_context(
-                accept_downloads=False,
-                service_workers="block",
+    bubblewrap = shutil.which("bwrap")
+    if bubblewrap is None:
+        raise BrowserSandboxUnavailableError(
+            "Read-only browser rendering requires Bubblewrap (bwrap)"
+        )
+
+    async with async_playwright() as playwright:
+        chromium, chromium_root = _find_headless_chromium(
+            playwright.chromium.executable_path
+        )
+        with tempfile.TemporaryDirectory(prefix="ocbrain-browser-sandbox-") as temp_dir:
+            wrapper = Path(temp_dir) / "chromium-sandbox"
+            wrapper.write_text(_sandbox_wrapper_source(sys.executable))
+            wrapper.chmod(0o700)
+            browser_env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "TMPDIR": "/tmp",
+                "LANG": "C.UTF-8",
+                "OCBRAIN_BWRAP": bubblewrap,
+                "OCBRAIN_CHROMIUM": str(chromium),
+                "OCBRAIN_CHROMIUM_ROOT": str(chromium_root),
+            }
+            browser = await playwright.chromium.launch(
+                executable_path=str(wrapper),
+                env=browser_env,
+                headless=True,
+                chromium_sandbox=True,
+                args=[
+                    "--disable-background-networking",
+                    "--disable-component-update",
+                    "--disable-default-apps",
+                    "--disable-extensions",
+                    "--disable-sync",
+                    "--no-first-run",
+                ],
             )
-            request_count = 0
+            try:
+                context = await browser.new_context(
+                    accept_downloads=False,
+                    service_workers="block",
+                )
+                request_count = 0
 
-            async def fetch_request(route) -> None:
-                nonlocal request_count
-                request_count += 1
-                request = route.request
-                if not _allows_browser_request(
-                    request.method, request.resource_type, request_count
-                ):
-                    await route.abort()
-                    return
-
-                try:
-                    response = await client.get(
-                        request.url,
-                        headers=request.headers,
-                        timeout=timeout_seconds,
-                        follow_redirects=False,
-                    )
-                    response_headers = {
-                        key: value
-                        for key, value in response.headers.items()
-                        if key.lower() not in _STRIPPED_RESPONSE_HEADERS
-                    }
-                    location = _header_value(response_headers, "location")
-                    if location and 300 <= response.status < 400:
-                        validate_public_url(urljoin(response.url, location))
-                    if (
-                        (_header_value(response_headers, "content-disposition") or "")
-                        .lower()
-                        .strip()
-                        .startswith("attachment")
+                async def fetch_request(route) -> None:
+                    nonlocal request_count
+                    request_count += 1
+                    request = route.request
+                    if not _allows_browser_request(
+                        request.method, request.resource_type, request_count
                     ):
                         await route.abort()
                         return
-                    await route.fulfill(
-                        status=response.status,
-                        headers=response_headers,
-                        body=response.body,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Blocked browser request to %s (%s)",
-                        urlparse(request.url).hostname or "invalid",
-                        type(exc).__name__,
-                    )
-                    await route.abort()
 
-            async def block_websocket(websocket_route) -> None:
-                nonlocal request_count
-                request_count += 1
-                await websocket_route.close()
+                    try:
+                        response = await client.get(
+                            request.url,
+                            headers=request.headers,
+                            timeout=timeout_seconds,
+                            follow_redirects=False,
+                        )
+                        response_headers = {
+                            key: value
+                            for key, value in response.headers.items()
+                            if key.lower() not in _STRIPPED_RESPONSE_HEADERS
+                        }
+                        location = _header_value(response_headers, "location")
+                        if location and 300 <= response.status < 400:
+                            validate_public_url(urljoin(response.url, location))
+                        if (
+                            (_header_value(response_headers, "content-disposition") or "")
+                            .lower()
+                            .strip()
+                            .startswith("attachment")
+                        ):
+                            await route.abort()
+                            return
+                        await route.fulfill(
+                            status=response.status,
+                            headers=response_headers,
+                            body=response.body,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Blocked browser request to %s (%s)",
+                            urlparse(request.url).hostname or "invalid",
+                            type(exc).__name__,
+                        )
+                        await route.abort()
 
-            await context.route("**/*", fetch_request)
-            await context.route_web_socket("**/*", block_websocket)
-            page = await context.new_page()
-            await page.goto(
-                str(validated_url),
-                wait_until="domcontentloaded",
-                timeout=int(timeout_seconds * 1000),
-            )
-            text = await page.locator("body").inner_text(
-                timeout=int(timeout_seconds * 1000)
-            )
-            return BrowserPage(
-                url=page.url,
-                title=await page.title(),
-                text=text[:max_text_chars],
-            )
-        finally:
-            await browser.close()
+                async def block_websocket(websocket_route) -> None:
+                    nonlocal request_count
+                    request_count += 1
+                    await websocket_route.close()
+
+                await context.route("**/*", fetch_request)
+                await context.route_web_socket("**/*", block_websocket)
+                page = await context.new_page()
+                await page.goto(
+                    str(validated_url),
+                    wait_until="domcontentloaded",
+                    timeout=int(timeout_seconds * 1000),
+                )
+                text = await page.locator("body").inner_text(
+                    timeout=int(timeout_seconds * 1000)
+                )
+                return BrowserPage(
+                    url=page.url,
+                    title=await page.title(),
+                    text=text[:max_text_chars],
+                )
+            finally:
+                await browser.close()
+
+
+def _find_headless_chromium(executable_path: str) -> tuple[Path, Path]:
+    chromium_path = Path(executable_path).resolve()
+    chromium_install = next(
+        (parent for parent in chromium_path.parents if parent.name.startswith("chromium-")),
+        None,
+    )
+    if chromium_install is None:
+        raise BrowserSandboxUnavailableError(
+            "Could not locate Playwright's Chromium installation"
+        )
+
+    revision = chromium_install.name.removeprefix("chromium-")
+    headless_install = chromium_install.parent / f"chromium_headless_shell-{revision}"
+    candidates = sorted(
+        headless_install.glob("chrome-headless-shell-*/chrome-headless-shell")
+    )
+    if not candidates:
+        raise BrowserSandboxUnavailableError(
+            "Playwright Chromium headless shell is missing; install it with "
+            "`python -m playwright install --only-shell chromium`"
+        )
+    executable = candidates[0].resolve()
+    return executable, executable.parent
+
+
+def _sandbox_wrapper_source(python_executable: str) -> str:
+    return f"""#!{python_executable}
+import os
+import sys
+from pathlib import Path
+
+bwrap = os.environ["OCBRAIN_BWRAP"]
+chromium = Path(os.environ["OCBRAIN_CHROMIUM"])
+chromium_root = Path(os.environ["OCBRAIN_CHROMIUM_ROOT"])
+chromium_fd = os.open(chromium_root, os.O_RDONLY | os.O_DIRECTORY)
+os.set_inheritable(chromium_fd, True)
+
+args = [
+    bwrap,
+    "--unshare-net",
+    "--unshare-pid",
+    "--die-with-parent",
+    "--new-session",
+    "--ro-bind", "/", "/",
+]
+for path in {_MASKED_PATHS!r}:
+    if Path(path).is_dir():
+        args.extend(["--tmpfs", path])
+
+args.extend(["--dev", "/dev", "--proc", "/proc"])
+
+masked_root = next(
+    (Path(path) for path in {_MASKED_PATHS!r}
+     if chromium_root == Path(path) or Path(path) in chromium_root.parents),
+    None,
+)
+if masked_root is not None:
+    target = masked_root
+    for part in chromium_root.relative_to(masked_root).parts:
+        target /= part
+        args.extend(["--dir", str(target)])
+    args.extend(["--ro-bind-fd", str(chromium_fd), str(chromium_root)])
+
+profile = next(
+    (arg.split("=", 1)[1] for arg in sys.argv[1:]
+     if arg.startswith("--user-data-dir=")),
+    None,
+)
+if profile and Path(profile).is_relative_to("/tmp"):
+    profile_path = Path(profile)
+    target = Path("/tmp")
+    for part in profile_path.relative_to("/tmp").parts:
+        target /= part
+        args.extend(["--dir", str(target)])
+
+args.extend(["--chdir", "/tmp", "--", str(chromium), *sys.argv[1:]])
+os.execvpe(bwrap, args, os.environ)
+"""
 
 
 def _header_value(headers: dict[str, str], name: str) -> str | None:

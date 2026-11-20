@@ -17,7 +17,7 @@ Supersedes:           v1 (research/contract detail, still referenced) and v2 (ha
 
 ## Implementation addendum (Nov 20, 2026)
 
-The legacy `modules/web_search` path now uses `core/web/egress.py` for public-only HTTP retrieval and can invoke `core/web/browser.py`'s headless Playwright renderer when static extraction yields too little content. The renderer exposes page content only; it does not offer click, form, login, download, or other user-directed actions. The legacy `core/web/fetcher.py` helper also uses the same egress client.
+The legacy `modules/web_search` path now uses `core/web/egress.py` for public-only HTTP retrieval and can invoke `core/web/browser.py`'s headless Playwright renderer when static extraction yields too little content. On Linux, Chromium runs in a Bubblewrap network/PID namespace with host user, workspace, and temporary directories masked; page HTTP requests are fulfilled by the public-egress client in the parent process. Rendering fails closed if Bubblewrap is unavailable. The renderer exposes page content only; it does not offer click, form, login, download, or other user-directed actions. The legacy `core/web/fetcher.py` helper also uses the same egress client.
 
 This is a deliberately bounded implementation of web search and read-only page rendering, not the separate `BrowserWorker` architecture described below. No K4.2 `web_search` or `browser_automation` adapter has been registered. The user deferred interactive and autonomous actions. See `CURRENT_STATE.md` and `KNOWN_ISSUES.md` for the live implementation status.
 

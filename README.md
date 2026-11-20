@@ -342,21 +342,26 @@ python -m pip install -e ".[voice]"
 ```
 
 Read-only web browsing uses Playwright with Chromium. The repository setup
-script installs Chromium automatically; on Debian/Ubuntu it also installs the
-required system libraries. After a manual package install, run:
+script installs Chromium and Bubblewrap automatically on supported Linux
+package managers; on Debian/Ubuntu it also installs the required system
+libraries. On Linux, Chromium runs in a Bubblewrap network/PID namespace with
+host home, workspace, and temporary directories masked. Browser rendering
+fails closed if that sandbox is unavailable. On non-Linux systems, web search
+can still use static HTTP extraction, but JavaScript rendering is disabled.
+After a manual Linux package install, run:
 
 ```bash
+sudo apt-get install bubblewrap  # Debian/Ubuntu
 python -m playwright install-deps chromium  # Debian/Ubuntu; requires admin privileges
 python -m playwright install --only-shell chromium
 ```
 
 Web search and browser page requests use a public-egress client that blocks
 private/local IP addresses, non-standard ports, credentials in URLs, and
-non-GET browser actions. The renderer also blocks Chromium DNS lookups and
-routes any unhandled browser networking to a local dead-end proxy. Browser
-interaction, form submission, and authenticated profiles are not enabled.
-This is not an OS-level network sandbox; do not treat it as isolation from a
-hostile page's non-HTTP browser capabilities or raw UDP traffic.
+non-GET browser actions. The sandboxed browser has no network interfaces, so
+raw UDP and other direct browser networking cannot bypass the egress client.
+Browser interaction, form submission, and authenticated profiles are not
+enabled.
 
 The package exposes two entry points:
 
