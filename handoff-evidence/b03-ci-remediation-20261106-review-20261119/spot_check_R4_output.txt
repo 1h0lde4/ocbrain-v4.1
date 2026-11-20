@@ -1,0 +1,7 @@
+# R4: the REAL run: block of the step 'Assert the Docker-backed tests ran', executed with bash -e against variants of /tmp/pytest-output.txt
+plain Docker-prerequisite skip line (expected rc=1) -> rc=1
+same line with ANSI colour codes (FORCE_COLOR-style) -> rc=0
+reason on a continuation line -> rc=0
+whitespace-only file -> rc=0
+empty file (expected rc=1) -> rc=1
+(rc=0 on the middle three = the step passes although it should have failed or could not decide)

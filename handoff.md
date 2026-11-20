@@ -1,6 +1,6 @@
 # Session Handoff
 
-> **Version 5.1 (workstream: B03 CI and security verification remediation, PR #86): version 5 plus the 2026-11-17 update in section 0a.** Version 4 is in git history (`git show 32b8f65:handoff.md`); section 0 below lists what changed in v5, section 0a what changed in v5.1. Version 5 itself is `git show 7e50dee:handoff.md`. It supersedes version 3
+> **Version 5.2 (workstream: B03 CI and security verification remediation, PR #86): version 5.1 plus the 2026-11-19 update in section 0b.** Version 5.1 is `git show b2fe9a3:handoff.md` (version 5 plus section 0a). Version 4 is in git history (`git show 32b8f65:handoff.md`); section 0 below lists what changed in v5, section 0a what changed in v5.1, section 0b what changed in v5.2. Version 5 itself is `git show 7e50dee:handoff.md`. It supersedes version 3
 > (the DockerBackend closure and the DEBT-039 study), which is in git history: `git show 1b829fc:handoff.md`
 > (it is also the `handoff.md` at the PR #86 head `a887e148`). Version 3's workstreams are closed and are not
 > touched by this one.
@@ -9,7 +9,7 @@
 > (PROJECT_INSTRUCTIONS 18.4.9): verify it against the live repository first (section 18).
 >
 > Scope warning (updated in v5): the remediation branch **has now run twice on GitHub Actions** (section 0). Sections 5 to 15 are
-> the v4 text and still describe the lab evidence; where section 0 contradicts them, **section 0 wins**, and where section 0a contradicts section 0, **section 0a wins**. The merge decision is **NO-GO**.
+> the v4 text and still describe the lab evidence; where section 0 contradicts them, **section 0 wins**, and where section 0a contradicts section 0, **section 0a wins**, and where section 0b contradicts section 0a, **section 0b wins**. The merge decision is **NO-GO**.
 
 ## 0. Version 5 update (2026-11-15): what changed since version 4
 
@@ -68,9 +68,40 @@ Next steps (these supersede section 17 where they differ):
 4. Refresh the final report A to J with the run-2 evidence (the 2026-11-15 report predates it). The label stays NO-GO / INCOMPLETE while F12/U9, the alerts and U8 are open.
 5. Do not merge, close or retarget anything.
 
+## 0b. Version 5.2 update (2026-11-19): the independent review exists; the final report is refreshed
+
+Everything this session produced is in `handoff-evidence/b03-ci-remediation-20261106-review-20261119/` (its `README.md` is the index; `SHA256SUMS` its manifest). The two older evidence directories were left byte-identical. **No code, workflow or test file was changed**, nothing was pushed to `integration/**`, PR #86 was not touched. Where this section contradicts section 0a, section 0 or the v4 text below, **this section wins**.
+
+User instructions in this period (verbatim where wording matters):
+- 2026-11-17 15:02, verbatim: "Continue, use the handoff on branch: tmp/b03-ci-remediation-handoff-20261112 as b2fe9a3". The tip `b2fe9a3` is handoff v5.1.
+- Bare "Continue" on 2026-11-18 00:35, 2026-11-18 10:45, 2026-11-18 18:15, 2026-11-19 01:30 and 2026-11-19 12:33. No new instruction. Taken as: carry out the next steps of section 0a. The standing instruction of 2026-11-17 10:11 ("All files must be available for next session") was applied the same way as in v5.1: the results are committed to the temporary branch only.
+
+Facts established (evidence: the files named in the right column):
+
+| Item | Result | Evidence |
+|---|---|---|
+| Handoff v5.1 against the live repository | Consistent. Tip `b2fe9a3`; trees of `164a078` (`b6beea40`), `0bee402` (`10d9b699`), `a1aaffc` (`0209f75e`) as recorded; outside `handoff-evidence/`, `git diff --name-only 164a078 HEAD` lists only `ci.yml`, `handoff.md`, `scripts/ci_docker_preflight.py` and the two new CI test files; `git diff --quiet a887e148 HEAD` over D10 list, gate script, `core/`, `requirements*` and the two B03 files: rc=0 (re-run 2026-11-19), D10 sha256 `51caa5d6...f158316`, 34 entries; the new evidence directory's manifests pass, the old one shows only the known CRLF mismatch; PR #86 re-read 2026-11-19 12:35Z: open, head `a887e148`, base `e2266603`, `updated_at` 2026-11-02, `mergeable_state` "unstable"; the integration branch has exactly two runs (`43643507359` failure, `43644902316` success), none for PR #86's head. | notes in `...-review-20261119/README.md`, `FINAL_REPORT_A-J_20261119.md` sections A, F, G |
+| **U8 / R10: independent review of `164a078`, `0bee402`, `a1aaffc`** | **DONE, APPROVE WITH CONDITIONS, no BLOCKER.** Obtained from a fresh agent on the fifth try (four were cut off by the 5-hour limit; the fourth was resumed once to deliver). Findings: R1 and R2 MEDIUM (the CI can go green with Docker-backed tests not executed), R3 to R6 LOW, R7 and R8 NIT. Its condition: fix or explicitly accept R1 and R2 before the green run is treated as proof. The harness's safety classifier timed out on that agent, so the continuing session checked the checkout (clean) and the remote tips (unchanged) before using the report. | `...-review-20261119/independent_review_report_b0a1143_a1aaffc.md`, `README.md` |
+| Reproduced by the continuing session (not independent of it) | **R1**: a `--deselect` of `test_docker_backend.py` in the pytest command leaves all 31 config tests green. **R4**: the real skip-step `run:` block exits 0 for an ANSI-coloured SKIPPED line, a reason on a continuation line, and a whitespace-only file. **R8** confirmed by reading and already present at `a887e148:ci.yml` line 50 (not introduced by this work). **R2**: confirmed from the hosted output, with one number corrected: the hosted run has **14** `test_namespace_backend` skips (the reviewer wrote 12; 4 + 1 + 14 = 19). R3 and R5 were not reproduced. R6 = N6, R7 = U17. | `spot_check_R1_output.txt`, `spot_check_R4_output.txt`, `spot_checks_20261119.sh.txt` |
+| Trap in the fix proposed for R2 | Installing `gcc-multilib` alone would make `test_a9_...` run, and it hardcodes `ocbrain-test/base:local`, which CI does not provision (U4): it would then fail with "no such object". The alternatives (an explicit allow-list of accepted skips; provisioning that tag) are the owner's (N2). | README, `FINAL_REPORT_A-J_20261119.md` section I |
+| Final report A to J | Refreshed; supersedes the 2026-11-15 report (which is not in the repository). Decision **NO-GO / INCOMPLETE**. | `FINAL_REPORT_A-J_20261119.md` |
+| Hosted evidence of run 2 | Unchanged from section 0a (artifacts verified against GitHub's digests); the 19 skips re-counted from the artifact: 4 + 14 + 1. Indirect only: the `-q` output has no per-file lines, so "the Docker-backed tests ran" rests on the counts (xfailed 1 to 9; 75 formerly failing tests no longer fail; no Docker skip). | the final report, section E |
+
+Ledger changes (these supersede earlier rows): **R10/U8**: review obtained, conditions open (it covers `164a078..a1aaffc`; a later CI change needs a new review of its own delta; do **not** re-send the brief for the same range). **New**: R1 and R2 (MEDIUM, owner decision, grouped with N2), R3 to R5 (LOW), R8 (NIT, pre-existing, owner's call). **U17** now also covers R7; **N6** = R6. **U18(b)**: mitigated: a refreshed final report is now in the repository (the 2026-11-15 one is still not); **U18(a)** (`independent_review_report_164a078.md`) and **U15** (the original assignment) are unchanged. No requirement or decision of earlier sections was changed.
+
+Decision: still **NO-GO / INCOMPLETE**. Open: F12/U9 and D-13 (the exact PR head `a887e148` has never run the remediated workflow; the PR-event proof), the security alerts, the review conditions R1 and R2, N2 to N6, F8/D-15, U17.
+
+The GitHub token the user pasted earlier is still present in clear text in the saved Claude preferences that this session can see. It was not used and is not stored here. It should be revoked and removed from the preferences.
+
+Next steps (these supersede section 0a's where they differ):
+1. Verify the transfer as in section 18, then `cd handoff-evidence/b03-ci-remediation-20261106-review-20261119 && sha256sum -c SHA256SUMS` (must pass). The two older directories' checks are as in section 0a.
+2. OWNER decisions, in this order (see `FINAL_REPORT_A-J_20261119.md` section J): how the CI fix reaches PR #86's head or `b01-base`, and whether to open a PR for the PR-event proof (D-13/U9); accept or fix R1 and R2 and decide whether to bundle R3 to R5, N6, U17 and F8 into one hardening round (a push to `integration/**` starts a hosted run and needs an explicit go); the security alerts (an export, or a token that can read them).
+3. If a hardening round is authorized: keep it minimal; pin the full pytest argv in a test; add a positive "Docker-backed tests executed" check; `--color=no`; settle A9 (see the trap above); push; observe the new hosted run; have the new delta reviewed by a fresh agent.
+4. Do not merge, close or retarget anything.
+
 ## 1. Handoff Metadata
 
-- Handoff version: 5.1 (version 5 plus section 0a, 2026-11-17)
+- Handoff version: 5.2 (version 5.1 plus section 0b, 2026-11-19)
 - Created at: 2026-11-12 (UTC). The session ran 2026-11-06 through 2026-11-12 and survived several context compactions and container resets.
 - Workstream: `sandbox-network-isolation`, PR #86 (B03 inert capacity and IPv6 guard primitives): CI and security verification remediation.
 - Task identifier: "Independent Remediation Assignment: PR #86 B03 CI and Security Verification" (user attachment, 2026-11-06 21:53).
@@ -389,6 +420,6 @@ First actions of the next session:
 
 ## 19. Transfer Status
 
-**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING** (v5.1: unchanged status. U15 is still the reason named in v5; section 0a adds U18, two further items that exist only outside the repository and that this session could not preserve. Until the user supplies or explicitly accepts the loss of those, they are part of the reason too.)
+**TRANSFER INCOMPLETE — REQUIRED INFORMATION MISSING** (v5.2: unchanged status; section 0b says what changed about U18: the refreshed final report is now in the repository, the review report of `164a078` and the original assignment are not. v5.1: unchanged status. U15 is still the reason named in v5; section 0a adds U18, two further items that exist only outside the repository and that this session could not preserve. Until the user supplies or explicitly accepts the loss of those, they are part of the reason too.)
 
 Reason in v5, exactly one: the verbatim text of the original assignment attachment is not available to this session (section 2, U15). Everything else the completeness gate requires is satisfied: the implementation checkpoint `164a078` is committed and pushed to `tmp/b03-ci-remediation-handoff-20261112` and the remote tip was verified; this file and the evidence directory are committed and pushed; requirement, decision and investigation ledgers, failed attempts, verification evidence, environment assumptions and an exact next action are recorded; no material work exists only in the local working tree. The status becomes TRANSFER READY when the user attaches the original assignment text (replace section 2 with it and compare against section 5). Separately, and independent of this status: **the remediation itself is not complete and has no hosted-CI evidence.**

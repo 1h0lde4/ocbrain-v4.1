@@ -1,0 +1,10 @@
+# R1: does the config test-suite notice that the Docker test file is deselected from the pytest run?
+## baseline (a1aaffc, unmutated)
+31 passed, 1 warning in 1.53s
+## mutant: --deselect tests/core/sandbox/test_docker_backend.py appended to the pytest command
+161c161
+<           pytest tests/ -q --tb=short -rfEs 2>&1 | tee /tmp/pytest-output.txt
+---
+>           pytest tests/ -q --tb=short -rfEs --deselect tests/core/sandbox/test_docker_backend.py 2>&1 | tee /tmp/pytest-output.txt
+## config tests against the mutant (a green result means the mutant is NOT caught)
+31 passed, 1 warning in 1.63s

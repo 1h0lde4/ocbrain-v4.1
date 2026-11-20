@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Spot-checks of reviewer findings R1 and R4 (review of b0a1143..a1aaffc), run 2026-11-19.
+# Stored as .sh.txt on purpose (same convention as the .py.txt files elsewhere in handoff-evidence/).
+# usage: bash spot_checks_20261119.sh.txt <git-checkout> <out-dir> <python-with-pytest-9.2.0-and-pyyaml>
+# Never touches <git-checkout>: it works on a `git archive` of a1aaffc in a temp dir.
+set -u
+REPO=$1; OUT=$2; PY=$3
+W=$(mktemp -d); mkdir "$W/repo"
+git -C "$REPO" archive a1aaffc3088ab70dc69c1de1d3c4f0d59bc37c38 | tar -x -C "$W/repo"
+cd "$W/repo"
+{
+echo "# R1: does the config test-suite notice that the Docker test file is deselected from the pytest run?"
+echo "## baseline (a1aaffc, unmutated)"
+"$PY" -m pytest tests/test_ci_workflow_config.py -q -p no:cacheprovider 2>&1 | tail -1
+cp .github/workflows/ci.yml "$W/ci.yml.orig"
+"$PY" - <<'PYEOF'
+p='.github/workflows/ci.yml'
+t=open(p).read()
+old="pytest tests/ -q --tb=short -rfEs 2>&1 | tee /tmp/pytest-output.txt"
+assert t.count(old)==1
+open(p,'w').write(t.replace(old,"pytest tests/ -q --tb=short -rfEs --deselect tests/core/sandbox/test_docker_backend.py 2>&1 | tee /tmp/pytest-output.txt"))
+PYEOF
+echo "## mutant: --deselect tests/core/sandbox/test_docker_backend.py appended to the pytest command"
+diff "$W/ci.yml.orig" .github/workflows/ci.yml
+echo "## config tests against the mutant (a green result means the mutant is NOT caught)"
+"$PY" -m pytest tests/test_ci_workflow_config.py -q -p no:cacheprovider 2>&1 | tail -1
+cp "$W/ci.yml.orig" .github/workflows/ci.yml
+} > "$OUT/spot_check_R1_output.txt" 2>&1
+{
+echo "# R4: the REAL run: block of the step 'Assert the Docker-backed tests ran', executed with bash -e against variants of /tmp/pytest-output.txt"
+"$PY" - "$W/repo/.github/workflows/ci.yml" "$W/skip_step.sh" <<'PYEOF'
+import sys,yaml
+d=yaml.safe_load(open(sys.argv[1]))
+step=[s for s in d['jobs']['tests']['steps'] if s.get('name','').startswith('Assert the Docker-backed')][0]
+open(sys.argv[2],'w').write(step['run'])
+PYEOF
+F=$(mktemp)   # the step reads /tmp/pytest-output.txt: back up any existing file first
+[ -e /tmp/pytest-output.txt ] && cp /tmp/pytest-output.txt "$F.bak"
+try() { cat > /tmp/pytest-output.txt; bash -e "$W/skip_step.sh" >/dev/null 2>&1; echo "$1 -> rc=$?"; }
+printf '%s\n' 'SKIPPED [3] tests/core/sandbox/test_docker_backend.py:84: requires a reachable Docker daemon' | try "plain Docker-prerequisite skip line (expected rc=1)"
+printf '\033[33mSKIPPED\033[0m [3] tests/core/sandbox/test_docker_backend.py:84: requires a reachable Docker daemon\n' | try "same line with ANSI colour codes (FORCE_COLOR-style)"
+printf '%s\n' 'SKIPPED [3] tests/core/sandbox/test_docker_backend.py:84' '  requires a reachable Docker daemon' | try "reason on a continuation line"
+printf '   \n' | try "whitespace-only file"
+: | try "empty file (expected rc=1)"
+rm -f /tmp/pytest-output.txt; [ -e "$F.bak" ] && mv "$F.bak" /tmp/pytest-output.txt
+echo "(rc=0 on the middle three = the step passes although it should have failed or could not decide)"
+} > "$OUT/spot_check_R4_output.txt" 2>&1
+rm -rf "$W"
