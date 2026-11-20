@@ -240,6 +240,15 @@ def test_bubblewrap_wrapper_isolates_network_namespace(tmp_path):
         "import socket\n"
         "names = {name for _, name in socket.if_nameindex()}\n"
         "assert names <= {'lo'}, names\n"
+        "sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        "try:\n"
+        "    sock.sendto(b'probe', ('203.0.113.1', 9))\n"
+        "except OSError:\n"
+        "    pass\n"
+        "else:\n"
+        "    raise AssertionError('raw UDP egress is available')\n"
+        "finally:\n"
+        "    sock.close()\n"
         "print('network namespace isolated')\n"
     )
     probe.chmod(0o700)
