@@ -115,13 +115,18 @@ def _answers_compatible(answers: list[str]) -> bool:
 
 
 async def _weave(answers: list[str], query: str) -> str:
-    providers = resolve_provider("merger")
     parts = "\n\n---\n\n".join(f"[{i+1}]:\n{a}" for i, a in enumerate(answers))
     prompt = (
         f"Combine these answers into one clear, non-repetitive response.\n"
         f"Query: {query}\n\nAnswers:\n{parts}\n\nUnified response:"
     )
+    # DEBT-029 (class): merge() runs after every module's capability call has completed, and the 3+ module
+    # branch calls this helper unguarded. Provider *resolution* is therefore inside the try as well as
+    # generation, so a config failure degrades to a plain join instead of failing already-completed work
+    # (which node retry would then re-execute). Type-only log: exception text is never logged.
     try:
+        providers = resolve_provider("merger")
         return await generate_with_fallback(providers, prompt)
-    except Exception:
+    except Exception as e:
+        log.warning("[Merger] weave failed (error_type=%s); falling back to plain join", type(e).__name__)
         return "\n\n".join(answers)

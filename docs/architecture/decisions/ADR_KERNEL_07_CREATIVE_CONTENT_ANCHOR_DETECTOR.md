@@ -315,8 +315,17 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     this ADR.
   - **Containment options, none applied** — (A) `plan_steps=[]`; (B) drop both the plan and the echoed
     interpretation, leaving the question only; (C) cap the plan at three steps and fix its formatting.
-    D-5 as decided says an ESCALATE *may* surface a question paired with the plan/intent, so (A) and (B)
-    stay inside it. The author's reading of the evidence favors (B) — a reading recorded before the repeated runs, which
+    **Correction (2026-10-17) — D-5 plan-pairing applicability is unresolved.** An earlier version of this paragraph
+    said (A) and (B) "stay inside" D-5; that assertion is withdrawn. It inferred that the word "may" makes the
+    concrete-plan pairing optional, which the text does not support. D-5 (§10.3) describes the detector-specific
+    clarification question as paired with the concrete interpreted plan/intent required by K4.2. (A) and (B) remove
+    the plan; (C) and the current behavior (D = keep as is, defined in the result record's "Disposition options")
+    retain it. The existing wording therefore does not establish that (A) and (B) conform. The remaining owner
+    decision is whether the pairing requirement applies to this response path. No containment option is accepted,
+    excluded or selected by this correction. If the requirement is binding, (A) and (B) need to be excluded or the
+    authoritative wording explicitly revised; if it is not binding, D-5/K4.2 must be reconciled to make that boundary
+    clear.
+    The author's reading of the evidence favors (B) — a reading recorded before the repeated runs, which
     neither select nor exclude any option. Run 0 refuted the hypothesis in that run, and the repeated batch showed
     that "every plan is multi-step" does not hold universally; together they show what the system does, **not**
     that the behavior is undesirable or that (B) is the only correct response — that is a

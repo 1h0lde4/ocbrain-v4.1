@@ -96,7 +96,7 @@ async def _handle(orch, query="what is OCBrain?"):
 
 def _failing_context():
     ctx = MagicMock(spec=ContextMemory)
-    ctx.save = MagicMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))  # outside dispatch try/except
+    ctx.set_long_term_memories_string = MagicMock(side_effect=RuntimeError(RAW_FAILURE_TEXT))
     return ctx
 
 
