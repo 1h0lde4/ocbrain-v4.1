@@ -330,8 +330,45 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
     that "every plan is multi-step" does not hold universally; together they show what the system does, **not**
     that the behavior is undesirable or that (B) is the only correct response — that is a
     product/architecture decision. Disposition is Moncif's.
+    **Status of the two passages above (2026-10-19).** The withdrawal of the A/B "stay inside" claim stands. The
+    sentence naming the "remaining owner decision" (whether the pairing requirement applies to this response path) is
+    **historical and superseded for this response path** by §10.5: the owner retained the requirement. Likewise the
+    author's earlier reading favoring (B) and the sentence "Disposition is Moncif's" are historical: (B) is **not
+    selected** (§10.5). The experimental evidence, thresholds, criteria and verdicts recorded in this section are
+    unchanged.
 - **Contract touch:** one additive keyword argument on `compile()`; the rest is additive
   metadata and an additive event key.
+
+### 10.5 Response-path disposition for the DEBT-043 remediation (owner-directed, 2026-10-19)
+
+**Status: SELECTED FOR IMPLEMENTATION — NOT YET IMPLEMENTED OR VERIFIED. ADR-KERNEL-07 remains PROPOSED.** This section records a
+response-path disposition. It is not the D-5 architectural decision, not an acceptance of this ADR and not a freeze-readiness claim.
+
+- **Decision and date.** On 2026-10-19 (the date of the owner's remediation directive; no earlier decision is
+  recorded) Moncif directed, for the DEBT-042/DEBT-043 remediation, that the K4.2 pairing requirement is **retained**:
+  a detector-specific clarification question may be surfaced only when it is accompanied by a concrete, truthful
+  representation of the interpreted intent and a genuine provisional plan.
+- **Selected: containment option "C-plus".** At most three genuine plan steps; corrected step formatting; an honest
+  representation of the intent; an artifact-appropriate question. **Not selected:** (A) — removes the plan; (B) —
+  removes the plan and the echoed interpretation; (D) — keeps the current behavior and leaves its defects in place (D
+  is defined in the live-check result record's "Disposition options").
+- **Provenance.** C-plus is an owner-directed implementation disposition that extends historical containment candidate
+  (C). It was **not selected by the repeated-run experiment** and is **not part of the D-5 decision of 2026-09-29**,
+  which is unchanged: detector placement, the existing Plan Compilation boundary, no new gate, K4.2 not superseded.
+  D-5 architectural "Option C" and containment "C"/"C-plus" are different decisions with different dates.
+- **Safe failure.** A missing or unusable plan must **not** produce an unpaired detector-specific question. The
+  response in that case is specified by the owner's remediation directive of 2026-10-19 (referred to there as §5.4;
+  the directive is not part of this repository and is not reproduced here) and will be recorded here when the DEBT-043
+  implementation lands; this section records only the prohibition.
+- **Residual product risk (recorded honestly).** The repeated-run experiment observed generic and occasionally
+  over-assumptive planning steps. C-plus reduces what is displayed; it does **not** establish that the remaining steps
+  are semantically appropriate or that users benefit from seeing them. A genuine planner-generated step can still be
+  generic, unsuitable, or presuppose a process that was not requested. The plan must be labeled **provisional**; it is
+  not independently verified, semantically validated or user-approved.
+- **What this does not change.** D-1..D-4 and every other disposition keep their current state;
+  `creative_content_anchor_enabled` stays `false` by default; the experimental evidence, thresholds, criteria and
+  verdicts in §10.4 are preserved. DEBT-043 and DEBT-042 stay **OPEN** in `KNOWN_ISSUES.md` until their fixes are
+  merged and verified.
 
 ## 11. Boundaries and rollback
 
