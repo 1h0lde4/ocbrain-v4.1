@@ -21,7 +21,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from core.events.event_stream import EventStream, get_event_stream
 from core.runtime.execution_context import ExecutionContext
@@ -40,6 +40,12 @@ from core.workflow.definition import (
     RetryPolicy,
     WorkflowDefinition,
     WorkflowNode,
+)
+from core.workflow.instance_guard import (
+    ClaimScope,
+    ClaimUnavailableError,
+    InstanceBusyError,
+    InstanceGuard,
 )
 
 logger = logging.getLogger("ocbrain.workflow.runtime")
@@ -258,12 +264,19 @@ class WorkflowRuntime:
         self,
         execution_runtime: ExecutionRuntime,
         event_stream: Optional[EventStream] = None,
+        *,
+        instance_guard: Optional[InstanceGuard] = None,
     ) -> None:
         self._execution_runtime = execution_runtime
         self._event_stream = event_stream or get_event_stream()
+        # DEBT-028 / ADR-KERNEL-10: single-flight guard on instance_id. The
+        # default guard is in-process only (zero I/O), which is exactly the
+        # pre-existing deployment; a durable host-wide guard is opt-in.
+        self._instance_guard = instance_guard if instance_guard is not None else InstanceGuard()
         self._total_executions: int = 0
         self._total_failures: int = 0
-        logger.info("WorkflowRuntime initialized")
+        logger.info("WorkflowRuntime initialized (instance claim scope=%s)",
+                    self._instance_guard.scope.value)
 
     @staticmethod
     def default_budget_for(query: str) -> ExecutionBudget:
@@ -321,13 +334,48 @@ class WorkflowRuntime:
             node.node_id: WorkflowNodeState(node_id=node.node_id)
             for node in definition.nodes
         }
-        return await self._run(
-            definition, instance_id, node_states, {},
-            query=query, session_id=session_id, metadata=metadata,
-            cancellation_token=cancellation_token,
+        return await self._run_guarded(
+            definition, instance_id, "execute",
+            lambda token: self._run(
+                definition, instance_id, node_states, {},
+                query=query, session_id=session_id, metadata=metadata,
+                cancellation_token=token,
+            ),
+            cancellation_token,
         )
 
     async def resume(
+        self,
+        definition: WorkflowDefinition,
+        instance_id: str,
+        *,
+        query: str = "",
+        session_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        cancellation_token: Optional[CancellationToken] = None,
+    ) -> WorkflowResult:
+        """Resume a previously-interrupted execution from its last checkpoint.
+
+        DEBT-028 / ADR-KERNEL-10: runs under the single-flight claim on
+        `instance_id`, taken BEFORE the checkpoint is read so two concurrent
+        resumes cannot both read the same checkpoint and both re-run its
+        pending nodes. If the instance is already in flight, returns
+        WorkflowResult(success=False) with metadata["claim_failure"] set
+        (never raises, like every other failure here). The resume semantics
+        themselves -- what is reused, what is re-run, the budget, the accepted
+        side-effect limitation -- are documented on _resume_from_checkpoint.
+        """
+        return await self._run_guarded(
+            definition, instance_id, "resume",
+            lambda token: self._resume_from_checkpoint(
+                definition, instance_id,
+                query=query, session_id=session_id, metadata=metadata,
+                cancellation_token=token,
+            ),
+            cancellation_token,
+        )
+
+    async def _resume_from_checkpoint(
         self,
         definition: WorkflowDefinition,
         instance_id: str,
@@ -448,6 +496,67 @@ class WorkflowRuntime:
         except Exception as e:
             logger.warning("WorkflowRuntime: checkpoint write failed for "
                             "instance '%s': %s", instance_id, e)
+
+    async def _run_guarded(
+        self,
+        definition: WorkflowDefinition,
+        instance_id: str,
+        operation: str,
+        run: Callable[[Optional[CancellationToken]], Awaitable[WorkflowResult]],
+        cancellation_token: Optional[CancellationToken],
+    ) -> WorkflowResult:
+        """Run `run` under the single-flight claim on `instance_id` (DEBT-028).
+
+        Never raises: a refused claim becomes WorkflowResult(success=False)
+        with metadata["claim_failure"] in {"instance_busy",
+        "claim_unavailable"}, plus a "workflow.instance_claim_rejected" event.
+        For a durable (host-scope) claim a token is always supplied so that, if
+        the lease is ever lost mid-run, the work is cancelled and a
+        "workflow.instance_claim_lost" event is emitted, instead of silently
+        becoming a duplicate execution.
+        """
+        scope = self._instance_guard.scope
+        token = cancellation_token
+        if token is None and scope is ClaimScope.HOST:
+            token = CancellationToken()
+
+        async def _on_lost() -> None:
+            if token is not None:
+                token.cancel("instance claim lost")
+            await self._emit_event("workflow.instance_claim_lost", {
+                "workflow_id": definition.workflow_id,
+                "instance_id": instance_id,
+                "operation": operation,
+                "scope": scope.value,
+            })
+
+        try:
+            async with self._instance_guard.claim(
+                instance_id, operation=operation, on_lost=_on_lost,
+            ):
+                return await run(token)
+        except InstanceBusyError as exc:
+            reason, holder = "instance_busy", exc.holder
+        except ClaimUnavailableError as exc:
+            reason, holder = "claim_unavailable", None
+            logger.error("WorkflowRuntime: %s", exc)
+        await self._emit_event("workflow.instance_claim_rejected", {
+            "workflow_id": definition.workflow_id,
+            "instance_id": instance_id,
+            "operation": operation,
+            "reason": reason,
+            "scope": scope.value,
+            "holder": None if holder is None else {
+                "host": holder.host, "pid": holder.pid, "operation": holder.operation,
+            },
+        })
+        return WorkflowResult(
+            success=False, workflow_id=definition.workflow_id, instance_id=instance_id,
+            error=(f"workflow instance '{instance_id}' not run: "
+                   + ("it is already in flight" if reason == "instance_busy"
+                      else "exclusive claim could not be established")),
+            metadata={"claim_failure": reason, "claim_scope": scope.value},
+        )
 
     async def _run(
         self,

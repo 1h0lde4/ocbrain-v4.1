@@ -249,6 +249,11 @@ async def main():
     from core.runtime.execution_runtime import ExecutionRuntime
     from core.workers.curator import MemoryCuratorWorker
     from core.workers.planner import PlannerWorker
+    from core.workflow.instance_guard import (
+        DEFAULT_CLAIM_DB_PATH,
+        DEFAULT_LEASE_TTL_S,
+        InstanceGuard,
+    )
     from core.workflow.runtime import WorkflowRuntime
 
     # Step 6a-2: K2.3 — Capability Runtime (capability/adapter/resource layer)
@@ -381,9 +386,20 @@ async def main():
     # through this, replacing the inline classify->dispatch->merge flow as
     # the primary production path. See K2.2 Cutover Report for the full
     # before/after chain and the reachability audit that verifies this.
+    # DEBT-028 / ADR-KERNEL-10 (PROPOSED): single-flight guard on a workflow
+    # instance_id. Its scope is an explicit deployment setting: "process"
+    # (default; in-process only, no I/O) or "host" (adds a durable lease shared
+    # by every process on this host that uses the same claim file). An unknown
+    # value stops startup rather than silently falling back.
+    workflow_instance_guard = InstanceGuard.from_scope(
+        config.get("runtime.workflow_claim_scope", "process"),
+        db_path=config.get("runtime.workflow_claim_db_path", DEFAULT_CLAIM_DB_PATH),
+        ttl_s=float(config.get("runtime.workflow_claim_lease_s", DEFAULT_LEASE_TTL_S)),
+    )
     workflow_runtime = WorkflowRuntime(
         execution_runtime=execution_runtime,
         event_stream=event_stream,
+        instance_guard=workflow_instance_guard,
     )
     log.info("WorkflowRuntime ready")
 
