@@ -19,6 +19,13 @@ What these pin, and why:
   skip whose reason says the daemon or the image is missing (the preflight has just
   proved both); its real ``run:`` block is executed against sample pytest output.
 * MYPY.  A pinned, narrow mypy job over the two B03 files, default and --strict.
+* EXECUTION EVIDENCE (R1/R2/R4/R5).  pytest writes a JUnit XML; before the gate, a step records the
+  REAL exit codes of the A9 evidence check and of the JUnit execution-manifest check (it never
+  fails by itself, because a red gate would skip everything after it); the last step of the job
+  decides from those records.  The five uploads, their exact paths and the ``error`` policy, the
+  action SHAs, the image, the absence of shell overrides and of OCBRAIN_SANDBOX_NETWORK_PROVISIONED,
+  and the exact pytest toolchain pins are pinned here; the recording and verdict steps are
+  executed for real against fixture inputs.
 * PACKET OWNERSHIP.  The real ``run:`` block is executed under a pull_request-style
   environment (``GITHUB_HEAD_REF`` set) and a push-style one (``GITHUB_REF_NAME``
   only): a declared packet branch is recognised either way; B03's branch is not a
@@ -32,6 +39,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -130,7 +138,7 @@ def test_every_artifact_upload_runs_even_after_an_earlier_step_failed() -> None:
         for step in _steps(name)
         if str(step.get("uses", "")).startswith("actions/upload-artifact@")
     ]
-    assert len(uploads) == 4, f"expected the four artifact uploads, found {uploads}"
+    assert len(uploads) == 5, f"expected the five artifact uploads, found {uploads}"
     for job, step, cond in uploads:
         assert cond == "always()", f"{job}/{step}: an artifact upload without `if: always()` is lost on a failed run"
 
@@ -138,7 +146,7 @@ def test_every_artifact_upload_runs_even_after_an_earlier_step_failed() -> None:
 def test_every_hosted_job_uploads_its_evidence_even_on_failure() -> None:
     wanted = {
         "drift-and-ownership": {"drift-report"},
-        "tests": {"docker-preflight", "pytest-output"},
+        "tests": {"docker-preflight", "pytest-output", "test-execution-evidence"},
         "typecheck-b03": {"mypy-b03"},
     }
     for job, names in wanted.items():
@@ -563,3 +571,343 @@ class TestPacketOwnershipStep:
         assert "is not one of this manifest's declared packet branches" in r.stdout
         assert "skipping cleanly" in r.stdout
         assert "SHIM python3" not in r.stdout, "the ownership checker must not run for a non-packet branch"
+
+
+# ------------------------------------------------------------------ R5: workflow integrity
+
+EXPECTED_ACTIONS = {
+    "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
+    "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+    "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+}
+EVIDENCE_FILES = (
+    "/tmp/pytest-junit.xml",
+    "/tmp/a9-observation.json",
+    "/tmp/a9-check.txt",
+    "/tmp/a9-check-exit-code.txt",
+    "/tmp/junit-manifest-check.json",
+    "/tmp/junit-manifest-check.txt",
+    "/tmp/junit-check-exit-code.txt",
+)
+# (job, artifact name) -> (exact path set).  Every upload is `if-no-files-found: error` (R5-e) and
+# `if: always()` (tested above); names and paths are exact (R5-f).
+EXPECTED_UPLOADS = {
+    ("drift-and-ownership", "drift-report"): {"/tmp/drift-report.json"},
+    ("tests", "docker-preflight"): {"/tmp/docker-preflight.json"},
+    ("tests", "pytest-output"): {"/tmp/pytest-output.txt", "/tmp/pytest-exit-code.txt"},
+    ("tests", "test-execution-evidence"): set(EVIDENCE_FILES),
+    ("typecheck-b03", "mypy-b03"): {"/tmp/mypy-b03.txt"},
+}
+CONSTRAINTS = ROOT / "tests" / "ci" / "ci-constraints.txt"
+EXEC_MANIFEST = ROOT / "tests" / "ci" / "pytest-execution-manifest.json"
+
+
+def _uploads() -> dict[tuple[str, str], dict[str, Any]]:
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for job in JOBS:
+        for step in _steps(job):
+            if str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+                out[(job, step["with"]["name"])] = step["with"]
+    return out
+
+
+def test_r5g_no_shell_override_at_workflow_job_or_step_level() -> None:
+    """`shell:` would add pipefail and change how the existing PIPESTATUS steps behave."""
+    doc = _doc()
+    assert "defaults" not in doc
+    for name, job in doc["jobs"].items():
+        assert "defaults" not in job, f"{name}: defaults.run.shell would change every step"
+        for step in job["steps"]:
+            assert "shell" not in step, f"{name}/{step.get('name')}: shell override"
+    assert not re.search(r"^\s*shell\s*:", WORKFLOW.read_text(encoding="utf-8"), re.MULTILINE)
+
+
+def test_r5e_r5f_every_upload_has_the_exact_name_paths_and_error_policy() -> None:
+    uploads = _uploads()
+    assert set(uploads) == set(EXPECTED_UPLOADS), sorted(uploads)
+    for key, expected_paths in EXPECTED_UPLOADS.items():
+        w = uploads[key]
+        paths = {ln.strip() for ln in str(w["path"]).splitlines() if ln.strip()}
+        assert paths == expected_paths, f"{key}: upload path set changed: {sorted(paths)}"
+        assert w.get("if-no-files-found") == "error", f"{key}: a missing file must fail the upload"
+
+
+def test_r5h_every_action_is_pinned_to_the_expected_commit() -> None:
+    seen = []
+    for job in JOBS:
+        for step in _steps(job):
+            if "uses" in step:
+                action, _, ref = str(step["uses"]).partition("@")
+                assert action in EXPECTED_ACTIONS, f"{job}/{step.get('name')}: unexpected action {action}"
+                assert ref == EXPECTED_ACTIONS[action], f"{job}/{step.get('name')}: {action} is not at the pinned commit"
+                seen.append(action)
+    assert len(seen) == 11, f"an action was added or removed: {seen}"
+    assert set(seen) == set(EXPECTED_ACTIONS)
+
+
+def test_r5s_the_test_image_is_exactly_python_3_12_slim_and_nothing_else_is_in_job_env() -> None:
+    """The job env holds the image and nothing else: in particular no OCBRAIN_SANDBOX_NETWORK_PROVISIONED."""
+    assert _doc()["jobs"]["tests"]["env"] == {"OCBRAIN_SANDBOX_DOCKER_IMAGE": "python:3.12-slim"}
+
+
+def test_r5p_m13_the_network_provisioned_flag_is_absent_everywhere() -> None:
+    """With it set to 1 the eight B01 strict xfails would run as if the contract were provisioned
+    (N-1).  It must not appear in the workflow at any level, not even in a comment."""
+    assert "OCBRAIN_SANDBOX_NETWORK_PROVISIONED" not in WORKFLOW.read_text(encoding="utf-8")
+    doc = _doc()
+    assert "env" not in doc
+    for name, job in doc["jobs"].items():
+        for step in job["steps"]:
+            assert set(step.get("env", {})) <= {"OCBRAIN_A9_OBSERVATION_PATH"}, f"{name}/{step.get('name')}"
+
+
+def _constraint_pins() -> dict[str, str]:
+    pins: dict[str, str] = {}
+    for raw in CONSTRAINTS.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            name, sep, version = line.partition("==")
+            assert sep and name not in pins, f"constraints must be exact, unique pins: {raw!r}"
+            pins[name.strip().lower().replace("_", "-")] = version.strip()
+    return pins
+
+
+def test_r5q_m17_the_ci_toolchain_is_pinned_exactly_and_the_three_places_agree() -> None:
+    pins = _constraint_pins()
+    assert pins == {"pytest": "9.2.0", "pytest-asyncio": "1.5.0", "anyio": "4.16.0"}
+    assert all(re.fullmatch(r"\d+(\.\d+)*", v) for v in pins.values()), "no prerelease may be pinned"
+    manifest_pins = json.loads(EXEC_MANIFEST.read_text(encoding="utf-8"))["pins"]
+    assert manifest_pins == {"pytest": pins["pytest"], "plugins": {k: v for k, v in pins.items() if k != "pytest"}}
+    install = _step("tests", "Install dependencies")["run"]
+    assert "pip install -r requirements.txt -c tests/ci/ci-constraints.txt" in install
+    assert "pytest==9.2.0" in _step("typecheck-b03", "Install pinned mypy")["run"]
+
+
+def test_r5q_no_other_unpinned_install_in_the_test_job() -> None:
+    installs = [
+        (s["name"], ln.strip())
+        for s in _steps("tests")
+        for ln in str(s.get("run", "")).splitlines()
+        if re.search(r"\b(pip|pip3|apt-get|apt)\b.*\binstall\b", ln)
+    ]
+    assert installs == [
+        ("Install dependencies", "python -m pip install --upgrade pip"),
+        ("Install dependencies", "pip install -r requirements.txt -c tests/ci/ci-constraints.txt"),
+        ("Install the 32-bit toolchain that A9 needs", "sudo apt-get install -y --no-install-recommends gcc-multilib"),
+    ], installs
+
+
+def _pytest_tokens() -> list[str]:
+    run = _step("tests", "Run test suite")["run"]
+    lines = [ln.strip() for ln in run.splitlines() if ln.strip().startswith("pytest ")]
+    assert len(lines) == 1, lines
+    return shlex.split(lines[0].split(" 2>&1")[0])
+
+
+def test_m1_to_m5_pytest_runs_the_whole_suite_with_exactly_these_arguments() -> None:
+    """No --deselect, --ignore, -k, -m, -x, narrowed path or plugin switch can be added without
+    changing this list, and so without a reviewed change to the test."""
+    assert _pytest_tokens() == [
+        "pytest", "tests/", "-q", "--tb=short", "-rfEs",
+        "-o", "junit_family=xunit2", "--junitxml=/tmp/pytest-junit.xml",
+    ]
+
+
+def test_the_a9_record_path_is_one_value_in_env_check_and_upload() -> None:
+    run_step = _step("tests", "Run test suite")
+    assert run_step["env"] == {"OCBRAIN_A9_OBSERVATION_PATH": "/tmp/a9-observation.json"}
+    record = _step("tests", "Record the A9 and JUnit manifest verdicts")["run"]
+    assert "--record /tmp/a9-observation.json" in record
+    assert "--junit /tmp/pytest-junit.xml" in record
+    assert "--manifest tests/ci/pytest-execution-manifest.json" in record
+
+
+def test_step_order_in_the_tests_job() -> None:
+    names = [s.get("name", "") for s in _steps("tests")]
+
+    def at(prefix: str) -> int:
+        hits = [i for i, n in enumerate(names) if n.startswith(prefix)]
+        assert len(hits) == 1, (prefix, hits)
+        return hits[0]
+
+    toolchain = at("Install the 32-bit toolchain")
+    assert at("Install dependencies") < toolchain < at("Docker preflight")
+    assert at("Run test suite") < at("Upload full test output") < at("Record the A9 and JUnit manifest verdicts")
+    assert at("Record the A9") < at("Upload test execution evidence") < at("Gate on pytest exit code")
+    assert at("Gate on pytest exit code") < at(_SKIP_STEP_NAME) < at("Fail unless the A9 and JUnit manifest checks passed")
+    assert at("Fail unless") == len(names) - 1, "the deciding step is the last step of the job"
+
+
+def test_the_verdict_step_is_one_command_over_exactly_the_evidence_the_record_step_writes() -> None:
+    verdict = _single_command(_step("tests", "Fail unless the A9 and JUnit manifest checks passed")["run"])
+    assert verdict[:3] == ["python3", "scripts/ci_junit_manifest.py", "verdict"]
+    exit_files = {verdict[i + 1] for i, t in enumerate(verdict) if t == "--exit-code-file"}
+    required = {verdict[i + 1] for i, t in enumerate(verdict) if t == "--require-file"}
+    record = _step("tests", "Record the A9 and JUnit manifest verdicts")["run"]
+    written = set(re.findall(r'echo "\$\?" > (\S+)', record))
+    assert exit_files == written, "the verdict must read exactly the exit codes the recording step writes"
+    assert exit_files | required == set(EVIDENCE_FILES), "everything uploaded is required, and nothing else is"
+    assert len(verdict) == 3 + 2 * (len(exit_files) + len(required))
+
+
+def test_the_recording_step_never_fails_by_itself_and_keeps_each_real_exit_code() -> None:
+    run = _step("tests", "Record the A9 and JUnit manifest verdicts")["run"]
+    lines = [ln.strip() for ln in run.replace("\\\n", " ").splitlines() if ln.strip()]
+    assert lines[0] == "set +e" and lines[-1] == "exit 0"
+    assert "||" not in run and "tee" not in run
+    # each checker is followed IMMEDIATELY by the line that records its own $?
+    for i, ln in enumerate(lines):
+        if ln.startswith("echo \"$?\""):
+            assert lines[i - 1].startswith("python3 scripts/"), "the recorded code must be the checker's"
+    assert sum(ln.startswith('echo "$?"') for ln in lines) == 2
+    assert "if" not in _step("tests", "Record the A9 and JUnit manifest verdicts")
+
+
+# ------------------------------------------------------------------ the recording and verdict steps, executed for real
+
+SCRIPTS = ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+import ci_a9_verifier as a9v  # noqa: E402
+import ci_junit_manifest as cjm  # noqa: E402
+
+A9_FIXTURES = ROOT / "tests" / "fixtures" / "ci" / "a9"
+_RECORD_STEP = "Record the A9 and JUnit manifest verdicts"
+_VERDICT_STEP = "Fail unless the A9 and JUnit manifest checks passed"
+
+
+def _a9_record(name: str) -> dict[str, Any]:
+    fx = json.loads((A9_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    return a9v.build_record(a9v.observations_from_record(fx), invocation_id="inv-1", image_ref="img:tag")
+
+
+def _junit(cases: list[tuple[str, str]]) -> str:
+    body = "".join(f'<testcase classname="{c}" name="{n}" time="0" />' for c, n in cases)
+    return (f'<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="0" '
+            f'skipped="0" tests="{len(cases)}">{body}</testsuite></testsuites>')
+
+
+def _exec_manifest() -> dict[str, Any]:
+    env = cjm.detect_environment()
+    assert env.pytest_version and not env.problem, env.problem
+    return {
+        "schema_version": cjm.MANIFEST_SCHEMA, "manifest_version": "1.0.0",
+        "pins": {"pytest": env.pytest_version, "plugins": dict(env.plugins)},
+        "entries": [{
+            "id": "must-run", "source": "tests/test_ci_workflow_config.py", "junit_classname": "tests.x",
+            "junit_name": "test_must_run", "expected_outcome": "PASS", "criticality": "runtime_verification",
+            "provenance": "fixture",
+        }],
+        "pending": [],
+    }
+
+
+class _Steps:
+    """Runs the workflow's real recording and verdict `run:` blocks in bash, with /tmp relocated."""
+
+    def __init__(self, tmp_path: Path, junit: str | None, a9: dict[str, Any] | None, manifest: dict[str, Any]) -> None:
+        self.scratch = tmp_path / "scratch"
+        self.scratch.mkdir()
+        self.manifest = tmp_path / "manifest.json"
+        self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        wrapper = bindir / "python3"
+        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+        self.env = {"PATH": f"{bindir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+        if junit is not None:
+            (self.scratch / "pytest-junit.xml").write_text(junit, encoding="utf-8")
+        if a9 is not None:
+            (self.scratch / "a9-observation.json").write_text(json.dumps(a9), encoding="utf-8")
+        self.tmp = tmp_path
+
+    def run(self, step: str) -> subprocess.CompletedProcess[str]:
+        text = _step("tests", step)["run"].replace("/tmp/", f"{self.scratch}/")
+        text = text.replace("tests/ci/pytest-execution-manifest.json", str(self.manifest))
+        script = self.tmp / f"{abs(hash(step))}.sh"
+        script.write_text(text, encoding="utf-8")
+        return subprocess.run(["bash", "-e", str(script)], cwd=ROOT, env=self.env, capture_output=True, text=True, timeout=120)
+
+    def code(self, name: str) -> str:
+        return (self.scratch / name).read_text(encoding="utf-8").strip()
+
+
+GOOD_JUNIT = _junit([("tests.x", "test_must_run")])
+
+
+@pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None, reason="executes the workflow's bash steps")
+class TestExecutionChecksSteps:
+    def test_both_checks_green_means_a_green_verdict(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("verified_apparmor"), _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert (s.code("a9-check-exit-code.txt"), s.code("junit-check-exit-code.txt")) == ("0", "0")
+        v = s.run(_VERDICT_STEP)
+        assert v.returncode == 0, v.stdout
+        assert "MITIGATION_VERIFIED" in (s.scratch / "a9-check.txt").read_text()
+        assert "GREEN" in (s.scratch / "junit-manifest-check.txt").read_text()
+        assert json.loads((s.scratch / "junit-manifest-check.json").read_text())["green"] is True
+
+    def test_an_unverified_a9_is_red_but_only_the_last_step_says_so(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("lab_host_bypass"), _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0, "the recording step never fails by itself"
+        assert (s.code("a9-check-exit-code.txt"), s.code("junit-check-exit-code.txt")) == ("1", "0")
+        v = s.run(_VERDICT_STEP)
+        assert v.returncode == 1 and "a9-check-exit-code.txt" in v.stdout and "junit-check-exit-code" not in v.stdout.split("RED", 1)[1]
+
+    def test_a_missing_a9_record_is_recorded_as_invalid_and_is_red(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, None, _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert s.code("a9-check-exit-code.txt") == "2"
+        assert "INVALID" in (s.scratch / "a9-check.txt").read_text(), "the text evidence exists even when the record does not"
+        v = s.run(_VERDICT_STEP)
+        assert v.returncode == 1 and "a9-observation.json" in v.stdout
+
+    def test_a_missing_junit_report_is_red(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, None, _a9_record("verified_apparmor"), _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert (s.code("a9-check-exit-code.txt"), s.code("junit-check-exit-code.txt")) == ("0", "1")
+        assert s.run(_VERDICT_STEP).returncode == 1
+
+    def test_a_deselected_mandatory_test_is_red_end_to_end(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, _junit([("tests.x", "test_something_else")]), _a9_record("verified_apparmor"), _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert s.code("junit-check-exit-code.txt") == "1"
+        assert "must-run" in (s.scratch / "junit-manifest-check.txt").read_text()
+        assert s.run(_VERDICT_STEP).returncode == 1
+
+    def test_a_toolchain_that_is_not_the_pinned_one_is_red_end_to_end(self, tmp_path: Path) -> None:
+        doc = _exec_manifest()
+        doc["pins"]["pytest"] = "0.0.1"
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("verified_apparmor"), doc)
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert s.code("junit-check-exit-code.txt") == "1"
+        assert s.run(_VERDICT_STEP).returncode == 1
+
+    @pytest.mark.parametrize("victim", [
+        "pytest-junit.xml", "a9-observation.json", "a9-check.txt", "junit-manifest-check.json", "junit-manifest-check.txt",
+    ])
+    def test_a_missing_evidence_file_fails_the_verdict_even_when_both_checks_passed(self, tmp_path: Path, victim: str) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("verified_apparmor"), _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        (s.scratch / victim).unlink()
+        v = s.run(_VERDICT_STEP)
+        assert v.returncode == 1 and victim in v.stdout
+
+    @pytest.mark.parametrize("victim", ["a9-check-exit-code.txt", "junit-check-exit-code.txt"])
+    def test_a_missing_or_tampered_exit_code_record_fails_the_verdict(self, tmp_path: Path, victim: str) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("verified_apparmor"), _exec_manifest())
+        s.run(_RECORD_STEP)
+        (s.scratch / victim).write_text("7\n")
+        assert s.run(_VERDICT_STEP).returncode == 1
+        (s.scratch / victim).unlink()
+        assert s.run(_VERDICT_STEP).returncode == 1
+
+    def test_the_verdict_without_the_recording_step_is_red(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, GOOD_JUNIT, _a9_record("verified_apparmor"), _exec_manifest())
+        assert s.run(_VERDICT_STEP).returncode == 1
+
+    def test_the_recording_step_succeeds_even_when_there_is_nothing_at_all(self, tmp_path: Path) -> None:
+        s = _Steps(tmp_path, None, None, _exec_manifest())
+        assert s.run(_RECORD_STEP).returncode == 0
+        assert (s.code("a9-check-exit-code.txt"), s.code("junit-check-exit-code.txt")) == ("2", "1")
+        assert s.run(_VERDICT_STEP).returncode == 1

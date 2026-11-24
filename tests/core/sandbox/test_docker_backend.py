@@ -831,112 +831,96 @@ def test_tc16_net_namespace_alone_does_not_admit_a_networked_request():
 
 
 # ======================================================================
-# A9/C3 — the exploit as a permanent regression/consistency check, not
-# just a one-off manual reproduction. Needs gcc-multilib (a genuine
-# 32-bit static binary — an inline `int $0x80` from a 64-bit process
-# was tried first and is wrong: its pointers aren't 32-bit-representable
-# and the kernel returns EFAULT). Skipped, separately from
-# _needs_docker, when that toolchain isn't available.
+# A9/C3 — the AF_VSOCK `socketcall` bypass, as a required security
+# assertion (H-D12, H-D14). The test used to characterise the bypass
+# ("open when no LSM is active"); it now requires verified mitigation,
+# so it FAILS wherever the container's deny rule cannot be verified, and
+# that is by design: a merge gate must not turn green because its
+# required security property is hard to verify.
+#
+# What "verified" means is defined and implemented in
+# scripts/ci_a9_verifier.py (spec 4A, H-D13): four runs of one 32-bit
+# static probe in the product's own `docker create` argv (S, the control
+# C that differs only by removing the LSM, and the baselines B1/B2), and
+# a classification that is a pure function of the observations. This
+# test only wires the product's argv into that method, writes the
+# evidence record BEFORE asserting (so a failing run still leaves its
+# evidence), and asserts MITIGATION_VERIFIED. It has no skip: a missing
+# Docker daemon, compiler or 32-bit execution is an INFRASTRUCTURE_ERROR
+# record and a red test, never a pass-by-skip (H-R2-1).
 # ======================================================================
 
-_SOCKETCALL_PROBE_C = r"""
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-#include <unistd.h>
 
-#define SYS_SOCKET 1
-
-long int80_socketcall(int call, long a0, long a1, long a2) {
-    long args[3] = {a0, a1, a2};
-    long ret;
-    __asm__ volatile ("int $0x80" : "=a" (ret) : "a" (102), "b" (call), "c" (args) : "memory");
-    return ret;
-}
-
-int main(int argc, char **argv) {
-    int domain = atoi(argv[1]);
-    int type = atoi(argv[2]);
-    long ret = int80_socketcall(SYS_SOCKET, domain, type, 0);
-    if (ret < 0) {
-        printf("FAILED errno=%ld\n", -ret);
-        return 1;
-    }
-    char linkpath[64], target[256];
-    snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%ld", ret);
-    ssize_t n = readlink(linkpath, target, sizeof(target) - 1);
-    if (n >= 0) {
-        target[n] = '\0';
-        printf("SUCCEEDED fd=%ld target=%s\n", ret, target);
-        return 0;
-    }
-    printf("SUCCEEDED fd=%ld target=UNKNOWN\n", ret);
-    return 0;
-}
-"""
+def _a9_record_path(tmp_path) -> pathlib.Path:
+    """Where the evidence record goes: CI sets OCBRAIN_A9_OBSERVATION_PATH
+    so the artifact step can find it; a local run keeps it in tmp_path."""
+    configured = os.environ.get("OCBRAIN_A9_OBSERVATION_PATH")
+    return pathlib.Path(configured) if configured else tmp_path / "a9-observation.json"
 
 
-def _can_build_32bit_probe() -> bool:
-    try:
-        r = subprocess.run(
-            ["gcc", "-m32", "-x", "c", "-static", "-o", "/dev/null", "-"],
-            input=_SOCKETCALL_PROBE_C, capture_output=True, text=True, timeout=15,
-        )
-        return r.returncode == 0
-    except Exception:
-        return False
-
-
-_needs_32bit_toolchain = pytest.mark.skipif(
-    not _can_build_32bit_probe(), reason="requires gcc-multilib (a real 32-bit static toolchain)"
-)
-
-
-@_needs_docker
-@_needs_32bit_toolchain
 @pytest.mark.asyncio
-async def test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state(tmp_path):
-    """The exploit, kept alive as a check rather than left as a one-off
-    manual finding. AF_VSOCK=40, SOCK_STREAM=1 (see docker_backend.py's
-    _lsm_active() docstring for the full account of what was tried and
-    why a seccomp-profile fix does not work here).
+async def test_a9_af_vsock_socketcall_bypass_is_mitigated_by_the_container_deny_rule(tmp_path):
+    """Requires `MITIGATION_VERIFIED` from the H-D13 method, on this host,
+    for the image CI actually uses (`_closeout_image()`), through the
+    argv `DockerBackend` actually builds. AF_VSOCK=40, SOCK_STREAM=1; see
+    docker_backend.py's `_lsm_active()` docstring for why a seccomp
+    profile cannot close the 32-bit `socketcall` path and only an LSM
+    hook (`security_socket_create`) does.
 
-    Only one direction is asserted: when no LSM is active (this host,
-    today), the bypass MUST be observably open — that is the current,
-    honest, verified state, and if it ever silently stops being true
-    without a corresponding code/doc update, this should fail loudly,
-    not pass quietly. When an LSM *is* active, this only reports the
-    result rather than asserting one, since _lsm_active() confirms
-    presence, not that the specific deny rule is loaded.
+    Not asserted: that `_lsm_active()` is true or false (that helper only
+    reports presence and is not consulted here), or anything about a
+    host other than the one this ran on. A pass is a measurement of this
+    host at this time, with the evidence in the record.
     """
-    from core.sandbox.backends.docker_backend import _lsm_active
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "scripts"))
+    import ci_a9_verifier as a9
+    from core.sandbox.backends.docker_backend import _build_container_env, _build_create_args
 
+    image_ref = _closeout_image()
     probe_dir = tmp_path / "probe"
+    workspace = tmp_path / "workspace"
     probe_dir.mkdir()
-    src_path = probe_dir / "probe.c"
-    bin_path = probe_dir / "probe"
-    src_path.write_text(_SOCKETCALL_PROBE_C)
-    build = subprocess.run(
-        ["gcc", "-m32", "-static", "-o", str(bin_path), str(src_path)],
-        capture_output=True, text=True,
-    )
-    assert build.returncode == 0, build.stderr
+    workspace.mkdir()
 
-    AF_VSOCK, SOCK_STREAM = 40, 1
-    result = subprocess.run(
-        ["docker", "run", "--rm", "-v", f"{probe_dir}:/probe:ro", "ocbrain-test/base:local",
-         "/probe/probe", str(AF_VSOCK), str(SOCK_STREAM)],
-        capture_output=True, text=True,
-    )
-    bypass_open = "SUCCEEDED" in result.stdout and "socket:[" in result.stdout
+    # The product pins containers to a resolved digest; do the same. If resolution fails the
+    # runs below fail too and are recorded as an infrastructure error; the cause is kept and
+    # reported in the assertion message, not swallowed.
+    resolve_error = None
+    try:
+        image_digest = await DockerBackend(image_ref=image_ref)._resolve_image_digest()
+    except Exception as exc:  # noqa: BLE001 - recorded and reported below, never ignored
+        image_digest, resolve_error = image_ref, f"{type(exc).__name__}: {exc}"
 
-    if not _lsm_active():
-        assert bypass_open, (
-            "AF_VSOCK via socketcall unexpectedly blocked with no LSM active — "
-            "if this host gained a real mitigation, update _lsm_active() and "
-            "this test together rather than leaving them inconsistent: "
-            f"{result.stdout!r}"
+    def product_argv(container_name, command):
+        return _build_create_args(
+            container_name=container_name,
+            request_id="a9-observation",
+            image_digest=image_digest,
+            command=command,
+            env=_build_container_env({}),
+            workspace_dir=str(workspace),
+            read_only_paths=(str(probe_dir),),
+            memory_limit_mb=256,
+            max_pids=64,
         )
+
+    # collect() runs blocking subprocesses: keep them off the event loop.
+    observations, invocation_id = await asyncio.to_thread(
+        a9.collect, a9.subprocess_runner, argv_builder=product_argv, image_ref=image_ref, workdir=probe_dir
+    )
+    record = a9.build_record(observations, invocation_id=invocation_id, image_ref=image_ref)
+    out = _a9_record_path(tmp_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    problems = a9.validate_record(record, expect_invocation_id=invocation_id)
+    assert not problems, f"the A9 evidence record is invalid: {problems} (record: {out})"
+    detail = (
+        f"A9 classification {record['classification']} ({', '.join(record['reasons']) or 'no reason'}); "
+        f"lsm_backend={record['lsm_backend']}, deny_rule={record['deny_rule']}; "
+        f"image resolution error: {resolve_error}; record: {out}"
+    )
+    assert record["classification"] == a9.MITIGATION_VERIFIED, detail
 
 
 # ======================================================================

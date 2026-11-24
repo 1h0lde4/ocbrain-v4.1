@@ -43,6 +43,7 @@ jobs:
         with:
           name: drift-report
           path: /tmp/drift-report.json
+          if-no-files-found: error
 
       - name: Packet ownership check (only on a recognized packet branch)
         run: |
@@ -92,7 +93,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c tests/ci/ci-constraints.txt
+
+      - name: Install the 32-bit toolchain that A9 needs
+        # A9 (tests/core/sandbox/test_docker_backend.py) compiles `gcc -m32 -static` and runs
+        # the probe in a container.  A missing toolchain is an explicit prerequisite failure
+        # recorded in a9-observation.json, never a skip (H-R2-1); this step just provides it.
+        # The apt package version is whatever the runner image offers and is not pinned: the
+        # compile result and the probe hash are part of the A9 evidence record.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-multilib
+          gcc --version
 
       - name: Docker preflight and test-image provisioning
         # Fail-closed prerequisite for the Docker-backed tests (scripts/ci_docker_preflight.py,
@@ -156,9 +168,16 @@ jobs:
         # so that every skip in a hosted run can be attributed (a skipped test is not a
         # pass).  Do not shorten it to `-rs`: `-r` REPLACES the default, the FAILED lines
         # disappear, and the gate then fails with "0 distinct FAILED node ID(s)".
+        #
+        # `--junitxml` (xunit2, pinned by `-o junit_family=xunit2`) is the machine-readable
+        # record that tests/ci/pytest-execution-manifest.json is checked against below; the
+        # terminal text above stays what the gate reads.  The A9 test writes its evidence record
+        # to the path in OCBRAIN_A9_OBSERVATION_PATH before it asserts.
+        env:
+          OCBRAIN_A9_OBSERVATION_PATH: /tmp/a9-observation.json
         run: |
           set +e
-          pytest tests/ -q --tb=short -rfEs 2>&1 | tee /tmp/pytest-output.txt
+          pytest tests/ -q --tb=short -rfEs -o junit_family=xunit2 --junitxml=/tmp/pytest-junit.xml 2>&1 | tee /tmp/pytest-output.txt
           echo "${PIPESTATUS[0]}" > /tmp/pytest-exit-code.txt
           exit 0
 
@@ -170,6 +189,48 @@ jobs:
           path: |
             /tmp/pytest-output.txt
             /tmp/pytest-exit-code.txt
+          if-no-files-found: error
+
+      - name: Record the A9 and JUnit manifest verdicts
+        # Runs BEFORE the gate on purpose: A9 fails by design on a host where the container's
+        # deny rule cannot be verified (H-D12, H-D14), which makes the gate red, and a red gate
+        # would skip every later step and lose this evidence.  Like the pytest step, this step
+        # records each checker's REAL exit code and never fails by itself; the last step of the
+        # job ("Fail unless the A9 and JUnit manifest checks passed") decides, and the verdict
+        # files are part of the uploaded evidence.
+        #   scripts/ci_a9_verifier.py        validates a9-observation.json (its verdict follows from
+        #                                     the raw runs) and prints the classification; exit 0 only
+        #                                     for MITIGATION_VERIFIED.
+        #   scripts/ci_junit_manifest.py     compares pytest's JUnit XML with the execution manifest
+        #                                     and the pinned pytest/plugin versions.
+        run: |
+          set +e
+          python3 scripts/ci_a9_verifier.py check \
+            --record /tmp/a9-observation.json \
+            --text /tmp/a9-check.txt
+          echo "$?" > /tmp/a9-check-exit-code.txt
+          python3 scripts/ci_junit_manifest.py check \
+            --junit /tmp/pytest-junit.xml \
+            --manifest tests/ci/pytest-execution-manifest.json \
+            --report /tmp/junit-manifest-check.json \
+            --text /tmp/junit-manifest-check.txt
+          echo "$?" > /tmp/junit-check-exit-code.txt
+          exit 0
+
+      - name: Upload test execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-execution-evidence
+          path: |
+            /tmp/pytest-junit.xml
+            /tmp/a9-observation.json
+            /tmp/a9-check.txt
+            /tmp/a9-check-exit-code.txt
+            /tmp/junit-manifest-check.json
+            /tmp/junit-manifest-check.txt
+            /tmp/junit-check-exit-code.txt
+          if-no-files-found: error
 
       - name: Gate on pytest exit code, errors and unlisted failures
         # Fails on: any pytest exit code other than 0/1, a missing summary
@@ -188,7 +249,8 @@ jobs:
         # SKIPPED line whose reason says either is missing therefore means a Docker-gating probe
         # inside the tests (a 5 s / 10 s timeout at import time) misfired, and the whole
         # Docker-backed suite would pass without having run.  A skip is not a pass.  Other skips
-        # (for example the 32-bit toolchain one) are listed by `-rs` and judged on their own reason.
+        # are listed by `-rs`; the JUnit execution-manifest check (recorded above, decided by the
+        # last step) rejects every skip whose exact reason the manifest does not list.
         run: |
           if [ ! -s /tmp/pytest-output.txt ]; then
             echo "::error::pytest output is missing or empty, so the skip check cannot be trusted"
@@ -199,6 +261,20 @@ jobs:
             exit 1
           fi
           echo "no Docker-prerequisite skips"
+
+      - name: Fail unless the A9 and JUnit manifest checks passed
+        # The decision the recording step deferred.  One command (a test pins that): red unless
+        # both recorded exit codes are exactly 0, and red if any evidence file is missing or
+        # empty ("if-no-files-found: error" only fires when the whole upload set is empty).
+        run: |
+          python3 scripts/ci_junit_manifest.py verdict \
+            --exit-code-file /tmp/a9-check-exit-code.txt \
+            --exit-code-file /tmp/junit-check-exit-code.txt \
+            --require-file /tmp/pytest-junit.xml \
+            --require-file /tmp/a9-observation.json \
+            --require-file /tmp/a9-check.txt \
+            --require-file /tmp/junit-manifest-check.json \
+            --require-file /tmp/junit-manifest-check.txt
 
   typecheck-b03:
     # B03's acceptance includes a clean mypy run over its two files (reconciliation

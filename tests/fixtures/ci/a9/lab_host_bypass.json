@@ -1,0 +1,112 @@
+{
+  "description": "Calibration: the lab host fingerprint (Engine above the floor, no LSM policy). Known red case.",
+  "expected": {
+    "image_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "expected_profile": "docker-default",
+  "host": {
+    "apparmor": "DISABLED",
+    "docker_security_options": [
+      "name=seccomp,profile=builtin"
+    ],
+    "kernel_release": "6.8.0-lab",
+    "selinux": "DISABLED",
+    "server_version": "29.8.2"
+  },
+  "route": 1,
+  "runs": {
+    "B1": {
+      "argv": [
+        "docker",
+        "create",
+        "--name",
+        "NAME",
+        "--security-opt",
+        "no-new-privileges",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "/probe/probe",
+        "40",
+        "1"
+      ],
+      "container_id": "cid-b1",
+      "duration_s": 0.4,
+      "image_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "B1",
+      "probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rc": 0,
+      "stderr": "",
+      "stdout": "CONFINEMENT apparmor=[UNREADABLE] selinux=[UNREADABLE] attr=[UNREADABLE]\nSUCCEEDED fd=3 target=socket:[4242]\n",
+      "timed_out": false
+    },
+    "B2": {
+      "argv": [
+        "docker",
+        "create",
+        "--name",
+        "NAME",
+        "--security-opt",
+        "no-new-privileges",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "/probe/probe",
+        "40",
+        "1"
+      ],
+      "container_id": "cid-b2",
+      "duration_s": 0.4,
+      "image_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "B2",
+      "probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rc": 0,
+      "stderr": "",
+      "stdout": "CONFINEMENT apparmor=[UNREADABLE] selinux=[UNREADABLE] attr=[UNREADABLE]\nSUCCEEDED fd=3 target=socket:[4242]\n",
+      "timed_out": false
+    },
+    "C": {
+      "argv": [
+        "docker",
+        "create",
+        "--name",
+        "NAME",
+        "--security-opt",
+        "no-new-privileges",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "/probe/probe",
+        "40",
+        "1"
+      ],
+      "container_id": "cid-c",
+      "duration_s": 0.4,
+      "image_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "C",
+      "probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rc": 0,
+      "stderr": "",
+      "stdout": "CONFINEMENT apparmor=[UNREADABLE] selinux=[UNREADABLE] attr=[UNREADABLE]\nSUCCEEDED fd=3 target=socket:[4242]\n",
+      "timed_out": false
+    },
+    "S": {
+      "argv": [
+        "docker",
+        "create",
+        "--name",
+        "NAME",
+        "--security-opt",
+        "no-new-privileges",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "/probe/probe",
+        "40",
+        "1"
+      ],
+      "container_id": "cid-s",
+      "duration_s": 0.4,
+      "image_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "name": "S",
+      "probe_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rc": 0,
+      "stderr": "",
+      "stdout": "CONFINEMENT apparmor=[UNREADABLE] selinux=[UNREADABLE] attr=[UNREADABLE]\nSUCCEEDED fd=3 target=socket:[4242]\n",
+      "timed_out": false
+    }
+  }
+}

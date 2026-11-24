@@ -1,0 +1,243 @@
+{
+  "schema_version": "pytest-execution-manifest/1",
+  "manifest_version": "0.1.0",
+  "pins": {
+    "pytest": "9.2.0",
+    "plugins": {
+      "pytest-asyncio": "1.5.0",
+      "anyio": "4.16.0"
+    }
+  },
+  "entries": [
+    {
+      "id": "a9-af-vsock-deny-rule",
+      "source": "tests/core/sandbox/test_docker_backend.py",
+      "junit_classname": "tests.core.sandbox.test_docker_backend",
+      "junit_name": "test_a9_af_vsock_socketcall_bypass_is_mitigated_by_the_container_deny_rule",
+      "expected_outcome": "PASS",
+      "criticality": "security_contract",
+      "required": true,
+      "provenance": "defined by this change (H-D14, spec 4 and 4A); the test is renamed from test_a9_af_vsock_socketcall_bypass_is_consistent_with_lsm_state because it no longer characterises the bypass; no XFAIL or SKIP waiver exists for A9 (H-D12)"
+    },
+    {
+      "id": "env-skip:test_allowed_hosts:test_allowed_host_is_reachable_through_the_proxy",
+      "source": "tests/core/sandbox/test_allowed_hosts.py",
+      "junit_classname": "tests.core.sandbox.test_allowed_hosts",
+      "junit_name": "test_allowed_host_is_reachable_through_the_proxy",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + iproute2 + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity and skip reason observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module skipped with this exact reason); approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_allowed_hosts:test_host_not_on_the_allowlist_is_rejected",
+      "source": "tests/core/sandbox/test_allowed_hosts.py",
+      "junit_classname": "tests.core.sandbox.test_allowed_hosts",
+      "junit_name": "test_host_not_on_the_allowlist_is_rejected",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + iproute2 + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity and skip reason observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module skipped with this exact reason); approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_allowed_hosts:test_empty_allowed_hosts_still_has_no_route_at_all",
+      "source": "tests/core/sandbox/test_allowed_hosts.py",
+      "junit_classname": "tests.core.sandbox.test_allowed_hosts",
+      "junit_name": "test_empty_allowed_hosts_still_has_no_route_at_all",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + iproute2 + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity and skip reason observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module skipped with this exact reason); approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_allowed_hosts:test_destroy_leaves_no_netns_veth_or_proxy_behind",
+      "source": "tests/core/sandbox/test_allowed_hosts.py",
+      "junit_classname": "tests.core.sandbox.test_allowed_hosts",
+      "junit_name": "test_destroy_leaves_no_netns_veth_or_proxy_behind",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + iproute2 + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity and skip reason observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module skipped with this exact reason); approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_echo_hello_runs_and_returns_output",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_echo_hello_runs_and_returns_output",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_illegal_path_access_fails_cleanly",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_illegal_path_access_fails_cleanly",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_symlink_escape_is_contained",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_symlink_escape_is_contained",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_path_traversal_is_contained",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_path_traversal_is_contained",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_network_egress_denied_by_default",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_network_egress_denied_by_default",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_memory_limit_kills_oversized_allocation",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_memory_limit_kills_oversized_allocation",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_pids_limit_blocks_fork_bomb",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_pids_limit_blocks_fork_bomb",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_timeout_terminates_long_running_command",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_timeout_terminates_long_running_command",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_cancel_kills_all_descendant_processes",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_cancel_kills_all_descendant_processes",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_artifacts_are_collected_with_real_hashes",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_artifacts_are_collected_with_real_hashes",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_seccomp_blocks_ptrace",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_seccomp_blocks_ptrace",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_seccomp_blocks_mount_for_the_payload",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_seccomp_blocks_mount_for_the_payload",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_seccomp_denylist_does_not_break_normal_execution",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_seccomp_denylist_does_not_break_normal_execution",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "env-skip:test_namespace_backend:test_uts_namespace_isolates_hostname",
+      "source": "tests/core/sandbox/test_namespace_backend.py",
+      "junit_classname": "tests.core.sandbox.test_namespace_backend",
+      "junit_name": "test_uts_namespace_isolates_hostname",
+      "expected_outcome": "SKIP",
+      "skip_reason": "requires unshare + a writable cgroup v1 memory controller",
+      "criticality": "environmental",
+      "required": true,
+      "provenance": "identity observed in a local pytest 9.2.0 xunit2 run on 2026-11-23 (the module ran there, it did not skip); skip reason read from the module-level pytestmark skipif at tests/core/sandbox/test_namespace_backend.py:62-65; approved by H-D2 (2026-11-22); hosted run 2 reported 19 skips but recorded no JUnit identities"
+    },
+    {
+      "id": "known-gap:adr-kernel-07-d4",
+      "source": "tests/core/cognitive/test_creative_content_anchor.py",
+      "junit_classname": "tests.core.cognitive.test_creative_content_anchor",
+      "junit_name": "test_d_already_known_from_context_is_not_implemented",
+      "expected_outcome": "XFAIL",
+      "criticality": "known_gap",
+      "required": true,
+      "provenance": "observed as <skipped type=\"pytest.xfail\"> in a local pytest 9.2.0 xunit2 run on 2026-11-23; unconditional strict xfail, ADR-KERNEL-07 D-4 (spec Appendix A); H-D11 tripwire inventory only, the in-test marker stays authoritative"
+    }
+  ],
+  "pending": [
+    {
+      "id": "docker-runtime-identities",
+      "reason": "the mandatory Docker runtime tests of tests/core/sandbox/test_docker_backend.py (and the other Docker-gated modules) cannot be enumerated without observing which of them execute on a Docker-capable host; nothing is inferred (H-D3: complete enumeration, no sentinel-only solution)",
+      "blocked_on": "a Docker-capable host (spec 7 step 1); the first hosted run's JUnit artifact is the intended source"
+    },
+    {
+      "id": "b01-xfail-identities",
+      "reason": "the eight strict B01 xfail identities (TC-01, TC-02, TC-03 x4, TC-04 x2 in tests/core/sandbox/test_network_isolation_contract.py, condition OCBRAIN_SANDBOX_NETWORK_PROVISIONED=unset) are Docker-gated: without a daemon they skip, so their xfail outcome and parametrized JUnit names have not been observed",
+      "blocked_on": "a Docker-capable host (spec 7 step 1, Appendix A); DEBT-039, DEBT-040"
+    }
+  ]
+}
