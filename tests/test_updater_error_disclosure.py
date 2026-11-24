@@ -17,6 +17,7 @@ to the local console and needs no change.
 """
 import logging
 import re
+import uuid
 
 import pytest
 import requests
@@ -30,13 +31,26 @@ PROXY_DETAIL = (
 )
 OTHER_DETAIL = "cannot read /opt/ocbrain/.release_token: permission denied"
 
+# A ref is random hex, and a four-hex-digit run such as "8080" is legal inside one (about 1 in 4,000
+# refs). The leak checks therefore look at the text without its ref, and one case forces such a ref.
+REF_WITH_LEAK_LOOKALIKE = "00008080-8080-4080-8080-808080808080"
+
+
+def _without_ref(text: str) -> str:
+    return re.sub(r" \(ref [0-9a-f-]{36}\)", "", text)
+
 
 @pytest.fixture
 def no_git_version(monkeypatch):
     monkeypatch.setattr(updater, "current_version", lambda: "1.0.0")
 
 
-def test_request_failure_check_error_is_redacted(monkeypatch, no_git_version, caplog):
+@pytest.mark.parametrize("forced_ref", [None, REF_WITH_LEAK_LOOKALIKE],
+                         ids=["random-ref", "ref-containing-8080"])
+def test_request_failure_check_error_is_redacted(monkeypatch, no_git_version, caplog, forced_ref):
+    if forced_ref:
+        monkeypatch.setattr(updater.uuid, "uuid4", lambda: uuid.UUID(forced_ref))
+
     def boom(*a, **kw):
         raise requests.ConnectionError(PROXY_DETAIL)
 
@@ -49,7 +63,7 @@ def test_request_failure_check_error_is_redacted(monkeypatch, no_git_version, ca
                      result.check_error)
     assert m, result.check_error
     for leaked in ("corp-proxy", "8080", "hunter2", "HTTPSConnectionPool"):
-        assert leaked not in result.check_error
+        assert leaked not in _without_ref(result.check_error)
     assert m.group(1) in caplog.text
     assert "corp-proxy" in caplog.text  # the detail is in the log, not lost
 
