@@ -1,0 +1,14 @@
+# Exact versions for the hosted `tests` job (H-D9, spec R5-q).  Installed with
+#   pip install -r requirements.txt -c tests/ci/ci-constraints.txt
+# so requirements.txt keeps its floating floors for developers while CI runs one known toolchain.
+#
+# These are the pytest and the REGISTERED pytest plugins that `python -m pytest --version --version`
+# lists after a clean `pip install -r requirements.txt` on Python 3.12 (observed 2026-11-23).
+# anyio is pinned because it registers a pytest plugin (anyio/pytest_plugin.py) even though no
+# requirement names it directly.  The same set is recorded in tests/ci/pytest-execution-manifest.json
+# ("pins"), and scripts/ci_junit_manifest.py rejects a run whose versions differ (M16, M21).
+# tests/test_ci_workflow_config.py asserts that this file, the manifest pins and the install step agree.
+# A pytest-asyncio prerelease must never enter this file (spec 0.3, H-D9).
+pytest==9.2.0
+pytest-asyncio==1.5.0
+anyio==4.16.0
