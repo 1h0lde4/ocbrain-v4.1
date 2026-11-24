@@ -18,6 +18,7 @@ a multi-turn lifecycle (no attempt state; D-3), Test D (D-4, strict xfail).
 """
 import ast
 import inspect
+import re
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -34,6 +35,7 @@ from core.cognitive.content_anchor import (
     CONTENT_ANCHOR_SCORE_THRESHOLD,
     CONTENT_ANCHOR_THRESHOLD_KEY,
     MISSING_SUBJECT,
+    SAFE_FAILURE_MESSAGE,
     anchor_missing,
     build_clarification_question,
     build_clarification_response,
@@ -329,28 +331,42 @@ class TestObservation:
 
 
 class TestClarificationResponse:
-    def test_pairs_interpretation_and_plan_with_a_specific_question(self):
+    """C-plus (DEBT-043). Exhaustive coverage of the response contract lives in
+    tests/core/cognitive/test_debt043_clarification_response.py; these keep the
+    original module's pairing assertions, updated from the superseded text."""
+
+    def test_pairs_intent_and_provisional_plan_with_a_specific_question(self):
         a = detect_creative_content_anchors("write a 1000 words story")
         r = build_clarification_response(
-            a, interpretation="Write a story of about 1000 words",
+            a, request_text="Write a story of about 1000 words",
             plan_steps=["Draft the story", "Polish the draft"])
-        assert "Here's how I read your request: Write a story" in r
-        assert "1. Draft the story; 2. Polish the draft" in r
-        assert r.rstrip().endswith("with those details.")
-        assert "surprise me" in r and "story" in r
+        assert "I understand this as a request for a story." in r
+        assert "Provisional draft plan" in r
+        assert "\n1. Draft the story\n2. Polish the draft\n" in r
+        assert "What should the story be about?" in r and "surprise me" in r
+        assert r.rstrip().endswith("Please send your request again with that detail.")
+        # the raw request is not echoed back as if it were an interpretation
+        assert "Here's how I read your request" not in r
+        assert "Write a story of about 1000" not in r
 
-    def test_degrades_to_the_bare_question_without_context(self):
+    def test_without_a_plan_it_is_the_safe_failure_never_the_bare_question(self):
         a = detect_creative_content_anchors("write a poem")
-        assert build_clarification_response(a) == build_clarification_question(a)
+        r = build_clarification_response(a)
+        assert r == SAFE_FAILURE_MESSAGE
+        assert r != build_clarification_question(a)      # no unpaired question
+        assert "poem" not in r and "about" not in r
 
     def test_model_text_is_flattened_truncated_and_capped(self):
         a = detect_creative_content_anchors("write a story")
         r = build_clarification_response(
-            a, interpretation="line1\nline2 " + "x" * 500,
-            plan_steps=[f"step {i}" for i in range(9)])
-        head = r.split("\n\n")[0]
-        assert "\n" not in head and len(head) < 260
-        assert "(+4 more)" in r and "6. step 5" not in r
+            a, request_text="x",
+            plan_steps=["line1\nline2 " + "x" * 500]
+                       + [f"step {i}" for i in range(1, 9)])
+        numbered = [ln for ln in r.split("\n") if re.match(r"\d+\. ", ln)]
+        assert len(numbered) == 3                        # C-plus cap, order kept
+        assert numbered[0].startswith("1. line1 line2 ") and len(numbered[0]) < 170
+        assert numbered[1:] == ["2. step 1", "3. step 2"]
+        assert "first 3 of 9 steps" in r and "4. " not in r
 
 
 # ── Real compile() + real GovernanceKernel (Plan Compilation boundary) ──
@@ -541,9 +557,11 @@ class TestOrchestrator:
         orch = _orch(True)
         answer = await _run(orch, "write a 1000 words story", _plan())
         assert isinstance(answer, str)
-        assert "Here's how I read your request: Write a story of about 1000" in answer
-        assert "1. Write the story" in answer               # the interpreted plan
+        assert "I understand this as a request for a story." in answer   # intent
+        assert "Provisional draft plan" in answer
+        assert "\n1. Write the story\n" in answer          # the genuine plan step
         assert "surprise me" in answer                       # the question
+        assert "Here's how I read your request" not in answer   # no raw echo
         assert "wasn't able to prepare" not in answer
         orch._workflow_runtime.execute.assert_not_called()   # no generation
         orch._execution_runtime.invoke.assert_awaited()      # Supervisor still surfaced

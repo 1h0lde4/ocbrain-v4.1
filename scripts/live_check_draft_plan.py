@@ -185,8 +185,7 @@ async def run(requests: Sequence[str], offline: str = "") -> Dict[str, Any]:
                                    for s in pair["steps"]]
             row["plan_label"] = classify_plan(pair["steps"], req, pair["interpretation"])
             row["shown_to_user"] = ca.build_clarification_response(
-                assessment, interpretation=pair["interpretation"],
-                plan_steps=pair["steps"])
+                assessment, request_text=req, plan_steps=pair["steps"])
         rows.append(row)
     esc = [r for r in rows if r["would_escalate"]]
     counts: Dict[str, int] = {}
