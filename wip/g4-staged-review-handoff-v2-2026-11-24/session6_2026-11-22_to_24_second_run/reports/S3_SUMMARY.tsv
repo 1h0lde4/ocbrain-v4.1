@@ -1,0 +1,18 @@
+case	url	parsed_identity	identity_ok	server_Host	SNI	#req	Authz_seen	block_rc	token_count(block)	token(solo git cmds)	verdict
+F14-1	https://github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	github.com	github.com	10	N	0	out=0 err=0	solo=0	PASS at canonical host
+F14-2	https://evil.test?@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	evil.test	evil.test	10	N	0	out=0 err=0	solo=0	FALSE PASS (PASS/rc0 but server saw non-github.com Host)
+F14-3	https://evil.test#@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	evil.test	evil.test	5	N	1	out=0 err=0	solo=0	FAIL (block rejected)
+F14-3L	https://evil.test#@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	evil.test	evil.test	10	N	0	out=0 err=0	solo=0	FALSE PASS (PASS/rc0 but server saw non-github.com Host)
+F14-4	https://127.0.0.1?@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	127.0.0.1	None	10	N	0	out=0 err=0	solo=0	FALSE PASS (PASS/rc0 but server saw non-github.com Host)
+F14-5	https://user:DUMMYTOKEN-xyz@evil.test?@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	evil.test	evil.test	10	N	0	out=0 err=0	solo=0	FALSE PASS (PASS/rc0 but server saw non-github.com Host)
+F14-5A	https://user:DUMMYTOKEN-xyz@evil.test?@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	evil.test	evil.test	15	Y	0	out=0 err=0	solo=0	FALSE PASS (PASS/rc0 but server saw non-github.com Host)
+F14-6	https://github.com@evil.test/1h0lde4/ocbrain-v4.1	https://evil.test/1h0lde4/ocbrain-v4.1	NO	evil.test	evil.test	10	N	1	out=0 err=0	solo=0	FAIL (block rejected)
+F14-7	https://evil.test/1h0lde4/ocbrain-v4.1	https://evil.test/1h0lde4/ocbrain-v4.1	NO	evil.test	evil.test	10	N	1	out=0 err=0	solo=0	FAIL (block rejected)
+F15-a1-401	https://DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	github.com	github.com	10	Y	1	out=0 err=3	solo=2	CREDENTIAL OUTPUT
+F15-a2-200	https://DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	github.com	github.com	10	N	0	out=0 err=0	solo=0	no token in this case
+F15-a3-auth	https://DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	github.com	github.com	15	Y	0	out=0 err=0	solo=0	no token in this case
+F15-b1-404	https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz	https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz	NO	github.com	github.com	5	N	1	out=0 err=3	solo=2	CREDENTIAL OUTPUT
+F15-b2-200	https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz	https://github.com/1h0lde4/ocbrain-v4.1?token=DUMMYTOKEN-xyz	NO	github.com	github.com	10	N	1	out=0 err=0	solo=0	no token in this case
+F15-c-200	https://github.com/1h0lde4/ocbrain-v4.1#DUMMYTOKEN-xyz	https://github.com/1h0lde4/ocbrain-v4.1#DUMMYTOKEN-xyz	NO	github.com	github.com	5	N	1	out=0 err=3	solo=2	CREDENTIAL OUTPUT
+F15-d-401	https://user:DUMMYTOKEN-xyz@github.com/1h0lde4/ocbrain-v4.1	https://github.com/1h0lde4/ocbrain-v4.1	YES	github.com	github.com	10	Y	1	out=0 err=0	solo=0	no token in this case
+F15-c-lenient	https://github.com/1h0lde4/ocbrain-v4.1#DUMMYTOKEN-xyz	https://github.com/1h0lde4/ocbrain-v4.1#DUMMYTOKEN-xyz	NO	github.com	github.com	10	N	1	out=0 err=0	solo=0	no token in this case

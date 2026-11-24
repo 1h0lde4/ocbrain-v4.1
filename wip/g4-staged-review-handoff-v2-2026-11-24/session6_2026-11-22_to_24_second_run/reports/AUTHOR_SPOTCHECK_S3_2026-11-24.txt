@@ -1,0 +1,16 @@
+AUTHOR SPOT-CHECK OF STAGE S3 REPORT (2026-11-24, UTC) -- author's own reading of the reviewer's saved evidence, not a re-run.
+Report saved byte-for-byte from the transcript: a9/reports/REPORT_S3.md, 11,986 bytes, sha256 eb05e157645aeb0e53cee6c6d773213449008e620a89b8adea2618ba779518e1 [REPORTED by sub-agent a9df07f22cc6f1381].
+Checked against a9/stage_S3/ (evidence of the reviewer's re-run):
+ - block diff vs original: lines 6 and 7 only (T=, H=). OK.
+ - SUMMARY.tsv rows F14-1..7, F14-3L, F14-5A, F15-a1..d: statuses, hosts, SNI, request counts, rc and token counts agree with the report.
+ - F14-2: block.stdout ends in PASS, rc 0, stderr 0 bytes; server.log: Host evil.test, SNI evil.test, request line GET /?@github.com/1h0lde4/ocbrain-v4.1/info/refs&service=git-upload-pack. OK.
+ - F14-5A: server.log has 401 and 200 answers and authorization_present true on requests 2,3,5,6 (value not logged). OK.
+ - F14-6, F14-7: rc 1, server saw 10 requests each (fetch and ls-remote still run after the identity FAIL). OK.
+ - F15-a1/b1/c: stdout 0 tokens, stderr 3 tokens each; text quoted in the report matches block.stderr. F15-d: 0 tokens (git anonymises). OK.
+ - The block's own FAIL line prints the canonical string, not the configured URL (stdout token count 0). OK.
+Minor discrepancies (none changes a status):
+ - Report text quotes client ports 33000/33016 and PASS time 01:53:51Z (first run); the saved evidence is the re-run (port 33988, 01:54:32Z). Verdicts identical.
+ - Case id F15-c-200 is a misnomer (that server answered 404); the 200 variant is F15-c-lenient (the reviewer says so).
+ - The reviewer left a stub stage_S3/REPORT_S3.md ("F14 NOT RUN"); renamed to REPORT_S3_AGENT_STUB_SUPERSEDED.md. The authoritative report is a9/reports/REPORT_S3.md.
+Not re-run by the author; the author did not run the TLS version himself. Real-GitHub behaviour untested (no public traffic).
+G4 OPEN · High · freeze-blocking. G5-G8 HELD. Freeze readiness NOT DECLARED.

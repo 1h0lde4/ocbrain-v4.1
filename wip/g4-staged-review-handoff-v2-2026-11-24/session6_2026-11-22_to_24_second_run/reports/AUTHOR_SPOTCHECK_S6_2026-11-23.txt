@@ -1,0 +1,7 @@
+Author spot-check of stage S6 (run 3) against its raw evidence, 2026-11-23 (UTC). Observed by the author reading files; the author did not re-run the harness.
+- run3/evidence/H23, H24, H25, H34: rc=0 and a line "PASS at ..." in stdout (the reviewer classed all four as FALSE PASS). Controls H23c and H34c: rc=1 with FAIL lines.
+- run3/evidence/H29: rc=0 (reviewer: false PASS with a simulated diff-tree failure; simulated, not real corruption).
+- run3/evidence/G/G04.stderr: the dummy token DUMMYTOKEN-xyz appears 3 times, stdout 0 times (matches the report).
+- run3/evidence/G/G13: rc=1; git's own stderr line shows a connection attempt to 127.0.0.1 port 1 for the URL https://127.0.0.1:1#@127.0.0.1:2/o/r (the host before the "#"). The identity-FAIL line is not in the block's stdout for this row, as the report states (the author did not re-read the identity-line count beyond the head of the file).
+- Not spot-checked by the author: H01-H21 (earlier run, not re-run even by the reviewer), F01-F09 beyond classification, the claim-table classifications C1-C20.
+Report file: reports/REPORT_S6.md, 23331 bytes, sha256 708241486be8037534dc50bed01380a95c0bd2f25da8f6d970295de8d41de1ca (extracted byte-for-byte from the session record; not edited).

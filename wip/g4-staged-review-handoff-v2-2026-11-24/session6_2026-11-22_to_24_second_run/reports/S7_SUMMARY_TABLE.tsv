@@ -1,0 +1,63 @@
+id	mutation	expected	reason	overall_exit(unrelated evidence checks fail in every run)	status_check_FAIL_lines	classification
+M00	unmodified text (baseline)	accept	control	1	-	correct accept
+M01	gov line: G4 OPEN -> G4 CLOSED	reject	wrong status	1	governing-status line missing	correct reject
+M02	gov line: G4 OPEN -> G4 RESOLVED	reject	wrong status	1	governing-status line missing	correct reject
+M03	gov line: High -> Low	reject	wrong priority	1	governing-status line missing	correct reject
+M04	gov line: G5-G8 HELD -> G5-G8 RELEASED	reject	wrong status	1	governing-status line missing	correct reject
+M05	gov line: NOT DECLARED -> DECLARED	reject	wrong status	1	governing-status line missing	correct reject
+M06	gov line: freeze-blocking -> non-blocking	reject	wrong status	1	governing-status line missing	correct reject
+M07	last line: G4 CLOSED	reject	wrong status	1	final line	correct reject
+M08	last line: G4 RESOLVED	reject	wrong status	1	final line	correct reject
+M09	last line: High -> Low	reject	wrong priority	1	final line	correct reject
+M10	last line: G5-G8 RELEASED	reject	wrong status	1	final line	correct reject
+M11	last line: Freeze readiness DECLARED	reject	wrong status	1	final line	correct reject
+M12	gov+last: G4 CLOSED	reject	wrong status	1	final line; governing-status line missing	correct reject
+M13	gov+last: Freeze readiness DECLARED	reject	wrong status	1	final line; governing-status line missing	correct reject
+M14	last line lower-case	reject	case differs	1	final line	correct reject
+M15	last line: en dash -> hyphen in G5-G8	reject	different dash	1	final line	correct reject
+M16	last line: middle dot -> bullet U+2022	reject	different separator	1	final line	correct reject
+M17	last line: double space after G4	reject	spacing	1	final line	correct reject
+M18	last line: trailing space	reject	trailing char	1	final line	correct reject
+M19	last line: trailing U+200B	reject	zero-width trailing	1	final line	correct reject
+M20	last line: interior U+200B	reject	zero-width interior	1	final line	correct reject
+M21	last line: NBSP instead of space	reject	spacing	1	final line	correct reject
+M22	last line: hedged suffix	reject	hedged	1	final line	correct reject
+M23	last line: negated prefix	reject	negated	1	final line	correct reject
+M24	last line: trailing U+2028	reject	invisible trailing char	1	-	FALSE ACCEPT
+M25	last line: 'wrong status' + U+2028 + correct text on one physical line	reject	hidden wrong status	1	-	FALSE ACCEPT
+M26	last line: 'wrong status' + U+0085 + correct text on one physical line	reject	hidden wrong status	1	-	FALSE ACCEPT
+M27	last line: 'wrong status' + FORM FEED + correct text	reject	hidden wrong status	1	-	FALSE ACCEPT
+M28	extra NBSP-only line after the correct last line	accept	invisible; neutral	1	-	correct accept
+M29	gov line lower-case status	reject	case differs	1	governing-status line missing	correct reject
+M30	gov line: hyphen dash	reject	different dash	1	governing-status line missing	correct reject
+M31	gov line: interior U+200B	reject	zero-width	1	governing-status line missing	correct reject
+M32	gov line: hedged suffix after the status	reject	hedged	1	-	FALSE ACCEPT
+M33	gov line: negated prefix before the label	reject	negated	1	-	FALSE ACCEPT
+M34	gov line: contradiction appended on the same line	reject	conflicting	1	-	FALSE ACCEPT
+M35	gov line: trailing U+200B after the final period	reject	zero-width trailing	1	-	FALSE ACCEPT
+M36	body paragraph with wrong status	reject	conflicting statement	1	-	FALSE ACCEPT
+M37	wrong status in a table cell (claims table row)	reject	conflicting statement	1	-	FALSE ACCEPT
+M38	wrong status in a code fence	reject	conflicting statement	1	-	FALSE ACCEPT
+M39	wrong status in a blockquote	reject	conflicting statement	1	-	FALSE ACCEPT
+M40	line 17 (Statuses unchanged) says G4 CLOSED	reject	conflicting statement	1	-	FALSE ACCEPT
+M41	second Governing statuses line (wrong) BEFORE the correct one	reject	conflicting statement	1	-	FALSE ACCEPT
+M42	wrong status line inserted BEFORE the correct last line	reject	conflicting statement	1	-	FALSE ACCEPT
+M43	wrong status line appended AFTER the correct last line	reject	last line wrong	1	final line	correct reject
+M44	gov line moved into an HTML comment; visible paragraph says G4 CLOSED	reject	hidden/conflicting	1	-	FALSE ACCEPT
+M45	unclosed <!-- inserted before correct last line (last line hidden when rendered)	reject	hidden status	1	-	FALSE ACCEPT
+M46	gov line indented 4 spaces (code block)	reject	not a statement	1	-	FALSE ACCEPT
+M47	gov line deleted	reject	missing	1	governing-status line missing	correct reject
+M48	last line deleted	reject	missing	1	final line	correct reject
+M49	gate row G4/freeze invariants: status FAIL, overall PASS	reject	inconsistent table	1	overall PASS with a non-PASS gate	correct reject
+M50	gate row G4/freeze invariants: status CLOSED	reject	word not allowed	1	status word not allowed; overall PASS with a non-PASS gate	correct reject
+M51	gate row G4/freeze invariants: reason says G4 CLOSED / freeze DECLARED, status PASS	reject	conflicting statement	1	-	FALSE ACCEPT
+M52	gate row G4/freeze invariants deleted	reject	gate absent (weak expectation)	1	-	FALSE ACCEPT
+M53	overall FAIL with all gates PASS	reject	inconsistent	1	overall not PASS with all gates PASS	correct reject
+M54	gate status lower-case 'pass'	reject	word not allowed	1	status word not allowed; overall PASS with a non-PASS gate	correct reject
+M55	extra gate row '| G4 CLOSED | PASS | x | y |'	reject	conflicting (weak expectation)	1	-	FALSE ACCEPT
+M56	overall row without SELF-REVIEW ONLY	reject	label missing	1	overall row must say SELF-REVIEW ONLY	correct reject
+M57	gate row G4/freeze invariants BLOCKED and overall BLOCKED	accept	consistent alternative	1	-	correct accept
+M58	gate row with one cell only ('| G4 |') after the invariants row	reject	malformed (crash expected)	1	CRASH	correct reject
+M59	CRLF line endings throughout	accept	same text; neutral	1	-	correct accept
+M60	UTF-8 BOM at file start	accept	neutral	1	-	correct accept
+M61	last line: 'wrong status' + lone CR + correct text on one physical line	reject	hidden wrong status	1	-	FALSE ACCEPT
