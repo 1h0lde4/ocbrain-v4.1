@@ -2,9 +2,22 @@
 
 > **Not for merge.** This file lives on a dedicated branch (`handoff/debt-025-followups-nov2026`) as a transfer record, not as project authority. A fresh session must verify it against the live repository before relying on any line (section 18).
 
+## 0. Update log (v2, Nov 24, 2026)
+
+What the continuation session did, all pushed unless stated. Details are in the sections named.
+
+- **Verified v1 against the repo first** (section 18): `main` `ef1351f`, PR #112 head `ed8890c`, handoff tip `b10c316` all matched; #94/#110 merged; `interface/auth_audit.py` absent from `main`. (At the very first check the handoff branch was not yet on the remote; the owner asked to check again and it was there.)
+- **Read the CI result for #112 at `ed8890c`: 7/7 success.** The unauthenticated GitHub API is rate-limited from this sandbox (60/hour, shared), so checks need the saved token (read-only use).
+- **Verified PR #112** (section 13): 215 targeted tests on current dependencies and at the FastAPI floor, drift 15/15, full-suite differential against `main` with identical failure sets, and a **20-mutant mutation review that first killed 17/20**. The three survivors were unasserted guarantees; three tests were added (`TestDeliveryGuarantees`, tests only) and **all 20 are now killed**.
+- **Merged `main` into the PR branch** (clean) and **updated the report** (A15, section 6 items 12-15, section 7). **Pushed `2e7d036`** to `feat/debt-025-auth-audit-eventstream-nov2026` (fast-forward, no force). **CI on `2e7d036`: 7/7 success.**
+- **Rewrote the PR #112 description** with exact evidence. PR stays a **draft**; not marked ready, not merged. Marking it ready is the owner's call (the `get_settings()` effective-mode semantics still need his or a reviewer's eyes).
+- **Deliberately not done:** the DEBT-025 register row and `CURRENT_STATE.md` (R-13): a status line written before the merge goes stale at the merge, an earlier lesson in this project.
+- **What v2 re-verified from v1:** `main` and PR tips, #94 and #110 merged, `interface/auth_audit.py` absent from `main`, the DEBT-025 register row as on `main` since Nov 17, and two EventStream facts (the default path `.data/events/stream.db` is relative; appends run in a thread via `run_in_executor`). **Not re-verified in v2:** the rest of sections 10 and 11 (for example the `evaluate_action` caller list and the Windows ACL findings); treat them as v1 evidence, not as re-checked.
+- **v1 expected "no failures beyond the known flaky updater test".** That holds only where `chromadb` and `sentence-transformers` are installed (CI, which is green). In this sandbox the full suite shows 16 environmental failures, identical on `main`; the updater test did not fail in the three full runs (it is random).
+
 ## 1. Handoff Metadata
 
-- Handoff version: 1
+- Handoff version: 2 (v1 Nov 23; v2 Nov 24, after a continuation session that carried out section 17 steps 1-6 of v1; see section 0)
 - Created at: Nov 2026, after the merge of PR #94 (2026-11-17T22:51Z). The sandbox clock was inconsistent across restarts, so no precise time is claimed here; use `git log` on this branch.
 - Workstream: DEBT-025 (API authentication boundary) and its follow-ups; also records the finished CTX-AUTH-002 / DEBT-029 work that preceded it.
 - Source session purpose: reconcile and land CTX-AUTH-002; resolve the DEBT-029 identifier collision; establish API exposure and implement the authentication boundary (DEBT-025); review and remediate PR #94; start the owner-approved follow-ups.
@@ -44,6 +57,8 @@ Chronological. Exact wording where the wording matters.
    - "No merge authorization is granted." "DEBT-025 must remain OPEN."
 6. **Final instruction of this session:** "Update the finished work to the repo and then create a handoff file for the remaining work to be done in a fresh session."
 
+7. **Session 2 (Nov 24):** "Read handoff/debt-025-followups-nov2026 and continue", then "Check again" (the branch had not appeared on the remote at the first check) and "Continue". Terse directives again mean full trust: execute the plan in section 17 without check-ins unless a real blocker needs a decision. No new scope, no change to A1, no merge authorisation.
+
 Standing constraints derived from the above: never merge without explicit authorisation; never weaken default-on authentication to avoid compatibility problems; never close DEBT-025; keep follow-ups out of PR #94 (now merged) and in their own PRs.
 
 ## 4. Goal, Scope & Success Criteria
@@ -69,13 +84,15 @@ DEBT-025 can close only when: control-plane authorization is implemented and ver
 | R-03 | A1: default-on bearer authentication, pinned public allowlist, `/health` protected, auditable opt-out | owner Oct 28 | **VERIFIED, merged** (#94 at `ce5c3f8`) | exact-head results in section 13 (head `c50caa9`) | post-merge `main` was not re-verified by me |
 | R-04 | Two small corrections (headers on rejections; rotate-first directory) | owner Nov 2 | **VERIFIED, merged** inside #94 | 6 regression tests fail on `8552ca6`; 38/38 mutants killed | |
 | R-05 | DEBT-025 stays OPEN | owner | **OPEN (by design)** | register row on main says so | |
-| R-06 | **Durable auth events** (spec in section 3, item 5) | owner Nov 2 | **IN PROGRESS: IMPLEMENTED BUT NOT FULLY VERIFIED** | PR #112 (draft); 212 targeted tests pass | section 6 and 17 |
+| R-06 | **Durable auth events** (spec in section 3, item 5) | owner Nov 2 | **IMPLEMENTED; VERIFIED locally and in CI at `2e7d036`; NOT MERGED; owner review pending** | PR #112 (draft); CI 7/7; 215 targeted; 20/20 mutants; section 13 | multi-process and Windows/macOS untested; register row deferred (R-13) |
 | R-07 | **Control-plane governance** | owner Nov 2 | **PROPOSED**: ADR-KERNEL-09 merged, status PROPOSED, **not accepted, not implemented** | ADR on main; O1-O5 undecided | blocks DEBT-025 closure |
 | R-08 | CSP hardening (no inline script/handlers) | owner Nov 2 | **OPEN**, not started | | high priority; token is in `sessionStorage` |
 | R-09 | Windows second-account read verification | owner Nov 2 | **OPEN**, not started | Windows job today lists ACL entries only | |
 | R-10 | Document the same-user token read as an accepted trust boundary | owner Nov 2 | **PARTIAL**: report section 6 item 1 states it | | check it is explicit enough |
 | R-11 | Flaky `tests/test_updater_error_disclosure.py` (random UUID containing `8080`) | owner Nov 2 | **OPEN**, separate issue | forced-UUID reproduction in section 11 | do not mix into DEBT-025 |
 | R-12 | No merge, no weakening, no closing of DEBT-025 | owner | **STANDING** | | |
+| R-13 | DEBT-025 register row and `CURRENT_STATE.md` say durable events are implemented | v1 step 5 | **DEFERRED until PR #112 merges** | | write it neutrally, after the owner's merge instruction; `KNOWN_ISSUES.md` conflicts easily and some repo files are CRLF |
+| R-14 | The report records the durable audit records and their limits | v1 step 5 | **IMPLEMENTED in PR #112** (A15, section 6 items 12-15, section 7) | CI 7/7 on `2e7d036` | |
 
 ## 6. Current Verified State
 
@@ -83,13 +100,16 @@ DEBT-025 can close only when: control-plane authorization is implemented and ver
 - The authentication boundary (PR #94) is on `main`, merged by the owner. Its pre-merge head `c50caa9`: full suite 2372 passed, 1 xfailed, 0 failed (baseline main 2184), drift 15/15, FastAPI-floor tests 188 passed, 24 security suites 488 passed, mutation review 38/38 killed, real browser (headless Chromium 153, **Linux**) 23/23, real Windows runner job passed, CI all green. (Section 13.)
 - ADR-KERNEL-09 is on `main`, status **PROPOSED**. The register row for DEBT-025 on `main` says: authentication IMPLEMENTED, not closed; control-plane residual designed in ADR-KERNEL-09 (not accepted); durable audit residual open.
 
+**VERIFIED (added in v2)**
+- PR #112 at `2e7d036` (draft): CI 7/7 success; 215 targeted tests (latest dependencies and the FastAPI 0.111 floor); drift 15/15; full-suite failure set identical to `main`'s; 20/20 valid mutants killed after three tests were added. Evidence: section 13. Not merged; the owner has not reviewed it.
+
 **IMPLEMENTED BUT NOT VERIFIED**
-- PR #112 (draft), head `ed8890c`, durable audit records. Locally: `tests/test_api_auth_boundary.py` 184 + `tests/test_web_auth_js.py` 4 + `tests/test_api_auth_audit.py` 24 = **212 passed**. Not run: full suite, drift, CodeQL, FastAPI floor, security suites, fail-before, mutation review. The report and register row are not updated.
+- Multi-process behaviour of the audit queue; a real EventStream under concurrent writers; duplicate records after a timed-out append (designed at-least-once, documented, untested); Windows/macOS.
 
 **PROPOSED:** ADR-KERNEL-09 design and decisions O1-O5.
 **DEFERRED:** CSP hardening, Windows second-account test, flaky-test fix.
 **BLOCKED:** ADR-KERNEL-09 implementation on the owner's O1-O5 decisions (and, for the principal, it builds on the merged auth boundary).
-**UNKNOWN:** the full-suite state of `main` after all the concurrent merges (not re-run by me since the merge); the CI result on PR #112.
+**UNKNOWN:** the CI-run full-suite counts on `main` (only the local differential at `ef1351f` was run by me: 16 environmental failures, identical to the PR's).
 
 Active architectural constraints: LAW 1 governance before capability; fail closed everywhere; audit failure never fails open; default-on authentication.
 
@@ -100,13 +120,13 @@ All figures verified by `git ls-remote` / the GitHub API during this session. **
 | Item | Value |
 |---|---|
 | Primary repository / remote | `github.com/1h0lde4/ocbrain-v4.1` / `origin` |
-| `main` when this was written | `ef1351f` (it had been `2491ae4`, `abd6c4b`, `6f93444`, `2ebf76a`, `f9e49dd` earlier in the session) |
+| `main` when this was written | `ef1351f` (earlier in the session: `2491ae4`, `abd6c4b`, `6f93444`, `2ebf76a`, `f9e49dd`). On Nov 24 it was `ef1351f` at the start of the continuation session and `ef1351f` when v2 was pushed. |
 | PR #94 (auth boundary) | **merged** by `1h0lde4` at 2026-11-17T22:51Z, merge commit `ce5c3f8`; my last head `c50caa9`; branch head `594060f` (another session merged main into it) |
 | PR #110 (ADR-KERNEL-09) | **merged**; PR head `48bb472` after another session corrected two evidence rows (section 11) |
 | PR #93 (CTX-AUTH-002) | **merged** |
-| PR #112 (audit records) | **draft, open**, head `ed8890c`, base `main` |
-| Implementation checkpoint (transfer commit) | `ed8890c` on `feat/debt-025-auth-audit-eventstream-nov2026` (6 files, +627/-9 vs the `main` it was merged with, `2ebf76a`) |
-| Handoff branch / commit | `handoff/debt-025-followups-nov2026`: one commit that adds `handoff.md`, parent `main` `ef1351f`. The handoff commit is the tip of that branch (a file cannot contain its own hash; read it with `git rev-parse origin/handoff/debt-025-followups-nov2026`). |
+| PR #112 (audit records) | **draft, open**, head `2e7d036` (was `ed8890c`); `main` `ef1351f` merged in, no conflicts; description rewritten Nov 24; not marked ready |
+| Implementation checkpoint (transfer commit) | `2e7d036` on `feat/debt-025-auth-audit-eventstream-nov2026`: `ed8890c` + `4ef2101` (tests) + `4294390` (merge of `main` `ef1351f`) + `2e7d036` (report). Diff against `main`: 7 files, +704/-13. Pushed fast-forward; remote tip verified by an unauthenticated `git ls-remote`. |
+| Handoff branch / commit | `handoff/debt-025-followups-nov2026`: v1 commit `b10c316` (parent `main` `ef1351f`), then the v2 commit on top. The tip of the branch is the handoff commit (a file cannot contain its own hash; read it with `git rev-parse origin/handoff/debt-025-followups-nov2026`). |
 | Working tree | the sandbox is **ephemeral and was reset twice**; nothing material exists only there. Worktrees `/home/claude/{audit,handoff}` are disposable. |
 | Remote push status / verification | all branches above pushed; verified with `git ls-remote` after each push |
 | Relevant ignored/untracked | none |
@@ -173,6 +193,10 @@ Nothing required for continuation exists outside the pushed repository.
 - **Test-harness mistakes, not product defects:** a fake ASGI `receive()` that replayed `http.request` (failed at FastAPI 0.111); disconnecting early cancelled response bodies; the bundled Chromium ships `--single-process` and `--disable-web-security`, which invalidate multi-context and CORS tests (filter them out); a process scanner that excluded "pytest" also hid the pytest tmp dir.
 - **Sandbox hazards (see section 14):** two resets; one destroyed uncommitted work.
 
+- **Mutant design error (v2):** raising the default of `MAX_PENDING_AGGREGATES` survived only because the test overrides that constant; a mutant must change code the test cannot override. Replaced by three mutants of the bound logic.
+- **A mutation runner that reported the first line starting with `ERROR`** mislabelled three kills (it picked captured log lines); only `FAILED ` lines identify the test.
+- **"Fail-before" by copying the new test file onto `main`** only proves the module is absent. Use mutants.
+
 ## 13. Verification Evidence
 
 All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
@@ -189,6 +213,15 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 | | CI | `tests`, `drift-and-ownership`, CodeQL, both Analyze, `token-acl-windows`: success |
 | PR #110 branch | full suite, drift | 2184 passed (identical to main); docs only, says nothing about design correctness |
 | `ed8890c` (PR #112) | `pytest tests/test_api_auth_boundary.py tests/test_web_auth_js.py tests/test_api_auth_audit.py` | **212 passed** (184 + 4 + 24), per module and together |
+| `ed8890c` (PR #112) | CI check runs (GitHub API) | 7/7 completed success: `tests`, `drift-and-ownership`, CodeQL, 3 x Analyze, `token-acl-windows` |
+| `2e7d036` (PR #112, v2) | CI check runs | **7/7 completed success** (`tests` finished 10:19Z, 5 min after the push) |
+| | the same three modules, current dependencies (FastAPI 0.165.0, Starlette 1.10.0, httpx 0.28.1, click 8.5.1) | **215 passed** (184 + 4 + 27) |
+| | the same, at the floor (`fastapi==0.111.0`, `starlette==0.37.2`, `httpx==0.27.2`) | **215 passed** |
+| | those plus `tests/test_check_drift.py`; `python3 scripts/check_drift.py` | 249 passed; 15/15 PASS |
+| `ed8890c` + 3 tests vs `main` `ef1351f` | full suite, `CI=true`, `--timeout=90`, with `--ignore` of the 4 files that import `chromadb` (`test_break_concurrency`, `test_break_empty_db`, `test_break_security`, `test_system_ctrl`) | PR **16 failed / 2377 passed / 4 skipped / 1 xfailed**; `main` **16 / 2350 / 4 / 1**; failure sets **identical** (8 need `chromadb`; 8 sandbox namespace and seccomp tests this container cannot run). +27 passes = the 24 + 3 new tests. The merged head was **not** re-run in full locally. |
+| | mutation review (20 valid mutants; harness outside the repo, gone) | first run 17 killed / 3 survived (request-path background flush, single-flight, loss reported once); 3 tests added; **final 20/20 killed** (two by hang or timeout: per-append timeout removed, single-flight removed) |
+| | fail-before: new test file copied onto `main` | collection `ImportError` (module absent): shows absence, not behaviour; the mutation review is the behavioural evidence |
+| | trial merge of `main` into the PR branch | clean, no conflicts |
 
 **Labels:** the Node live-server test is **not** browser evidence; the browser run is Linux/Chromium only and not part of CI; the Windows evidence is one runner as the built-in Administrator with English names and lists ACL entries only (**no second-account read was attempted**); POSIX checks say nothing about NTFS. **Not performed:** a real desktop launcher, macOS, a frozen build on Windows/macOS, a truly separate host, the second-account Windows test, anything for PR #112 beyond the 212 tests.
 
@@ -200,6 +233,10 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 - Traps: `pkill -f <pattern>` kills your own shell if the pattern is in the command line; `ss` is not installed; test `\r` with Python, not `$'\r'` in `sh`; some repo files are CRLF (`main.py`, `core/event_bus.py`, `tests/conftest.py`, `KNOWN_ISSUES.md`) so edit them preserving line endings.
 - Pushing: use `git -c http.extraheader="Authorization: Basic <base64 x-access-token:TOKEN>"` so the token is not stored in the URL or git config.
 - The browser/live/mutation harness scripts lived in `/tmp` and `/home/claude/e2e` and are **gone**. To rebuild: `npm i @sparticuz/chromium puppeteer-core` (67 MB Chromium inside the package), launch with `args` filtered of `--single-process`, `--no-zygote`, `--disable-web-security`, `--allow-running-insecure-content`, `--disable-site-isolation-trials`; start the server with `setsid nohup` and match processes by script file name.
+
+- **Nov 24 session environment (ephemeral, gone with the sandbox):** `/home/claude/venv` (current dependencies) and `venv-floor` (the pins above); extra installs `feedparser trafilatura aiohttp beautifulsoup4`; `chromadb` and `sentence-transformers` not installed. Rebuild by the command lists in this section. Worktrees for the mutation run, `main` and this branch were disposable.
+- **Tool traps seen on Nov 24:** a `sleep` of 90 s or more inside one tool call was stopped by the tool layer twice with "the credential it was run with is no longer valid" (no GitHub credential was involved); poll with sleeps of 60 s or less. A background `pytest` started with a plain `&` died silently at about 42 percent; `setsid nohup` runs finished. The unauthenticated GitHub API is exhausted for the shared egress address; the saved token (valid for `1h0lde4`, push access, checked read-only first) was used for checks and for one fast-forward push, per the standing owner instruction.
+- Running the suite dirties tracked files (section 15): `git checkout -- config data` before committing.
 
 ## 15. Unresolved Questions / Risks / Blockers
 
@@ -215,6 +252,9 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 | EventStream default path is cwd-relative | read | anchor it | separate defect | yes |
 | Token plaintext in saved preferences | owner informed | rotate, secret store | owner's call | yes |
 | Concurrency | other sessions push to branches and merge | always re-fetch; never overwrite | standing | yes |
+| Running the test suite rewrites tracked `config/models.toml`, `config/settings.toml`, `config/sources.toml` and `data/context.sqlite` (also on pristine `main`; it drops comments such as the `import_root` note) | seen in two worktrees after suite runs | fix the config writer or point tests at a temporary directory | separate issue, not DEBT-025; not changed | yes |
+| Duplicate audit records after a timed-out append (EventStream appends run in a thread, `core/events/event_stream.py` line 228) | read; report section 6 item 12 | accept at-least-once (documented), or dedupe on `transition_id` | owner's call | yes |
+| `chromadb` / `sentence-transformers` not installed in this sandbox | 4 files ignored, 8 tests fail on import | install in a longer session | CI covers them | yes |
 
 ## 16. Relevant Information / References
 
@@ -227,26 +267,27 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 
 ## 17. Next Steps
 
-1. **Verify state first** (section 18). Read PR #112's CI result (checks API) before doing anything else.
-2. **Finish verifying PR #112** (stays a draft until done): install the heavy dependencies in short steps; run the full suite with `CI=true`, drift, the FastAPI-0.111 floor, the named security suites. *Expected:* no failures beyond the known flaky updater test.
-3. **Fail-before:** copy `tests/test_api_auth_audit.py` onto a worktree of current `main` (which has no audit code) and confirm the new behavioural tests fail there.
-4. **Mutation review** of the new logic, then confirm all are killed. Suggested mutants: remove the effective-mode gate in `get_settings`; make `_disable_audit_pending()` return False; swallow a flush failure as success; remove the backoff; remove the aggregate `_close_window()` call at rollover; disable the timer; persist per denial; put a credential in a payload; drop the bound on pending aggregates; remove the `schedule_flush()` in `setup()`.
-5. **Update the docs in the same PR:** `docs/reports/api-exposure-and-auth-boundary-oct2026.md` (A5/A6 and residual "Durable authentication events" -> implemented, with its own limits) and the DEBT-025 register row sentence "the durable audit residual remains open". **Do not close DEBT-025.** Beware: `KNOWN_ISSUES.md` conflicts easily with other sessions' edits.
-6. Report results in the PR body with exact figures; only then mark it ready. **Never merge.**
-7. **ADR-KERNEL-09 implementation** only after the owner decides O1-O5: its own PR(s), following §6 T1-T12 (route-coverage test, no-side-effect-on-denial per area, ordering, missing policy/identity, governance unavailable, audit unavailable, decision content, not-a-pass-through, durability round trip, fail-before, mutation review). Use the corrected caller list (section 11) when proposing the drift rule.
-8. **CSP hardening** (own PR): remove inline `<script>` and `onclick=` in `interface/web/index.html` and `settings.html` (module cards use inline handlers and unescaped `innerHTML`), then tighten `interface/headers.py` to `script-src 'self'`; rebuild the real-browser harness to prove no CSP violations.
-9. **Windows second-account test:** extend `scripts/check_token_acl_windows.py` / the CI job to create a local user (admin runner), attempt to read the token file as that user, and assert denial; label what it does and does not prove.
-10. **Flaky updater test** (own PR): strip the random `error_ref` UUID before the `"8080" not in ...` substring checks in `tests/test_updater_error_disclosure.py`.
+v1 steps 1-6 were carried out in v2 (section 0): CI read, PR #112 verified (fail-before replaced by a 20-mutant review, three tests added), the report updated, the PR description rewritten, nothing merged. What remains, in order:
+
+1. **Verify state first** (section 18). Expected: PR #112 head `2e7d036` and still a draft; if the owner has reviewed or merged it, adapt (item 2).
+2. **Owner review of PR #112** (the owner's step; do not merge). The one item that needs eyes: `get_settings()` now returns the *effective* mode (required while a disable record is pending). If the owner merges it on an explicit instruction: open a small **docs PR** that updates the DEBT-025 register row (an append-only addendum after the "Superseded Nov 17" bracket; the phrase "the durable audit residual remains open" is superseded, not deleted) and `CURRENT_STATE.md` (R-13). Neutral wording, written after the merge. Mind CRLF files.
+3. **ADR-KERNEL-09 implementation** only after the owner decides O1-O5: its own PR(s), following its section 6 T1-T12. Use the corrected caller list (section 11) for the drift rule.
+4. **CSP hardening** (own PR, no owner decision needed): remove inline `<script>` and `onclick=` in `interface/web/index.html` and `settings.html` (module cards use inline handlers and unescaped `innerHTML`), then tighten `interface/headers.py` to `script-src 'self'`; rebuild a real-browser harness (section 14) to show no CSP violations.
+5. **Windows second-account test** (own PR, no decision needed): extend `scripts/check_token_acl_windows.py` and the `token-acl-windows` job to create a local user, attempt to read the token file as that user and assert denial; label what it does and does not prove.
+6. **Flaky updater test** (own PR): strip the random `error_ref` UUID before the `"8080" not in ...` substring checks in `tests/test_updater_error_disclosure.py`. It did not fail in the three full runs of Nov 24 (random).
+7. **Optional, separate issues:** anchor the EventStream default path; stop the suite rewriting tracked `config/*.toml` and `data/context.sqlite` (section 15).
+
+Items 4-7 can start without the owner; 3 is blocked on O1-O5; 2 is the owner's.
 
 ## 18. Resume Instructions
 
 First, in order:
 1. Read `PROJECT_INSTRUCTIONS.md` (Project knowledge).
-2. `git fetch origin`; verify `main`, PR #112's head (`ed8890c` expected unless someone pushed), and this branch's tip. **Resolve any mismatch before changing code.**
+2. `git fetch origin`; verify `main`, PR #112's head (`2e7d036` expected unless someone pushed), and this branch's tip. **Resolve any mismatch before changing code.**
 3. Verify the handoff against the live repository (a state snapshot goes stale in hours here): are #94/#110 still merged, is `interface/auth_audit.py` still absent from `main`, has anyone changed the DEBT-025 row?
 4. Confirm the test environment (section 14) before trusting any green or red.
 5. Begin at step 2 of section 17. Do not redo completed work unless verification contradicts this file. If the repository contradicts it, correct this file; do not choose whichever source is convenient.
 
 ## 19. Transfer Status
 
-**TRANSFER READY**: all material work is in Git and pushed (PR #112's branch at `ed8890c`; handoff branch pushed and verified), nothing material exists only in the sandbox, and the next action is defined. This does **not** mean the work is complete or verified: PR #112 is explicitly unverified beyond 212 targeted tests, ADR-KERNEL-09 is unimplemented and unaccepted, and DEBT-025 remains OPEN.
+**TRANSFER READY**: all material work is in Git and pushed (PR #112's branch at `2e7d036`, CI 7/7; this handoff branch, v2 on top of v1; both verified with an unauthenticated `git ls-remote`), nothing material exists only in the sandbox, and the next action is defined. This does **not** mean the work is complete: PR #112 is a draft awaiting the owner's review and is unmerged, multi-process and Windows/macOS behaviour is untested, ADR-KERNEL-09 is unimplemented and unaccepted, and DEBT-025 remains OPEN.
