@@ -390,3 +390,64 @@ class TestPlumbing:
 
         asyncio.run(main())
         assert [t for t, _ in sink.records] == [auth.EVENT_DISABLED]
+
+
+class TestDeliveryGuarantees:
+    """Three guarantees the mutation review (Nov 2026) found unasserted in the first version of this file."""
+
+    def test_traffic_alone_persists_a_re_enable_record(self, sink, required, monkeypatch):
+        """No manual flush and no setup(): the request path itself schedules the background flush."""
+        async def main():
+            async def downstream(scope, receive, send):
+                raise AssertionError("every request here is denied")
+            mw = auth.ApiAuthMiddleware(downstream)
+            monkeypatch.setenv(auth.ENV_MODE, "disabled")
+            auth.get_settings(None)
+            assert await auth.flush_audit() is True                      # the disable record is stored
+            monkeypatch.setenv(auth.ENV_MODE, "required")
+            assert await _acall(mw) == 401                               # this request notices the re-enable
+            await asyncio.sleep(0.1)                                     # let the background flush run
+
+        asyncio.run(main())
+        assert [t for t, _ in sink.records] == [auth.EVENT_DISABLED, auth.EVENT_ENABLED]
+
+    def test_concurrent_flushes_append_each_record_exactly_once(self, required, monkeypatch):
+        monkeypatch.setenv(auth.ENV_MODE, "disabled")
+
+        async def main():
+            gate = asyncio.Event()
+
+            class Gated(RecordingSink):
+                async def append(self, event_type, payload):
+                    self.calls += 1
+                    await gate.wait()
+                    self.records.append((event_type, json.loads(json.dumps(dict(payload)))))
+
+            gated = Gated()
+            auth_audit.set_sink(gated)
+            auth.get_settings(None)                                      # queues the disable record
+            first = asyncio.ensure_future(auth.flush_audit())
+            await asyncio.sleep(0.05)                                    # `first` is now inside append()
+            second = await asyncio.wait_for(auth.flush_audit(), timeout=1.0)   # single-flight: returns at once
+            assert second is False and gated.calls == 1
+            gate.set()
+            assert await first is True
+            return gated
+
+        gated = asyncio.run(main())
+        assert [t for t, _ in gated.records] == [auth.EVENT_DISABLED] and gated.calls == 1
+
+    def test_every_overflow_loss_is_reported_exactly_once(self, sink, required, clock, monkeypatch):
+        monkeypatch.setattr(auth_audit, "MAX_PENDING_AGGREGATES", 3)
+        sink.fail = True
+        for _ in range(6):                                               # six windows, one denial each
+            assert call(app, "GET", "/config")[0] == 401
+            clock[0] += auth.THROTTLE_WINDOW_S + 1
+        sink.fail = False
+        clock[0] += auth_audit.AUDIT_RETRY_BACKOFF_S + 1
+        assert call(app, "GET", "/config")[0] == 401                     # closes the sixth window: six aggregates in all
+        assert flush() is True
+        lost = 6 - 3                                                     # six aggregates were created, three fit
+        got = aggregates(sink)
+        assert sum(a["dropped_aggregates"] for a in got) + auth._audit_state["dropped_aggregates"] == lost
+        assert sum(a["dropped_denials"] for a in got) + auth._audit_state["dropped_denials"] == lost
