@@ -15,9 +15,18 @@ What the continuation session did, all pushed unless stated. Details are in the 
 - **What v2 re-verified from v1:** `main` and PR tips, #94 and #110 merged, `interface/auth_audit.py` absent from `main`, the DEBT-025 register row as on `main` since Nov 17, and two EventStream facts (the default path `.data/events/stream.db` is relative; appends run in a thread via `run_in_executor`). **Not re-verified in v2:** the rest of sections 10 and 11 (for example the `evaluate_action` caller list and the Windows ACL findings); treat them as v1 evidence, not as re-checked.
 - **v1 expected "no failures beyond the known flaky updater test".** That holds only where `chromadb` and `sentence-transformers` are installed (CI, which is green). In this sandbox the full suite shows 16 environmental failures, identical on `main`; the updater test did not fail in the three full runs (it is random).
 
+### v3 (Nov 25, 2026): section 17 items 4 and 6 done as two separate PRs
+
+- **PR #115, flaky updater test (item 6): open, not draft, CI 7/7 success.** Test only (`tests/test_updater_error_disclosure.py`, +16/-2). Cause: `check_error` ends in `(ref <uuid>)` and the test asserted `"8080"` is absent from the whole string; a random UUID can contain `8080` (about 1 in 4,000). The leak check now strips the ref and the test also runs with a forced ref containing `8080`. Fail-before reproduced deterministically; a mutant that puts the exception text back into `check_error` is killed by 3 of the 4 tests.
+- **PR #118, CSP `script-src 'self'` (item 4): open, DRAFT, base `ef1351f`, head `72e74c1`, 2 commits, 10 files.** CI at write time: 6/7 checks completed, all success; `tests` still in progress. The inline script of `index.html`, `settings.html` and `wizard.html` moved to `/static/index.js`, `settings.js`, `wizard.js`; the inline `on*=` handlers became `data-action` / `data-dirty` attributes with one delegated listener per page; `interface/headers.py` sends `script-src 'self'` (`style-src` keeps `'unsafe-inline'`). New `tests/test_web_csp.py` (30 tests). The PR #94 guard `test_web_pages_use_the_authenticating_helpers` now reads the page script too (a bare `fetch()` put into `index.js` fails it).
+- **Evidence for #118:** real headless Chromium 158 on Linux, 29/29 checks against the real server with only API responses mocked; negative control (`main`'s pages under the strict policy) 0/29 with real `script-src-attr` / `script-src-elem` violations; 252 targeted tests on current dependencies and at the FastAPI floor; drift 15/15; full-suite failure set identical to `main`'s (16 environmental; 16 failed / 2380 passed vs 16 / 2350). **Still needed: a human click-through** (no other browser, no Windows/macOS, no frozen build).
+- **`main` moved:** `ef1351f` to `0ef31d7`. The owner merged #116 (DEBT-042) and #117 (DEBT-043), other sessions' work on `core/cognitive`, `core/memory` and `core/orchestrator.py`. They touch none of the files of #112, #115 or #118; trial merges were clean. PR #112 is still a draft, open, CI 7/7, **not merged**.
+- **A false alarm, corrected:** the real server answered 401 to `/api/wizard/*`, which looked like a new defect (the wizard sends no token). It is not: those routes do not exist (E7, already in the report); the auth layer is outermost and answers unknown paths before routing can 404. Do not report it as new.
+- **Not done:** register row and `CURRENT_STATE.md` (R-13) still deferred until the owner merges #112; items 5 and 7 below untouched.
+
 ## 1. Handoff Metadata
 
-- Handoff version: 2 (v1 Nov 23; v2 Nov 24, after a continuation session that carried out section 17 steps 1-6 of v1; see section 0)
+- Handoff version: 3 (v1 Nov 23; v2 Nov 24; v3 Nov 25, after a second continuation session that carried out section 17 items 4 and 6 of v2; see section 0)
 - Created at: Nov 2026, after the merge of PR #94 (2026-11-17T22:51Z). The sandbox clock was inconsistent across restarts, so no precise time is claimed here; use `git log` on this branch.
 - Workstream: DEBT-025 (API authentication boundary) and its follow-ups; also records the finished CTX-AUTH-002 / DEBT-029 work that preceded it.
 - Source session purpose: reconcile and land CTX-AUTH-002; resolve the DEBT-029 identifier collision; establish API exposure and implement the authentication boundary (DEBT-025); review and remediate PR #94; start the owner-approved follow-ups.
@@ -93,6 +102,8 @@ DEBT-025 can close only when: control-plane authorization is implemented and ver
 | R-12 | No merge, no weakening, no closing of DEBT-025 | owner | **STANDING** | | |
 | R-13 | DEBT-025 register row and `CURRENT_STATE.md` say durable events are implemented | v1 step 5 | **DEFERRED until PR #112 merges** | | write it neutrally, after the owner's merge instruction; `KNOWN_ISSUES.md` conflicts easily and some repo files are CRLF |
 | R-14 | The report records the durable audit records and their limits | v1 step 5 | **IMPLEMENTED in PR #112** (A15, section 6 items 12-15, section 7) | CI 7/7 on `2e7d036` | |
+| R-15 | Flaky updater test fixed | handoff v2 item 6 | **IMPLEMENTED; VERIFIED (local + CI 7/7); PR #115 open, not merged** | fail-before deterministic; mutant killed | owner merges |
+| R-16 | CSP `script-src 'self'` for the shipped pages | handoff v2 item 4 | **IMPLEMENTED; VERIFIED in headless Chromium/Linux and statically; PR #118 DRAFT, not merged; human click-through pending** | 29/29 browser checks, negative control 0/29, 252 targeted, drift 15/15 | `style-src 'unsafe-inline'` and other unescaped `innerHTML` values remain (report section 6 item 2) |
 
 ## 6. Current Verified State
 
@@ -120,11 +131,13 @@ All figures verified by `git ls-remote` / the GitHub API during this session. **
 | Item | Value |
 |---|---|
 | Primary repository / remote | `github.com/1h0lde4/ocbrain-v4.1` / `origin` |
-| `main` when this was written | `ef1351f` (earlier in the session: `2491ae4`, `abd6c4b`, `6f93444`, `2ebf76a`, `f9e49dd`). On Nov 24 it was `ef1351f` at the start of the continuation session and `ef1351f` when v2 was pushed. |
+| `main` when this was written | `ef1351f` (earlier in the session: `2491ae4`, `abd6c4b`, `6f93444`, `2ebf76a`, `f9e49dd`). Nov 24: `ef1351f`. Nov 25: `0ef31d7` after the owner merged #116 and #117 (unrelated files). |
 | PR #94 (auth boundary) | **merged** by `1h0lde4` at 2026-11-17T22:51Z, merge commit `ce5c3f8`; my last head `c50caa9`; branch head `594060f` (another session merged main into it) |
 | PR #110 (ADR-KERNEL-09) | **merged**; PR head `48bb472` after another session corrected two evidence rows (section 11) |
 | PR #93 (CTX-AUTH-002) | **merged** |
-| PR #112 (audit records) | **draft, open**, head `2e7d036` (was `ed8890c`); `main` `ef1351f` merged in, no conflicts; description rewritten Nov 24; not marked ready |
+| PR #112 (audit records) | **draft, open**, head `2e7d036`; `main` `ef1351f` merged in; description rewritten Nov 24; not marked ready; CI 7/7 |
+| PR #115 (flaky updater test) | open, not draft, head `823d9e2`, base `ef1351f`; CI 7/7 |
+| PR #118 (CSP `script-src 'self'`) | **draft**, open, head `72e74c1`, base `ef1351f` (two commits: `36de1f4` code and tests, `72e74c1` report); CI: 6/7 checks completed, all success; `tests` still in progress |
 | Implementation checkpoint (transfer commit) | `2e7d036` on `feat/debt-025-auth-audit-eventstream-nov2026`: `ed8890c` + `4ef2101` (tests) + `4294390` (merge of `main` `ef1351f`) + `2e7d036` (report). Diff against `main`: 7 files, +704/-13. Pushed fast-forward; remote tip verified by an unauthenticated `git ls-remote`. |
 | Handoff branch / commit | `handoff/debt-025-followups-nov2026`: v1 commit `b10c316` (parent `main` `ef1351f`), then the v2 commit on top. The tip of the branch is the handoff commit (a file cannot contain its own hash; read it with `git rev-parse origin/handoff/debt-025-followups-nov2026`). |
 | Working tree | the sandbox is **ephemeral and was reset twice**; nothing material exists only there. Worktrees `/home/claude/{audit,handoff}` are disposable. |
@@ -196,6 +209,8 @@ Nothing required for continuation exists outside the pushed repository.
 - **Mutant design error (v2):** raising the default of `MAX_PENDING_AGGREGATES` survived only because the test overrides that constant; a mutant must change code the test cannot override. Replaced by three mutants of the bound logic.
 - **A mutation runner that reported the first line starting with `ERROR`** mislabelled three kills (it picked captured log lines); only `FAILED ` lines identify the test.
 - **"Fail-before" by copying the new test file onto `main`** only proves the module is absent. Use mutants.
+- **Wizard 401 taken for a new defect** (v3): the auth layer answers 401 to any unknown path before routing; the wizard routes do not exist (E7). Check the report's E-list before calling something new.
+- **Harness mistakes, not product defects (v3):** a click on `#thinking-control` fails while it is `display:none` (it appears only while a query runs, on `main` too); a click on `.add-module-btn` races the grid re-render (use a retry); toggles in `settings.js` number 7, not 3 (derive counts from the page). `cut -c` split a multi-byte emoji and made the tool output invalid UTF-8: slice in Python. `/bin/sh` has no process substitution: use `bash -c`.
 
 ## 13. Verification Evidence
 
@@ -222,6 +237,12 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 | | mutation review (20 valid mutants; harness outside the repo, gone) | first run 17 killed / 3 survived (request-path background flush, single-flight, loss reported once); 3 tests added; **final 20/20 killed** (two by hang or timeout: per-append timeout removed, single-flight removed) |
 | | fail-before: new test file copied onto `main` | collection `ImportError` (module absent): shows absence, not behaviour; the mutation review is the behavioural evidence |
 | | trial merge of `main` into the PR branch | clean, no conflicts |
+| `72e74c1` (PR #118) | real browser, headless Chromium 158 Linux, harness outside the repo (gone), pages/static/headers from the real server, API responses mocked | **29/29**; negative control (`main` pages under the strict policy) **0/29** with `script-src-attr` and `script-src-elem` violations |
+| | `tests/test_web_csp.py` (new) on this branch; on `main`'s pages and policy | 30 passed; fail-before 15 of 30 fail |
+| | CSP + boundary + Node live + drift module, current dependencies; at the FastAPI floor | **252 passed**; **252 passed**; drift 15/15 |
+| | full suite, `ed8890c`-style differential: this branch vs `main` `ef1351f`, same environment, 4 chromadb files ignored | **16 failed / 2380 passed / 4 skipped / 1 xfailed** vs **16 / 2350 / 4 / 1**; failure sets identical |
+| | guard mutation: bare `fetch()` put into `index.js` | caught by `test_web_pages_use_the_authenticating_helpers[index.html]` |
+| `823d9e2` (PR #115) | fail-before with a forced ref containing `8080`; fixed file; with `tests/test_check_drift.py`; drift | assertion fails before; 4 passed after; 38 passed; 15/15 |
 
 **Labels:** the Node live-server test is **not** browser evidence; the browser run is Linux/Chromium only and not part of CI; the Windows evidence is one runner as the built-in Administrator with English names and lists ACL entries only (**no second-account read was attempted**); POSIX checks say nothing about NTFS. **Not performed:** a real desktop launcher, macOS, a frozen build on Windows/macOS, a truly separate host, the second-account Windows test, anything for PR #112 beyond the 212 tests.
 
@@ -237,6 +258,7 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 - **Nov 24 session environment (ephemeral, gone with the sandbox):** `/home/claude/venv` (current dependencies) and `venv-floor` (the pins above); extra installs `feedparser trafilatura aiohttp beautifulsoup4`; `chromadb` and `sentence-transformers` not installed. Rebuild by the command lists in this section. Worktrees for the mutation run, `main` and this branch were disposable.
 - **Tool traps seen on Nov 24:** a `sleep` of 90 s or more inside one tool call was stopped by the tool layer twice with "the credential it was run with is no longer valid" (no GitHub credential was involved); poll with sleeps of 60 s or less. A background `pytest` started with a plain `&` died silently at about 42 percent; `setsid nohup` runs finished. The unauthenticated GitHub API is exhausted for the shared egress address; the saved token (valid for `1h0lde4`, push access, checked read-only first) was used for checks and for one fast-forward push, per the standing owner instruction.
 - Running the suite dirties tracked files (section 15): `git checkout -- config data` before committing.
+- **Browser harness (v3, rebuilt, gone with the sandbox):** `npm i @sparticuz/chromium puppeteer-core` (the module's export is under `.default`); a launcher that starts `interface.api:app` with `OCBRAIN_API_TOKEN` and `OCBRAIN_API_TOKEN_FILE` set and the working directory outside the repo, with an optional mode that forces the strict policy for a negative control; `puppeteer` request interception serving the real pages and static files and mocking only `/status`, `/modules`, `/config`, `/query`, `/train/*`, `/modules/new` and `/api/wizard/*`; a `securitypolicyviolation` listener installed with `evaluateOnNewDocument`; the token adopted from the `#token=` fragment. Stop servers by PID (`ps -eo pid,comm,args | awk ...`), never `pkill -f`.
 
 ## 15. Unresolved Questions / Risks / Blockers
 
@@ -252,7 +274,8 @@ All `CI=true`, Python 3.12.3, `chromadb==0.5.3`, Linux unless stated.
 | EventStream default path is cwd-relative | read | anchor it | separate defect | yes |
 | Token plaintext in saved preferences | owner informed | rotate, secret store | owner's call | yes |
 | Concurrency | other sessions push to branches and merge | always re-fetch; never overwrite | standing | yes |
-| Running the test suite rewrites tracked `config/models.toml`, `config/settings.toml`, `config/sources.toml` and `data/context.sqlite` (also on pristine `main`; it drops comments such as the `import_root` note) | seen in two worktrees after suite runs | fix the config writer or point tests at a temporary directory | separate issue, not DEBT-025; not changed | yes |
+| Running the test suite rewrites tracked `config/models.toml`, `config/settings.toml`, `config/sources.toml` and `data/context.sqlite` (also on pristine `main`; it drops comments such as the `import_root` note) | seen in several worktrees after suite and drift runs; `git checkout -- config data` before committing | fix the config writer or point tests at a temporary directory | separate issue, not DEBT-025; not changed | yes |
+| PR #118 changes UI behaviour that only a headless browser has exercised | section 13 | the owner clicks through the pages in a real browser (and, if wanted, Firefox/Safari) before merging | open | yes: it is a draft |
 | Duplicate audit records after a timed-out append (EventStream appends run in a thread, `core/events/event_stream.py` line 228) | read; report section 6 item 12 | accept at-least-once (documented), or dedupe on `transition_id` | owner's call | yes |
 | `chromadb` / `sentence-transformers` not installed in this sandbox | 4 files ignored, 8 tests fail on import | install in a longer session | CI covers them | yes |
 
@@ -272,12 +295,12 @@ v1 steps 1-6 were carried out in v2 (section 0): CI read, PR #112 verified (fail
 1. **Verify state first** (section 18). Expected: PR #112 head `2e7d036` and still a draft; if the owner has reviewed or merged it, adapt (item 2).
 2. **Owner review of PR #112** (the owner's step; do not merge). The one item that needs eyes: `get_settings()` now returns the *effective* mode (required while a disable record is pending). If the owner merges it on an explicit instruction: open a small **docs PR** that updates the DEBT-025 register row (an append-only addendum after the "Superseded Nov 17" bracket; the phrase "the durable audit residual remains open" is superseded, not deleted) and `CURRENT_STATE.md` (R-13). Neutral wording, written after the merge. Mind CRLF files.
 3. **ADR-KERNEL-09 implementation** only after the owner decides O1-O5: its own PR(s), following its section 6 T1-T12. Use the corrected caller list (section 11) for the drift rule.
-4. **CSP hardening** (own PR, no owner decision needed): remove inline `<script>` and `onclick=` in `interface/web/index.html` and `settings.html` (module cards use inline handlers and unescaped `innerHTML`), then tighten `interface/headers.py` to `script-src 'self'`; rebuild a real-browser harness (section 14) to show no CSP violations.
+4. **CSP hardening: DONE as PR #118 (draft).** Remaining: CI result, a human click-through, the owner's review. Later, separate jobs if wanted: remove the `style=` attributes and tighten `style-src`; escape the remaining `innerHTML` values listed in the report (section 6 item 2); `encodeURIComponent` in `trainModule`.
 5. **Windows second-account test** (own PR, no decision needed): extend `scripts/check_token_acl_windows.py` and the `token-acl-windows` job to create a local user, attempt to read the token file as that user and assert denial; label what it does and does not prove.
-6. **Flaky updater test** (own PR): strip the random `error_ref` UUID before the `"8080" not in ...` substring checks in `tests/test_updater_error_disclosure.py`. It did not fail in the three full runs of Nov 24 (random).
+6. **Flaky updater test: DONE as PR #115 (open, CI 7/7).** Waiting for the owner to merge.
 7. **Optional, separate issues:** anchor the EventStream default path; stop the suite rewriting tracked `config/*.toml` and `data/context.sqlite` (section 15).
 
-Items 4-7 can start without the owner; 3 is blocked on O1-O5; 2 is the owner's.
+Items 5 and 7 can start without the owner; 3 is blocked on O1-O5; 2 (review of #112, #115, #118) is the owner's.
 
 ## 18. Resume Instructions
 
@@ -290,4 +313,4 @@ First, in order:
 
 ## 19. Transfer Status
 
-**TRANSFER READY**: all material work is in Git and pushed (PR #112's branch at `2e7d036`, CI 7/7; this handoff branch, v2 on top of v1; both verified with an unauthenticated `git ls-remote`), nothing material exists only in the sandbox, and the next action is defined. This does **not** mean the work is complete: PR #112 is a draft awaiting the owner's review and is unmerged, multi-process and Windows/macOS behaviour is untested, ADR-KERNEL-09 is unimplemented and unaccepted, and DEBT-025 remains OPEN.
+**TRANSFER READY**: all material work is in Git and pushed (PR #112 branch `2e7d036`, PR #115 branch `823d9e2`, PR #118 branch `72e74c1`, and this handoff branch with v3 on top of v2; all verified with an unauthenticated `git ls-remote`), nothing material exists only in the sandbox, and the next action is defined. This does **not** mean the work is complete: #112 and #118 are drafts, #115 is open, none is merged, #118 has had no human click-through, ADR-KERNEL-09 is unimplemented and unaccepted, and DEBT-025 remains OPEN.
