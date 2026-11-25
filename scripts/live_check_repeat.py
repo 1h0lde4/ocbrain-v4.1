@@ -57,7 +57,9 @@ if str(ROOT) not in sys.path:
 from core.cognitive import content_anchor as ca  # noqa: E402
 
 # ── Pre-registered criteria (keep identical to the protocol document) ────────────────────────────────
-DISPLAY_CAP = ca._MAX_STEPS_SHOWN                  # 5: steps the response shows before "(+N more)"
+DISPLAY_CAP = 5                                    # PRE-REGISTERED C2 cap: what the ORIGINAL response showed. Deliberately NOT
+                                                   # tied to ca._MAX_STEPS_SHOWN (now 3, DEBT-043): changing the product must not
+                                                   # silently change a pre-registered criterion.
 C2_MEDIAN_RANGE = (5, 9)                           # per-run median steps per plan must lie in this range
 C2_MIN_OVER_CAP = 7                                # plans exceeding the display cap, per run, at least
 C4_STORY_MIN = 5                                   # story-like plans with a character-structure step, per run

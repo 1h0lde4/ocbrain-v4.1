@@ -51,7 +51,7 @@ The current register distinguishes verified fixes from partial remediation and p
 - FZ-02 has merged provider-failure, stalled/deadline, and router-cleanup work, but end-to-end cancellation and terminal outcome semantics remain open. PR #104 is router-resource cleanup, not workflow cancellation.
 - FZ-05 execution-registry growth and EventStream retention remain open.
 - FZ-06 / DEBT-030 execution identity across event, workflow, and capability boundaries remains open.
-- G4 / DEBT-042 remains a High, freeze-blocking workstream. D1–D11 remain open; no product implementation is authorized by the current handoff.
+- G4 / DEBT-042 remains a High, freeze-blocking workstream. D1–D11 remain open; no product implementation is authorized by the current handoff. *(Nov 25, 2026: the narrow DEBT-042 `_fts_escape` query-syntax fix was merged separately in PR #116 on the owner's instruction and DEBT-042 stays OPEN pending independent verification; the G4 decisions D1–D11 are unchanged and no G4 implementation is authorized.)*
 
 Other important open areas include API authentication/authorization (DEBT-025), test/config isolation (DEBT-012), learning-boundary remediation (DEBT-014), Context authority boundaries (including CTX-AUTH-001b), and incomplete sandbox isolation. See the live register rather than relying on this abbreviated list.
 
