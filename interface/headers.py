@@ -5,8 +5,12 @@ The UI keeps its API token in sessionStorage, so anything that can run script in
 the page can read it.  These headers do not stop an injected inline script, but
 they remove the easy follow-ons: third-party script and style loads, requests to
 other origins (``connect-src 'self'``), framing by another site, and MIME
-sniffing.  ``'unsafe-inline'`` remains because the shipped pages use inline
-``<script>`` blocks and ``onclick`` attributes; removing those is a separate job.
+sniffing.  ``script-src 'self'`` also means an injected inline ``<script>`` block or
+``on*=`` attribute does not run: the shipped pages keep their script in
+``/static/*.js`` and wire events with ``addEventListener`` and ``data-action``
+(``tests/test_web_csp.py`` pins this).  ``style-src 'unsafe-inline'`` remains because the
+pages and their templates still carry ``style=`` attributes; that exposure is smaller
+than script and is a separate job.
 """
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ from typing import Any, Awaitable, Callable, MutableMapping
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "font-src 'self'; "
