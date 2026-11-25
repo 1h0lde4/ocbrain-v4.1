@@ -654,7 +654,14 @@ def test_protocol_document_matches_the_tools_constants():
 
 
 def test_constants_stay_in_sync_with_the_product_and_the_supplied_run():
-    assert rp.DISPLAY_CAP == rp.ca._MAX_STEPS_SHOWN == 5
+    # C2 is PRE-REGISTERED against the cap the ORIGINAL response showed (5). DEBT-043 lowered the
+    # product's cap, so DISPLAY_CAP must be a literal, not derived from the product: otherwise
+    # changing the product would silently change the criterion.
+    assert rp.DISPLAY_CAP == 5
+    tree = ast.parse(Path(rp.__file__).read_text())
+    cap = [n for n in tree.body if isinstance(n, ast.Assign)
+           and any(isinstance(t, ast.Name) and t.id == "DISPLAY_CAP" for t in n.targets)]
+    assert len(cap) == 1 and isinstance(cap[0].value, ast.Constant) and cap[0].value.value == 5
     assert sum(rp.BASELINE_RUN0["steps"]) == 83 and len(rp.BASELINE_RUN0["steps"]) == len(lc.SAMPLE) == 11
     assert sum(c > rp.DISPLAY_CAP for c in rp.BASELINE_RUN0["steps"]) == 9
     story = [r for r in lc.SAMPLE if re.search(r"\b(story|novel)\b", r, re.I)]

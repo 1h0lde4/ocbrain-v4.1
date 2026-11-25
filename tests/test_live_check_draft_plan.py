@@ -84,9 +84,17 @@ class TestOfflineSelfTest:
     @pytest.mark.asyncio
     async def test_shown_to_user_is_the_real_response_builder_output(self):
         res = await lc.run([REQ], offline="generic")
-        shown = res["rows"][0]["shown_to_user"]
-        assert "Here's how I read your request" in shown
-        assert "1. Draft the piece; 2. Revise and polish the draft" in shown
+        row = res["rows"][0]
+        shown = row["shown_to_user"]
+        # DEBT-043 (C-plus): the harness shows exactly what the real builder returns --
+        # a labelled provisional plan on separate numbered lines, no echoed request.
+        assert shown == lc.ca.build_clarification_response(
+            lc.ca.detect_creative_content_anchors(REQ),
+            request_text=REQ, plan_steps=row["steps"])
+        assert "Provisional draft plan" in shown
+        assert "\n1. Draft the piece\n2. Revise and polish the draft\n" in shown
+        assert "Here's how I read your request" not in shown
+        assert "; 2." not in shown
         assert "surprise me" in shown
 
 
