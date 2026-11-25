@@ -22,7 +22,7 @@ What these pin, and why:
 * EXECUTION EVIDENCE (R1/R2/R4/R5).  pytest writes a JUnit XML; before the gate, a step records the
   REAL exit codes of the A9 evidence check and of the JUnit execution-manifest check (it never
   fails by itself, because a red gate would skip everything after it); the last step of the job
-  decides from those records.  The five uploads, their exact paths and the ``error`` policy, the
+  decides from those records.  The six uploads, their exact paths and the ``error`` policy, the
   action SHAs, the image, the absence of shell overrides and of OCBRAIN_SANDBOX_NETWORK_PROVISIONED,
   and the exact pytest toolchain pins are pinned here; the recording and verdict steps are
   executed for real against fixture inputs.
@@ -138,7 +138,7 @@ def test_every_artifact_upload_runs_even_after_an_earlier_step_failed() -> None:
         for step in _steps(name)
         if str(step.get("uses", "")).startswith("actions/upload-artifact@")
     ]
-    assert len(uploads) == 5, f"expected the five artifact uploads, found {uploads}"
+    assert len(uploads) == 6, f"expected the six artifact uploads, found {uploads}"
     for job, step, cond in uploads:
         assert cond == "always()", f"{job}/{step}: an artifact upload without `if: always()` is lost on a failed run"
 
@@ -146,7 +146,7 @@ def test_every_artifact_upload_runs_even_after_an_earlier_step_failed() -> None:
 def test_every_hosted_job_uploads_its_evidence_even_on_failure() -> None:
     wanted = {
         "drift-and-ownership": {"drift-report"},
-        "tests": {"docker-preflight", "pytest-output", "test-execution-evidence"},
+        "tests": {"docker-engine", "docker-preflight", "pytest-output", "test-execution-evidence"},
         "typecheck-b03": {"mypy-b03"},
     }
     for job, names in wanted.items():
@@ -593,6 +593,7 @@ EVIDENCE_FILES = (
 # `if: always()` (tested above); names and paths are exact (R5-f).
 EXPECTED_UPLOADS = {
     ("drift-and-ownership", "drift-report"): {"/tmp/drift-report.json"},
+    ("tests", "docker-engine"): {"/tmp/docker-engine.json"},
     ("tests", "docker-preflight"): {"/tmp/docker-preflight.json"},
     ("tests", "pytest-output"): {"/tmp/pytest-output.txt", "/tmp/pytest-exit-code.txt"},
     ("tests", "test-execution-evidence"): set(EVIDENCE_FILES),
@@ -641,7 +642,7 @@ def test_r5h_every_action_is_pinned_to_the_expected_commit() -> None:
                 assert action in EXPECTED_ACTIONS, f"{job}/{step.get('name')}: unexpected action {action}"
                 assert ref == EXPECTED_ACTIONS[action], f"{job}/{step.get('name')}: {action} is not at the pinned commit"
                 seen.append(action)
-    assert len(seen) == 11, f"an action was added or removed: {seen}"
+    assert len(seen) == 12, f"an action was added or removed: {seen}"
     assert set(seen) == set(EXPECTED_ACTIONS)
 
 
@@ -731,11 +732,32 @@ def test_step_order_in_the_tests_job() -> None:
         return hits[0]
 
     toolchain = at("Install the 32-bit toolchain")
-    assert at("Install dependencies") < toolchain < at("Docker preflight")
+    engine = at("Provision the pinned Docker Engine")
+    assert at("Install dependencies") < toolchain < engine < at("Upload Docker Engine provisioning report") < at("Docker preflight")
     assert at("Run test suite") < at("Upload full test output") < at("Record the A9 and JUnit manifest verdicts")
     assert at("Record the A9") < at("Upload test execution evidence") < at("Gate on pytest exit code")
     assert at("Gate on pytest exit code") < at(_SKIP_STEP_NAME) < at("Fail unless the A9 and JUnit manifest checks passed")
     assert at("Fail unless") == len(names) - 1, "the deciding step is the last step of the job"
+
+
+def test_the_engine_step_is_one_command_pinning_an_exact_version_at_or_above_the_floor() -> None:
+    import ci_docker_engine as engine
+
+    run = _step("tests", "Provision the pinned Docker Engine that A9 needs")["run"]
+    tokens = shlex.split(run.replace("\\\n", " "))
+    assert tokens[:2] == ["python3", "scripts/ci_docker_engine.py"], tokens
+    assert tokens[2] == "--version" and tokens[4] == "--report" and len(tokens) == 6, tokens
+    version = engine.parse_version(tokens[3])  # exact X.Y.Z: no range, no latest, no prerelease
+    assert engine.at_or_above_floor(version), f"{tokens[3]} is below the A9 Engine floor"
+    assert tokens[5] == "/tmp/docker-engine.json" == next(iter(EXPECTED_UPLOADS[("tests", "docker-engine")]))
+    for forbidden in ("||", "&&", ";", "|", "latest", "--apt-revision"):
+        assert forbidden not in run, forbidden
+    assert "if" not in _step("tests", "Provision the pinned Docker Engine that A9 needs"), "a skipped provisioning must not be possible"
+
+
+def test_the_engine_is_provisioned_before_the_preflight_that_pulls_the_image() -> None:
+    names = [s.get("name", "") for s in _steps("tests")]
+    assert names.index("Provision the pinned Docker Engine that A9 needs") < names.index("Docker preflight and test-image provisioning")
 
 
 def test_the_verdict_step_is_one_command_over_exactly_the_evidence_the_record_step_writes() -> None:
