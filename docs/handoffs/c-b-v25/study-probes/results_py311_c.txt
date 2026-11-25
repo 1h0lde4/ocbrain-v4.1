@@ -1,0 +1,57 @@
+## probes_c.py (real uvicorn in-process)
+python 3.11.15
+=== c1_nonstream_query_client_disconnect ===
+{
+  "orchestrator_log": [
+    "handle:start",
+    "handle:COMPLETED (logical operation ran to the end)"
+  ]
+}
+=== c2_sse_query_client_disconnect ===
+{
+  "got_first_bytes": true,
+  "provider_log": [
+    "provider-stream:start",
+    "provider-stream:CancelledError"
+  ],
+  "graph_nodes": {
+    "c2-exec": [
+      "OCBrain execution",
+      "pending"
+    ],
+    "27eee58a-f09b-45f8-a9ba-60a7a81a1070": [
+      "Generate response",
+      "running"
+    ]
+  },
+  "execution_events": []
+}
+=== c3_execution_events_terminal_gap ===
+{
+  "events_received_by_subscriber_before_manual_terminal": [
+    "execution.node.status"
+  ],
+  "subscriber_still_waiting_3s_after_cancel": true,
+  "after_manually_emitting_execution.cancelled": [
+    "<<response ended (chunked terminator)>>",
+    "execution.cancelled"
+  ],
+  "reader_done_after_control": false
+}
+=== c4_graceful_shutdown_with_inflight_request ===
+{
+  "server_exit_took_s": 4.67,
+  "orchestrator_log": [
+    "handle:start",
+    "handle:COMPLETED (logical operation ran to the end)"
+  ],
+  "client_got_response": "HTTP/1.1 200 OK\r\ndate: Tue, 03 Nov 2026 00:43:46 GMT\r\nserver"
+}
+=== c4b_graceful_shutdown_with_timeout ===
+{
+  "server_exit_took_s": 1.16,
+  "orchestrator_log": [
+    "handle:start",
+    "handle:CANCELLED"
+  ]
+}
