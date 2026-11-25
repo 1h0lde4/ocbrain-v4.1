@@ -262,6 +262,20 @@ jobs:
             /tmp/junit-check-exit-code.txt
           if-no-files-found: error
 
+      - name: Observe JUnit identities (THROWAWAY, never to be merged)
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          import ci_junit_manifest as m
+          r = m.parse_junit(Path("/tmp/pytest-junit.xml"))
+          print("OBS-BEGIN", len(r.cases), r.problems)
+          for c in r.cases:
+              print("OBS|%s|%s|%s|%s" % (c.classname, c.name, c.outcome, (c.reason or "")[:120]))
+          print("OBS-END")
+          PY
+
       - name: Gate on pytest exit code, errors and unlisted failures
         # Fails on: any pytest exit code other than 0/1, a missing summary
         # line, ERROR/INTERNALERROR entries, zero passed tests, and any FAILED
