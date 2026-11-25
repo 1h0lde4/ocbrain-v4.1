@@ -1,0 +1,3 @@
+sandbox: Ubuntu 24.04.5 LTS | python 3.12.3 | cpus 1 | 2026-11-25T01:10:01Z
+huggingface.co resolves: no
+venv packages absent: torch absent;transformers absent;sentence_transformers absent;

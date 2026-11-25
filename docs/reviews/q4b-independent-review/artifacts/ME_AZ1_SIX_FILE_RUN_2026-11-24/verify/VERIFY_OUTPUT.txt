@@ -1,0 +1,30 @@
+# command: python3 docs/reviews/q4b-independent-review/artifacts/ME_AZ1_SIX_FILE_RUN_2026-11-24/verify/summarize_az1.py   (repo root; branch HEAD 1e9f3b7 + uncommitted package)
+
+== 4a4783c: # python Python 3.12.3 | pytest pytest 9.2.0
+[PASS] 4a4783c: header names the full commit SHA
+[PASS] 4a4783c: tests/test_execution_runtime.py has 37 PASSED and nothing else  ({'PASSED': 37})
+[PASS] 4a4783c: tests/test_supervisor_worker.py has 29 PASSED and nothing else  ({'PASSED': 29})
+[PASS] 4a4783c: tests/test_evaluator_worker.py has 26 PASSED and nothing else  ({'PASSED': 26})
+[PASS] 4a4783c: tests/test_workflow_runtime.py has 35 PASSED and nothing else  ({'PASSED': 35})
+[PASS] 4a4783c: tests/test_workflow_failure_disclosure.py has 8 PASSED and nothing else  ({'PASSED': 8})
+[PASS] 4a4783c: tests/test_scheduler_failure_containment.py has 35 PASSED and nothing else  ({'PASSED': 35})
+[PASS] 4a4783c: total is 170 PASSED with no other outcome  ({'PASSED': 170})
+[PASS] 4a4783c: pytest summary line says 170 passed
+[PASS] 4a4783c: exit status 0 recorded
+[PASS] 4a4783c: test_a_successful_workflow_run_is_unchanged PASSED
+
+== f13bfde: # python Python 3.12.3 | pytest pytest 9.1.1
+[PASS] f13bfde: header names the full commit SHA
+[PASS] f13bfde: tests/test_execution_runtime.py has 37 PASSED and nothing else  ({'PASSED': 37})
+[PASS] f13bfde: tests/test_supervisor_worker.py has 29 PASSED and nothing else  ({'PASSED': 29})
+[PASS] f13bfde: tests/test_evaluator_worker.py has 26 PASSED and nothing else  ({'PASSED': 26})
+[PASS] f13bfde: tests/test_workflow_runtime.py has 35 PASSED and nothing else  ({'PASSED': 35})
+[PASS] f13bfde: tests/test_workflow_failure_disclosure.py has 8 PASSED and nothing else  ({'PASSED': 8})
+[PASS] f13bfde: tests/test_scheduler_failure_containment.py has 35 PASSED and nothing else  ({'PASSED': 35})
+[PASS] f13bfde: total is 170 PASSED with no other outcome  ({'PASSED': 170})
+[PASS] f13bfde: pytest summary line says 170 passed
+[PASS] f13bfde: exit status 0 recorded
+[PASS] f13bfde: test_a_successful_workflow_run_is_unchanged PASSED
+
+checks run: 22; passed: 22; failed: 0
+# exit status: 0
