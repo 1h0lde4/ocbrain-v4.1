@@ -68,7 +68,7 @@ All IMPLEMENTED. "Owner ruling" is the state of the owner's own decision.
 | A10 | **Token location and lifecycle:** frozen builds use a per-user directory (`%LOCALAPPDATA%\OCBrain`, `~/Library/Application Support/OCBrain`, `$XDG_DATA_HOME/ocbrain`); the file is re-checked on every request, so `ocbrain token --rotate` or deleting it revokes the old token without a restart. | authorised plan |
 | A11 | **The tray never puts the token on a command line.** The page asks once per tab; `ocbrain token --show` prints it. A one-time-code scheme was rejected: a local attacker could win the race to redeem it and obtain the full token. | authorised plan |
 | A12 | **Windows:** `icacls /reset`, `/inheritance:r`, `/grant:r *<SID>:(F)` on create, load and rotate, then the DACL is read as SDDL (SIDs, language-independent) and **no principal other than the current user, SYSTEM, Administrators and OWNER RIGHTS may have an allow entry**; anything else fails closed and names the principal. A loosened ACL (Everyone/Users added) is repaired on the next load. Validated by the `token-acl-windows` CI job (`scripts/check_token_acl_windows.py`), which checks each file two independent ways (icacls display names and SDDL SIDs); the unit tests stub `icacls` and prove logic only. | authorised plan |
-| A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `'unsafe-inline'` stays because the shipped pages use inline script and `onclick`. | authorised plan |
+| A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `script-src 'self'`: the shipped pages keep their script in `/static/*.js` and wire events with `addEventListener` and `data-action`, so an injected inline script or `on*=` attribute does not run (`tests/test_web_csp.py`). `style-src 'unsafe-inline'` stays because the pages still carry `style=` attributes. | authorised plan |
 | A14 | **`ocbrain token [--show|--rotate]`** in both entry points (the pip CLI, and `main.py` for packaged installs); the CLI group now runs a known subcommand before treating text as a query (E11). | authorised plan |
 
 Rejected: cookie sessions (more state, a CSRF surface, no gain on one machine); a `?token=` query parameter (logs,
@@ -108,9 +108,16 @@ Token required (30): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 ## 6. Residual scope (explicit)
 1. **Same-user processes can read the token file.** Not defended against. A different mechanism (OS keyring,
    per-process credentials) would be a separate decision.
-2. **`'unsafe-inline'` remains in the CSP**, so an injected inline script still runs and can read `sessionStorage`.
-   The CSP removes third-party loads and cross-origin `connect`, not XSS itself. Module names and stage text are
-   inserted unescaped via `innerHTML` in `index.html` (pre-existing; not exploited).
+2. **`style-src 'unsafe-inline'` remains in the CSP** (the pages and their templates still carry `style=` attributes).
+   Script no longer has it: `script-src 'self'`, with each page's script in `/static/index.js`, `settings.js` and
+   `wizard.js`, so the browser blocks an injected inline script or `on*=` attribute. That is a mitigation, not a
+   guarantee: injected markup, links and style still render, and the token stays readable by any script that does run
+   from `'self'`. Checked in a real headless Chromium on Linux (a harness outside the repo, not part of CI) and by
+   static tests; no other browser, and not Windows or macOS. Where the inline handlers were replaced, the module name,
+   stage, setting key and wizard model name are now escaped (`escapeHtml`). Still inserted unescaped via `innerHTML`
+   (pre-existing, no longer able to run script): `e.message` in the module-grid error line, config values in the
+   `value=` of `settings.js` inputs, and `display`, `description` and the `id=` of wizard model rows. `trainModule`
+   also puts the module name into the URL path without `encodeURIComponent` (unchanged).
 3. **No lockout.** Denial logging is bounded; a flood is still answered, at about 400 requests per second measured.
 4. **The `Host` allowlist does not apply under the explicit opt-out.**
 5. **Whether a browser keeps the `#token=` URL in its history** is no longer relevant to the tray (it sends none),
