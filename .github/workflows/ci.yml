@@ -106,6 +106,36 @@ jobs:
           sudo apt-get install -y --no-install-recommends gcc-multilib
           gcc --version
 
+      - name: Provision the pinned Docker Engine that A9 needs
+        # A9 can only be verified on an Engine whose default policy owns the AF_VSOCK deny rule
+        # (Docker Engine 29.8.0 or later; H-D13c route 1).  The hosted image ships 29.4.2, which
+        # blocks the 32-bit `socketcall` multiplexer wholesale, so on it A9 is INCONCLUSIVE
+        # (`control_not_open`, `socketcall_blocked_wholesale`) whatever the tests do: observed on
+        # hosted runs 45368424695 and 45369842012.  This step installs EXACTLY the pinned
+        # version of docker-ce and docker-ce-cli (no range, no "latest") from Docker's apt
+        # repository after checking that the signing key is the one pinned fingerprint, restarts
+        # the daemon, and requires the daemon and the client to report that exact version
+        # (scripts/ci_docker_engine.py, unit-tested in tests/test_ci_docker_engine.py).
+        # Fail-closed: a failed step is a red job, never a skip.  It decides nothing about A9: the
+        # classification still comes only from the behavioral runs, and the Engine version stays
+        # corroboration.  The version below is the one the lab host (which reproduced the
+        # bypass without an LSM policy) ran; raising it is a reviewed change, because a newer
+        # Engine changes the default profile that A9 verifies.
+        #
+        # The step is exactly ONE command (a test pins that and the version's form).
+        run: |
+          python3 scripts/ci_docker_engine.py \
+            --version 29.8.2 \
+            --report /tmp/docker-engine.json
+
+      - name: Upload Docker Engine provisioning report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docker-engine
+          path: /tmp/docker-engine.json
+          if-no-files-found: error
+
       - name: Docker preflight and test-image provisioning
         # Fail-closed prerequisite for the Docker-backed tests (scripts/ci_docker_preflight.py,
         # unit-tested in tests/test_ci_docker_preflight.py): a reachable daemon, exactly
