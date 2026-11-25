@@ -1,0 +1,20 @@
+# test_namespace_backend.py, baseline fbe1ebd, review sandbox: unshare OK, cgroup v1 memory controller writable
+# Run A: venv interpreter (sys.executable=/home/claude/v/bin/python, not visible inside the chroot) -> 8 failed, 6 passed (execvp FileNotFoundError, _ns_init.py:97)
+# Run B: system interpreter (command below) -> all 14 passed
+# cmd: PYTHONPATH=<venv site-packages>:<repo> /usr/bin/python3 -m pytest tests/core/sandbox/test_namespace_backend.py -v -rs -p no:cacheprovider --tb=short
+
+tests/core/sandbox/test_namespace_backend.py::test_echo_hello_runs_and_returns_output PASSED [  7%]
+tests/core/sandbox/test_namespace_backend.py::test_illegal_path_access_fails_cleanly PASSED [ 14%]
+tests/core/sandbox/test_namespace_backend.py::test_symlink_escape_is_contained PASSED [ 21%]
+tests/core/sandbox/test_namespace_backend.py::test_path_traversal_is_contained PASSED [ 28%]
+tests/core/sandbox/test_namespace_backend.py::test_network_egress_denied_by_default PASSED [ 35%]
+tests/core/sandbox/test_namespace_backend.py::test_memory_limit_kills_oversized_allocation PASSED [ 42%]
+tests/core/sandbox/test_namespace_backend.py::test_pids_limit_blocks_fork_bomb PASSED [ 50%]
+tests/core/sandbox/test_namespace_backend.py::test_timeout_terminates_long_running_command PASSED [ 57%]
+tests/core/sandbox/test_namespace_backend.py::test_cancel_kills_all_descendant_processes PASSED [ 64%]
+tests/core/sandbox/test_namespace_backend.py::test_artifacts_are_collected_with_real_hashes PASSED [ 71%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_ptrace PASSED [ 78%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_mount_for_the_payload PASSED [ 85%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_denylist_does_not_break_normal_execution PASSED [ 92%]
+tests/core/sandbox/test_namespace_backend.py::test_uts_namespace_isolates_hostname PASSED [100%]
+============================== 14 passed in 4.45s ==============================
