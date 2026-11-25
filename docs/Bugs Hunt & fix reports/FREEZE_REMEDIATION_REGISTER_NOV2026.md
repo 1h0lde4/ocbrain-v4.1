@@ -110,6 +110,17 @@ An absence claim is weaker than a presence claim. Scope used, and what would str
 3. Does DEC-08 already have a decision record somewhere not on `main`?
 4. Should EVG-01 be satisfied by a retained CI artifact or by a privileged-runner run?
 
-## 10. Transfer note
+## 10. Post-baseline movement (addendum; baseline above stays pinned to `fbe1ebd`)
+
+`origin/main` advanced to `cc446f8` (2026-11-25 19:42 UTC) after this register's baseline: PR #117 (DEBT-043 clarification-response implementation) and PR #119 (documentation sync, "DEBT-042 / DEBT-043 state after PR #116 and #117 (both stay OPEN)") were merged. Checked at `cc446f8`, by diff scope and targeted greps only (the new code and tests were **not** reviewed or run):
+
+| Row | Effect |
+|---|---|
+| DEF-11 / EVG-06 | DEBT-043 is now **implemented and merged, not independently verified**; the old `Here's how I read your request` string is absent from `content_anchor.py`; the register row on `main` says so and keeps the item OPEN, consistent with the four-state rule. PR #117 is no longer an open candidate. The DEF-11 acceptance criteria and `IR` requirement stand, now against merged code. |
+| DOC-01 | Largely addressed by #119 for DEBT-043 (row read: "fix merged, still OPEN"); the DEBT-042 row was **not** re-read at `cc446f8`. Re-check before treating DOC-01 as closed. |
+| DOC-04 | The open-PR count and "12 open PRs" figure are stale again. |
+| All other rows | The diff between `fbe1ebd` and `cc446f8` does not touch any file cited by DEF-01 to DEF-10, DEF-12 or DEF-13 (`interface/`, `core/workers`, `core/capabilities`, `core/runtime`, `core/events`, `core/workflow`, `core/context.py`, `scripts/ci_test_gate.py`, `scripts/check_drift.py`, `config/`); `core/orchestrator.py` changed but line 13 (`from .context import ContextMemory`, DEF-09) is unchanged. Statuses carry over, **UNVERIFIED** at `cc446f8` beyond that. |
+
+## 11. Transfer note
 
 New files only, on branch `docs/freeze-blocker-debt-review-nov2026` (base `main` @ `fbe1ebd`): this register and `FREEZE_REVIEW_EVIDENCE_NOV2026/`. No code, test, register, configuration or policy file is changed. Nothing is merged to `main`.
