@@ -275,11 +275,31 @@ async def observe_creative_content_anchors(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Clarification response (post-ESCALATE)
+# Clarification response (post-ESCALATE) -- C-plus (DEBT-043, ADR-KERNEL-07 §10.5)
 # ─────────────────────────────────────────────────────────────────────────
+#
+# K4.2 pairing is retained: a detector-specific question is surfaced ONLY together
+# with (1) a truthful representation of the intent and (2) a genuine provisional
+# plan.  If either cannot be produced, the response is the generic safe failure
+# below -- never an unpaired question.  Nothing here calls a model, validates the
+# quality of a planner step, or adds a governance decision: it only presents the
+# data the detector and the planner already produced.
 
-_MAX_STEPS_SHOWN = 5
+_MAX_STEPS_SHOWN = 3
 _MAX_TEXT = 160
+
+SAFE_FAILURE_MESSAGE = (
+    "I couldn't form a reliable draft plan for this request. Please restate "
+    "what you'd like me to create and include any details you already know."
+)
+FAILURE_NO_USABLE_INTENT = "no_usable_intent"
+FAILURE_NO_USABLE_PLAN = "no_usable_plan"
+
+# A leading list marker ("1.", "2)", "-", "*", a bullet) -- also bare or repeated
+# ones ("1.", "1. 2. step") -- is stripped so the display never shows "1. 1. step".
+_STEP_MARKER = re.compile(r"^(?:\s*(?:\d{1,3}[.)]|[-*\u2022])(?:\s+|$))+")
+_DEGRADED_PLAN_WORD = "unspecified"   # planner._decompose's degrade placeholder
+_SURPRISE_WAY_OUT = 'or say "surprise me" and I\'ll choose'  # backed by _DELEGATION
 
 
 def _one_line(text: Any, limit: int = _MAX_TEXT) -> str:
@@ -287,39 +307,126 @@ def _one_line(text: Any, limit: int = _MAX_TEXT) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1].rstrip() + "\u2026"
 
 
+def _normalized(text: Any) -> str:
+    return " ".join(str(text or "").casefold().split()).strip(" \t.,;:!?\"'")
+
+
+def genuine_plan_steps(plan_steps: Sequence[Any], request_text: str = "") -> list:
+    """The usable, displayable steps of a planner-produced plan, in plan order.
+
+    Skipped: non-string, empty or whitespace-only entries; a leading list marker
+    ("1.", "-", "*") is stripped so the display never shows "1. 2. step".
+    Returns [] -- no genuine plan -- when the plan is the planner's degrade
+    fallback: `planner._decompose` answers a failed or unparsable model call with
+    ONE step that is the goal description itself (or "unspecified").  That step
+    is the request echoed back, not a plan, and must not be presented as one.
+    """
+    steps = []
+    for raw in plan_steps or ():
+        if not isinstance(raw, str):
+            continue
+        text = _one_line(_STEP_MARKER.sub("", raw))
+        if text:
+            steps.append(text)
+    if len(steps) == 1 and _normalized(steps[0]) in (_normalized(request_text), _DEGRADED_PLAN_WORD):
+        return []
+    return steps
+
+
+def build_clarification_intent(assessment: Optional["ContentAnchorAssessment"]) -> Optional[str]:
+    """What the detector actually established, stated plainly -- or None.
+
+    The only intent data available here is the artifact kind the request names
+    and the fact that it carries no subject/premise content.  The user's own
+    words are deliberately NOT echoed as an "interpretation": by K4.2-H1 the
+    goal description IS the raw request, so echoing it would present the request
+    as if it were an independent reading of it.
+    """
+    if assessment is None or not getattr(assessment, "in_scope", False):
+        return None
+    kind = str(assessment.artifact or "").strip()
+    if not kind:
+        return None
+    article = "an" if kind[:1].lower() in "aeiou" else "a"
+    text = f"I understand this as a request for {article} {kind}."
+    if MISSING_SUBJECT in (assessment.missing or ()):
+        text += f" It doesn't say what the {kind} should be about."
+    return text
+
+
+_KIND_QUESTIONS = {
+    "story": "What should the story be about? A short description, such as a subject, genre or tone, helps",
+    "poem": "What should the poem be about? A subject, theme or mood helps",
+    "essay": "Which topic or question should the essay address?",
+    "song": "What should the song be about, or what mood should it have?",
+    "joke": "Is there a topic you'd like the joke to be about?",
+}
+
+
 def build_clarification_question(assessment: "ContentAnchorAssessment") -> str:
-    """Deterministic, specific question. Slice 1 is stateless, so it tells
-    the user to resend the request with details (ADR-KERNEL-07 D-3)."""
-    kind = assessment.artifact or "piece"
-    return (
-        f"Before I write this {kind}, what should it be about? A subject, "
-        f"genre, or tone is enough (for example: a noir mystery, a cozy "
-        f"fantasy, a funny office comedy) \u2014 or say \"surprise me\" and I'll "
-        f"choose. Please send your request again with those details."
-    )
+    """Deterministic, artifact-appropriate question.  It presupposes no subject,
+    genre or process, and promises nothing about the result.  Slice 1 is stateless,
+    so it tells the user to resend the request with the detail (ADR-KERNEL-07 D-3)."""
+    kind = str(getattr(assessment, "artifact", "") or "").strip() or "piece"
+    ask = _KIND_QUESTIONS.get(kind, f"What should the {kind} be about?")
+    if ask.endswith("?"):
+        way_out = f" {_SURPRISE_WAY_OUT[0].upper()}{_SURPRISE_WAY_OUT[1:]}."
+    else:
+        way_out = f" \u2014 {_SURPRISE_WAY_OUT}."
+    return f"{ask}{way_out} Please send your request again with that detail."
+
+
+@dataclass(frozen=True)
+class ClarificationRendering:
+    """Result of rendering the clarification.  `paired` is True only when the
+    intent statement, at least one genuine plan step and the detector-specific
+    question are all present; otherwise `text` is SAFE_FAILURE_MESSAGE."""
+    text: str
+    paired: bool
+    steps_shown: int = 0
+    steps_total: int = 0
+    failure_reason: Optional[str] = None
+
+
+def render_clarification_response(
+    assessment: Optional["ContentAnchorAssessment"],
+    *,
+    request_text: str = "",
+    plan_steps: Sequence[Any] = (),
+) -> ClarificationRendering:
+    """Render the paired clarification, or the safe failure (never an unpaired question).
+
+    `request_text` is used ONLY to recognize the planner's degrade fallback; it is
+    never displayed.  Planner steps are shown as separate numbered lines, in plan
+    order, at most _MAX_STEPS_SHOWN of them, labelled provisional.  The underlying
+    execution plan is not modified; omitted steps are stated as omitted.
+    """
+    intent = build_clarification_intent(assessment)
+    if intent is None:
+        return ClarificationRendering(SAFE_FAILURE_MESSAGE, False, failure_reason=FAILURE_NO_USABLE_INTENT)
+    steps = genuine_plan_steps(plan_steps, request_text)
+    if not steps:
+        return ClarificationRendering(SAFE_FAILURE_MESSAGE, False, failure_reason=FAILURE_NO_USABLE_PLAN)
+    shown = steps[:_MAX_STEPS_SHOWN]
+    notes = ["not checked or approved"]
+    if MISSING_SUBJECT in (assessment.missing or ()):
+        notes.append("not yet tailored to a subject")
+    if len(steps) > len(shown):
+        notes.append(f"first {len(shown)} of {len(steps)} steps")
+    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(shown, 1))
+    text = "\n\n".join([
+        intent,
+        f"Provisional draft plan ({'; '.join(notes)}):\n{listing}",
+        build_clarification_question(assessment),
+    ])
+    return ClarificationRendering(text, True, steps_shown=len(shown), steps_total=len(steps))
 
 
 def build_clarification_response(
-    assessment: "ContentAnchorAssessment",
+    assessment: Optional["ContentAnchorAssessment"],
     *,
-    interpretation: str = "",
-    plan_steps: Sequence[str] = (),
+    request_text: str = "",
+    plan_steps: Sequence[Any] = (),
 ) -> str:
-    """Detector-specific question paired with the concrete interpreted
-    plan/intent K4.2 expects to be surfaced (not an abstract question alone).
-
-    `interpretation` and `plan_steps` are model-derived text echoed to the
-    user, so they are flattened to one line and truncated; at most
-    _MAX_STEPS_SHOWN steps are shown.
-    """
-    parts = []
-    if interpretation and str(interpretation).strip():
-        parts.append(f"Here's how I read your request: {_one_line(interpretation)}")
-    steps = [_one_line(s) for s in plan_steps if s and str(s).strip()]
-    if steps:
-        shown = steps[:_MAX_STEPS_SHOWN]
-        listing = "; ".join(f"{i}. {t}" for i, t in enumerate(shown, 1))
-        more = f" (+{len(steps) - len(shown)} more)" if len(steps) > len(shown) else ""
-        parts.append(f"My draft plan: {listing}{more}")
-    parts.append(build_clarification_question(assessment))
-    return "\n\n".join(parts)
+    """Text of `render_clarification_response` (kept for callers that need only the string)."""
+    return render_clarification_response(assessment, request_text=request_text, plan_steps=plan_steps).text
