@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from contextlib import closing
@@ -25,6 +26,13 @@ from core.memory.knowledge_entry import KnowledgeEntry
 logger = logging.getLogger("ocbrain.memory.backends.sqlite_storage")
 
 DEFAULT_DB_PATH = ".data/memory/unified.db"
+
+# Characters removed from user query text before it is turned into an FTS5 MATCH
+# expression (DEBT-042).  NUL ends the expression early inside SQLite's FTS5 parser
+# ("unterminated string") and a lone surrogate cannot be encoded to UTF-8 by the
+# sqlite3 parameter binding.  Neither can occur in indexed text, so dropping them
+# changes no match.
+_FTS_UNBINDABLE_CHARS = re.compile("[\x00\ud800-\udfff]")
 
 
 class SQLiteStorageBackend(StorageBackend):
@@ -361,12 +369,39 @@ class SQLiteStorageBackend(StorageBackend):
 
     @staticmethod
     def _fts_escape(query: str) -> str:
-        """Escape FTS5 special chars to prevent query parse errors."""
-        special = {'"', "'", '(', ')', '*', '^', ':', '-', '+'}
-        tokens = []
+        """Turn free text into a *literal* FTS5 MATCH expression (DEBT-042).
+
+        Every whitespace-separated token becomes one double-quoted FTS5 string with
+        any embedded ``"`` doubled, so user text is never parsed as FTS5 query
+        syntax: no operators (``AND``/``OR``/``NOT``/``NEAR``), no column filters
+        (``col:term``), no prefix (``*``), initial-token (``^``), grouping or
+        negation characters, and no malformed expression from stray punctuation.
+        The expression is still bound as an SQL parameter by ``search_text``; the
+        two protections are independent.
+
+        Term-matching semantics:
+
+        * Tokens stay implicitly AND-ed, as before.
+        * A plain word matches exactly as it did when it was unquoted.
+        * A token that the tokenizer splits into several terms (``file.txt``,
+          ``C++``, ``state-of-the-art``) matches those terms as an adjacent
+          phrase.  This is what tokens already quoted for ``-``, ``:`` or ``'``
+          always did; it now also applies to ``.``, ``,``, ``?``, ``/`` and every
+          other punctuation character, which previously raised a syntax error.
+        * Intentional change: the uppercase words ``AND``/``OR``/``NOT``/``NEAR``
+          are now literal terms.  Before, a bare keyword acted as an FTS5
+          operator (``cats OR dogs`` widened the search, a trailing ``NOT`` was a
+          syntax error); user text must not select operator behaviour.
+        * Punctuation-only tokens contribute no terms (FTS5 treats an empty
+          phrase as neutral inside an AND); a query with no terms at all matches
+          nothing.  Empty and whitespace-only queries never reach this function:
+          ``search_text`` keeps its established unfiltered contract for them.
+        * NUL and lone surrogate characters are removed (see
+          ``_FTS_UNBINDABLE_CHARS``).
+        """
+        terms = []
         for word in query.split():
-            if any(c in word for c in special):
-                tokens.append(f'"{word}"')
-            else:
-                tokens.append(word)
-        return " ".join(tokens) if tokens else '""'
+            word = _FTS_UNBINDABLE_CHARS.sub("", word)
+            if word:
+                terms.append('"' + word.replace('"', '""') + '"')
+        return " ".join(terms) if terms else '""'

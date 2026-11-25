@@ -634,16 +634,21 @@ class TestGoal7RetrievalQuality:
         hit = next(r for r in results if r.entry.entry_id == "interaction:g7c")
         assert hit.composite_score > 0.0
 
-    def test_fts5_question_mark_gap_is_pre_existing_and_unrelated(self):
-        """Documented finding (see SESSION4B_REPORT.md 'Remaining
-        Limitations'): _fts_escape() does not escape '?', which raises an
-        FTS5 syntax error for any query containing one. This is reproduced
-        directly against the escaping function -- independent of anything
-        written -- confirming it predates and is unrelated to this
-        session's write-path changes, and is out of scope to fix here
-        (it is a search-query-sanitization concern, not a write-path one)."""
+    def test_fts5_question_mark_is_a_literal_term_since_debt042(self):
+        """History: SESSION4B_REPORT.md 'Remaining Limitations' documented that
+        _fts_escape() did not escape '?', which raised an FTS5 syntax error. This
+        test originally pinned that gap -- but its ``"?" in escaped`` assertion held
+        for a broken AND a fixed escaper alike, so it protected nothing. DEBT-042
+        fixed the whole class of unescaped punctuation (see
+        tests/test_debt042_fts5_literal_queries.py); this now asserts the corrected
+        behaviour against a real FTS5 table."""
+        import sqlite3
         escaped = SQLiteStorageBackend._fts_escape("what is OCBrain?")
-        assert "?" in escaped  # passes through unescaped -> FTS5 MATCH syntax error
+        assert escaped == '"what" "is" "OCBrain?"'
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE VIRTUAL TABLE t USING fts5(content)")
+        conn.execute("INSERT INTO t(content) VALUES ('what is OCBrain')")
+        assert conn.execute("SELECT content FROM t WHERE t MATCH ?", (escaped,)).fetchall() == [("what is OCBrain",)]
 
     @pytest.mark.asyncio
     async def test_no_regression_for_realistic_question_free_queries(self, tmp_path):
