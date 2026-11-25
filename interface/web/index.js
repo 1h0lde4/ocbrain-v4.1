@@ -119,6 +119,9 @@ function formatProgress(node) {
 }
 function formatElapsed(node) { return node.started_at ? `${Math.round((Date.now()/1000 - node.started_at))}s` : ''; }
 function formatLastProgress(node) { return node.last_progress_at ? `${Math.max(0, Math.round(Date.now()/1000 - node.last_progress_at))}s ago` : ''; }
+// The .stage-* rules in index.html. Anything else renders unstyled, as before.
+const STAGE_CLASSES = ['bootstrap', 'shadow', 'native'];
+
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toggleInspection() { document.getElementById('inspection').classList.toggle('open'); }
 function closeInspection() { document.getElementById('inspection').classList.remove('open'); }
@@ -252,12 +255,13 @@ async function loadModules() {
     grid.innerHTML = '';
     for (const [name, info] of Object.entries(modules)) {
       const score = Math.round((info.maturity_score||0) * 100);
-      const stageClass = `stage-${info.stage||'bootstrap'}`;
+      const stage = info.stage || 'bootstrap';
+      const stageClass = `stage-${STAGE_CLASSES.includes(stage) ? stage : 'unknown'}`;  // never raw data in a class attribute
       const card = document.createElement('div');
       card.className = 'module-card';
       card.innerHTML = `
         <div class="module-name">${escapeHtml(name)}</div>
-        <div class="module-stage ${stageClass}">${escapeHtml(info.stage||'bootstrap')}</div>
+        <div class="module-stage ${stageClass}">${escapeHtml(stage)}</div>
         <div class="progress-label">Maturity — ${score}%</div>
         <div class="progress-track"><div class="progress-fill" style="width:${score}%"></div></div>
         <div class="module-stats">
