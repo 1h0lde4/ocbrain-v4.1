@@ -16,7 +16,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -280,8 +282,11 @@ class TestDenialAggregates:
         flush()
         blob = json.dumps(sink.records)
         assert "SECRET-ATTEMPT" not in blob and "/x" not in blob and "127.0.0.1" not in blob
-        assert set(aggregates(sink)[0]) <= {"schema", "kind", "window_start", "window_end", "window_seconds", "total",
-                                            "by_reason", "logged", "suppressed", "pid", "dropped_aggregates", "dropped_denials"}
+        # aggregate_id (PR #112 review) is a random hex id so a duplicate after a timed-out append can be recognised;
+        # it carries no information about any request.
+        assert set(aggregates(sink)[0]) <= {"schema", "kind", "aggregate_id", "window_start", "window_end", "window_seconds",
+                                            "total", "by_reason", "logged", "suppressed", "pid", "dropped_aggregates",
+                                            "dropped_denials"}
 
 
 async def _acall(mw, headers=(), host="localhost:7437"):
@@ -451,3 +456,115 @@ class TestDeliveryGuarantees:
         got = aggregates(sink)
         assert sum(a["dropped_aggregates"] for a in got) + auth._audit_state["dropped_aggregates"] == lost
         assert sum(a["dropped_denials"] for a in got) + auth._audit_state["dropped_denials"] == lost
+
+
+def drain(**kw) -> bool:
+    return asyncio.run(auth.drain_audit(**kw))
+
+
+class TestShutdownDrainAndIds:
+    """PR #112 review: pending records must get one last bounded attempt at shutdown, duplicates must be
+    identifiable, and the per-process limit of transition tracking is a documented, pinned fact."""
+
+    def test_drain_turns_the_open_window_into_an_aggregate_and_stores_it(self, sink, required, clock):
+        for _ in range(2):
+            assert call(app, "GET", "/config")[0] == 401
+        assert aggregates(sink) == []                                    # the window is still open: nothing stored yet
+        assert drain() is True
+        got = aggregates(sink)
+        assert len(got) == 1 and got[0]["total"] == 2
+
+    def test_drain_ignores_the_retry_backoff_for_one_last_attempt(self, sink, opted_out, clock):
+        sink.fail = True
+        auth.get_settings(None)                                          # queues the disable record
+        assert flush() is False                                          # fails and sets the backoff
+        sink.fail = False
+        assert flush() is False and sink.records == []                   # still inside the backoff
+        assert drain() is True
+        assert [t for t, _ in sink.records] == [auth.EVENT_DISABLED]
+
+    def test_drain_is_bounded_and_never_raises_when_the_store_hangs(self, sink, opted_out, clock, monkeypatch, caplog):
+        monkeypatch.setattr(auth_audit, "AUDIT_TIMEOUT_S", 5.0)          # one append would outlast the drain
+        monkeypatch.setattr(auth_audit, "AUDIT_DRAIN_TIMEOUT_S", 0.2)
+        sink.hang = True
+        auth.get_settings(None)
+        t0 = time.monotonic()
+        with caplog.at_level(logging.ERROR):
+            assert drain() is False
+        assert time.monotonic() - t0 < 2.0
+        assert auth.has_pending_audit()                                  # nothing is dropped silently ...
+        assert "could not be persisted at shutdown" in caplog.text       # ... and the loss is logged
+
+    def test_drain_gives_up_at_the_first_failure_instead_of_spinning(self, sink, opted_out, clock):
+        sink.fail = True
+        auth.get_settings(None)
+        t0 = time.monotonic()
+        assert drain() is False
+        assert time.monotonic() - t0 < 1.0 and sink.calls == 1           # one attempt, not a loop to the deadline
+
+    def test_drain_waits_for_an_append_already_in_flight(self, required, monkeypatch):
+        monkeypatch.setenv(auth.ENV_MODE, "disabled")
+
+        async def main():
+            gate = asyncio.Event()
+
+            class Gated(RecordingSink):
+                async def append(self, event_type, payload):
+                    self.calls += 1
+                    await gate.wait()
+                    self.records.append((event_type, json.loads(json.dumps(dict(payload)))))
+
+            gated = Gated()
+            auth_audit.set_sink(gated)
+            auth.get_settings(None)
+            first = asyncio.ensure_future(auth.flush_audit())
+            await asyncio.sleep(0.05)                                    # `first` is inside append()
+            d = asyncio.ensure_future(auth.drain_audit())
+            await asyncio.sleep(0.05)
+            assert not d.done()                                          # waiting for it, not giving up
+            gate.set()
+            assert await d is True and await first is True
+            return gated
+
+        gated = asyncio.run(main())
+        assert [t for t, _ in gated.records] == [auth.EVENT_DISABLED] and gated.calls == 1
+
+    def test_aggregate_ids_identify_a_duplicate_after_a_timed_out_append(self, required, clock):
+        class LandsThenFails(RecordingSink):
+            first = True
+
+            async def append(self, event_type, payload):
+                await super().append(event_type, payload)                # the write lands ...
+                if self.first and event_type == DENIED:
+                    self.first = False
+                    raise TimeoutError("the caller gave up")             # ... but the caller sees a timeout
+
+        s = LandsThenFails()
+        auth_audit.set_sink(s)
+        assert call(app, "GET", "/config")[0] == 401
+        clock[0] += auth.THROTTLE_WINDOW_S + 1
+        assert call(app, "GET", "/config")[0] == 401                     # closes window 1: aggregate A1
+        assert flush() is False                                          # A1 landed, then the call "timed out"
+        clock[0] += auth_audit.AUDIT_RETRY_BACKOFF_S + 1
+        assert flush() is True                                           # A1 is retried: a duplicate in the store
+        dup = aggregates(s)
+        assert len(dup) == 2 and dup[0]["aggregate_id"] == dup[1]["aggregate_id"]
+        assert re.fullmatch(r"[0-9a-f]{32}", dup[0]["aggregate_id"])
+        clock[0] += auth.THROTTLE_WINDOW_S + 1
+        assert call(app, "GET", "/config")[0] == 401                     # closes window 2: aggregate A2
+        assert flush() is True
+        assert len({a["aggregate_id"] for a in aggregates(s)}) == 2      # another window, another id
+
+    def test_main_drains_the_audit_queue_before_it_closes_the_orchestrator(self):
+        src = (Path(__file__).resolve().parent.parent / "main.py").read_text(encoding="utf-8")
+        assert src.count("await _api_auth.drain_audit()") == 1
+        at = src.index("await _api_auth.drain_audit()")
+        assert at < src.index("await orchestrator.close()")
+        assert src.rindex("finally:", 0, at) > src.index("asyncio.gather(server.serve()")   # inside the exit path
+
+    def test_a_restart_into_required_mode_writes_no_record_documented_limit(self, sink, required):
+        """Report section 6 item 16: transitions are tracked per process. A process that starts in 'required' mode
+        cannot know the previous one was disabled, so a disabled period that ends across a restart has no
+        api.auth_enabled. If a startup record or a restored previous mode is ever added, change this on purpose."""
+        auth.get_settings(None)
+        assert flush() is True and sink.records == []

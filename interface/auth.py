@@ -586,16 +586,17 @@ def _log_audit_failure(record: dict[str, Any], exc: BaseException) -> None:
               record["event_type"], type(exc).__name__, gate)
 
 
-async def flush_audit() -> bool:
+async def flush_audit(force: bool = False) -> bool:
     """Persist pending records in order.  True if nothing is left pending.
 
     Never raises (except task cancellation).  Single-flight, time-boxed per append, and after a
-    failure it backs off, so a broken store cannot add latency to every request.
+    failure it backs off, so a broken store cannot add latency to every request.  ``force`` (shutdown
+    only) ignores the backoff; single-flight still applies.
     """
     state = _audit_state
     if not _pending:
         return True
-    if state["flushing"] or _clock() < state["next_attempt"]:
+    if state["flushing"] or (not force and _clock() < state["next_attempt"]):
         return False
     state["flushing"] = True
     try:
@@ -628,12 +629,40 @@ def schedule_flush() -> None:
     task.add_done_callback(_tasks.discard)
 
 
+async def drain_audit(timeout_s: Optional[float] = None) -> bool:
+    """Shutdown: close the open denial window into its aggregate, then make one bounded, final attempt to
+    persist everything still pending (it ignores the retry backoff).  Never raises (except cancellation).
+
+    True if nothing is left pending.  Whatever could not be stored is logged and is lost with the process.
+    """
+    limit = auth_audit.AUDIT_DRAIN_TIMEOUT_S if timeout_s is None else timeout_s
+
+    async def _drain() -> None:
+        while _pending:
+            while _audit_state["flushing"]:  # let an in-flight append finish (it is time-boxed)
+                await asyncio.sleep(0.02)
+            if not await flush_audit(force=True):
+                return
+
+    try:
+        _close_window()
+        await asyncio.wait_for(_drain(), timeout=limit)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # includes the drain timeout; shutdown must not fail because of the audit store
+        log.error("Authentication audit drain at shutdown stopped early (%s).", type(exc).__name__)
+    if _pending:
+        log.error("%d authentication audit record(s) could not be persisted at shutdown and are lost: %s",
+                  len(_pending), ", ".join(sorted({r["event_type"] for r in _pending})))
+    return not _pending
+
+
 def _close_window() -> None:
     """Turn the finished window's counters into one aggregate record and reset them."""
     st = _throttle
     if st["total"]:
         payload = {
-            "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate",
+            "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate", "aggregate_id": uuid.uuid4().hex,
             "window_start": _iso(st["start_wall"]), "window_end": _iso(_wall()),
             "window_seconds": THROTTLE_WINDOW_S, "total": st["total"],
             "by_reason": dict(sorted(st["reasons"].items())),

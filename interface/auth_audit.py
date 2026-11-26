@@ -24,6 +24,7 @@ SCHEMA_VERSION = 1
 AUDIT_TIMEOUT_S = 2.0          # one append may take at most this long
 AUDIT_RETRY_BACKOFF_S = 5.0    # after a failure, do not try again for this long (no per-request latency)
 MAX_PENDING_AGGREGATES = 100   # bound on unsent denial aggregates; overflow is counted, not hidden
+AUDIT_DRAIN_TIMEOUT_S = 5.0    # shutdown: one bounded, final attempt to persist what is still pending
 
 
 class AuthAuditSink(Protocol):
