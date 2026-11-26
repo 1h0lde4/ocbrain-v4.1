@@ -7,9 +7,11 @@ rules, pinned in tests/test_ci_workflow_config.py; M13's manifest half (an entry
 condition no longer holds) is tested here.
 
 What this proves is the checker's LOGIC against real pytest 9.2.0 output
-(tests/fixtures/ci/junit/pytest9_all_outcomes.xml) and synthetic reports.  It does not prove that
-the real suite's manifest is complete: the Docker-gated identities are `pending` until a Docker
-host observes them (spec 7 step 1, H-D3), and `test_real_manifest_*` pins exactly that.
+(tests/fixtures/ci/junit/pytest9_all_outcomes.xml) and synthetic reports.  The real manifest's
+Docker identities were observed on a hosted runner (provenance on every entry); the
+`test_real_manifest_*` tests pin what is enrolled and replay the manifest's own expectations, and
+its mutants, through the checker.  They do not re-observe a hosted run: only the hosted job's own
+check does that, and each run is a measurement of that run.
 """
 from __future__ import annotations
 
@@ -939,25 +941,136 @@ def test_real_manifest_names_a9_as_a_mandatory_pass_with_no_waiver() -> None:
     assert a9[0].criticality == "security_contract" and a9[0].condition is None
 
 
-def test_real_manifest_has_the_known_gap_xfail() -> None:
+B01 = "tests.core.sandbox.test_network_isolation_contract"
+B01_CONDITION = "OCBRAIN_SANDBOX_NETWORK_PROVISIONED=unset"
+DOCKER_SKIP_REASONS = ("requires a reachable Docker daemon", "requires the test image")
+
+
+def _real_doc() -> dict[str, Any]:
+    doc: dict[str, Any] = json.loads(REAL_MANIFEST.read_text(encoding="utf-8"))
+    return doc
+
+
+def _replay(doc: dict[str, Any], *, skip: str = "", drop: str = "", outcome: dict[str, str] | None = None) -> list[str]:
+    """Testcases that do exactly what the manifest expects (PASS, the exact skip, XFAIL), plus one
+    unlisted pass.  `skip` / `drop` / `outcome` mutate one identity by manifest entry id."""
+    cases: list[str] = []
+    for e in doc["entries"]:
+        if e["id"] == drop:
+            continue
+        kind = {"PASS": "pass", "SKIP": "skip", "XFAIL": "xfail"}[e["expected_outcome"]]
+        msg = e.get("skip_reason", "strict xfail")
+        if e["id"] == skip:
+            kind, msg = "skip", DOCKER_SKIP_REASONS[0]
+        if outcome and e["id"] in outcome:
+            kind, msg = outcome[e["id"]], "mutated"
+        cases.append(tc(e["junit_classname"], e["junit_name"], kind, msg))
+    return cases + [tc("tests.unrelated", "test_x")]
+
+
+def test_real_manifest_has_the_known_gap_xfail_and_the_eight_b01_xfails() -> None:
     manifest, _ = cm.load_manifest(REAL_MANIFEST)
     assert manifest is not None
-    gap = [e for e in manifest.entries if e.expected == "XFAIL"]
+    xf = [e for e in manifest.entries if e.expected == "XFAIL"]
+    assert len(xf) == 9
+    gap = [e for e in xf if e.classname != B01]
     assert [(e.classname, e.name) for e in gap] == [(XF_CLASS, XF_NAME)]
+    b01 = [e for e in xf if e.classname == B01]
+    assert len(b01) == 8
+    assert all(e.condition == B01_CONDITION and e.criticality == "known_gap" and e.required for e in b01)
+    by_tc = {tag: sum(e.name.startswith(f"test_{tag}_") for e in b01) for tag in ("tc01", "tc02", "tc03", "tc04")}
+    assert by_tc == {"tc01": 1, "tc02": 1, "tc03": 4, "tc04": 2}
+    assert all("[docker" in e.name for e in b01)
 
 
-def test_real_manifest_keeps_unobserved_identities_pending_not_invented() -> None:
-    """H-D3: the mandatory Docker runtime identities and the eight B01 XFAIL identities need a
-    Docker-capable host.  Until one observes them they are pending, and a pending block makes the
-    checker red.  This test must change in the same commit that resolves them."""
+def test_real_manifest_has_no_pending_block() -> None:
+    """H-D3: the Docker runtime identities and the eight B01 xfail identities were observed on a
+    hosted runner and are enrolled, so nothing is pending.  A new pending block is red by design and
+    must be a deliberate, visible change that updates this test."""
     manifest, _ = cm.load_manifest(REAL_MANIFEST)
     assert manifest is not None
-    ids = {p["id"] for p in manifest.pending}
-    assert ids == {"docker-runtime-identities", "b01-xfail-identities"}
-    for p in manifest.pending:
-        assert p.get("blocked_on") and p.get("reason")
-    listed = {e.classname for e in manifest.entries}
-    assert "tests.core.sandbox.test_network_isolation_contract" not in listed
+    assert manifest.pending == ()
+
+
+def test_real_manifest_enrols_the_observed_docker_runtime_identities() -> None:
+    manifest, _ = cm.load_manifest(REAL_MANIFEST)
+    assert manifest is not None
+    runtime = [e for e in manifest.entries if e.criticality == "runtime_verification"]
+    assert len(runtime) == 76
+    assert {e.classname for e in runtime} == {DOCKER}
+    assert all(e.expected == "PASS" and e.required and e.condition is None for e in runtime)
+    assert all(A9 != e.name for e in runtime), "A9 is a security_contract entry, never a plain runtime one"
+    # the whole manifest: A9 + 76 runtime passes, 18 approved skips, 9 xfails
+    assert len(manifest.entries) == 104
+    assert sum(e.expected == "PASS" for e in manifest.entries) == 77
+    # every enrolled identity names where it was observed
+    assert all("run 45584825671" in e.provenance for e in manifest.entries if e.id.startswith(("docker-runtime:", "b01-xfail:")))
+
+
+def test_real_manifest_replay_is_green_and_every_entry_is_checked(h: Harness) -> None:
+    """The manifest's own expectations, replayed, are green; the checker judged all 104 entries."""
+    doc = _real_doc()
+    ev = h.run(_replay(doc), doc)
+    assert ev.green, red_reasons(ev)
+    assert len(ev.entries) == 104 and all(e.ok for e in ev.entries)
+
+
+def test_a_skip_of_any_enrolled_pass_identity_is_red(h: Harness) -> None:
+    """The Docker runtime tests are mandatory: a daemon that is missing turns every one of them into
+    a skip, and each skip must be red on its own (not only the aggregate)."""
+    doc = _real_doc()
+    for e in doc["entries"]:
+        if e["expected_outcome"] != "PASS":
+            continue
+        ev = h.run(_replay(doc, skip=e["id"]), doc)
+        assert not ev.green, e["id"]
+        assert "mandatory test skipped" in red_reasons(ev), e["id"]
+
+
+def test_an_absent_enrolled_identity_is_red(h: Harness) -> None:
+    doc = _real_doc()
+    for e in doc["entries"]:
+        ev = h.run(_replay(doc, drop=e["id"]), doc)
+        assert not ev.green, e["id"]
+        assert "absent from the report" in red_reasons(ev), e["id"]
+
+
+def test_a_b01_xfail_that_passes_or_fails_is_red_and_the_condition_is_enforced(h: Harness) -> None:
+    doc = _real_doc()
+    b01 = [e for e in doc["entries"] if e["junit_classname"] == B01]
+    assert len(b01) == 8
+    for e in b01:
+        for kind in ("pass", "failure", "skip"):
+            ev = h.run(_replay(doc, outcome={e["id"]: kind}), doc)
+            assert not ev.green, (e["id"], kind)
+    # the declared condition no longer holding (the isolation is provisioned) is red, not a quiet pass
+    ev = h.run(_replay(doc), doc, environ={"OCBRAIN_SANDBOX_NETWORK_PROVISIONED": "1"})
+    assert not ev.green
+    assert sum("declared condition" in e.why for e in ev.red_entries) == 8
+
+
+def test_no_approved_skip_accepts_a_missing_docker_daemon_or_image() -> None:
+    """H-D7 premise: the grep skip step rejected any skip whose reason names the Docker daemon or the
+    test image.  The manifest accepts a skip only with the exact approved reason, and no approved
+    reason is one of those, so everything the grep rejected is also red here."""
+    manifest, _ = cm.load_manifest(REAL_MANIFEST)
+    assert manifest is not None
+    approved = {e.skip_reason for e in manifest.entries if e.expected == "SKIP"}
+    assert approved and all(r is not None for r in approved)
+    for reason in approved:
+        assert not any(d in str(reason) for d in DOCKER_SKIP_REASONS), reason
+
+
+def test_an_unlisted_skip_for_a_missing_daemon_or_image_is_red(h: Harness) -> None:
+    """H-D7: a Docker-gated test nobody enrolled (a new test, a new module) that skips for a missing
+    daemon or image is still red -- an unlisted non-pass outcome is never green."""
+    doc = _real_doc()
+    for reason in DOCKER_SKIP_REASONS:
+        cases = _replay(doc) + [tc("tests.core.sandbox.test_brand_new_docker_module", "test_new", "skip", reason)]
+        ev = h.run(cases, doc)
+        assert not ev.green
+        assert any(u.startswith("unapproved skip") for u in ev.unlisted_reds), ev.unlisted_reds
+        assert "test_brand_new_docker_module" in red_reasons(ev)
 
 
 def test_real_manifest_fixture_ids_exist_in_the_repository() -> None:
