@@ -12,6 +12,8 @@ Read-only evidence supporting `FREEZE_REMEDIATION_REGISTER_NOV2026.md`. Baseline
 
 - `sandbox_namespace_tests_run.txt` — per-test outcomes of `tests/core/sandbox/test_namespace_backend.py` (14 tests) under the system interpreter: 14 passed; header records the earlier venv-interpreter run (8 failed, `execvp` `FileNotFoundError`). Single environment; says nothing about what CI executes (see register EVG-01).
 
+- `sandbox_namespace_tests_cc446f8.txt` — the same file at the exact CI commit `cc446f8` with host configuration (kernel, cgroup filesystem type, `memory` directory writable, `unshare` exit code): 14 passed, 0 skipped. Author-run, single environment, system interpreter. The CI result for this commit (14 skipped) was reported to the review and is not stored here as a retrieved artifact.
+
 ## Commands (clean clone, working tree reverted afterwards)
 
 ```

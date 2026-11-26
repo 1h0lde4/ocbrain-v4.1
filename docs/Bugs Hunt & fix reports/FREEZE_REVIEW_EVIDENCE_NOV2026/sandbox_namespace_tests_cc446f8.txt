@@ -1,0 +1,24 @@
+# Namespace sandbox backend — acceptance commands, review sandbox, commit cc446f87e72d5f8277da3c293a88ee79a7e872bd
+# kernel: 6.18.44-fc-v880
+# stat -fc %T /sys/fs/cgroup -> tmpfs
+# test -d /sys/fs/cgroup/memory -> yes
+# test -w /sys/fs/cgroup/memory -> yes
+# unshare --user --map-root-user --net --fork -- true -> exit 0
+# interpreter: /usr/bin/python3 (Python 3.12.3) with PYTHONPATH=<venv site-packages>:<worktree> (a venv interpreter is not visible inside the chroot; see register E-8)
+# cmd: pytest tests/core/sandbox/test_namespace_backend.py -v -rs
+
+tests/core/sandbox/test_namespace_backend.py::test_echo_hello_runs_and_returns_output PASSED [  7%]
+tests/core/sandbox/test_namespace_backend.py::test_illegal_path_access_fails_cleanly PASSED [ 14%]
+tests/core/sandbox/test_namespace_backend.py::test_symlink_escape_is_contained PASSED [ 21%]
+tests/core/sandbox/test_namespace_backend.py::test_path_traversal_is_contained PASSED [ 28%]
+tests/core/sandbox/test_namespace_backend.py::test_network_egress_denied_by_default PASSED [ 35%]
+tests/core/sandbox/test_namespace_backend.py::test_memory_limit_kills_oversized_allocation PASSED [ 42%]
+tests/core/sandbox/test_namespace_backend.py::test_pids_limit_blocks_fork_bomb PASSED [ 50%]
+tests/core/sandbox/test_namespace_backend.py::test_timeout_terminates_long_running_command PASSED [ 57%]
+tests/core/sandbox/test_namespace_backend.py::test_cancel_kills_all_descendant_processes PASSED [ 64%]
+tests/core/sandbox/test_namespace_backend.py::test_artifacts_are_collected_with_real_hashes PASSED [ 71%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_ptrace PASSED [ 78%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_blocks_mount_for_the_payload PASSED [ 85%]
+tests/core/sandbox/test_namespace_backend.py::test_seccomp_denylist_does_not_break_normal_execution PASSED [ 92%]
+tests/core/sandbox/test_namespace_backend.py::test_uts_namespace_isolates_hostname PASSED [100%]
+============================== 14 passed in 3.75s ==============================
