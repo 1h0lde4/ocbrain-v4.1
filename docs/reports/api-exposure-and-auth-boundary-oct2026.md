@@ -34,7 +34,7 @@ the fixes are below.
 | E4 | Before this change there was no authentication on any route. The only request gate was `CSRFHeaderMiddleware`: non-safe methods need the header `X-OCBrain-Local`. Its value is not checked and is the same constant in the CLI and the web UI: anti-CSRF, not authentication. | `interface/api.py`, `interface/cli.py`, `interface/web/*.html` | VERIFIED (read) |
 | E5 | No CORS middleware is installed, so cross-origin browser pages cannot read responses; a cross-origin preflight is rejected. | `grep -rn CORSMiddleware`; real-browser run | VERIFIED (grep, executed) |
 | E6 | Runtime route table at this revision: 31 (method, path) pairs: 30 protected and 1 public (`GET /`), plus the `/static/` mount. Enforced by a test that walks the real route table and the `/brain/v2` router. | `app`, `app.openapi()`, `core/brain_api.register()` | VERIFIED (executed) |
-| E7 | `web/wizard.html` calls `/api/wizard/*`. No such route exists in the Python code. | `grep -rn wizard --include=*.py` | VERIFIED (grep); out of scope, flagged |
+| E7 | `web/wizard.html` called `/api/wizard/*`; no such route exists in the Python code, and nothing linked to the page (`index.html`, `settings.html` and `interface/tray.py` open only the root UI and `settings.html`). Its script also used bare `fetch()`. The page and script are removed in PR #118. | `grep -rn wizard` over `*.py`, `*.html`, `*.js` | VERIFIED (grep); removed in PR #118 |
 | E8 | The `Host` header was not validated: `Host: evil.example:7437` got 200 for `/`, `/static/auth.js` and `/openapi.json`. | live request, pre-fix | VERIFIED (executed) |
 | E9 | In a PyInstaller `--onefile` build the default token path (`Path(__file__)/../data/api_token`) resolved inside the per-run `_MEI…` temp directory: a new token each start, invisible to a separate process. | throwaway Linux build, run twice | VERIFIED (executed, Linux only) |
 | E10 | In a packaged install the binary named `ocbrain` is the server (`main.py`), not the CLI; in a pip install `ocbrain` is the click CLI. | `install/build.py`, the deb/service file, `pyproject.toml` | VERIFIED (read) |
@@ -68,7 +68,7 @@ All IMPLEMENTED. "Owner ruling" is the state of the owner's own decision.
 | A10 | **Token location and lifecycle:** frozen builds use a per-user directory (`%LOCALAPPDATA%\OCBrain`, `~/Library/Application Support/OCBrain`, `$XDG_DATA_HOME/ocbrain`); the file is re-checked on every request, so `ocbrain token --rotate` or deleting it revokes the old token without a restart. | authorised plan |
 | A11 | **The tray never puts the token on a command line.** The page asks once per tab; `ocbrain token --show` prints it. A one-time-code scheme was rejected: a local attacker could win the race to redeem it and obtain the full token. | authorised plan |
 | A12 | **Windows:** `icacls /reset`, `/inheritance:r`, `/grant:r *<SID>:(F)` on create, load and rotate, then the DACL is read as SDDL (SIDs, language-independent) and **no principal other than the current user, SYSTEM, Administrators and OWNER RIGHTS may have an allow entry**; anything else fails closed and names the principal. A loosened ACL (Everyone/Users added) is repaired on the next load. Validated by the `token-acl-windows` CI job (`scripts/check_token_acl_windows.py`), which checks each file two independent ways (icacls display names and SDDL SIDs); the unit tests stub `icacls` and prove logic only. | authorised plan |
-| A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `'unsafe-inline'` stays because the shipped pages use inline script and `onclick`. | authorised plan |
+| A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `script-src 'self'`: the shipped pages keep their script in `/static/*.js` and wire events with `addEventListener` and `data-action`, so an injected inline script or `on*=` attribute does not run (`tests/test_web_csp.py`). `style-src 'unsafe-inline'` stays because the pages still carry `style=` attributes. | authorised plan |
 | A14 | **`ocbrain token [--show|--rotate]`** in both entry points (the pip CLI, and `main.py` for packaged installs); the CLI group now runs a known subcommand before treating text as a query (E11). | authorised plan |
 
 Rejected: cookie sessions (more state, a CSRF surface, no gain on one machine); a `?token=` query parameter (logs,
@@ -108,9 +108,16 @@ Token required (30): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 ## 6. Residual scope (explicit)
 1. **Same-user processes can read the token file.** Not defended against. A different mechanism (OS keyring,
    per-process credentials) would be a separate decision.
-2. **`'unsafe-inline'` remains in the CSP**, so an injected inline script still runs and can read `sessionStorage`.
-   The CSP removes third-party loads and cross-origin `connect`, not XSS itself. Module names and stage text are
-   inserted unescaped via `innerHTML` in `index.html` (pre-existing; not exploited).
+2. **`style-src 'unsafe-inline'` remains in the CSP** (the pages and their templates still carry `style=` attributes).
+   Script no longer has it: `script-src 'self'`, with each page's script in `/static/index.js` and `settings.js`, so
+   the browser blocks an injected inline script or `on*=` attribute. That is a mitigation, not a
+   guarantee: injected markup, links and style still render, and the token stays readable by any script that does run
+   from `'self'`. Checked in a real headless Chromium on Linux (a harness outside the repo, not part of CI) and by
+   static tests; no other browser, and not Windows or macOS. Where the inline handlers were replaced, the module name,
+   the stage text and the setting key are now escaped (`escapeHtml`), and the stage *class* comes from an allowlist of
+   the three stages the CSS defines. Still inserted unescaped via `innerHTML` (pre-existing, no longer able to run
+   script): `e.message` in the module-grid error line and config values in the `value=` of `settings.js` inputs.
+   `trainModule` also puts the module name into the URL path without `encodeURIComponent` (unchanged).
 3. **No lockout.** Denial logging is bounded; a flood is still answered, at about 400 requests per second measured.
 4. **The `Host` allowlist does not apply under the explicit opt-out.**
 5. **Whether a browser keeps the `#token=` URL in its history** is no longer relevant to the tray (it sends none),
@@ -122,7 +129,7 @@ Token required (30): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 7. **A real desktop launcher** (`xdg-open`, Chrome, Firefox, Safari) was not exercised; the no-token-on-a-command-line
    property is tested with a stand-in launcher plus a positive control that shows the detector sees a leak.
 8. **Multi-user hosts** were simulated with an unprivileged uid in one container.
-9. **`web/wizard.html` targets routes that do not exist** (E7).
+9. **`web/wizard.html` targeted routes that do not exist** (E7); removed in PR #118.
 10. **The CLI parsing fix (E11) is a minimal change to the group, not a CLI redesign.**
 11. The web helpers (`web/auth.js`) are executed under Node against a live server (`tests/test_web_auth_js.py`) and,
     separately and outside CI, in headless Chromium on Linux. The Node run is not browser evidence.

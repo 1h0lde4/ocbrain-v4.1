@@ -569,11 +569,16 @@ class TestClients:
 
     @pytest.mark.parametrize("page", ["index.html", "settings.html"])
     def test_web_pages_use_the_authenticating_helpers(self, page):
-        html = (REPO_ROOT / "interface" / "web" / page).read_text(encoding="utf-8")
+        # The page's script lives in /static/<page>.js (script-src 'self'), so check the markup AND that script.
+        web = REPO_ROOT / "interface" / "web"
+        html = (web / page).read_text(encoding="utf-8")
+        script_name = page.removesuffix(".html") + ".js"
+        script = (web / script_name).read_text(encoding="utf-8")
         import re
-        assert not re.search(r"(?<![A-Za-z_.])fetch\(", html), "bare fetch() would be unauthenticated"
-        assert "EventSource" not in html, "EventSource cannot send an Authorization header"
-        assert html.index('src="/static/auth.js"') < html.index("<script>")
+        for name, text in ((page, html), (script_name, script)):
+            assert not re.search(r"(?<![A-Za-z_.])fetch\(", text), f"bare fetch() in {name} would be unauthenticated"
+            assert "EventSource" not in text, f"EventSource in {name} cannot send an Authorization header"
+        assert html.index('src="/static/auth.js"') < html.index(f'src="/static/{script_name}"')
 
     def test_auth_js_defines_the_helpers_and_keeps_the_token_out_of_persistent_storage(self):
         js = (REPO_ROOT / "interface" / "web" / "auth.js").read_text(encoding="utf-8")
