@@ -63,6 +63,11 @@ from core.orchestrator import Orchestrator
 REQ = "write a 1000 words story"
 DESC = "Write a story of about 1000 words"          # K4.2-H1: description == the request
 OLD_ECHO = "Here's how I read your request"
+# The two PRE-EXISTING generic failure responses of the K4.2 path (not introduced by C-plus).
+GENERIC_REJECTION = ("I'm sorry, I wasn't able to prepare your request for execution. "
+                     "Please try rephrasing or simplifying your request.")
+GENERIC_OUTER_FAILURE = ("I'm sorry, something went wrong while processing your request. "
+                         "Please try again.")
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
@@ -247,6 +252,11 @@ class TestEmptyAndMissingPlan:
         assert "surprise me" not in answer and OLD_ECHO not in answer
         assert "orchestrator.clarification_requested" not in _types(orch)
         orch._workflow_runtime.execute.assert_not_called()
+        # actual outcome: compile() rejects the structure BEFORE the C-plus renderer is reached,
+        # so the pre-existing generic compilation-failure response and event apply
+        assert answer == GENERIC_REJECTION
+        (p,) = _payload(orch, "orchestrator.query_failed")
+        assert (p["error_type"], p["error"]) == ("CompilationRejected", "rejected_precheck")
 
     @pytest.mark.asyncio
     async def test_real_path_missing_plan_yields_no_detector_question(self):
@@ -258,6 +268,10 @@ class TestEmptyAndMissingPlan:
         assert "surprise me" not in answer and "should the story be about" not in answer
         assert "orchestrator.clarification_requested" not in _types(orch)
         orch._workflow_runtime.execute.assert_not_called()
+        # actual outcome: compile() raises; the pre-existing outer handler contains it
+        assert answer == GENERIC_OUTER_FAILURE
+        (p,) = _payload(orch, "orchestrator.query_failed")
+        assert p["error_type"] not in ("CompilationRejected", "ClarificationPairingUnavailable")
 
 
 # ── 4. malformed or unusable step data ──────────────────────────────────
@@ -288,6 +302,9 @@ class TestMalformedSteps:
         assert answer == SAFE_FAILURE_MESSAGE
         assert "orchestrator.clarification_requested" not in _types(orch)
         orch._workflow_runtime.execute.assert_not_called()
+        (p,) = _payload(orch, "orchestrator.query_failed")
+        assert p["error_type"] == "ClarificationPairingUnavailable"
+        assert ca.FAILURE_NO_USABLE_PLAN in p["error"]
 
     @pytest.mark.asyncio
     async def test_real_path_step_without_a_description_yields_no_detector_question(self):
@@ -302,6 +319,9 @@ class TestMalformedSteps:
         assert "surprise me" not in answer and "should the story be about" not in answer
         assert "orchestrator.clarification_requested" not in _types(orch)
         orch._workflow_runtime.execute.assert_not_called()
+        assert answer == GENERIC_OUTER_FAILURE             # actual outcome (see TestFailureCategoryOutcomes)
+        (p,) = _payload(orch, "orchestrator.query_failed")
+        assert p["error_type"] not in ("CompilationRejected", "ClarificationPairingUnavailable")
 
 
 # ── 5. absent, empty or unusable intent representation ──────────────────
@@ -711,3 +731,141 @@ class TestEventsAndOutcome:
         orch._event_stream.append = AsyncMock(side_effect=append)
         answer = await _handle(orch, make_plan())
         assert isinstance(answer, str) and expected in answer
+
+
+# ── Cases 3, 4 and 12: ONE contract table for every failure category ────
+#
+# A request that reaches the content-anchor path ends in exactly one of these outcomes.
+# They are the ACTUAL outcomes of the merged code, pinned so that an accidental change to
+# any of them fails a test.  Which response a category receives is a property of WHERE the
+# failure happens: inside compile() (pre-existing generic responses) or after compile()
+# escalated for the content-anchor reason (the C-plus safe-failure text).  ADR-KERNEL-07
+# section 10.5 documents the same four outcomes.
+
+_EXCEPTION = object()          # error_type is the raised exception's class name
+
+
+def _plan_empty_goal_id():
+    plan = _plan(_steps("A step"))
+    plan.goal_id = ""
+    return plan
+
+
+def _plan_duplicate_step_ids():
+    return _plan([PlanStep(step_id="s1", description="One", capability_type="llm_completion"),
+                  PlanStep(step_id="s1", description="Two", capability_type="llm_completion")])
+
+
+def _plan_step_without_step_id():
+    plan = _plan(_steps("A step"))
+    plan.steps = [object()]
+    return plan
+
+
+def _plan_none_description():
+    plan = _plan(_steps("Write the story"))
+    plan.steps[0].description = None
+    return plan
+
+
+_FAILURE_CATEGORIES = [
+    # (id, plan factory, expected response, error_type, expected error text)
+    ("compile_rejects_empty_steps", lambda: _plan([]),
+     GENERIC_REJECTION, "CompilationRejected", "rejected_precheck"),
+    ("compile_rejects_empty_goal_id", _plan_empty_goal_id,
+     GENERIC_REJECTION, "CompilationRejected", "rejected_precheck"),
+    ("compile_rejects_duplicate_step_ids", _plan_duplicate_step_ids,
+     GENERIC_REJECTION, "CompilationRejected", "rejected_precheck"),
+    ("compile_raises_for_missing_plan", lambda: None,
+     GENERIC_OUTER_FAILURE, _EXCEPTION, None),
+    ("compile_raises_for_step_without_step_id", _plan_step_without_step_id,
+     GENERIC_OUTER_FAILURE, _EXCEPTION, None),
+    ("pairing_unavailable_none_description", _plan_none_description,
+     SAFE_FAILURE_MESSAGE, "ClarificationPairingUnavailable", ca.FAILURE_NO_USABLE_PLAN),
+    ("pairing_unavailable_blank_descriptions", lambda: _plan(_steps("  ", "\t")),
+     SAFE_FAILURE_MESSAGE, "ClarificationPairingUnavailable", ca.FAILURE_NO_USABLE_PLAN),
+    ("pairing_unavailable_degraded_single_step", lambda: _plan(_steps(DESC)),
+     SAFE_FAILURE_MESSAGE, "ClarificationPairingUnavailable", ca.FAILURE_NO_USABLE_PLAN),
+]
+
+
+class TestFailureCategoryOutcomes:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "make_plan, response, error_type, error_text",
+        [c[1:] for c in _FAILURE_CATEGORIES], ids=[c[0] for c in _FAILURE_CATEGORIES])
+    async def test_actual_outcome_of_each_failure_category(
+            self, make_plan, response, error_type, error_text):
+        orch = _orch()
+        answer = await _handle(orch, make_plan())
+        # terminal outcome: the specific response for this category, never a detector question
+        assert answer == response
+        assert "surprise me" not in answer and OLD_ECHO not in answer
+        # events: exactly one failure event with the existing contract keys, no success event
+        types = _types(orch)
+        assert types.count("orchestrator.query_failed") == 1
+        assert "orchestrator.clarification_requested" not in types
+        assert "orchestrator.query_completed" not in types
+        (payload,) = _payload(orch, "orchestrator.query_failed")
+        assert {"interaction_id", "error", "error_type"} <= set(payload)
+        if error_type is _EXCEPTION:
+            # classified by the pre-existing outer handler as an unexpected exception
+            assert payload["error_type"] not in ("CompilationRejected", "ClarificationPairingUnavailable")
+            assert payload["error_type"].endswith(("Error", "Exception"))
+        else:
+            assert payload["error_type"] == error_type
+            assert error_text in payload["error"]
+        # nothing is executed and no substitute plan is run
+        orch._workflow_runtime.execute.assert_not_called()
+
+    def test_the_three_failure_responses_are_distinct_and_none_is_the_old_response(self):
+        assert len({GENERIC_REJECTION, GENERIC_OUTER_FAILURE, SAFE_FAILURE_MESSAGE}) == 3
+        for text in (GENERIC_REJECTION, GENERIC_OUTER_FAILURE, SAFE_FAILURE_MESSAGE):
+            assert OLD_ECHO not in text and "surprise me" not in text
+
+    @pytest.mark.asyncio
+    async def test_valid_pairing_is_the_only_outcome_with_a_clarification_event(self):
+        orch = _orch()
+        answer = await _handle(orch, _plan(_steps("Draft", "Revise")))
+        types = _types(orch)
+        assert types.count("orchestrator.clarification_requested") == 1
+        assert "orchestrator.query_failed" not in types
+        assert "orchestrator.query_completed" not in types
+        assert "Provisional draft plan" in answer and "surprise me" in answer
+        orch._workflow_runtime.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_usable_intent_after_a_successful_compile_is_a_pairing_failure(self):
+        orch = _orch()
+        with patch.object(ca, "build_clarification_intent", return_value=None):
+            answer = await _handle(orch, _plan(_steps("Draft", "Revise")))
+        assert answer == SAFE_FAILURE_MESSAGE
+        (payload,) = _payload(orch, "orchestrator.query_failed")
+        assert payload["error_type"] == "ClarificationPairingUnavailable"
+        assert ca.FAILURE_NO_USABLE_INTENT in payload["error"]
+        assert "orchestrator.clarification_requested" not in _types(orch)
+
+
+class TestKnownPreExistingCompilerDefect:
+    """CHARACTERISATION of a defect that exists independently of DEBT-043 -- NOT a design requirement.
+
+    core/cognitive/compiler.py::_validate_plan_structure raises AttributeError for a ``None`` plan
+    and for a step object lacking ``step_id``, instead of returning a structured rejection. The
+    Orchestrator's outer handler contains the exception (generic response, ``query_failed``), so
+    the user never sees a traceback and nothing executes. This test records today's behaviour so
+    that a deliberate compiler fix updates it knowingly; it must not be read as the intended
+    contract for malformed plans. No DEBT id has been assigned to the defect yet.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("make_plan, needle", [
+        (lambda: None, "goal_id"),
+        (_plan_step_without_step_id, "step_id"),
+    ], ids=["none_plan", "step_without_step_id"])
+    async def test_attribute_error_is_raised_in_compile_and_contained(self, make_plan, needle):
+        orch = _orch()
+        answer = await _handle(orch, make_plan())
+        assert answer == GENERIC_OUTER_FAILURE
+        (payload,) = _payload(orch, "orchestrator.query_failed")
+        assert payload["error_type"] == "AttributeError" and needle in payload["error"]
+        orch._workflow_runtime.execute.assert_not_called()
