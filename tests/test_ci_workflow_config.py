@@ -429,70 +429,41 @@ def test_every_command_a_container_shell_script_runs_is_required_or_a_shell_buil
 
 # ------------------------------------------------------------------ the Docker suite must not skip silently
 
-
-_SKIP_STEP_NAME = "Assert the Docker-backed tests ran"
-
-
-def _run_skip_step(tmp_path: Path, pytest_output: str) -> subprocess.CompletedProcess[str]:
-    run = _step("tests", _SKIP_STEP_NAME)["run"]
-    assert "/tmp/pytest-output.txt" in run
-    out = tmp_path / "pytest-output.txt"
-    out.write_text(pytest_output, encoding="utf-8")
-    script = tmp_path / "step.sh"
-    script.write_text(run.replace("/tmp/pytest-output.txt", str(out)), encoding="utf-8")
-    return subprocess.run(["bash", "-e", str(script)], capture_output=True, text=True, timeout=60)
+_RETIRED_SKIP_STEP = "Assert the Docker-backed tests ran"
+DOCKER_SKIP_REASONS = ("requires a reachable Docker daemon", "requires the test image")
 
 
-def test_the_skip_step_runs_after_the_gate_and_the_reasons_it_matches_are_the_tests_own() -> None:
+def test_the_grep_skip_step_is_retired_and_nothing_greps_pytest_text_for_skips() -> None:
+    """H-D7 (decided 2026-11-22: retire only after JUnit equivalence is proven by mutation).
+
+    The retired step grepped pytest's `-rs` text for the two Docker-prerequisite skip reasons.  The
+    execution manifest decides the same thing from the JUnit structure and decides more: a skip of
+    any enrolled mandatory PASS is red, an unlisted skip is red whatever its reason, and an approved
+    skip must carry its exact reason.  The equivalence is pinned by three tests in
+    tests/test_ci_junit_manifest.py (named below), and the checker's mutation matrix kills the
+    mutants that would weaken it.  Skip reasons are still printed by `-rs` for humans."""
     names = [s.get("name", "") for s in _steps("tests")]
-    gate = next(i for i, n in enumerate(names) if n.startswith("Gate on pytest exit code"))
-    skip = next(i for i, n in enumerate(names) if n.startswith(_SKIP_STEP_NAME))
-    assert gate < skip
-    assert "if" not in _steps("tests")[skip] and "continue-on-error" not in _steps("tests")[skip]
-    run = _steps("tests")[skip]["run"]
+    assert not any(n.startswith(_RETIRED_SKIP_STEP) for n in names)
+    for step in _steps("tests"):
+        assert "SKIPPED" not in step.get("run", ""), f"{step.get('name')}: do not grep pytest text for skips"
+    manifest_tests = (ROOT / "tests" / "test_ci_junit_manifest.py").read_text(encoding="utf-8")
+    for name in (
+        "test_a_skip_of_any_enrolled_pass_identity_is_red",
+        "test_no_approved_skip_accepts_a_missing_docker_daemon_or_image",
+        "test_an_unlisted_skip_for_a_missing_daemon_or_image_is_red",
+    ):
+        assert f"def {name}(" in manifest_tests, f"the H-D7 equivalence test {name} is gone"
+    assert "-rfEs" in _step("tests", "Run test suite")["run"], "skip reasons stay visible in the log"
+
+
+def test_the_docker_skip_reasons_the_manifest_tests_use_are_the_tests_own() -> None:
+    """If a Docker gate in the tests changes its wording, the manifest tests that prove 'a missing
+    daemon or image is red' would silently stop modelling a real skip.  Fail here instead."""
     gating_sources = (DOCKER_TESTS.read_text(encoding="utf-8"), CONTRACT_TESTS.read_text(encoding="utf-8"))
-    for reason in ("requires a reachable Docker daemon", "requires the test image"):
-        assert reason in run, f"the step no longer matches {reason!r}"
+    manifest_tests = (ROOT / "tests" / "test_ci_junit_manifest.py").read_text(encoding="utf-8")
+    for reason in DOCKER_SKIP_REASONS:
         assert any(reason in src for src in gating_sources), f"no Docker test gate uses the reason {reason!r} any more"
-
-
-@pytest.mark.skipif(shutil.which("bash") is None, reason="executes the workflow's bash step")
-class TestDockerSkipAssertionStep:
-    CLEAN = "....\n=== short test summary info ===\nFAILED tests/x.py::t - boom\n10 passed, 1 failed in 1.0s\n"
-
-    @pytest.mark.parametrize("reason", [
-        "requires a reachable Docker daemon",
-        "requires the test image 'python:3.12-slim' locally (OCBRAIN_SANDBOX_DOCKER_IMAGE; it must contain python3)",
-    ])
-    def test_a_docker_prerequisite_skip_fails_the_job(self, tmp_path: Path, reason: str) -> None:
-        r = _run_skip_step(tmp_path, self.CLEAN + f"SKIPPED [57] tests/core/sandbox/test_docker_backend.py: {reason}\n")
-        assert r.returncode == 1, r.stdout
-        assert "::error::" in r.stdout
-
-    def test_an_unrelated_skip_does_not(self, tmp_path: Path) -> None:
-        r = _run_skip_step(tmp_path, self.CLEAN + "SKIPPED [1] tests/core/sandbox/test_docker_backend.py:870: requires gcc-multilib (a real 32-bit static toolchain)\n")
-        assert r.returncode == 0, r.stdout
-        assert "no Docker-prerequisite skips" in r.stdout
-
-    def test_a_missing_or_empty_pytest_output_fails_the_job(self, tmp_path: Path) -> None:
-        run = _step("tests", _SKIP_STEP_NAME)["run"]
-        for content in (None, ""):
-            out = tmp_path / "pytest-output.txt"
-            out.unlink(missing_ok=True)
-            if content is not None:
-                out.write_text(content, encoding="utf-8")
-            script = tmp_path / "step.sh"
-            script.write_text(run.replace("/tmp/pytest-output.txt", str(out)), encoding="utf-8")
-            r = subprocess.run(["bash", "-e", str(script)], capture_output=True, text=True, timeout=60)
-            assert r.returncode == 1, (content, r.stdout)
-            assert "::error::" in r.stdout
-
-    def test_a_run_without_skips_passes(self, tmp_path: Path) -> None:
-        assert _run_skip_step(tmp_path, self.CLEAN).returncode == 0
-
-    def test_the_words_in_a_test_name_or_a_failure_message_are_not_a_skip(self, tmp_path: Path) -> None:
-        r = _run_skip_step(tmp_path, "FAILED tests/x.py::test_requires_a_reachable_Docker_daemon - requires a reachable Docker daemon\n")
-        assert r.returncode == 0, "only SKIPPED lines count"
+        assert reason in manifest_tests, f"the manifest tests no longer model the skip reason {reason!r}"
 
 
 # ------------------------------------------------------------------ mypy
@@ -761,7 +732,7 @@ def test_step_order_in_the_tests_job() -> None:
     assert at("Install dependencies") < toolchain < engine < at("Upload Docker Engine provisioning report") < at("Docker preflight")
     assert at("Run test suite") < at("Upload full test output") < at("Record the A9 and JUnit manifest verdicts")
     assert at("Record the A9") < at("Upload test execution evidence") < at("Gate on pytest exit code")
-    assert at("Gate on pytest exit code") < at(_SKIP_STEP_NAME) < at("Fail unless the A9 and JUnit manifest checks passed")
+    assert at("Gate on pytest exit code") < at("Fail unless the A9 and JUnit manifest checks passed")
     assert at("Fail unless") == len(names) - 1, "the deciding step is the last step of the job"
 
 

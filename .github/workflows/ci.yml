@@ -274,28 +274,13 @@ jobs:
             --exit-code-file /tmp/pytest-exit-code.txt \
             --allowlist docs/architecture/D10_KNOWN_ENVIRONMENTAL_FAILURES.txt
 
-      - name: Assert the Docker-backed tests ran (none skipped for a missing daemon or image)
-        # The preflight step has just proved a reachable daemon and the provisioned image.  A
-        # SKIPPED line whose reason says either is missing therefore means a Docker-gating probe
-        # inside the tests (a 5 s / 10 s timeout at import time) misfired, and the whole
-        # Docker-backed suite would pass without having run.  A skip is not a pass.  Other skips
-        # are listed by `-rs`; the JUnit execution-manifest check (recorded above, decided by the
-        # last step) rejects every skip whose exact reason the manifest does not list.
-        run: |
-          if [ ! -s /tmp/pytest-output.txt ]; then
-            echo "::error::pytest output is missing or empty, so the skip check cannot be trusted"
-            exit 1
-          fi
-          if grep -E '^SKIPPED .*(requires a reachable Docker daemon|requires the test image)' /tmp/pytest-output.txt; then
-            echo "::error::Docker-backed tests were skipped although the preflight proved the daemon and the image"
-            exit 1
-          fi
-          echo "no Docker-prerequisite skips"
-
       - name: Fail unless the A9 and JUnit manifest checks passed
         # The decision the recording step deferred.  One command (a test pins that): red unless
         # both recorded exit codes are exactly 0, and red if any evidence file is missing or
         # empty ("if-no-files-found: error" only fires when the whole upload set is empty).
+        # This also decides what a text grep of pytest's `-rs` lines used to (H-D7, retired): a
+        # Docker-gated test that skips because the daemon or image is missing is a mandatory PASS
+        # that did not pass, and an unlisted Docker-gated test that skips is an unapproved skip.
         run: |
           python3 scripts/ci_junit_manifest.py verdict \
             --exit-code-file /tmp/a9-check-exit-code.txt \
