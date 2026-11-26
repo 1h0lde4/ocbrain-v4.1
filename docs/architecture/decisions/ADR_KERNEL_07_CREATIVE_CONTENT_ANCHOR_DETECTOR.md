@@ -361,12 +361,33 @@ response-path disposition. It is not the D-5 architectural decision, not an acce
 - **Safe failure.** A missing or unusable plan must **not** produce an unpaired detector-specific question. The
   response in that case is specified by the owner's remediation directive of 2026-10-19 (referred to there as §5.4;
   the directive is not part of this repository and is not reproduced here). **Implementation record (PR #117, merge
-  `0ef31d7`, Nov 25, 2026).** When the detector yields no usable intent, or the planner yields no genuine step (a single
-  step equal to the request, or "unspecified", is the planner's degrade fallback and is not counted as a plan), the
-  response is the fixed text `SAFE_FAILURE_MESSAGE` in `core/cognitive/content_anchor.py`: "I couldn't form a reliable draft plan for this request. Please restate what you'd like me to create and include any details you already know." It claims neither an
-  interpretation nor a valid plan, carries no exception or internal detail, contains no detector-specific question, and is
-  returned with an `orchestrator.query_failed` event (`error_type = ClarificationPairingUnavailable`; the error text
-  carries only a reason code). The old unpaired question and the old response are never used as a fallback.
+  `0ef31d7`, Nov 25, 2026; outcome description corrected Nov 26, 2026 — the first version of this record overstated where
+  the fixed text applies).** A request that reaches this path ends in exactly one of four outcomes. None is an unpaired
+  detector question, and none executes a plan:
+  1. *Structural rejection inside `compile()`* (empty `steps`, empty `goal_id`, duplicate `step_id`; status
+     `rejected_precheck`): the **pre-existing** generic compilation-failure response ("I'm sorry, I wasn't able to prepare your
+     request for execution. Please try rephrasing or simplifying your request.") and `orchestrator.query_failed` with
+     `error_type = CompilationRejected`. The C-plus renderer is not reached.
+  2. *Unexpected exception inside `compile()`* (observed for a missing/`None` plan and for a step object lacking `step_id`):
+     the **pre-existing** outer-handler response ("I'm sorry, something went wrong while processing your request. Please try
+     again.") and `orchestrator.query_failed` with `error_type` equal to the exception class name (currently `AttributeError`).
+     The renderer is not reached. This is a pre-existing compiler weakness (below), not a design requirement of C-plus.
+  3. *The plan compiles and escalates for the content-anchor reason, but the pairing cannot be produced* — no usable intent,
+     or no genuine step (blank or unusable descriptions; a single step equal to the request, or "unspecified", is the
+     planner's degrade fallback and is not counted as a plan): the fixed text `SAFE_FAILURE_MESSAGE` in
+     `core/cognitive/content_anchor.py` ("I couldn't form a reliable draft plan for this request. Please restate what you'd like me to create and include any details you already know.") and `orchestrator.query_failed` with
+     `error_type = ClarificationPairingUnavailable` (the error text carries only a reason code). It claims neither an
+     interpretation nor a valid plan, carries no exception or internal detail, and contains no detector-specific question.
+  4. *Valid pairing*: the C-plus response and `orchestrator.clarification_requested`; no `query_failed`.
+
+  The old unpaired question and the old response are never used as a fallback. For empty, missing and malformed plans the
+  contract that is met is: no detector-specific question, no unhandled failure, no execution, and the existing outcome and
+  event contracts preserved — **not** "the fixed text everywhere". On Nov 26, 2026 the decision was to document and test
+  this rather than change product behaviour; all four outcomes are pinned by `TestFailureCategoryOutcomes` in
+  `tests/core/cognitive/test_debt043_clarification_response.py`. **Separate pre-existing defect (no DEBT id assigned):**
+  `core/cognitive/compiler.py::_validate_plan_structure` raises `AttributeError` for a `None` plan or a step lacking
+  `step_id` instead of returning a structured rejection; the outer handler contains it. It is characterised, not endorsed,
+  by `TestKnownPreExistingCompilerDefect`.
 - **Residual product risk (recorded honestly).** The repeated-run experiment observed generic and occasionally
   over-assumptive planning steps. C-plus reduces what is displayed; it does **not** establish that the remaining steps
   are semantically appropriate or that users benefit from seeing them. A genuine planner-generated step can still be
