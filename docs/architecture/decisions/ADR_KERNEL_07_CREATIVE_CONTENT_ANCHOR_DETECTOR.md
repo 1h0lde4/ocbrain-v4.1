@@ -222,7 +222,9 @@ corpus; the study's 466-vs-1000-words experiment (`[PENDING]`); cross-turn conve
 
 **Full-suite qualification.** Branch and `main` have **identical pre-existing failure sets**
 (23 test IDs: 16 failed + 7 errors, **untriaged**). That is evidence of *no newly introduced
-failures within that set*, not "the suite passed".
+failures within that set*, not "the suite passed". **[Update Nov 25, 2026: that set was measured on an older `main`. On `main` `0ef31d7`,
+in the authoring sandbox (Python 3.12.3, SQLite 3.45.1), the full suite was 2535 passed and 1 xfailed with no failures or errors, and the CI test gate
+and drift check passed; the earlier 23-ID set is not reproduced there. This is not a claim about other environments.]**
 
 ## 10. D-5 — evidence, decision, consequences
 
@@ -341,7 +343,7 @@ K4.2 is **not** superseded; DRIFT-10's wording is left unchanged.
 
 ### 10.5 Response-path disposition for the DEBT-043 remediation (owner-directed, 2026-10-19)
 
-**Status: SELECTED FOR IMPLEMENTATION — NOT YET IMPLEMENTED OR VERIFIED. ADR-KERNEL-07 remains PROPOSED.** This section records a
+**Status: IMPLEMENTED AND MERGED (PR #117, Nov 25, 2026) — NOT INDEPENDENTLY VERIFIED. ADR-KERNEL-07 remains PROPOSED.** (Selected for implementation on 2026-10-19; post-merge tests passed; independent verification and owner authorization to close DEBT-043 are pending.) This section records a
 response-path disposition. It is not the D-5 architectural decision, not an acceptance of this ADR and not a freeze-readiness claim.
 
 - **Decision and date.** On 2026-10-19 (the date of the owner's remediation directive; no earlier decision is
@@ -358,17 +360,34 @@ response-path disposition. It is not the D-5 architectural decision, not an acce
   D-5 architectural "Option C" and containment "C"/"C-plus" are different decisions with different dates.
 - **Safe failure.** A missing or unusable plan must **not** produce an unpaired detector-specific question. The
   response in that case is specified by the owner's remediation directive of 2026-10-19 (referred to there as §5.4;
-  the directive is not part of this repository and is not reproduced here) and will be recorded here when the DEBT-043
-  implementation lands; this section records only the prohibition.
+  the directive is not part of this repository and is not reproduced here). **Implementation record (PR #117, merge
+  `0ef31d7`, Nov 25, 2026).** When the detector yields no usable intent, or the planner yields no genuine step (a single
+  step equal to the request, or "unspecified", is the planner's degrade fallback and is not counted as a plan), the
+  response is the fixed text `SAFE_FAILURE_MESSAGE` in `core/cognitive/content_anchor.py`: "I couldn't form a reliable draft plan for this request. Please restate what you'd like me to create and include any details you already know." It claims neither an
+  interpretation nor a valid plan, carries no exception or internal detail, contains no detector-specific question, and is
+  returned with an `orchestrator.query_failed` event (`error_type = ClarificationPairingUnavailable`; the error text
+  carries only a reason code). The old unpaired question and the old response are never used as a fallback.
 - **Residual product risk (recorded honestly).** The repeated-run experiment observed generic and occasionally
   over-assumptive planning steps. C-plus reduces what is displayed; it does **not** establish that the remaining steps
   are semantically appropriate or that users benefit from seeing them. A genuine planner-generated step can still be
   generic, unsuitable, or presuppose a process that was not requested. The plan must be labeled **provisional**; it is
   not independently verified, semantically validated or user-approved.
+- **Implementation record — what PR #117 does.** At most three genuine planner steps, in order, one per numbered line,
+  labelled provisional ("not checked or approved"; the omission of further steps is stated, e.g. "first 3 of N steps");
+  never padded or fabricated; the execution plan is not mutated (presentation only). The intent statement is derived from
+  detector data only (artifact kind and missing subject); the request text is not echoed. The question is
+  artifact-appropriate for story, poem, essay, song and joke, with a generic fallback, and no longer carries
+  story-specific examples. `orchestrator.clarification_requested` gains two additive keys (`plan_steps_shown`,
+  `plan_steps_total`); no model call, no new governance evaluation or gate, no change to the Plan Compilation boundary
+  (D-5 unchanged). `scripts/live_check_repeat.py` pins `DISPLAY_CAP = 5` as a literal so the pre-registered C2 criterion
+  does not follow the product's new cap of 3. Verified so far: the PR's tests (92 new, driving the real
+  `Orchestrator.handle()`, `compile()` and `GovernanceKernel`), CI on the PR head and on `main`, a local full-suite run, and
+  17 of 17 deliberate mutations caught. **Not done:** independent review, and a live-model re-run of the draft-plan harness
+  against C-plus (the observations in §10.4 describe the pre-C-plus behavior of one model).
 - **What this does not change.** D-1..D-4 and every other disposition keep their current state;
   `creative_content_anchor_enabled` stays `false` by default; the experimental evidence, thresholds, criteria and
-  verdicts in §10.4 are preserved. DEBT-043 and DEBT-042 stay **OPEN** in `KNOWN_ISSUES.md` until their fixes are
-  merged and verified.
+  verdicts in §10.4 are preserved. DEBT-043 and DEBT-042 stay **OPEN** in `KNOWN_ISSUES.md`: their fixes are merged
+  (PR #117 and PR #116) but are not independently verified, and closure is not authorized.
 
 ## 11. Boundaries and rollback
 

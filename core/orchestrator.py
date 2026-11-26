@@ -291,7 +291,7 @@ class Orchestrator:
                 try:
                     from core.cognitive.compiler import CompilationStatus
                     from core.cognitive.content_anchor import (
-                        anchor_missing, build_clarification_response,
+                        anchor_missing, render_clarification_response,
                     )
                     from core.cognitive.compiler import compile as compile_plan
                     from core.cognitive.intent import (
@@ -496,22 +496,46 @@ class Orchestrator:
                                 and _gr is not None
                                 and _gr.governor == "OrchestrationGovernor"
                                 and anchor_missing(anchor_assessment)):
-                            await self._emit_event(
-                                "orchestrator.clarification_requested", {
-                                    "interaction_id": interaction_id,
-                                    "goal_id": goal.resource_id,
-                                    "status": compilation_result.status,
-                                    "missing": list(
-                                        anchor_assessment.missing),
-                                })
                             _sf = getattr(goal, "structured_form", None) or {}
-                            return build_clarification_response(
+                            _rendering = render_clarification_response(
                                 anchor_assessment,
-                                interpretation=str(
+                                request_text=str(
                                     _sf.get("description") or ""),
                                 plan_steps=[
-                                    st.description
-                                    for st in execution_plan.steps])
+                                    getattr(st, "description", None)
+                                    for st in list(getattr(
+                                        execution_plan, "steps", None)
+                                        or [])])
+                            if _rendering.paired:
+                                await self._emit_event(
+                                    "orchestrator.clarification_requested", {
+                                        "interaction_id": interaction_id,
+                                        "goal_id": goal.resource_id,
+                                        "status": compilation_result.status,
+                                        "missing": list(
+                                            anchor_assessment.missing),
+                                        "plan_steps_shown":
+                                            _rendering.steps_shown,
+                                        "plan_steps_total":
+                                            _rendering.steps_total,
+                                    })
+                                return _rendering.text
+                            # The K4.2 pairing (intent + a genuine plan) could
+                            # not be produced: a presentation failure, NOT a
+                            # completed clarification and NEVER an unpaired
+                            # detector-specific question (ADR-KERNEL-07 §10.5).
+                            await self._emit_event(
+                                "orchestrator.query_failed", {
+                                    "interaction_id": interaction_id,
+                                    "error": (
+                                        "content-anchor clarification could "
+                                        "not be paired with a usable intent "
+                                        "and plan "
+                                        f"({_rendering.failure_reason})"),
+                                    "error_type":
+                                        "ClarificationPairingUnavailable",
+                                })
+                            return _rendering.text
                         await self._emit_event("orchestrator.query_failed", {
                             "interaction_id": interaction_id,
                             "error": compilation_result.status,
