@@ -14,6 +14,9 @@ Read-only evidence supporting `FREEZE_REMEDIATION_REGISTER_NOV2026.md`. Baseline
 
 - `sandbox_namespace_tests_cc446f8.txt` — the same file at the exact CI commit `cc446f8` with host configuration (kernel, cgroup filesystem type, `memory` directory writable, `unshare` exit code): 14 passed, 0 skipped. Author-run, single environment, system interpreter. The CI result for this commit (14 skipped) was reported to the review and is not stored here as a retrieved artifact.
 
+- `issue105_probe_cc446f8.txt` — output of the repo's own #105 probe (script on `origin/follow-up/fz02-b2d-latent-token-cancellation-oct2026`, `docs/handoffs/fz02_gate_probe.py`) run against `main` @ `cc446f8`: retry-after-cancel reproduced (node ran twice, `execute()` returned after cancellation) and the 0.3 s graph budget not enforced until the router's 2.0 s deadline. Author-run, single environment, faked provider stream.
+- `dependabot_open_alerts_2026-11-25.tsv` — the seven open Dependabot alerts as read from the GitHub API on 2026-11-25 (manifest, range, patched version, CVE, creation date).
+
 ## Commands (clean clone, working tree reverted afterwards)
 
 ```

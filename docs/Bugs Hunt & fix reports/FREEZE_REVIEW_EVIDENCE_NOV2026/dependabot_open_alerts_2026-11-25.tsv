@@ -1,0 +1,8 @@
+alert	severity	package	manifest	vulnerable_range	patched	cve	created
+#1	high	chromadb	requirements.txt	>=0.4.17,<=1.5.9	none	CVE-2026-45830	2026-09-26
+#2	high	chromadb	requirements.txt	>=0.5.0,<=1.5.9	none	CVE-2026-45831	2026-09-26
+#3	critical	chromadb	requirements.txt	>=0.4.17,<=1.5.9	none	CVE-2026-45833	2026-09-26
+#4	critical	sentence-transformers	pyproject.toml	<5.6.0	5.6.0	CVE-2026-68770	2026-10-04
+#5	high	chromadb	pyproject.toml	>=0.4.17,<=1.5.9	none	CVE-2026-45830	2026-10-10
+#6	high	chromadb	pyproject.toml	>=0.5.0,<=1.5.9	none	CVE-2026-45831	2026-10-10
+#7	critical	chromadb	pyproject.toml	>=0.4.17,<=1.5.9	none	CVE-2026-45833	2026-10-10

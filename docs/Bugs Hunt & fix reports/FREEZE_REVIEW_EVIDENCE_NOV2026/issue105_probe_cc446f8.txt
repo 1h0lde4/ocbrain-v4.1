@@ -1,0 +1,10 @@
+# Issue #105 reproduction — repo's own probe, run against main @ cc446f87e72d5f8277da3c293a88ee79a7e872bd (throw-away worktree)
+# script: docs/handoffs/fz02_gate_probe.py on origin/follow-up/fz02-b2d-latent-token-cancellation-oct2026 (not copied here); cmd: OCROOT=<worktree> python fz02_gate_probe.py
+# real WorkflowRuntime/ExecutionRuntime/Worker.execute/ModelRouter; only the provider stream is faked
+== PROBE 1: graph watchdog (hard 0.3 s) vs a node hung inside the real router (router hard deadline 2.0 s)
+  workflow returned after 2.03s | success=False
+  workflow token cancelled=True reason='execution hard_deadline'
+  node attempts=1 | router returned after 2.02s | provider stream closed after 2.02s
+== PROBE 2: the TASK running the workflow is cancelled at 0.5 s (node retry policy: max_retries=1)
+  execute() RETURNED a result after 2.53s (cancellation did NOT propagate) | success=False | task.cancelled()=False
+  node attempts=2 | provider stream close times after t0 (s): [0.5, 2.52]
