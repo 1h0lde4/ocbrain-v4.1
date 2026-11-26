@@ -351,6 +351,22 @@ jobs:
           echo "exit codes: default=$RC_DEFAULT strict=$RC_STRICT" | tee -a /tmp/mypy-b03.txt
           [ "$RC_DEFAULT" = "0" ] && [ "$RC_STRICT" = "0" ]
 
+      - name: mypy --strict on the CI scripts that decide this workflow's verdict
+        # scripts/ci_a9_verifier.py, scripts/ci_junit_manifest.py and scripts/ci_docker_engine.py
+        # classify A9, judge the JUnit report against the execution manifest and provision the
+        # Docker Engine.  They are strictly typed and were only ever checked locally; this keeps
+        # that evidence in CI.  It is a separate step so the two-file B03 command above stays exactly
+        # the evidence of record.  Output is appended to the same mypy-b03 artifact.
+        run: |
+          set +e
+          export MYPYPATH=.
+          SCRIPTS="scripts/ci_a9_verifier.py scripts/ci_junit_manifest.py scripts/ci_docker_engine.py"
+          echo "== mypy --strict (CI scripts): $SCRIPTS ==" | tee -a /tmp/mypy-b03.txt
+          mypy --strict --explicit-package-bases --follow-imports=silent $SCRIPTS 2>&1 | tee -a /tmp/mypy-b03.txt
+          RC_SCRIPTS=${PIPESTATUS[0]}
+          echo "exit code: scripts strict=$RC_SCRIPTS" | tee -a /tmp/mypy-b03.txt
+          [ "$RC_SCRIPTS" = "0" ]
+
       - name: Upload mypy output
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

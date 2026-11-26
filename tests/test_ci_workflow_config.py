@@ -520,6 +520,31 @@ def test_mypy_job_is_pinned_narrow_and_covers_both_b03_files_in_both_modes() -> 
     assert "mypy ." not in run and " core/ " not in run and "tests/ " not in run
 
 
+CI_SCRIPTS = (
+    "scripts/ci_a9_verifier.py",
+    "scripts/ci_junit_manifest.py",
+    "scripts/ci_docker_engine.py",
+)
+
+
+def test_mypy_job_also_runs_strict_on_the_ci_scripts_without_touching_the_b03_command() -> None:
+    """The three scripts that decide this workflow's verdict are type-checked in CI.  The two-file B03
+    step above is the evidence of record and is pinned unchanged by its own test."""
+    run = _step("typecheck-b03", "mypy --strict on the CI scripts")["run"]
+    assert 'SCRIPTS="' + " ".join(CI_SCRIPTS) + '"' in run, "exactly the three CI scripts"
+    invocations = [ln.strip() for ln in run.splitlines() if ln.strip().startswith("mypy ") and "--version" not in ln]
+    assert invocations == ["mypy --strict --explicit-package-bases --follow-imports=silent $SCRIPTS 2>&1 | tee -a /tmp/mypy-b03.txt"]
+    assert "MYPYPATH=." in run and "RC_SCRIPTS=${PIPESTATUS[0]}" in run
+    assert run.rstrip().endswith('[ "$RC_SCRIPTS" = "0" ]'), "the step fails unless mypy exits 0"
+    assert "|| true" not in run
+    assert "if" not in _step("typecheck-b03", "mypy --strict on the CI scripts"), "a gating step is never conditional"
+    for path in CI_SCRIPTS:
+        assert (ROOT / path).is_file(), path
+    names = [s["name"] for s in _steps("typecheck-b03")]
+    assert names.index("Upload mypy output") > names.index(_step("typecheck-b03", "mypy --strict on the CI scripts")["name"]), \
+        "its output must exist before the artifact is uploaded"
+
+
 # ------------------------------------------------------------------ packet ownership
 
 
