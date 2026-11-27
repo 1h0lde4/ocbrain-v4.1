@@ -568,3 +568,67 @@ class TestShutdownDrainAndIds:
         api.auth_enabled. If a startup record or a restored previous mode is ever added, change this on purpose."""
         auth.get_settings(None)
         assert flush() is True and sink.records == []
+
+
+class TestSuppressionSummaryAndFinalLoss:
+    """Second review (Nov 25): 112-R1 the flood-protection summary must survive the window timer;
+    112-R2 the last overflow loss must reach a durable record at shutdown, not stay in memory."""
+
+    def test_the_suppression_summary_is_emitted_when_a_later_denial_closes_the_window(self, sink, required, clock, monkeypatch, caplog):
+        seen = []
+        monkeypatch.setattr(auth, "_emit", lambda event, payload: seen.append((event, dict(payload))))
+        for _ in range(auth.THROTTLE_BURST + 5):
+            assert call(app, "GET", "/config")[0] == 401
+        clock[0] += auth.THROTTLE_WINDOW_S + 1
+        with caplog.at_level(logging.WARNING):
+            call(app, "GET", "/config")                                  # this denial closes the window
+        summaries = [p for e, p in seen if e == auth.EVENT_DENIED and p.get("reason") == auth.REASON_THROTTLED]
+        assert summaries == [{"reason": auth.REASON_THROTTLED, "count": 5}]
+        assert "5 further denials were suppressed" in caplog.text
+        flush()
+        assert aggregates(sink)[0]["suppressed"] == 5
+
+    def test_the_suppression_summary_survives_the_window_timer(self, sink, required, monkeypatch, caplog):
+        """The timer closes a quiet window; it must emit the same summary, exactly once, not just persist a count."""
+        monkeypatch.setattr(auth, "THROTTLE_WINDOW_S", 0.2)
+        auth.reset_cache_for_tests()
+        seen = []
+        monkeypatch.setattr(auth, "_emit", lambda event, payload: seen.append((event, dict(payload))))
+
+        async def main():
+            async def downstream(scope, receive, send):
+                raise AssertionError("every request here is denied")
+            mw = auth.ApiAuthMiddleware(downstream)
+            for _ in range(auth.THROTTLE_BURST + 5):
+                await _acall(mw)
+            await asyncio.sleep(0.7)                                     # no traffic: the timer closes the window
+            await _acall(mw)                                             # a later denial must not repeat the summary
+
+        with caplog.at_level(logging.WARNING):
+            asyncio.run(main())
+        summaries = [p for e, p in seen if e == auth.EVENT_DENIED and p.get("reason") == auth.REASON_THROTTLED]
+        assert summaries == [{"reason": auth.REASON_THROTTLED, "count": 5}]
+        assert caplog.text.count("further denials were suppressed") == 1
+        assert aggregates(sink)[0]["suppressed"] == 5
+
+    def test_the_last_overflow_loss_is_persisted_at_shutdown(self, sink, required, clock, monkeypatch):
+        monkeypatch.setattr(auth_audit, "MAX_PENDING_AGGREGATES", 3)
+        sink.fail = True
+        for _ in range(6):                                               # six windows, one denial each
+            assert call(app, "GET", "/config")[0] == 401
+            clock[0] += auth.THROTTLE_WINDOW_S + 1
+        sink.fail = False
+        assert drain() is True                                           # closes window six; no further traffic follows
+        got = aggregates(sink)
+        lost = 6 - 3                                                     # six aggregates were created, three fit
+        assert sum(a["dropped_aggregates"] for a in got) == lost         # durably reported ...
+        assert sum(a["dropped_denials"] for a in got) == lost
+        assert auth._audit_state["dropped_aggregates"] == 0 and auth._audit_state["dropped_denials"] == 0   # ... none left in memory
+
+    def test_overflow_losses_are_reported_even_when_no_aggregate_is_pending(self, sink, required, clock):
+        auth._audit_state["dropped_aggregates"], auth._audit_state["dropped_denials"] = 2, 7   # losses nobody has reported yet
+        assert drain() is True
+        got = aggregates(sink)
+        assert len(got) == 1 and got[0]["total"] == 0
+        assert (got[0]["dropped_aggregates"], got[0]["dropped_denials"]) == (2, 7)
+        assert auth._audit_state["dropped_aggregates"] == 0

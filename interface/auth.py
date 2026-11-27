@@ -629,6 +629,31 @@ def schedule_flush() -> None:
     task.add_done_callback(_tasks.discard)
 
 
+def _fold_overflow_losses() -> None:
+    """Shutdown: overflow losses that no later aggregate will carry get into a durable record now.
+
+    They are added to the newest pending aggregate; with none pending they are queued as a loss-only aggregate
+    (total 0).  Nothing is dropped after this, so it cannot start another loss.
+    """
+    st = _audit_state
+    lost_aggregates, lost_denials = st["dropped_aggregates"], st["dropped_denials"]
+    if not (lost_aggregates or lost_denials):
+        return
+    st.update(dropped_aggregates=0, dropped_denials=0)
+    newest = next((r for r in reversed(_pending) if r["kind"] == "aggregate"), None)
+    if newest is not None:
+        newest["payload"]["dropped_aggregates"] += lost_aggregates
+        newest["payload"]["dropped_denials"] += lost_denials
+        return
+    now = _iso(_wall())
+    _enqueue(EVENT_DENIED, {
+        "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate", "aggregate_id": uuid.uuid4().hex,
+        "window_start": now, "window_end": now, "window_seconds": THROTTLE_WINDOW_S, "total": 0,
+        "by_reason": {}, "logged": 0, "suppressed": 0, "pid": os.getpid(),
+        "dropped_aggregates": lost_aggregates, "dropped_denials": lost_denials,
+    }, kind="aggregate")
+
+
 async def drain_audit(timeout_s: Optional[float] = None) -> bool:
     """Shutdown: close the open denial window into its aggregate, then make one bounded, final attempt to
     persist everything still pending (it ignores the retry backoff).  Never raises (except cancellation).
@@ -646,20 +671,31 @@ async def drain_audit(timeout_s: Optional[float] = None) -> bool:
 
     try:
         _close_window()
+        _fold_overflow_losses()
         await asyncio.wait_for(_drain(), timeout=limit)
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # includes the drain timeout; shutdown must not fail because of the audit store
         log.error("Authentication audit drain at shutdown stopped early (%s).", type(exc).__name__)
     if _pending:
-        log.error("%d authentication audit record(s) could not be persisted at shutdown and are lost: %s",
-                  len(_pending), ", ".join(sorted({r["event_type"] for r in _pending})))
+        carried = sum(r["payload"].get("dropped_aggregates", 0) for r in _pending)
+        log.error("%d authentication audit record(s) could not be persisted at shutdown and are lost: %s "
+                  "(they carry the count of %d earlier overflow-dropped aggregate(s)).",
+                  len(_pending), ", ".join(sorted({r["event_type"] for r in _pending})), carried)
     return not _pending
 
 
 def _close_window() -> None:
-    """Turn the finished window's counters into one aggregate record and reset them."""
+    """Close the finished window: emit the flood-protection summary, turn the counters into one aggregate record, reset.
+
+    Every path that ends a window (a later denial, the window timer, shutdown) comes through here, so the summary
+    line and event are identical on all of them.
+    """
     st = _throttle
+    if st["suppressed"]:
+        log.warning("api.auth_denied: %d further denials were suppressed in the previous %.0f s window.",
+                    st["suppressed"], THROTTLE_WINDOW_S)
+        _emit(EVENT_DENIED, {"reason": REASON_THROTTLED, "count": st["suppressed"]})
     if st["total"]:
         payload = {
             "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate", "aggregate_id": uuid.uuid4().hex,
@@ -698,10 +734,6 @@ def _admit_denial(reason: str = REASON_INVALID) -> bool:
     now = _clock()
     st = _throttle
     if now - st["start"] >= THROTTLE_WINDOW_S:
-        if st["suppressed"]:
-            log.warning("api.auth_denied: %d further denials were suppressed in the previous %.0f s window.",
-                        st["suppressed"], THROTTLE_WINDOW_S)
-            _emit(EVENT_DENIED, {"reason": REASON_THROTTLED, "count": st["suppressed"]})
         _close_window()
         st["start"] = now
     if st["total"] == 0:  # first denial of this window
