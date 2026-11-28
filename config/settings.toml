@@ -27,6 +27,17 @@ max_recovery_attempts = 3
 # No new gate. Default false: no behavior change.
 creative_content_anchor_enabled = false
 
+# DEBT-028 / ADR-KERNEL-10 (PROPOSED): single-flight guard on a workflow
+# instance_id (execute()/resume() refuse a second concurrent run of one id).
+# "process" (default): exclusivity inside this process only, no I/O -- correct
+# while exactly one process owns the checkpoint store. "host": also a durable
+# lease in workflow_claim_db_path, shared by every process on this host that
+# uses the same file; fails closed if exclusivity cannot be established.
+# An unknown value stops startup. Not a multi-host lock.
+workflow_claim_scope = "process"
+workflow_claim_db_path = ".data/events/workflow_claims.db"
+workflow_claim_lease_s = 60.0
+
 # Execution-budget defaults (K4.4). Distinct from max_recovery_attempts
 # above, which governs ADR-K4.2-H-05's OperationRecoveryBudget (autonomous
 # recovery attempts across a whole operation) -- these govern the time
