@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -632,3 +633,83 @@ class TestSuppressionSummaryAndFinalLoss:
         assert len(got) == 1 and got[0]["total"] == 0
         assert (got[0]["dropped_aggregates"], got[0]["dropped_denials"]) == (2, 7)
         assert auth._audit_state["dropped_aggregates"] == 0
+
+
+class TestEventSemanticsAndTimedOutAppends:
+    """Third review (Nov 25): what a notification means, and what a timed-out append really does."""
+
+    def test_the_bus_announcement_of_an_opt_out_says_what_is_actually_enforced(self, sink, required, monkeypatch):
+        seen = []
+        monkeypatch.setattr(auth, "_emit", lambda event, payload: seen.append((event, dict(payload))))
+        sink.fail = True
+        monkeypatch.setenv(auth.ENV_MODE, "disabled")
+        assert auth.get_settings(None).mode == auth.MODE_REQUIRED
+        monkeypatch.setenv(auth.ENV_MODE, "required")
+        auth.get_settings(None)
+        disabled = next(p for e, p in seen if e == auth.EVENT_DISABLED)
+        enabled = next(p for e, p in seen if e == auth.EVENT_ENABLED)
+        assert disabled["mode"] == auth.MODE_DISABLED and disabled["effective"] == auth.MODE_REQUIRED   # requested, not enforced
+        assert enabled["mode"] == auth.MODE_REQUIRED and enabled["effective"] == auth.MODE_REQUIRED
+
+    def test_a_timed_out_append_that_keeps_running_in_its_thread_is_retried_without_loss(self, required, clock, monkeypatch):
+        """The EventStream appends in an executor thread; cancelling the asyncio waiter does not stop that thread, so the
+        first write can still land.  Delivery is at-least-once: the record is retried, never lost, and a duplicate
+        carries the same transition_id."""
+        monkeypatch.setattr(auth_audit, "AUDIT_TIMEOUT_S", 0.05)
+        monkeypatch.setenv(auth.ENV_MODE, "disabled")
+        threaded = ThreadedSink(slow_first=0.3)
+        auth_audit.set_sink(threaded)
+        auth.get_settings(None)                                           # queues the disable record
+
+        async def main():
+            assert await auth.flush_audit() is False                      # the waiter gave up after 0.05 s ...
+            assert auth.has_pending_audit()                               # ... so the record is still pending
+            await asyncio.sleep(0.5)                                      # the first thread finishes and commits anyway
+            assert len(threaded.records) == 1
+            clock[0] += auth_audit.AUDIT_RETRY_BACKOFF_S + 1
+            assert await auth.flush_audit() is True
+
+        asyncio.run(main())
+        assert [t for t, _ in threaded.records] == [auth.EVENT_DISABLED, auth.EVENT_DISABLED]      # a duplicate, never a loss
+        assert threaded.records[0][1]["transition_id"] == threaded.records[1][1]["transition_id"]  # and it is recognisable
+        assert not auth.has_pending_audit()
+
+    def test_single_flight_is_per_coroutine_not_per_storage_operation_documented_limit(self, required, monkeypatch):
+        """Report section 6 item 12: a retry can start while the timed-out first write is still running in its thread, so
+        two storage operations overlap.  Pinned so that a change here is deliberate."""
+        monkeypatch.setattr(auth_audit, "AUDIT_TIMEOUT_S", 0.05)
+        monkeypatch.setenv(auth.ENV_MODE, "disabled")
+        threaded = ThreadedSink(slow_first=0.3)
+        auth_audit.set_sink(threaded)
+        auth.get_settings(None)
+
+        async def main():
+            assert await auth.flush_audit() is False
+            assert await auth.flush_audit(force=True) is True             # starts while the first thread still runs
+            await asyncio.sleep(0.5)
+
+        asyncio.run(main())
+        assert threaded.peak == 2, "the two writes overlapped"
+        assert len(threaded.records) == 2
+
+
+class ThreadedSink:
+    """A sink whose append runs its blocking write in an executor thread, as the real EventStream does."""
+
+    def __init__(self, slow_first: float = 0.0) -> None:
+        self.records, self.calls, self.in_flight, self.peak = [], 0, 0, 0
+        self.slow_first, self._lock = slow_first, threading.Lock()
+
+    async def append(self, event_type, payload):
+        self.calls += 1
+        delay = self.slow_first if self.calls == 1 else 0.0
+        await asyncio.get_running_loop().run_in_executor(None, self._write, event_type, dict(payload), delay)
+
+    def _write(self, event_type, payload, delay):
+        with self._lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+        time.sleep(delay)
+        with self._lock:
+            self.records.append((event_type, json.loads(json.dumps(payload))))
+            self.in_flight -= 1

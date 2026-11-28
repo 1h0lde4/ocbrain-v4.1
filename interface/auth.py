@@ -423,11 +423,13 @@ def _note_mode(mode: str) -> None:
             "reach the port. (It takes effect only once this transition's audit record is persisted.)",
             ENV_MODE,
         )
-        _emit(EVENT_DISABLED, {"mode": mode, "previous": previous})
+        # A live notification of a REQUESTED transition: "effective" is what is enforced right now, and the opt-out
+        # takes effect only once its record is durable.  The durable EventStream record is the evidence it did.
+        _emit(EVENT_DISABLED, {"mode": mode, "previous": previous, "effective": MODE_REQUIRED})
         _enqueue(EVENT_DISABLED, _transition_payload(mode, previous), kind="transition")
     elif previous == MODE_DISABLED:
         log.warning("API authentication is REQUIRED again (was disabled).")
-        _emit(EVENT_ENABLED, {"mode": mode, "previous": previous})
+        _emit(EVENT_ENABLED, {"mode": mode, "previous": previous, "effective": mode})
         _enqueue(EVENT_ENABLED, _transition_payload(mode, previous), kind="transition")
 
 
