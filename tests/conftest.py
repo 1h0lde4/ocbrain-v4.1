@@ -13,11 +13,22 @@ def _api_auth_opt_out(monkeypatch):
     explicitly here.  tests/test_api_auth_boundary.py removes this override and
     tests the boundary itself.
     """
-    from interface import auth
+    from interface import auth, auth_audit
+
+    class _NullAuditSink:
+        """The opt-out waits for its audit record (interface/auth.py): give these tests a sink that
+        stores nothing and always succeeds, so they see the opt-out take effect immediately.
+        tests/test_api_auth_audit.py tests the real behaviour."""
+
+        async def append(self, event_type, payload):
+            return None
+
+    auth_audit.set_sink(_NullAuditSink())
     monkeypatch.setenv(auth.ENV_MODE, auth.MODE_DISABLED)
     auth.reset_cache_for_tests()
     yield
     auth.reset_cache_for_tests()
+    auth_audit.set_sink(None)
 
 
 @pytest.fixture

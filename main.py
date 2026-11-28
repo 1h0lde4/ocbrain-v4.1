@@ -478,6 +478,14 @@ async def main():
         # path from main(): normal return, exception, or a
         # KeyboardInterrupt/SystemExit propagating up through
         # asyncio.gather() above.
+        # PR #112 review: persist what the API authentication layer still has pending (the open denial window
+        # and any audit record that could not be stored earlier) while the EventStream is still usable.
+        # drain_audit() is bounded and never raises; the guard keeps the original exit path intact.
+        try:
+            from interface import auth as _api_auth
+            await _api_auth.drain_audit()
+        except Exception:
+            log.exception("Authentication audit drain failed at shutdown")
         log.info("Shutting down Orchestrator...")
         await orchestrator.close()
 

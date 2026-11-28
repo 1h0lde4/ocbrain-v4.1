@@ -35,6 +35,7 @@ Opting out is explicit and loud: ``OCBRAIN_API_AUTH=disabled`` or
 """
 from __future__ import annotations
 
+import asyncio
 import getpass
 import hmac
 import json
@@ -50,10 +51,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Iterable, Mapping, MutableMapping, Optional
 
+from interface import auth_audit
 from interface.headers import SECURITY_HEADERS
 
 log = logging.getLogger(__name__)
@@ -407,7 +411,7 @@ _last_mode: Optional[str] = None
 
 
 def _note_mode(mode: str) -> None:
-    """Log and emit every change of the resolved mode, in both directions."""
+    """Log, emit and queue for persistence every change of the resolved mode, in both directions."""
     global _last_mode
     if mode == _last_mode:
         return
@@ -416,12 +420,17 @@ def _note_mode(mode: str) -> None:
         log.warning(
             "API AUTHENTICATION IS DISABLED (%s / global.api_auth). Every endpoint, including "
             "config writes, updates, import/export and /query, is open to anything that can "
-            "reach the port.", ENV_MODE,
+            "reach the port. (It takes effect only once this transition's audit record is persisted.)",
+            ENV_MODE,
         )
-        _emit(EVENT_DISABLED, {"mode": mode, "previous": previous})
+        # A live notification of a REQUESTED transition: "effective" is what is enforced right now, and the opt-out
+        # takes effect only once its record is durable.  The durable EventStream record is the evidence it did.
+        _emit(EVENT_DISABLED, {"mode": mode, "previous": previous, "effective": MODE_REQUIRED})
+        _enqueue(EVENT_DISABLED, _transition_payload(mode, previous), kind="transition")
     elif previous == MODE_DISABLED:
         log.warning("API authentication is REQUIRED again (was disabled).")
-        _emit(EVENT_ENABLED, {"mode": mode, "previous": previous})
+        _emit(EVENT_ENABLED, {"mode": mode, "previous": previous, "effective": mode})
+        _enqueue(EVENT_ENABLED, _transition_payload(mode, previous), kind="transition")
 
 
 def get_settings(configured_mode: Optional[Any] = None) -> AuthSettings:
@@ -429,6 +438,9 @@ def get_settings(configured_mode: Optional[Any] = None) -> AuthSettings:
     global _cached
     mode = resolve_mode(configured_mode)
     _note_mode(mode)
+    if mode == MODE_DISABLED and _disable_audit_pending():
+        # Fail closed: the opt-out takes effect only once its audit record is durable.
+        mode = MODE_REQUIRED
     cached = _cached
     if mode == MODE_DISABLED:
         if cached is None or cached.mode != mode:
@@ -447,7 +459,9 @@ def reset_cache_for_tests() -> None:
     global _cached, _last_mode
     _cached = None
     _last_mode = None
-    _throttle.update(start=0.0, count=0, suppressed=0, warned=False)
+    _throttle.update(start=0.0, count=0, suppressed=0, warned=False, total=0, reasons={}, start_wall=0.0, window_id=0)
+    _pending.clear()
+    _audit_state.update(next_attempt=0.0, flushing=False, dropped_aggregates=0, dropped_denials=0, last_error_log=-1e9)
 
 
 # ── Host allowlist ───────────────────────────────────────────────────────────
@@ -514,19 +528,222 @@ def _safe_path(path: str) -> str:
 
 
 _clock: Callable[[], float] = time.monotonic
-_throttle: dict[str, Any] = {"start": 0.0, "count": 0, "suppressed": 0, "warned": False}
+_wall: Callable[[], float] = time.time
+_WINDOW_TIMER = True  # tests with a fake clock turn the real-time timer off
+_throttle: dict[str, Any] = {
+    "start": 0.0, "count": 0, "suppressed": 0, "warned": False,
+    "total": 0, "reasons": {}, "start_wall": 0.0, "window_id": 0,
+}
+
+# ── Durable audit records ────────────────────────────────────────────────────
+_pending: list[dict[str, Any]] = []  # records not yet persisted, oldest first
+_audit_state: dict[str, Any] = {
+    "next_attempt": 0.0, "flushing": False, "dropped_aggregates": 0, "dropped_denials": 0, "last_error_log": -1e9,
+}
+_tasks: set = set()  # strong references to background flush tasks
 
 
-def _admit_denial() -> bool:
-    """True if this denial may be logged and emitted (bounded rate)."""
+def _iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds")
+
+
+def _transition_payload(mode: str, previous: Optional[str]) -> dict[str, Any]:
+    return {
+        "schema": auth_audit.SCHEMA_VERSION, "transition_id": uuid.uuid4().hex,
+        "mode": mode, "previous": previous,
+        "source": "env" if ENV_MODE in os.environ else "config",
+        "pid": os.getpid(), "at": _iso(_wall()),
+    }
+
+
+def _enqueue(event_type: str, payload: dict[str, Any], *, kind: str) -> None:
+    _pending.append({"event_type": event_type, "payload": payload, "kind": kind})
+    if kind != "aggregate":
+        return
+    aggregates = [r for r in _pending if r["kind"] == "aggregate"]
+    while len(aggregates) > auth_audit.MAX_PENDING_AGGREGATES:  # bounded; the loss is counted, not hidden
+        dropped = aggregates.pop(0)
+        _pending.remove(dropped)
+        _audit_state["dropped_aggregates"] += 1
+        _audit_state["dropped_denials"] += int(dropped["payload"].get("total", 0))
+
+
+def has_pending_audit() -> bool:
+    return bool(_pending)
+
+
+def _disable_audit_pending() -> bool:
+    """True while any api.auth_disabled record is unpersisted: the opt-out must not take effect."""
+    return any(r["event_type"] == EVENT_DISABLED for r in _pending)
+
+
+def _log_audit_failure(record: dict[str, Any], exc: BaseException) -> None:
+    now = _clock()
+    if now - _audit_state["last_error_log"] < 30.0:
+        return
+    _audit_state["last_error_log"] = now
+    gate = (" Authentication STAYS REQUIRED until the disable record is stored."
+            if _disable_audit_pending() else " It will be retried.")
+    log.error("Authentication audit record %s could not be persisted (%s).%s",
+              record["event_type"], type(exc).__name__, gate)
+
+
+async def flush_audit(force: bool = False) -> bool:
+    """Persist pending records in order.  True if nothing is left pending.
+
+    Never raises (except task cancellation).  Single-flight, time-boxed per append, and after a
+    failure it backs off, so a broken store cannot add latency to every request.  ``force`` (shutdown
+    only) ignores the backoff; single-flight still applies.
+    """
+    state = _audit_state
+    if not _pending:
+        return True
+    if state["flushing"] or (not force and _clock() < state["next_attempt"]):
+        return False
+    state["flushing"] = True
+    try:
+        sink = auth_audit.get_sink()
+        while _pending:
+            record = _pending[0]
+            try:
+                await asyncio.wait_for(sink.append(record["event_type"], record["payload"]),
+                                       timeout=auth_audit.AUDIT_TIMEOUT_S)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # storage error or timeout: never propagate into request handling
+                state["next_attempt"] = _clock() + auth_audit.AUDIT_RETRY_BACKOFF_S
+                _log_audit_failure(record, exc)
+                return False
+            _pending.pop(0)
+        return True
+    finally:
+        state["flushing"] = False
+
+
+def schedule_flush() -> None:
+    """Start a background flush on the running loop (a no-op without one)."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(flush_audit())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+def _fold_overflow_losses() -> None:
+    """Shutdown: overflow losses that no later aggregate will carry get into a durable record now.
+
+    They are added to the newest pending aggregate; with none pending they are queued as a loss-only aggregate
+    (total 0).  Nothing is dropped after this, so it cannot start another loss.
+    """
+    st = _audit_state
+    lost_aggregates, lost_denials = st["dropped_aggregates"], st["dropped_denials"]
+    if not (lost_aggregates or lost_denials):
+        return
+    st.update(dropped_aggregates=0, dropped_denials=0)
+    newest = next((r for r in reversed(_pending) if r["kind"] == "aggregate"), None)
+    if newest is not None:
+        newest["payload"]["dropped_aggregates"] += lost_aggregates
+        newest["payload"]["dropped_denials"] += lost_denials
+        return
+    now = _iso(_wall())
+    _enqueue(EVENT_DENIED, {
+        "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate", "aggregate_id": uuid.uuid4().hex,
+        "window_start": now, "window_end": now, "window_seconds": THROTTLE_WINDOW_S, "total": 0,
+        "by_reason": {}, "logged": 0, "suppressed": 0, "pid": os.getpid(),
+        "dropped_aggregates": lost_aggregates, "dropped_denials": lost_denials,
+    }, kind="aggregate")
+
+
+async def drain_audit(timeout_s: Optional[float] = None) -> bool:
+    """Shutdown: close the open denial window into its aggregate, then make one bounded, final attempt to
+    persist everything still pending (it ignores the retry backoff).  Never raises (except cancellation).
+
+    True if nothing is left pending.  Whatever could not be stored is logged and is lost with the process.
+    """
+    limit = auth_audit.AUDIT_DRAIN_TIMEOUT_S if timeout_s is None else timeout_s
+
+    async def _drain() -> None:
+        while _pending:
+            while _audit_state["flushing"]:  # let an in-flight append finish (it is time-boxed)
+                await asyncio.sleep(0.02)
+            if not await flush_audit(force=True):
+                return
+
+    try:
+        _close_window()
+        _fold_overflow_losses()
+        await asyncio.wait_for(_drain(), timeout=limit)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # includes the drain timeout; shutdown must not fail because of the audit store
+        log.error("Authentication audit drain at shutdown stopped early (%s).", type(exc).__name__)
+    if _pending:
+        carried = sum(r["payload"].get("dropped_aggregates", 0) for r in _pending)
+        log.error("%d authentication audit record(s) could not be persisted at shutdown and are lost: %s "
+                  "(they carry the count of %d earlier overflow-dropped aggregate(s)).",
+                  len(_pending), ", ".join(sorted({r["event_type"] for r in _pending})), carried)
+    return not _pending
+
+
+def _close_window() -> None:
+    """Close the finished window: emit the flood-protection summary, turn the counters into one aggregate record, reset.
+
+    Every path that ends a window (a later denial, the window timer, shutdown) comes through here, so the summary
+    line and event are identical on all of them.
+    """
+    st = _throttle
+    if st["suppressed"]:
+        log.warning("api.auth_denied: %d further denials were suppressed in the previous %.0f s window.",
+                    st["suppressed"], THROTTLE_WINDOW_S)
+        _emit(EVENT_DENIED, {"reason": REASON_THROTTLED, "count": st["suppressed"]})
+    if st["total"]:
+        payload = {
+            "schema": auth_audit.SCHEMA_VERSION, "kind": "aggregate", "aggregate_id": uuid.uuid4().hex,
+            "window_start": _iso(st["start_wall"]), "window_end": _iso(_wall()),
+            "window_seconds": THROTTLE_WINDOW_S, "total": st["total"],
+            "by_reason": dict(sorted(st["reasons"].items())),
+            "logged": st["count"], "suppressed": st["suppressed"], "pid": os.getpid(),
+            "dropped_aggregates": _audit_state["dropped_aggregates"],
+            "dropped_denials": _audit_state["dropped_denials"],
+        }
+        _audit_state.update(dropped_aggregates=0, dropped_denials=0)
+        _enqueue(EVENT_DENIED, payload, kind="aggregate")
+    st.update(count=0, suppressed=0, warned=False, total=0, reasons={})
+
+
+def _window_timer_fired(window_id: int) -> None:
+    st = _throttle
+    if st["window_id"] != window_id or not st["total"]:
+        return  # a later window is already running (or it was closed by a newer denial)
+    _close_window()
+    schedule_flush()
+
+
+def _schedule_window_timer(window_id: int) -> None:
+    if not _WINDOW_TIMER:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.call_later(THROTTLE_WINDOW_S + 0.05, _window_timer_fired, window_id)
+
+
+def _admit_denial(reason: str = REASON_INVALID) -> bool:
+    """Count every denial; True if this one may be logged and emitted (bounded rate)."""
     now = _clock()
     st = _throttle
     if now - st["start"] >= THROTTLE_WINDOW_S:
-        if st["suppressed"]:
-            log.warning("api.auth_denied: %d further denials were suppressed in the previous %.0f s window.",
-                        st["suppressed"], THROTTLE_WINDOW_S)
-            _emit(EVENT_DENIED, {"reason": REASON_THROTTLED, "count": st["suppressed"]})
-        st.update(start=now, count=0, suppressed=0, warned=False)
+        _close_window()
+        st["start"] = now
+    if st["total"] == 0:  # first denial of this window
+        st["start_wall"] = _wall()
+        st["window_id"] += 1
+        _schedule_window_timer(st["window_id"])
+    st["total"] += 1
+    st["reasons"][reason] = st["reasons"].get(reason, 0) + 1
     if st["count"] < THROTTLE_BURST:
         st["count"] += 1
         return True
@@ -540,7 +757,7 @@ def _admit_denial() -> bool:
 
 
 def _audit_denied(reason: str, scope: MutableMapping[str, Any]) -> None:
-    if not _admit_denial():
+    if not _admit_denial(reason):
         return
     method = str(scope.get("method", "WS" if scope.get("type") == "websocket" else "?"))
     path = _safe_path(str(scope.get("path", "")))
@@ -621,6 +838,11 @@ class ApiAuthMiddleware:
 
         try:
             settings = self._settings_provider()
+            if _disable_audit_pending():
+                await flush_audit()                  # bounded by AUDIT_TIMEOUT_S and the retry backoff
+                settings = self._settings_provider() # required until the record is durable
+            elif has_pending_audit():
+                schedule_flush()                     # aggregates / enable records never delay a request
         except AuthConfigError:
             log.exception("API authentication is misconfigured; refusing the request.")
             await self._reject(scope, send, 503, "API authentication is misconfigured")

@@ -700,6 +700,9 @@ class TestOptOutTransitions:
         monkeypatch.setenv(auth.ENV_TOKEN, TOKEN)
         auth.reset_cache_for_tests()
         assert auth.get_settings("required").mode == auth.MODE_REQUIRED
+        # the opt-out waits for its audit record: still required until it is persisted
+        assert auth.get_settings("disabled").mode == auth.MODE_REQUIRED
+        assert asyncio.run(auth.flush_audit()) is True        # conftest's sink always succeeds
         assert auth.get_settings("disabled").mode == auth.MODE_DISABLED
         assert auth.get_settings("required").mode == auth.MODE_REQUIRED
         assert [e[0] for e in events] == [auth.EVENT_DISABLED, auth.EVENT_ENABLED]

@@ -60,8 +60,8 @@ All IMPLEMENTED. "Owner ruling" is the state of the owner's own decision.
 | A2 | **Deny by default, pinned allowlist: `GET`/`HEAD` of `/` and `/static/*` only.** The interactive docs are disabled; the schema at `/openapi.json` needs the token. | authorised plan (Oct 31); docs-disabled was chosen over self-hosting the docs UI, reversible |
 | A3 | **Pure-ASGI middleware, outermost.** Runs before routing (unknown paths give 401, not 404) and does not buffer SSE. Rejection happens before CSRF, routing or any handler. | authorised plan |
 | A4 | **One per-installation secret**: `OCBRAIN_API_TOKEN`, else the token file; `secrets.token_urlsafe(32)`, `O_EXCL`, owner-only; under 32 characters refused; constant-time compare; never logged, never in an event, never on a command line. | authorised plan |
-| A5 | **Opt-out is explicit, loud and audited on every transition:** `OCBRAIN_API_AUTH=disabled` or `global.api_auth = "disabled"`; any other value, a typo included, means required; `PUT /config` cannot change it. Disable and re-enable are each logged and emitted (`api.auth_disabled`, `api.auth_enabled`). | authorised plan |
-| A6 | **Denials are audited with a bounded rate:** WARNING log + `api.auth_denied` (reason, method, sanitised path, client; never the credential), at most 20 per 10 s then a suppressed-count summary. The HTTP body is a generic 401; every request is still rejected. | authorised plan |
+| A5 | **Opt-out is explicit, loud and audited on every transition:** `OCBRAIN_API_AUTH=disabled` or `global.api_auth = "disabled"`; any other value, a typo included, means required; `PUT /config` cannot change it. Disable and re-enable are each logged, emitted (`api.auth_disabled`, `api.auth_enabled`) and persisted (A15). | authorised plan |
+| A6 | **Denials are audited with a bounded rate:** WARNING log + `api.auth_denied` (reason, method, sanitised path, client; never the credential), at most 20 per 10 s then a suppressed-count summary. The HTTP body is a generic 401; every request is still rejected. Each window also yields one persisted aggregate (A15). | authorised plan |
 | A7 | **Misconfiguration fails closed:** startup abort, or 503 at request time; never open. A directory, dangling symlink, unreadable or short token file is a 503, not a 500. | authorised plan |
 | A8 | **Clients carry the token:** the CLI reads env or the token file; `web/auth.js` keeps it in `sessionStorage` only and prompts once per tab; the one SSE stream uses a `fetch`-based reader because `EventSource` cannot send headers. | authorised plan |
 | A9 | **`Host` allowlist in required mode:** `localhost`, `127.0.0.1`, `::1`, plus `OCBRAIN_API_ALLOWED_HOSTS` / `global.api_allowed_hosts` for a proxied deployment. Names only, port ignored. Checked before the public allowlist. Not applied under the explicit opt-out. | authorised plan |
@@ -70,6 +70,7 @@ All IMPLEMENTED. "Owner ruling" is the state of the owner's own decision.
 | A12 | **Windows:** `icacls /reset`, `/inheritance:r`, `/grant:r *<SID>:(F)` on create, load and rotate, then the DACL is read as SDDL (SIDs, language-independent) and **no principal other than the current user, SYSTEM, Administrators and OWNER RIGHTS may have an allow entry**; anything else fails closed and names the principal. A loosened ACL (Everyone/Users added) is repaired on the next load. Validated by the `token-acl-windows` CI job (`scripts/check_token_acl_windows.py`), which checks each file two independent ways (icacls display names and SDDL SIDs); the unit tests stub `icacls` and prove logic only. | authorised plan |
 | A13 | **Baseline security headers** (CSP with no external origin, `nosniff`, `DENY`, `no-referrer`). `'unsafe-inline'` stays because the shipped pages use inline script and `onclick`. | authorised plan |
 | A14 | **`ocbrain token [--show|--rotate]`** in both entry points (the pip CLI, and `main.py` for packaged installs); the CLI group now runs a known subcommand before treating text as a query (E11). | authorised plan |
+| A15 | **Authentication audit records are durable (`EventStream`).** Every disable is persisted before it takes effect, and so is every re-enable that happens while the process runs (`transition_id`, mode, previous mode, source, pid, UTC time). A process that starts in `required` mode writes no record, so the end of a disabled period across a restart is not recorded (section 6 item 16). Denials are persisted as bounded *aggregates*: one record per window (`aggregate_id`, window start and end, total, per-reason counts, logged and suppressed counts, counted losses), never one per request; the log and event flood protection is unchanged. Never persisted: tokens, `Authorization` headers, request paths, client addresses. **Fail closed:** a pending `api.auth_disabled` record keeps the *effective* mode `required` (the opt-out takes effect only once its record is stored); a store failure or timeout is logged, retried after a backoff and never raised into a request; failing to store a denial aggregate or an `api.auth_enabled` record changes nobody's access. At a normal shutdown `main.py` calls `drain_audit()`, which closes the open window and makes one bounded final attempt (5 s, ignoring the retry backoff) to persist what is pending. The flood-protection summary (the warning line and the `throttled` event) is emitted when a window closes, by whichever path closes it (a later denial, the window timer, shutdown); on `main` it appeared only when a later denial arrived, so it now also appears at the end of a quiet window. The `throttled` event and the `api.auth_disabled` announcement are live notifications on the in-process EventBus, not durable records: the suppressed count survives only as the aggregate's `suppressed`, and the `api.auth_disabled` announcement reports a *requested* transition (its payload's `effective` is what is enforced at that moment, `required` until the record is durable); the `EventStream` record is the evidence that the transition took effect. At shutdown, overflow losses that no later aggregate would carry are added to the newest pending aggregate, or queued as a loss-only aggregate. Code: `interface/auth_audit.py`, `interface/auth.py`. | approved specification (owner, Nov 2) |
 
 Rejected: cookie sessions (more state, a CSRF surface, no gain on one machine); a `?token=` query parameter (logs,
 history); a one-time bootstrap code in the launcher URL (race, see A11); relying on the bind address alone (E3);
@@ -126,11 +127,51 @@ Token required (30): `GET /status`, `/health`, `/modules`, `/config`, `/debug`, 
 10. **The CLI parsing fix (E11) is a minimal change to the group, not a CLI redesign.**
 11. The web helpers (`web/auth.js`) are executed under Node against a live server (`tests/test_web_auth_js.py`) and,
     separately and outside CI, in headless Chromium on Linux. The Node run is not browser evidence.
+12. **Durable audit records are at-least-once and per process.** A store call that times out can still have landed and is
+    then retried, so a duplicate record is possible: `transition_id` identifies a duplicate transition and `aggregate_id` a duplicate aggregate.
+    Single-flight protects concurrent flush coroutines, not the storage operation: a timed-out append keeps running in
+    its executor thread, so a retry can overlap it and both can land (`tests/test_api_auth_audit.py` pins the retry
+    without loss, the duplicate and the overlap). Each worker process keeps its own pending queue and its own denial
+    window, so a multi-worker deployment writes one aggregate per worker per window; this was not exercised with
+    real multiple processes.
+13. **A permanently broken store keeps an opt-out from taking effect.** By design: `disabled` is enforced as `required`
+    until `api.auth_disabled` is stored, and the error is logged. The operator has to repair the store.
+14. **Aggregates are bounded** (`MAX_PENDING_AGGREGATES`, 100 per process): on overflow the oldest is dropped and the loss
+    is counted in a later aggregate. At a normal shutdown `drain_audit()` closes the open window and makes one bounded final
+    attempt (5 s) to persist what is pending, including overflow losses not yet reported; after a kill, a crash or a failed
+    final attempt, pending records and an open window are lost (logged when the process is still alive). Checked end to
+    end with the real `main.py`, a real `EventStream`, a real SIGTERM and SIGINT, a broken store and a locked store
+    (`tests/test_main_shutdown_e2e.py`; item 17 gives the latency requirement).
+15. **The `EventStream` default path is relative to the working directory** (`.data/events/stream.db`), so where the
+    records land depends on how the server is started. A separate defect; not changed here.
+16. **Transition records are per process.** A process that starts in `required` mode writes no record, so a disabled
+    period that ends across a restart has no `api.auth_enabled`; every start in `disabled` mode does write an
+    `api.auth_disabled`. Restoring the previous mode from the last persisted record, or recording the startup mode on
+    every start, would close this; neither is implemented (the owner's decision), and a test pins the current
+    behaviour. Reading the last persisted mode is only as good as its prerequisites: (1) a stable `EventStream`
+    location (item 15), with a compatibility decision for existing databases, because a different working directory
+    would show no previous mode; (2) a single server instance, or a concurrency-safe transition, because reading the
+    last mode and appending a transition is not atomic; (3) tests for restart from disabled to required and from
+    required to disabled; (4) defined behaviour when the previous mode cannot be read.
+17. **Shutdown-latency requirement.** A stop completes within 5 s normally and within 10 s even when the store is
+    locked or hung. Measured: 0.4 to 0.5 s; with a locked store 5.4 s. That is SQLite's own busy timeout (5 s), not the
+    drain's 5 s bound: the drain gives up after the 2 s per-append timeout, but the blocked worker thread is held until
+    SQLite gives up, and `asyncio.run` waits for it. `tests/test_main_shutdown_e2e.py` enforces both bounds.
+18. **`get_settings()` returns the effective runtime mode; `resolve_mode()` returns the configured one.** A requested
+    opt-out is enforced as `required` until its audit record is durable, so the two can differ. Consumers at this
+    revision: the API middleware's settings provider and the startup block, both in `interface/api.py`; nothing else
+    reads the mode. A diagnostic that needs the operator's configured preference must call `resolve_mode()`, never
+    infer it from the effective mode. Pinned by `test_a_failing_store_keeps_authentication_required` (requested,
+    store failing: required, and a valid token still works), `test_a_failing_store_never_weakens_a_re_enable`,
+    `test_disable_then_enable_before_the_record_is_stored` (switching back while pending) and the bus-payload test
+    (`effective`).
+19. **The end-to-end shutdown test is POSIX only.** Windows has no SIGTERM/SIGINT semantics to deliver this way, and
+    the Windows CI job covers the token ACL only; shutdown behaviour on Windows is not verified.
 
 ## 7. Open findings that this change does not close
 * **Authenticated-but-unauthorized control-plane operations.** Authentication establishes who is calling, not
   whether the call is permitted. `/update/install`, `/update/restart`, `PUT /config` (including the mutable
   `global.ollama_host` and `global.web_ui_port`), `/import`, `/export`, `/distill`, `/rollback`, `/modules/new`,
   `/evolve/plan` and `/train/*` have no `GovernanceKernel` evaluation. **Open.**
-* **Durable authentication events.** `api.auth_denied`, `api.auth_disabled` and `api.auth_enabled` reach the log and
-  in-memory bus subscribers only, not the persistent `EventStream`. **Open decision for the owner.**
+* **Durable authentication events.** Implemented (A15): transitions and bounded denial aggregates reach the persistent
+  `EventStream`. Its limits are §6 items 12 to 19.
