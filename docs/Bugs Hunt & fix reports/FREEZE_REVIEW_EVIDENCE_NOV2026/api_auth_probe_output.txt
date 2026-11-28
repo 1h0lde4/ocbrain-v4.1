@@ -1,0 +1,26 @@
+# api_auth_probe.py at repo HEAD (interface/ unchanged between fbe1ebd and cc446f8); throwaway token; in-process TestClient
+non-SSE route/method pairs probed: 23
+no token statuses: [200, 401] | non-401: {('GET', '/'): 200}
+wrong token statuses: [200, 401]
+valid token GET statuses: [200]
+variant GET  /health/           -> 401 application/json
+variant GET  /Health            -> 401 application/json
+variant GET  /%68ealth          -> 401 application/json
+variant POST /query/            -> 401 application/json
+variant GET  //health           -> 200 text/html; charset=utf
+variant GET  //config           -> 200 text/html; charset=utf
+variant PUT  //config           -> 401 application/json
+variant POST //update/install   -> 401 application/json
+variant POST //rollback         -> 401 application/json
+variant GET  ///health          -> 401 application/json
+Host evil.example: 400 | Host localhost.evil.com: 400
+SSE /events no token: 401
+SSE /events wrong token: 401
+SSE /executions/x/events no token: 401
+SSE /executions/x/events wrong token: 401
+SSE token in query string only: 401
+forwarded-header case 'X-Forwarded-For 127.0.0.1': 401
+forwarded-header case 'X-Forwarded-Host/Proto': 401
+forwarded-header case 'Forwarded: for=127.0.0.1': 401
+forwarded-header case 'Host evil + X-Forwarded-Host localhost': 400
+forwarded-header case 'X-Original-URL/X-Rewrite-URL -> /': 401

@@ -17,6 +17,12 @@ Read-only evidence supporting `FREEZE_REMEDIATION_REGISTER_NOV2026.md`. Baseline
 - `issue105_probe_cc446f8.txt` — output of the repo's own #105 probe (script on `origin/follow-up/fz02-b2d-latent-token-cancellation-oct2026`, `docs/handoffs/fz02_gate_probe.py`) run against `main` @ `cc446f8`: retry-after-cancel reproduced (node ran twice, `execute()` returned after cancellation) and the 0.3 s graph budget not enforced until the router's 2.0 s deadline. Author-run, single environment, faked provider stream.
 - `dependabot_open_alerts_2026-11-25.tsv` — the seven open Dependabot alerts as read from the GitHub API on 2026-11-25 (manifest, range, patched version, CVE, creation date).
 
+## Manifest and scripts (Revision 2)
+
+- `EVIDENCE_MANIFEST.tsv` — one row per evidence item (`EV-01` …): file, SHA-256, repository SHA, command, environment, executor, recorded-at time, result, limitations. `EV-10` is the **reported** CI run (not retrieved). Recorded-at times are file times; original run times were not captured at execution. `debt012_config_content_diff.patch` is stored LF-normalized so its committed bytes match its hash.
+- `scripts/r1_gate_probe.py`, `scripts/api_auth_probe.py`, `scripts/debt012b_import_attribution.py` — reproduction scripts and their outputs (`r1_gate_probe_output.txt`, `api_auth_probe_output.txt`, `debt012b_import_attribution_output.txt`). `fullsuite_runs_fbe1ebd.txt` holds the full-suite summaries.
+- Not stored: the write-spy pytest plugin behind `debt012_config_writers.tsv`, the upstream #105 probe script (branch `origin/follow-up/fz02-b2d-latent-token-cancellation-oct2026`, `docs/handoffs/fz02_gate_probe.py`), and the raw full-suite logs.
+
 ## Commands (clean clone, working tree reverted afterwards)
 
 ```

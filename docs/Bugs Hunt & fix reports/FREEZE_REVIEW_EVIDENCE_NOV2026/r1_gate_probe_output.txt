@@ -1,0 +1,6 @@
+# r1_gate_probe.py at repo HEAD (code identical to fbe1ebd for scripts/ci_test_gate.py; unchanged through cc446f8)
+parse_failed_ids -> ['tests/t.py::test_f[a', 'tests/t.py::test_g']
+empty allowlist | ok = False | new = ['tests/t.py::test_f[a', 'tests/t.py::test_g'] | known = [] | reasons = ['summary reports 3 failed but 2 distinct FAILED node ID(s) were found in the output', '2 failure(s) not in the known-failure list']
+allowlist = full ids of test_f[a - 1] and test_g | ok = False | new = ['tests/t.py::test_f[a'] | known = ['tests/t.py::test_g'] | reasons = ['summary reports 3 failed but 2 distinct FAILED node ID(s) were found in the output', '1 failure(s) not in the known-failure list']
+hand-truncated allowlist entry + 1 real failing ' - ' id -> ok = True | new = [] | known = ['tests/x.py::test_p[a'] | reasons = []
+same output, empty allowlist -> ok = False | reasons = ['1 failure(s) not in the known-failure list']

@@ -1,0 +1,14 @@
+# debt012b_import_attribution.py at repo HEAD; hashes: in-process (before exit) and by shell AFTER the process exits
+# context.py and its import chain are unchanged between fbe1ebd and cc446f8 (diff scope); orchestrator.py changed elsewhere
+shell sha256 before run: 858b5af1dec53ff0f4811db8c0e91d9ba407f0e727ec63e02084b1e3c95a76f0
+sha256 before import: 858b5af1dec53ff0f4811db8c0e91d9ba407f0e727ec63e02084b1e3c95a76f0
+FIRST OPEN of /home/claude/ocb/data/context.sqlite
+    interface/api.py 24 <module> | from core.orchestrator import Orchestrator
+    core/orchestrator.py 13 <module> | from .context import ContextMemory
+    core/context.py 320 <module> | context_memory = ContextMemory()
+    core/context.py 34 __init__ | self._conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    core/runtime/state.py 28 _connect_closing | return _ORIGINAL_SQLITE_CONNECT(*args, **kwargs)
+sha256 after import:  858b5af1dec53ff0f4811db8c0e91d9ba407f0e727ec63e02084b1e3c95a76f0
+shell sha256 after process exit: a59c39a22e84bc225e47a2e375b1c1226f2fe4a963a17897ab3e2d57447c3860
+git status of tracked data file after exit:  M data/context.sqlite
+interpretation: the DB is opened at import time (stack above); the in-process hash is unchanged, the on-disk bytes differ once the process has exited, so the write happens at connection close / interpreter exit or via a WAL checkpoint (INFERENCE; the exact write was not traced)
